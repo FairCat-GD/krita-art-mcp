@@ -74,11 +74,21 @@ class Bridge:
         self._httpd, self._thread = httpd, thread
         thread.start()
         serving.wait()
+        try:
+            self._publish(httpd.port)
+        except BaseException:
+            # A bridge nobody can find must not outlive this call.
+            self.stop()
+            raise
+        self._log.info("bridge %s listening on 127.0.0.1:%d", self.session_id, httpd.port)
+        return True
+
+    def _publish(self, port: int) -> None:
         # Written last, so a client that finds the file finds a bridge that answers.
         bridge_file.write(
             self._path,
             {
-                "port": httpd.port,
+                "port": port,
                 "token": self._token,
                 "pid": os.getpid(),
                 "session_id": self.session_id,
@@ -89,8 +99,6 @@ class Bridge:
                 "qt_major": self.health.get("qt_major"),
             },
         )
-        self._log.info("bridge %s listening on 127.0.0.1:%d", self.session_id, httpd.port)
-        return True
 
     def stop(self) -> None:
         # Runs before Python is finalised (K48); every step must return promptly.

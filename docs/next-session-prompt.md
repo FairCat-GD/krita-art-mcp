@@ -19,9 +19,10 @@ Release 0.3.0.
 
 - **Round 1 is the Phase 1 build.** Sessions 0, 1 and 2 are done; 3–15 remain, and 6, 10 and 13
   are architecture reviews.
-- **Session 2 is committed locally, not pushed.** `origin` is the private GitHub repository
-  `FairCat-GD/krita-art-mcp`. `origin/main` holds everything through `review: bridge_core never
-  reaches Krita, and 9 smaller`. List `origin/main..HEAD` before any push.
+- **Session 2 and its review fixes are pushed.** `origin` is the private GitHub repository
+  `FairCat-GD/krita-art-mcp`. `origin/main` holds everything through `review: a bridge that fails
+  to publish now stops, and 6 smaller`, so `origin/main..HEAD` starts empty. List it before any
+  push.
 - **What Session 2 left that Session 3 builds on:**
   - **The plugin** (`plugin/krita_art_mcp_bridge/`).
     - **`bridge_core/` is pure stdlib.**
@@ -55,8 +56,9 @@ Release 0.3.0.
       function `(client, arguments) -> CallToolResult`.
     - `envelope.py`: `completed`, `pending`, `failed` and `failure`.
     - `errors.py`: `PROTOCOL`, `API_VERSION` and `CODES` (with hints).
-    - Also `setup_checks.py`, `doctor.py`, `install.py`, `plugin_files.py`, `processes.py`,
-      `paths.py` and `instructions.py`.
+    - Also `setup_checks.py` (with `plugin_current`, invariant 11's one check, shared by
+      `doctor` and the probe), `doctor.py` (a 5 s budget), `install.py`, `plugin_files.py`,
+      `processes.py`, `paths.py` and `instructions.py`.
     - `probe/__init__.py`: `Report` and `run()`. A new live check is a function called from
       `_probe`.
   - **The schemas.**
@@ -97,7 +99,9 @@ Release 0.3.0.
     - `request_id`, `client`, every reply's `session_id` and the uniform error body are there
       for Session 3; the lease and dedup need no new protocol.
     - Session 3 decides how long finished operations are kept: today the map only grows, per
-      Krita session.
+      Krita session. A resent `operation_id` with other arguments returns the first operation;
+      the `request_id` conflict rule is Session 3's. Both were review findings, skipped for
+      Session 3.
   - **`doctor` and the not-running hint share `setup_checks`.** `KRITA_NOT_RUNNING` names the
     first failing local step in `details.{step, detail, fix}`.
 - **Restarting Krita.** The bridge answers now, so a session restarts Krita itself when
@@ -112,8 +116,8 @@ Release 0.3.0.
   With any unsaved document, ask the owner (decision 21).
 - **Baseline:**
   - `verify`: 6 stages, all PASS;
-  - 120 server tests passed, 0 skipped;
-  - 85 plugin-core tests passed, 0 skipped;
+  - 122 server tests passed, 0 skipped;
+  - 87 plugin-core tests passed, 0 skipped;
   - `probe`: 10 PASS, 0 FAIL, plus 3 MEASURED.
 - **Not done:** the owner's own look at N-03 in Activity Monitor (`top` measured 0.0%; it is in
   `docs/BACKLOG.md`).

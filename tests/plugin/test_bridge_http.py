@@ -211,6 +211,36 @@ def test_a_malformed_call_is_refused(live: Live) -> None:
     assert reply["error"]["code"] == "INVALID_ARGUMENT"
 
 
+class _Warnings(logging.Handler):
+    def __init__(self) -> None:
+        super().__init__(logging.WARNING)
+        self.records: list[logging.LogRecord] = []
+
+    def emit(self, record: logging.LogRecord) -> None:
+        self.records.append(record)
+
+
+def test_a_client_that_left_is_not_logged_as_a_failure(live: Live) -> None:
+    httpd = live.bridge._httpd
+    assert httpd is not None
+    warnings = _Warnings()
+    httpd.log.addHandler(warnings)
+    try:
+        for gone in (BrokenPipeError(), ConnectionResetError(), TimeoutError()):
+            try:
+                raise gone
+            except OSError:
+                httpd.handle_error(None, ("127.0.0.1", 1))
+        assert warnings.records == []
+        try:
+            raise ValueError("a real failure")
+        except ValueError:
+            httpd.handle_error(None, ("127.0.0.1", 1))
+        assert len(warnings.records) == 1
+    finally:
+        httpd.log.removeHandler(warnings)
+
+
 def test_a_stopping_bridge_answers_503(live: Live) -> None:
     live.bridge.jobs.stop()
     status, reply = live.request("GET", "/v1/health")

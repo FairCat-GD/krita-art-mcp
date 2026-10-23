@@ -1,8 +1,10 @@
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
+from typing import Any
 
 from krita_art_mcp import paths, plugin_files, processes
+from krita_art_mcp.errors import PROTOCOL
 
 INSTALL = "Run `uv run krita-art-mcp install-plugin`, then restart Krita."
 ENABLE = (
@@ -68,6 +70,16 @@ def first_local_failure(setup: Setup) -> Step | None:
         if not step.passed:
             return step
     return None
+
+
+def plugin_current(health: dict[str, Any], plugin_source: Path) -> Step:
+    # Invariant 11: the plugin Krita runs is the repository's, at this protocol.
+    repo_hash = plugin_files.source_hash(plugin_source / paths.PLUGIN_NAME)
+    running_hash = str(health.get("plugin_hash"))
+    protocol = health.get("protocol")
+    current = protocol == PROTOCOL and running_hash == repo_hash
+    detail = f"protocol {protocol}, running {running_hash[:12]}, repo {repo_hash[:12]}"
+    return Step("the protocol and plugin hash match", current, detail, INSTALL)
 
 
 def bridge_missing() -> Step:

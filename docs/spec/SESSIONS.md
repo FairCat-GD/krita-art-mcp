@@ -635,6 +635,43 @@ internals*, K1, K14, K19, K40, K41, K48, C1, C3, C4).
   - 85 plugin-core tests passed, 0 skipped (+38);
   - `probe`: 10 PASS, 0 FAIL, 3 MEASURED;
   - 1 registered tool; 19 schema files.
+- **Review (`/code-review high`), 10 findings: 7 fixed and 3 skipped.**
+  - **A bridge that fails after its serve thread starts now stops itself.** `Bridge.start`
+    stops and re-raises if writing `bridge.json` fails. The extension hooks `applicationClosing`
+    before it starts the bridge, so any part that ran is stopped at quit.
+  - **`doctor` reports a protocol mismatch at step 5, with the reinstall fix.** It used to call
+    it an unreachable bridge, with "restart Krita".
+  - **A client that left before its reply is not logged as a failure.** `BrokenPipeError`,
+    `ConnectionResetError` and `TimeoutError` go to debug, so polls that time out during a long
+    call no longer flood `plugin.log` with tracebacks.
+  - **Validation messages are cut to 200 characters.** jsonschema quotes the offending value,
+    which could push an `INVALID_ARGUMENT` past 6 MiB and turn it into `INTERNAL_ERROR`.
+  - **`doctor` waits at most 5 s** for the document counts, not the 45 s budget.
+  - **`setup_checks.plugin_current` is the one check of the running plugin** (invariant 11),
+    shared by `doctor` step 5 and the probe's first check.
+  - **The instructions read the wait budget from `WAIT_BUDGET_S`.**
+  - **Skipped:**
+    - a resent `operation_id` with other arguments returns the first operation. Ids are
+      server-minted UUIDs, and conflicts belong to Session 3's `request_id` dedup;
+    - operations are kept for the whole Krita session. How long to keep them is Session 3's
+      call, alongside dedup, which needs them for that session;
+    - `/bin/ps` runs on every call. It guards against sending the token to a process that
+      reused Krita's pid.
+  - **Falsified:**
+    - start failing to publish;
+    - quiet disconnects;
+    - the protocol-mismatch step;
+    - short messages;
+    - the budget in the instructions;
+    - the shared plugin check.
+
+    Each failed at its own test, and passed once restored.
+  - **Numbers after the review:**
+    - `verify`: 6 stages, all PASS;
+    - 122 server tests passed, 0 skipped (+2);
+    - 87 plugin-core tests passed, 0 skipped (+2);
+    - `probe`: 10 PASS, 0 FAIL, 3 MEASURED, on the reinstalled plugin after a self-restart
+      (0 unsaved documents).
 
 ---
 

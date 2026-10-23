@@ -16,6 +16,8 @@ from krita_art_mcp.tools import observe
 # Every message stays under Codex's 8 MiB line limit, with room to spare (C5).
 MAX_RESULT_BYTES = 6 * 1024 * 1024
 MAX_REPORTED_PROBLEMS = 20
+# jsonschema quotes the offending value, which may be a 4096-point array.
+MAX_MESSAGE_CHARS = 200
 
 ToolFunction = Callable[[BridgeClient, dict[str, Any]], CallToolResult]
 
@@ -81,10 +83,10 @@ def _checked(
     if problems:
         result = envelope.failure(
             "INVALID_ARGUMENT",
-            f"{_pointer(problems[0]) or '/'}: {problems[0].message}",
+            f"{_pointer(problems[0]) or '/'}: {_short(problems[0].message)}",
             details={
                 "errors": [
-                    {"path": _pointer(problem), "message": problem.message}
+                    {"path": _pointer(problem), "message": _short(problem.message)}
                     for problem in problems[:MAX_REPORTED_PROBLEMS]
                 ]
             },
@@ -110,6 +112,10 @@ def _result_problem(result: CallToolResult, outputs: Draft202012Validator) -> st
     if size >= MAX_RESULT_BYTES:
         return f"the result is {size} bytes, over the {MAX_RESULT_BYTES}-byte limit"
     return None
+
+
+def _short(message: str) -> str:
+    return message if len(message) <= MAX_MESSAGE_CHARS else message[: MAX_MESSAGE_CHARS - 1] + "…"
 
 
 def _pointer(problem: ValidationError) -> str:

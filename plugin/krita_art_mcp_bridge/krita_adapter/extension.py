@@ -45,13 +45,13 @@ class KritaArtMcpExtension(Extension):
             log=self._log,
         )
         self._bridge = bridge
-        if not bridge.start():
-            return
         notifier = Krita.instance().notifier()
         # The notifier blocks its signals until something activates it.
         if not notifier.active():
             notifier.setActive(True)
+        # Hooked before the start, so whatever part of it ran is stopped at quit.
         notifier.applicationClosing.connect(self._stop)
+        bridge.start()
 
     def _drain(self) -> None:
         if self._bridge is not None:

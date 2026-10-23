@@ -79,6 +79,15 @@ def test_an_unknown_field_is_an_invalid_argument_envelope() -> None:
     assert result.content[0].text.startswith("INVALID_ARGUMENT: ")
 
 
+def test_a_huge_invalid_argument_gets_a_short_message() -> None:
+    server = MCPServer("short", tools=[tools.build("krita_operation_get", _completed)])
+    result = _call(server, {"operation_id": list(range(100_000))}, "krita_operation_get")
+    error = result.structured_content["error"]
+    assert error["code"] == "INVALID_ARGUMENT"
+    assert len(error["message"]) <= 220
+    assert all(len(problem["message"]) <= 200 for problem in error["details"]["errors"])
+
+
 def test_a_raising_tool_returns_internal_error() -> None:
     def run(arguments: dict[str, Any]) -> CallToolResult:
         raise RuntimeError("boom")

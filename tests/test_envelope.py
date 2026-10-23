@@ -8,6 +8,7 @@ from bridge_core.source_hash import source_hash as plugin_source_hash
 from jsonschema import Draft202012Validator
 
 from krita_art_mcp import envelope, errors, paths, plugin_files, schemas
+from krita_art_mcp.bridge_client import WAIT_BUDGET_S
 from krita_art_mcp.instructions import INSTRUCTIONS
 
 ENVELOPE_FIELDS = ["api_version", "status", "document_id", "revision", "operation_id", "error"]
@@ -68,5 +69,6 @@ def test_a_cancelled_operation_reports_status_cancelled() -> None:
     assert result.content[0].text == f"CANCELLED: {errors.CODES['CANCELLED'][1]}"
 
 
-def test_the_instructions_fit_in_4096_characters() -> None:
+def test_the_instructions_fit_in_4096_characters_and_name_the_wait_budget() -> None:
     assert 0 < len(INSTRUCTIONS) <= 4096
+    assert f"{WAIT_BUDGET_S:.0f}-second wait" in INSTRUCTIONS

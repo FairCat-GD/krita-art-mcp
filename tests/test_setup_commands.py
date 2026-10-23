@@ -115,6 +115,9 @@ def _setup(tmp_path: Path, *, installed: bool, enabled: bool, running: bool) -> 
 
 REPO_HASH = plugin_files.source_hash(REPO_PLUGIN / paths.PLUGIN_NAME)
 UNREACHABLE = Failed(error_body("KRITA_NOT_RUNNING", "no bridge", details={"fix": "Restart."}))
+OTHER_PROTOCOL = Failed(
+    error_body("PROTOCOL_MISMATCH", details={"bridge_protocol": 2, "server_protocol": 1})
+)
 
 
 @pytest.mark.parametrize(
@@ -125,8 +128,9 @@ UNREACHABLE = Failed(error_body("KRITA_NOT_RUNNING", "no bridge", details={"fix"
         (True, True, False, _healthy(REPO_HASH), 3),
         (True, True, True, UNREACHABLE, 4),
         (True, True, True, _healthy("0" * 64), 5),
+        (True, True, True, OTHER_PROTOCOL, 5),
     ],
-    ids=["not installed", "not enabled", "Krita closed", "no bridge", "stale plugin"],
+    ids=["not installed", "not enabled", "Krita closed", "no bridge", "stale plugin", "protocol"],
 )
 def test_doctor_names_the_first_failing_step(
     tmp_path: Path,
@@ -145,6 +149,8 @@ def test_doctor_names_the_first_failing_step(
     ]
     assert f"{failing_step}. " in lines[failing_step - 1] and "FAIL" in lines[failing_step - 1]
     assert lines[failing_step].startswith("   Fix: ")
+    if failing_step == 5:
+        assert "install-plugin" in lines[failing_step]
     assert lines[failing_step + 1] == f"doctor: stopped at step {failing_step} of 5."
     # The restart check is reported whichever step failed.
     assert lines[-1] == "Krita has 2 open document(s), 1 unsaved."

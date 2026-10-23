@@ -3,6 +3,7 @@ import hmac
 import json
 import logging
 import math
+import sys
 import threading
 import time
 from collections.abc import Iterator
@@ -64,6 +65,10 @@ class BridgeHTTPServer(ThreadingHTTPServer):
             return True
 
     def handle_error(self, request: Any, client_address: Any) -> None:
+        # A client whose poll timed out during a long Krita call has gone; that is routine.
+        if isinstance(sys.exc_info()[1], (BrokenPipeError, ConnectionResetError, TimeoutError)):
+            self.log.debug("a client left before its reply")
+            return
         self.log.warning("a bridge request failed", exc_info=True)
 
 

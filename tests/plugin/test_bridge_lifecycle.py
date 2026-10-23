@@ -119,6 +119,22 @@ def test_stop_leaves_a_bridge_file_another_session_wrote(tmp_path: Path) -> None
     assert json.loads((tmp_path / "bridge.json").read_text())["session_id"] == "newer"
 
 
+def test_a_bridge_that_cannot_publish_itself_stops(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    def full_disk(path: Path, content: dict[str, Any]) -> None:
+        raise OSError("no space left")
+
+    monkeypatch.setattr(bridge_file, "write", full_disk)
+    bridge = _bridge(tmp_path)
+    with pytest.raises(OSError):
+        bridge.start()
+    assert bridge._thread is not None and bridge._httpd is not None
+    bridge._thread.join(5)
+    assert not bridge._thread.is_alive()
+    assert bridge._httpd.socket.fileno() == -1
+
+
 def test_stop_runs_in_order(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     bridge = _bridge(tmp_path)
     assert bridge.start()

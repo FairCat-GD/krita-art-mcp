@@ -10,9 +10,8 @@ from typing import Any, TextIO
 from jsonschema import Draft202012Validator
 from mcp import Client, StdioServerParameters
 
-from krita_art_mcp import __version__, paths, plugin_files, schemas
+from krita_art_mcp import __version__, paths, schemas, setup_checks
 from krita_art_mcp.bridge_client import BridgeClient, Done, Failed
-from krita_art_mcp.errors import PROTOCOL
 from krita_art_mcp.instructions import INSTRUCTIONS
 from krita_art_mcp.tools import BUILT_TOOLS
 
@@ -81,19 +80,14 @@ def _probe(report: Report, client: BridgeClient, serve: list[str]) -> None:
         report.check("the bridge answers its health check", False, health.error["message"])
         return
     info = health.result
-    repo_hash = plugin_files.source_hash(paths.plugin_source() / paths.PLUGIN_NAME)
-    running_hash = str(info.get("plugin_hash"))
-    if not report.check(
-        "the running plugin is the repo's",
-        running_hash == repo_hash,
-        f"running {running_hash[:12]}, repo {repo_hash[:12]}",
-    ):
-        report.note("Stopped: run `uv run krita-art-mcp install-plugin`, then restart Krita.")
+    current = setup_checks.plugin_current(info, paths.plugin_source())
+    if not report.check("the running plugin is the repo's", current.passed, current.detail):
+        report.note(f"Stopped: {current.fix}")
         return
     report.check(
-        "health reports this protocol and version",
-        info.get("protocol") == PROTOCOL and info.get("plugin_version") == __version__,
-        f"protocol {info.get('protocol')}, plugin {info.get('plugin_version')}",
+        "health reports this plugin version",
+        info.get("plugin_version") == __version__,
+        f"plugin {info.get('plugin_version')}",
     )
     asyncio.run(_over_stdio(report, serve, info))
     _runtime(report, client, info)
