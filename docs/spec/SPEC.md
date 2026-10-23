@@ -66,8 +66,10 @@ the decision as an **Amended <date> by the owner** note.
     checksum file are left out. The originals are not in the repository.
 14. **This repository is public from its first commit.** No file or commit message holds a
     personal name, a game name, an agent persona, a home-directory path (write `~`), or AI
-    attribution (co-author trailers, "generated with", an AI as author or addressee). Claude Code
-    and Codex appear only as supported MCP clients. The hygiene stage of `verify` enforces it.
+    attribution (co-author trailers, "generated with" lines, session links, an AI credited as
+    author, co-author or addressee). Naming the tools themselves is fine: Claude Code and Codex
+    as supported MCP clients, `CLAUDE.md`, and the workflow's mention of the review command. The
+    hygiene stage of `verify` enforces the names and the trailers.
 15. **Licence: GPL-3.0-or-later** for the whole repository (`LICENSE`, session 1). Code borrowed
     from MIT or CC0 projects keeps its attribution.
 16. **Commits** use the owner's global git identity. Subjects are typed and plain, at most 72
@@ -86,11 +88,13 @@ the decision as an **Amended <date> by the owner** note.
     `harness.*` namespace in the plugin creates filter layers, filter and transform masks, clone
     layers, local selection masks, an active selection mask, and view zoom, pan and rotation. It
     never writes pixels, is never an MCP tool, and refuses any document outside
-    `<data dir>/harness/`. Pixel content comes from ORA files the server writes into that folder
-    and the harness opens with `krita_document_open`.
+    the harness folder (decision 25). Pixel content comes from ORA files the server writes into
+    that folder and the harness opens with `krita_document_open`.
 21. **A session may restart Krita** (quit and relaunch it to load a reinstalled plugin) only when
-    no open document has unsaved changes; otherwise it asks the owner. The harness never quits
-    Krita.
+    no open document has unsaved changes, as the bridge reports from each document's modified
+    flag; otherwise it asks the owner. Until the bridge answers (the first restarts of session 2,
+    or a plugin that fails to load), the session cannot see unsaved changes and always asks the
+    owner to restart. The harness never quits Krita.
 22. **Where the version shows:** `krita-art-mcp --version` and the MCP `serverInfo.version` from
     session 1; `krita_server_info` (`plugin_version` beside the server's) from session 2.
 23. **Three version numbers, kept apart:** the package version (`0.N.0`, `pyproject.toml`, the
@@ -101,8 +105,10 @@ the decision as an **Amended <date> by the owner** note.
     uses `harness.*` only to build fixtures.
 25. **`KRITA_ART_MCP_DATA_DIR` moves only what the server owns** (captures, baselines, journal),
     because Krita launched from the Dock never sees the variable. `bridge.json`, `transfer/`,
-    `logs/` and `config.json` stay in the default data directory. Both sides always allow
-    `<data dir>/harness/`; the harness never edits `config.json`.
+    `logs/` and `config.json` stay in the default data directory, and so does the harness
+    folder: `~/Library/Application Support/krita-art-mcp/harness/` whatever the variable says,
+    because the plugin must see it. Wherever this spec writes `<data dir>/harness/`, it means that
+    folder. Both sides always allow it; the harness never edits `config.json`.
 26. **Masks travel server → plugin as raw 8-bit files** in `transfer/` with their SHA-256. The
     plugin never decodes PNG.
 27. **Definitions.** A document is *dirty* after any successful guarded call except

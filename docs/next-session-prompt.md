@@ -1,5 +1,6 @@
 Read docs/spec/SPEC.md (§1 decisions 4, 5, 14–17, 19, 22–24; §3; §5; §6), docs/spec/PDD.md (Part
-8), CLAUDE.md, then this file, and do Session 1 of docs/spec/SESSIONS.md: the scaffold. Session 1
+8, *Build, install & operations* and C1), docs/DEVELOPMENT-WORKFLOW.md (*Day one*), CLAUDE.md,
+then this file, and do Session 1 of docs/spec/SESSIONS.md: the scaffold. Session 1
 has five parts:
 - the uv project and the layout of SPEC §3;
 - `uv run scripts/verify.py`, with six named stages, hygiene among them;
@@ -13,8 +14,16 @@ Release 0.1.0.
 
 - **Round 1 is the Phase 1 build.** Session 0, the intake, is done. Sessions 1–15 remain, and
   6, 10 and 13 are architecture reviews.
-- **There is no remote, and nothing has been pushed** (decision 17). The intake commit,
-  `docs: open round 1 — krita-art-mcp`, is local only.
+- **The remote is `origin`, the private GitHub repository `FairCat-GD/krita-art-mcp`**,
+  created at the owner's request (decision 17). `origin/main` holds everything through
+  `review: restarts before the bridge go to the owner, and 6 smaller`. List `origin/main..HEAD`
+  before any push.
+- **The intake's review** (`/code-review high`, 7 findings, all fixed in the spec, the plan,
+  `CLAUDE.md` and this file): restarts before the bridge answers always go to the owner; the
+  public rule allows naming the tools and bans crediting them; review sessions may write in
+  `docs/spec/`; the 3.10 falsification fails at both 3.10 stages; the N-09 and H4 fixtures stay
+  sparse; the harness folder is always under the default data directory; this prompt's read
+  order matches Session 1's block.
 - **What exists is documents only:**
   - `docs/spec/`: `SPEC.md`, `SESSIONS.md`, and `PDD.md` (scrubbed);
   - `docs/spec/reference/contract-package/` (scrubbed; its historical fixtures and checksum file
@@ -40,8 +49,8 @@ Release 0.1.0.
     ```
   - **To falsify the hygiene stage,** add a throwaway word and its hash, watch the stage fail, then
     remove both.
-  - **`gh` is authenticated** for the owner's GitHub account. Create no repository until the owner
-    asks.
+  - **`gh` is authenticated** for the owner's GitHub account. The repository stays private until
+    the owner publishes it.
   - **Krita on this Mac.**
     - Krita 5.3.4 is at `/Applications/krita.app`, with Python 3.13 and PyQt5 5.15.11 bundled.
     - `~/Library/Application Support/Krita/pykrita/` exists and is empty.
@@ -73,4 +82,5 @@ Release 0.1.0.
   - no dependency before it is used.
 - **Comments state the present, briefly.** No session ids, no "used to", no review stories, no
   paragraphs.
-- **Every push needs its own approval.** There is no remote yet.
+- **Every push needs its own approval.** List `origin/main..HEAD` first, because parallel
+  sessions may share this checkout.

@@ -117,8 +117,9 @@ takes the next version, and every later version shifts by one; the handoff says 
   - the banned-call and import scans;
   - hygiene, on files and on commit messages.
 - Each verify stage falsified once, failing at its own step and nowhere else: a misformatted
-  line, a lint error, a type error, a failing test, a construct newer than 3.10 in the plugin
-  core, and a private term in a tracked file. Each new test falsified once.
+  line, a lint error, a type error, a failing test, and a private term in a tracked file. A
+  construct newer than 3.10 in the plugin core is guarded by two stages, so it fails at both
+  3.10 stages (mypy on `plugin/`, plugin pytest) and at no other. Each new test falsified once.
 
 **Watch for:**
 - **uv fetches CPython 3.10 on first use.** It is a uv-managed interpreter, not system software.
@@ -189,9 +190,10 @@ internals*, K1, K14, K19, K40, K41, K48, C1, C3, C4).
   - The Python and PyQt versions inside Krita.
   - The `edit_undo` action, and how its text shows the top undo label (invariant 5 needs it).
   - H4, idle: 500 `krita_server_info` calls, with a p95 under 50 ms.
-- **The owner's step.** After `install-plugin` and a restart, the owner enables the plugin in
-  *Configure Krita › Python Plugin Manager* (on macOS, in the application menu). The session then
-  restarts Krita when it is safe (decision 21).
+- **The owner's step.** After `install-plugin`, the owner restarts Krita, enables the plugin in
+  *Configure Krita › Python Plugin Manager* (on macOS, in the application menu), and restarts it
+  again. Until the bridge answers, the session asks the owner for every restart; once it answers,
+  the session restarts Krita itself when it is safe (decision 21).
 - **Docs.**
   - `CLAUDE.md`: the commands `install-plugin`, `doctor` and `probe`.
   - README: install, enable, and register in Codex and Claude Code, with absolute paths (PDD Part
@@ -222,7 +224,8 @@ internals*, K1, K14, K19, K40, K41, K48, C1, C3, C4).
 - **A polling `QTimer` is wrong.** It fires inside `waitForDone` and starts a second job
   mid-stroke (K41). Use the queued signal.
 - **A changed plugin loads only after a Krita restart.** Run `install-plugin`, then restart, but
-  only with no unsaved documents; otherwise ask the owner (decision 21).
+  only when the bridge reports no unsaved documents; with no bridge yet, or any unsaved document,
+  ask the owner (decision 21). The health answer should expose what the restart check needs.
 - **Apps launched from the Dock don't inherit `PATH`.** Client registrations use absolute paths.
 
 ---
@@ -597,7 +600,9 @@ K10, K18, K21, K30, K37, K43, K44, K47); any REVIEW finding the handoff assigns 
 - **Benchmarks** (decision 6), failing over budget:
   - N-01: a 2000 × 2000 document with 20 protected layers, 200 points, a 40 px brush; p95 under
     1.5 s.
-  - N-09: 8192 × 8192 with 30 protected layers; p95 under 3 s.
+  - N-09: 8192 × 8192 with 30 protected layers; p95 under 3 s. The fixture's layers are
+    sparse (small content on the full canvas), so the ORA stays small; measure Krita's memory
+    before and after and record it.
 - **Docs.**
   - `CHANGELOG.md`: 0.8.0.
   - README: the tool list.
@@ -727,7 +732,8 @@ finding the handoff assigns here.
     `composite_preserved` and `expected_losses`.
   - A verified save clears the dirty marker. The working document's path never changes.
 - **H4, long save.** A save of about 20 s, with a retried paint call queued behind it. The bridge
-  answers within 1 s after the save, and no job is lost or duplicated.
+  answers within 1 s after the save, and no job is lost or duplicated. Reach the 20 s with the
+  fewest layers that do it, measured first, and record Krita's memory; never dense 8k layers.
 - **Docs.**
   - `CHANGELOG.md`: 0.10.0.
   - README: the tool list.

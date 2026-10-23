@@ -138,8 +138,9 @@ The why for each is in `docs/spec/SPEC.md` §5.
 - **The main thread.** The `krita` bindings never release the GIL, so the HTTP thread is silent
   during any long libkis call. The server owns the wait budget.
 - **Restarts.** A changed plugin loads only after a Krita restart: run `install-plugin`, then
-  restart. A session may restart Krita itself only when no open document has unsaved changes;
-  otherwise it asks the owner. The harness never quits Krita.
+  restart. A session may restart Krita itself only when the bridge reports no unsaved
+  documents; with no bridge answering, or any unsaved document, it asks the owner. The harness
+  never quits Krita.
 
 ## This repository is public: nothing private goes in
 
@@ -149,8 +150,8 @@ message follows these rules:
   "the Codex agent".
 - **No home-directory paths.** Write `~`.
 - **No AI attribution:** no co-author trailers, no "generated with" lines, no session links, no
-  AI as author or addressee. Claude Code and Codex are named only as MCP clients the server
-  supports.
+  AI credited as author, co-author or addressee. Naming the tools is fine: Claude Code and Codex
+  as the MCP clients the server supports, this file, and the workflow's review command.
 - **Fixtures are fictional.**
 
 The hygiene stage of `verify` checks tracked files against hashed private terms, and commit
@@ -174,7 +175,7 @@ touches the owner's documents or `config.json`.
 
 - Commit locally; a push or tag needs explicit approval, each time.
   - Before any push, list `git log origin/main..HEAD`; parallel sessions may share this checkout.
-  - There is no remote until the owner asks for one.
+  - `origin` is the private GitHub repository; it stays private until the owner publishes it.
 - Stage explicit paths, never `git add -A`. Never undo with `git checkout <path>`.
 - **Subjects.** Typed (`feat:`, `fix:`, `refactor:`, `docs:`, `review:`), in plain words, at most
   72 characters, ending `(x.y.z)` when the commit cuts a version.
@@ -190,8 +191,10 @@ touches the owner's documents or `config.json`.
   `waitForDone()`.
 - Touch the owner's documents, files, `kritarc` or `config.json` from a test or harness, or
   restart Krita while a document has unsaved changes.
-- Edit `docs/spec/` beyond your block's done-note and logged amendments, or edit
-  `docs/spec/reference/` at all.
+- Edit `docs/spec/` beyond what the workflow gives your session: your block's done-note and
+  logged amendments; in a review session, its `REVIEW-<date>.md` and the amendments or inserted
+  blocks the owner chose; in the round's last session, the close. Never edit
+  `docs/spec/reference/`.
 - Loosen a schema to make an example pass, or relax a budget to make a benchmark pass.
 - Upgrade a pinned dependency in passing, or rename a machine identifier.
 - Put anything private in a file or a commit message.
