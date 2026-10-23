@@ -17,16 +17,23 @@ PYTHON = sys.executable
 PLUGIN_PACKAGES = ["-p", "bridge_core", "-p", "krita_adapter"]
 
 
+class SetupError(Exception):
+    pass
+
+
 def _uv() -> str:
     uv = os.environ.get("UV") or shutil.which("uv")
     if uv is None:
-        raise SystemExit("verify: uv not found")
+        raise SetupError("uv not found: set UV or put uv on PATH")
     return uv
 
 
 def _locked_version(package: str) -> str:
     lock = tomllib.loads((ROOT / "uv.lock").read_text(encoding="utf-8"))
-    return next(str(p["version"]) for p in lock["package"] if p["name"] == package)
+    versions = [str(p["version"]) for p in lock["package"] if p["name"] == package]
+    if not versions:
+        raise SetupError(f"{package} is not in uv.lock")
+    return versions[0]
 
 
 def _plugin_tests() -> list[list[str]]:
@@ -51,11 +58,25 @@ STAGES: dict[str, Callable[[], list[list[str]]]] = {
 }
 
 
+def _call(command: list[str]) -> bool:
+    try:
+        return subprocess.run(command, cwd=ROOT).returncode == 0
+    except OSError as error:
+        print(f"verify: cannot run {command[0]}: {error}")
+        return False
+
+
 def _run(name: str) -> tuple[bool, float]:
     print(f"\n== {name} ==", flush=True)
     start = time.monotonic()
-    passed = all(subprocess.run(command, cwd=ROOT).returncode == 0 for command in STAGES[name]())
-    return passed, time.monotonic() - start
+    try:
+        commands = STAGES[name]()
+    except SetupError as error:
+        print(f"verify: {name} cannot start: {error}")
+        return False, time.monotonic() - start
+    # Every command runs, even after one fails, so each reports its own errors.
+    results = [_call(command) for command in commands]
+    return all(results), time.monotonic() - start
 
 
 def main(argv: list[str]) -> int:

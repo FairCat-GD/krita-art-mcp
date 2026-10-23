@@ -3,6 +3,7 @@ import queue
 import subprocess
 import sys
 import threading
+import time
 from importlib.metadata import version
 from pathlib import Path
 from typing import Any
@@ -10,15 +11,17 @@ from typing import Any
 import bridge_core
 
 CLI = str(Path(sys.executable).with_name("krita-art-mcp"))
+# The release this checkout is; bumped with the package version.
+EXPECTED_VERSION = "0.1.0"
 
 
 def test_plugin_version_equals_package_version() -> None:
-    assert bridge_core.PLUGIN_VERSION == version("krita-art-mcp") == "0.1.0"
+    assert bridge_core.PLUGIN_VERSION == version("krita-art-mcp") == EXPECTED_VERSION
 
 
 def test_cli_prints_its_version() -> None:
     result = subprocess.run([CLI, "--version"], capture_output=True, text=True, check=True)
-    assert result.stdout == "krita-art-mcp 0.1.0\n"
+    assert result.stdout == f"krita-art-mcp {EXPECTED_VERSION}\n"
 
 
 def test_stdio_initialize_names_the_server_and_lists_no_tools() -> None:
@@ -45,15 +48,20 @@ def test_stdio_initialize_names_the_server_and_lists_no_tools() -> None:
         stdin.write(json.dumps({"jsonrpc": "2.0", **message}) + "\n")
         stdin.flush()
 
-    def reply() -> Any:
-        return json.loads(replies.get(timeout=30))["result"]
+    def reply(request_id: int) -> Any:
+        # Notifications and other replies may come first; only the matching id answers.
+        deadline = time.monotonic() + 30
+        while True:
+            message = json.loads(replies.get(timeout=max(0.0, deadline - time.monotonic())))
+            if message.get("id") == request_id:
+                return message["result"]
 
     try:
         send({"id": 1, "method": "initialize", "params": initialize})
-        assert reply()["serverInfo"] == {"name": "krita-art", "version": "0.1.0"}
+        assert reply(1)["serverInfo"] == {"name": "krita-art", "version": EXPECTED_VERSION}
         send({"method": "notifications/initialized"})
         send({"id": 2, "method": "tools/list"})
-        assert reply()["tools"] == []
+        assert reply(2)["tools"] == []
     finally:
         # Closing stdin first lets the server exit, so a failed assertion cannot hang the run.
         stdin.close()

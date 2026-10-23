@@ -15,3 +15,5 @@ The first release is the scaffold that the Phase 1 tools are built on.
 - **`krita-art-mcp serve` starts the MCP server.** It speaks over stdio as `krita-art` and
   reports its version to the client; it offers no tools yet.
 - **`krita-art-mcp --version`.** It prints the installed version.
+
+[0.1.0]: https://github.com/FairCat-GD/krita-art-mcp/commit/6588c86b268e321401b27af53842d58c759f6b13

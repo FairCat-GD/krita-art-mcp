@@ -22,10 +22,9 @@ Release 0.2.0.
 
 - **Round 1 is the Phase 1 build.** Sessions 0 and 1 are done; 2–15 remain, and 6, 10 and 13 are
   architecture reviews.
-- **Session 1 is committed locally, not pushed.** Its review fixes, if any, follow it as a
-  `review:` commit. `origin` is the private GitHub repository `FairCat-GD/krita-art-mcp`.
-  `origin/main` holds everything through `review: restarts before the bridge go to the owner, and
-  6 smaller`. List `origin/main..HEAD` before any push.
+- **Session 1 and its review fixes are pushed.** `origin` is the private GitHub repository
+  `FairCat-GD/krita-art-mcp`. `origin/main` holds everything through `review: bridge_core never
+  reaches Krita, and 9 smaller`, so `origin/main..HEAD` starts empty. List it before any push.
 - **What Session 1 left that Session 2 builds on:**
   - **The package.**
     - `src/krita_art_mcp/__init__.py` holds `__version__`, from the package metadata.
@@ -41,8 +40,9 @@ Release 0.2.0.
     - `krita_adapter/__init__.py` is empty.
     - There is no package `__init__.py` and no `.desktop` file yet.
   - **Tests.**
-    - `tests/` (3.12): schemas and examples, C1, the version and stdio checks, and hygiene.
-    - `tests/plugin/` (3.10): the version shape, and the banned-call and import scans.
+    - `tests/` (3.12): schemas and examples, C1, the version and stdio checks, hygiene, and
+      `verify` itself.
+    - `tests/plugin/` (3.10): the version shape, and the source scans with their snippet cases.
     - `test_c1_error_passthrough.py` shows how to hand-build an `MCPServer` tool.
   - **`scripts/verify.py`**, in six stages:
     - `format` and `lint`;
@@ -69,9 +69,14 @@ Release 0.2.0.
   - **To falsify the hygiene stage,** add a throwaway word in an untracked file and its hash to
     `scripts/hygiene_terms.txt`, watch the stage fail, then remove both. Hygiene also checks
     untracked files, so this works before staging.
-  - **A version bump touches three places:** `pyproject.toml`, `bridge_core.PLUGIN_VERSION` (a
-    test holds them equal), and `uv.lock`, which `uv lock` refreshes. Then the `CHANGELOG.md`
-    entry.
+  - **A version bump touches four places:**
+    - `pyproject.toml`;
+    - `bridge_core.PLUGIN_VERSION`;
+    - `EXPECTED_VERSION` in `tests/test_version.py`; tests hold all three equal;
+    - `uv.lock`, which `uv lock` refreshes.
+
+    Then the `CHANGELOG.md` entry, and its link reference to the session's commit, added in the
+    review commit.
   - **`gh` is authenticated** for the owner's GitHub account. The repository stays private until
     the owner publishes it.
   - **Krita on this Mac.**
@@ -80,10 +85,9 @@ Release 0.2.0.
     - `~/Library/Preferences/kritarc` has no `[python]` section.
 - **Baseline** (Session 1's done-note; ARCHITECTURE's table comes in Session 15):
   - `verify`: 6 stages, all PASS;
-  - 49 server tests passed, 0 skipped;
-  - 5 plugin-core tests passed, 0 skipped.
-- **Not done:** the `[0.1.0]` link reference in `CHANGELOG.md`, agreed with the owner. It needs
-  Session 1's commit sha, so it lands in Session 1's review commit.
+  - 54 server tests passed, 0 skipped;
+  - 47 plugin-core tests passed, 0 skipped.
+- **Not done:** nothing.
 
 ## Watch for
 
@@ -107,6 +111,19 @@ Release 0.2.0.
     package, whose `__init__.py` will import Krita.
   - Once `__init__.py` and an adapter that imports `bridge_core` land, `-p krita_adapter` may need
     reworking. A relative `..bridge_core` reaches beyond its top level there.
+- **What the source scans refuse in `plugin/`.** Each rule has snippet cases in
+  `tests/plugin/test_source_scans.py`.
+  - `bridge_core` imports only the standard library, and itself relatively.
+  - Other plugin code imports its own modules relatively or through `krita_art_mcp_bridge.`, never
+    as `bridge_core` (Krita cannot find that name). `krita` and PyQt imports belong under
+    `krita_adapter/`.
+  - **Banned:**
+    - `getattr`, `setattr`, `delattr` and `hasattr` with a computed name;
+    - imports of `importlib`, `builtins`, `runpy`, `code` and `codeop`;
+    - `setPixelData`, `saveAs` and every `.apply`;
+    - the built-ins `exec`, `eval` and `compile`.
+  - Qt's `loop.exec()` and `getattr(loop, "exec", None)` pass.
+  - Modules removed by Python 3.12 or 3.13 are refused.
 - **No `tests/conftest.py`.** The 3.10 run loads every conftest from the rootdir down, and its
   environment holds only pytest.
 - **A stdio test waits for each reply, and closes stdin in a `finally`.**

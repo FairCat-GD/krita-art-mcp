@@ -35,6 +35,12 @@ def test_a_term_in_a_file_is_reported_by_file_and_line_never_by_name(tmp_path: P
     assert PROBE not in "".join(problems)
 
 
+def test_a_term_joined_to_a_word_or_number_is_reported(tmp_path: Path) -> None:
+    (tmp_path / "joined.txt").write_text(f"my{PROBE.capitalize()}Notes\n{PROBE}2026\n")
+    problems = hygiene.scan_files(tmp_path, ["joined.txt"], TERMS)
+    assert [problem.split(": ")[0] for problem in problems] == ["joined.txt:1", "joined.txt:2"]
+
+
 def test_a_term_in_a_path_is_reported(tmp_path: Path) -> None:
     name = f"{PROBE}-notes.txt"
     (tmp_path / name).write_text("nothing to see\n")
@@ -63,6 +69,16 @@ def test_attribution_in_commit_messages_is_reported(tmp_path: Path) -> None:
         f"private term (hash {PROBE_HASH[:12]})",
     ]
     assert all(", message line 3: " in problem for problem in problems)
+
+
+def test_a_term_staged_but_gone_from_the_working_tree_is_reported(tmp_path: Path) -> None:
+    _git(tmp_path, "init", "-q", "-b", "main")
+    (tmp_path / "notes.txt").write_text(f"a {PROBE}\n")
+    _git(tmp_path, "add", "notes.txt")
+    (tmp_path / "notes.txt").write_text("clean again\n")
+    assert hygiene.check(tmp_path, TERMS) == [
+        f"notes.txt (staged):1: private term (hash {PROBE_HASH[:12]})"
+    ]
 
 
 def test_a_clean_repository_passes(tmp_path: Path) -> None:

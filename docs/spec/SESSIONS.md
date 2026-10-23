@@ -272,6 +272,63 @@ takes the next version, and every later version shifts by one; the handoff says 
   - 49 server tests passed, 0 skipped;
   - 5 plugin-core tests passed, 0 skipped;
   - 19 schema files and 7 term hashes.
+- **Review (`/code-review high`), 10 findings: 10 fixed and 0 skipped.**
+  - **`bridge_core` never reaches Krita.**
+    - Imports are now resolved, relative ones included.
+    - A new test holds `bridge_core` to the standard library and to relative imports of itself,
+      so a path to `krita_adapter` or to the package is refused.
+    - Own modules elsewhere are imported relatively or through `krita_art_mcp_bridge.`, as Krita
+      loads them.
+  - **The stdlib allowlist is 3.10's minus the modules removed by 3.12 and 3.13,** since the
+    plugin runs on Krita's 3.13. `imp`, `cgi`, `distutils` and the like are refused.
+  - **`verify` runs every command of a stage,** even after one fails.
+  - **The banned-call scan refuses the built-ins `exec`, `eval` and `compile` by name, not by
+    attribute.** PyQt6's `loop.exec()` and `getattr(loop, "exec", None)` pass.
+  - **Indirect routes to the banned calls are refused:**
+    - `getattr`, `setattr`, `delattr` and `hasattr` with a computed name;
+    - `__import__`, `vars`, `__builtins__`, `__dict__`, `__getattribute__`, `attrgetter` and
+      `methodcaller`;
+    - imports of `builtins`, `importlib`, `runpy`, `code` and `codeop`.
+
+    Snippet tests list what is refused and what passes.
+  - **Hygiene checks staged content too,** read from the index with `git cat-file --batch`, so
+    a term staged and then removed from the working copy is reported as `path (staged):line`.
+    A repository with no commits yet now passes the message check instead of crashing; the
+    staged-content test found this.
+  - **Hygiene also hashes camel-case words and digit groups inside each run,** so `myTermNotes`
+    and `term2026` are caught.
+    - A term inside an all-lowercase run joined to another word is still missed.
+    - Matching every substring would flag ordinary words that contain a short term, and a hit
+      cannot name the term to explain itself.
+  - **One `EXPECTED_VERSION` in `tests/test_version.py`** holds the three version expectations.
+    The handoff names it as the fourth place a version bump touches.
+  - **The stdio test matches replies by `id`,** skipping notifications, within one 30 s deadline.
+  - **A stage that cannot start fails on its own:**
+    - no uv, or a package missing from `uv.lock`, raises `SetupError`;
+    - a command that cannot be run reports as failed;
+    - the other stages and the summary still run.
+  - **The `[0.1.0]` link reference** is added to `CHANGELOG.md`, as agreed at plan time.
+  - **Falsified.** Each failed when broken and passed once restored:
+    - `from .. import krita_adapter` in `bridge_core` (core purity);
+    - `import imp` (removed modules);
+    - `getattr(object(), 'save' + 'As')` (banned call);
+    - `exec` added to the banned attributes (allowed uses);
+    - the code-module list emptied (banned uses found);
+    - the core-purity rule disabled (import rules refuse);
+    - the adapter exemption removed (import rules allow);
+    - the sub-token pass removed (joined terms);
+    - the staged scan dropped (staged content);
+    - the no-commit guard removed (same test);
+    - `all()` over a generator restored (every command runs);
+    - `SystemExit` instead of `SetupError` (uv missing);
+    - the setup catch removed (stage fails alone);
+    - `EXPECTED_VERSION` changed (three version tests);
+    - the initialize reply awaited under the wrong id, which failed by its 30 s timeout and left
+      no server behind.
+  - **Numbers after the review:**
+    - `verify`: 6 stages, all PASS;
+    - 54 server tests passed, 0 skipped (+5);
+    - 47 plugin-core tests passed, 0 skipped (+42, most of them snippet cases).
 
 ---
 
