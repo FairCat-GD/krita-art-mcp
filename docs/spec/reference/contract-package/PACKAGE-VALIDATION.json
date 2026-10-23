@@ -1,0 +1,8 @@
+{
+  "status": "PASS",
+  "offline_contract_checks": 236,
+  "mvp_tools": 27,
+  "extension_tools": 42,
+  "local_markdown_links_checked": 15,
+  "scope": "Documentation, examples, source generators and schemas only. Pixel-art authoring remains in Aseprite. No server implementation or game artwork included."
+}

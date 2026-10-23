@@ -1,0 +1,706 @@
+# Session-based development workflow
+
+A versioned specification, not the conversation, is the source of truth, and AI coding agents
+and developers write code against it. Work is divided into fixed-scope **sessions**. Each runs
+in a single chat, with no context carried between them. Because no session can rely on
+remembering a previous one, the repository holds everything a session needs: the contract, the
+scope, the current state and the known pitfalls. The same discipline suits human teams with
+turnover or long gaps between working periods.
+
+Use it for any project expected to outlast its author's working memory. It is more process than
+a weekend prototype needs. If you adopt only part of it, keep the split between scope and state
+and the handoff rules; they are what keep a long build on track.
+
+This file is copied verbatim into every project as `docs/DEVELOPMENT-WORKFLOW.md`, templates
+included. The one edit a project makes to it is an **In this repository** paragraph here, under
+the introduction, naming where the project deviates and why (see *Adapting the workflow*). The
+project's own standing rules live in its `CLAUDE.md`, not here.
+
+**In this repository.** Round 1 builds Phase 1 of krita-art-mcp from the product draft
+(`docs/spec/PDD.md`) and the contract derived from it (`docs/spec/SPEC.md`). This repository's
+history will be public, which changes two things. The PDD and the contract package beside it are
+frozen as received except that private details (people, games, agent personas) are replaced by
+roles. And no document, test or commit message here names a person, a game or an agent persona,
+or credits an AI tool. Round 1 also places three architecture reviews at its milestones; each
+writes `docs/spec/REVIEW-<date>.md` as evidence, and only the user turns a finding into scope.
+
+## The documents
+
+| Document | Job | Mutability |
+|---|---|---|
+| `docs/spec/` | **the round in progress**: its spec file(s) and its `SESSIONS.md` | spec read-only, except dated amendments the human makes; SESSIONS amendable with a logged reason; the folder is emptied when the round closes |
+| `docs/next-session-prompt.md` | **state**: what the next session needs that the docs do not say | rewritten by every session as its last act |
+| `CHANGELOG.md` | what shipped, per version, written for the person using the product | append-only for content |
+| `docs/BACKLOG.md` | work that has been named but belongs to no round, and checks nobody has done by hand | items move out when a round picks them up |
+| `CLAUDE.md` | standing rules, loaded into every session automatically | edited as rules change; kept lean |
+| `docs/ARCHITECTURE.md` | the system **as built**: its invariants, its deliberate decisions, its known debt and the baseline counts | written by round 1's documentation pass; kept true by every session after |
+| `docs/USER-GUIDE.md` | behaviour from the user's side | written by round 1's documentation pass; kept true by every session after |
+| `README.md` | what the thing is, how to run it, where the docs are | written by Session 1; kept true |
+| `docs/DEVELOPMENT-WORKFLOW.md` | this file: the method and its templates | copied verbatim; changes only with the kit |
+
+**Scope and state are different jobs, and the split is what makes the workflow hold.** Scope
+(`SESSIONS.md`) is fixed in advance, so no session can quietly redefine what a later one owes.
+State cannot be written in advance, so the last act of every session is writing the next
+session's prompt.
+
+**The spec files of a round.**
+- **Round 1, the build:** `docs/spec/PDD.md` (the product design draft, frozen as received)
+  and `docs/spec/SPEC.md` (the contract derived from it).
+- **Every later round:** one `docs/spec/FEATURE-<name>.md` per request, holding the request
+  verbatim and a dated list of the decisions resolved at intake.
+- **A round that comes from an audit** keeps the audit beside them as
+  `docs/spec/REVIEW-<date>.md`. A review is evidence and a session block is scope, and neither
+  is the other: a finding becomes scope only when the intake turns it into a decision and a
+  block.
+- **Either way,** the spec is read-only once the round's first session opens. When the human
+  changes a resolved decision mid-round, the change is added to the spec file, next to what it
+  changes, as a dated **Amended <date> by the user** note saying what changed and why. The
+  original text stays. A session never amends the spec on its own authority.
+
+## Rounds
+
+Work happens in **rounds**, and every round has the same lifecycle.
+
+**Where a round comes from:**
+- a request from the human;
+- a walkthrough, where the human uses the build and their corrections are the request;
+- an audit run at the human's request and recorded as `REVIEW-<date>.md`;
+- items picked from `docs/BACKLOG.md`.
+
+However it starts, it goes through an intake.
+
+1. **Intake.** The intake is a session of its own, in its own chat, and writes no product code.
+   - The request is written down verbatim.
+   - A request that asks for judgement ("what is missing before 1.0?") is answered by an audit
+     first, of the code, the docs and whatever the product promises. The intake then proposes
+     groups of work for the human to pick from.
+   - What the request leaves underdetermined is asked in small batches, each question with a
+     recommended answer and one line on why. A contradiction is asked about, not resolved by a
+     guess.
+   - The answers are recorded as numbered, dated *resolved decisions*. An implementing session
+     never re-litigates them. What the human declines goes to `docs/BACKLOG.md`, saying which
+     intake left it out.
+   - A question that only the implementing session will have the context to answer can be
+     left to it, written into its block as **Ask at the start of <id>**. A proposal the human
+     has not confirmed says so.
+2. **Plan.** `docs/spec/SESSIONS.md` gets the standard header, a table of sessions with their
+   versions, and one block per session, in order (templates at the end of this file). Each
+   block has:
+   - its **Scope**, pointing at the files and lines it changes where the intake could see them;
+   - its **Docs**: which documents it keeps true, and how;
+   - its **Gates**: `verify`, the tests it must add, and the harnesses it must run;
+   - its **Watch for**: the known traps.
+
+   A session should be finishable in one chat with every gate green, and deliver a vertical
+   slice rather than one layer.
+   - **Session ids.** Round 1 numbers its sessions (0, 1, 2…). Later rounds give each session a
+     letter for its theme and a number, for example C1–C4 for a cleanup, D1 for the data
+     layer, V1 for a release.
+3. **The intake ends like any session.** The items it picked leave `docs/BACKLOG.md`, and the
+   handoff is rewritten to open the round's first session. Then comes a local commit
+   (`docs: open round <N> — <theme>`) and the human's review. At an intake the review checks
+   the plan against the code: the pointers, the feasibility, and where the spec and the code
+   disagree. Its fixes land in the spec and the plan before the first session opens.
+4. **Sessions**, one per chat (the cycle below). The plan can change on the way, always with a
+   logged reason:
+   - **A session can be inserted, with the human,** when a review or a session shows the plan
+     is missing one. It gets its own block, which says why it exists, in the human's words
+     where they gave them. The table's versions shift, and the handoff says so.
+   - **Scope the human adds mid-session** is recorded in the block as "added mid-session by
+     the user".
+5. **Close.** The round's last block closes it.
+   - **Anything left open** moves to `docs/BACKLOG.md`: deferred work, and checks nobody has
+     done by hand.
+   - **The release commit comes first, with the last done-note in it.** Then a separate
+     `docs: close round <N>` commit deletes `docs/spec/`'s files and rewrites the handoff to
+     say no round is in progress. Git history keeps the specs, and the release commit is where
+     the last done-note can still be read in full; the handoff names that commit.
+   - **The review follows the close.** `SESSIONS.md` is gone by then, so the findings are
+     recorded in the review commit's message and in the handoff.
+   - **Round 1 also owes a documentation pass**, planned as a real session, usually its last:
+     - `docs/ARCHITECTURE.md` (the system as built, the invariants, the deliberate
+       decisions, the known debt, a baseline table of counts);
+     - `docs/USER-GUIDE.md`;
+     - a truthful README.
+
+     From then on `CLAUDE.md` points at the as-built documents, and every session keeps them
+     true.
+
+**Round 1 starts with Session 0 (intake) and Session 1 (scaffold).** Session 0 turns the
+product draft into the spec, the plan and the rules file, and writes no product code. Session 1
+builds the skeleton and the day-one checklist, and is the first block of every build plan.
+
+## Day one (Session 1)
+
+Each of these is cheap on day one and expensive to retrofit.
+
+- **One verification command.** `verify` = typecheck + lint + format check + tests. Formatting
+  is in the gate from the first commit.
+- **The gate is held by the session and the human; there is no CI.** `verify` is green before
+  every commit, the human reviews every session, and nothing reaches the remote without their
+  approval.
+- **Version and changelog.** Stamp `0.1.0` in the manifest, surface it in the product, and
+  start `CHANGELOG.md` from the template, with an empty `[Unreleased]` section.
+- **A fixtures directory** (`tests/fixtures/`). Tests never read documentation or design
+  assets; a test that depends on a mockup makes the mockup undeletable.
+- **Fictional test data only.** No real names, no real content, no author's identity in
+  fixtures or seeds.
+- **Checkout tuning lives in the repo.** Anything set in `.git/config` or an editor does not
+  travel to the next clone; put it in scripts or docs.
+- **A truthful README**: what the thing is, how to run it, and where the docs are.
+- **The Commands table in `CLAUDE.md`**, filled in: every script a session runs, one line
+  each on what it does.
+
+## The session cycle
+
+The human opens every session, intakes included, in a new chat in plan mode, by pasting the
+prompt the previous session printed.
+
+1. **Entry gate.** The tree is clean, `docs/next-session-prompt.md` names the session you are
+   about to do, and, unless this is the round's first session, the previous session's block in
+   `SESSIONS.md` has its done-note. If it does not, that session did not finish; do not stack
+   on it.
+2. **Read in order:** the spec file(s) the session's block names, `CLAUDE.md`,
+   `docs/ARCHITECTURE.md` (once it exists), then the prompt. The prompt adds context; it
+   never replaces the sources.
+3. **Plan with the human before any edit.** In plan mode, read the code the block points at
+   and propose a concrete plan. Ask the block's *Ask at the start* questions here, and agree
+   here on anything the plan changes about the block. Those changes are logged as amendments
+   ("amended at plan time, with the user"). The human approves the plan, and only then does the
+   session edit.
+4. **Work inside the scope.** Stop the moment the spec turns out wrong, a decision is genuinely
+   underdetermined, or something does not behave as specified. Say so, leave the tree clean
+   or clearly marked, and resolve it with the human. A session that guesses to avoid stopping
+   is the expensive failure mode, because the guess becomes load-bearing for everything after
+   it.
+5. **Verification gate.** `verify` is green before the session may commit. Run the harnesses
+   the block names (UI, end-to-end, runtime probes), and any other whose ground the change
+   covers. Falsify every new check before trusting it.
+6. **Keep the docs true**, in the same commit as the code:
+   - `CHANGELOG.md`: an entry for everything user-visible, under the session's version, and
+     the version bumped in the manifest (see *Versions and the changelog*);
+   - `docs/ARCHITECTURE.md`: the sections the change touches, any new deliberate decision or
+     known debt, and the baseline table for every count that moved;
+   - `docs/USER-GUIDE.md`, for any behaviour a user now sees differently;
+   - `README.md`, when what the thing is, how it runs, or a number it states changes;
+   - `CLAUDE.md`, when a standing rule, a command or a pin changes;
+   - `docs/BACKLOG.md`, for anything the session deferred or could not check by hand.
+
+   The block's **Docs** line names the ones the plan expected; it is a floor, not a ceiling.
+7. **Log.** Append a done-note to the session's block in `SESSIONS.md` (template at the end):
+   - what was decided with the human at the start;
+   - what actually shipped;
+   - the **amendments**, where the block's intent held but its letter did not, each with its
+     reason and who decided it;
+   - what was measured, and what was checked by hand, with the outcome of each;
+   - what was falsified;
+   - the numbers, with their deltas.
+8. **Handoff.** Rewrite `docs/next-session-prompt.md` for the next session.
+9. **Commit locally**: one commit for the session's work, and in the round's last session the
+   close commit after it. Never push, and never tag, without explicit approval for that
+   specific push.
+10. **Review.** The human runs a code review over the session's commit at high effort, in the
+    same chat (in Claude Code, `/code-review high`). Fix what it finds. A finding that changes
+    behaviour or scope is the human's call, and a finding left unfixed is recorded as skipped,
+    with its reason. Falsify the checks the fixes add. Then:
+    - add a **Review** section to the done-note: the findings, what was fixed and what was
+      skipped, what was falsified, and the numbers after the review;
+    - update that version's CHANGELOG entry and the docs the fixes touched (no new version);
+    - update the handoff for anything the review changed, including a session it opened;
+    - commit the fixes as a separate `review:` commit.
+
+    Expect it to find something; the worst finds are routinely in code the session had just
+    called safe.
+11. **Print the next session's prompt** as the last message of the chat, ready to paste. If the
+    human then approves a push, follow *Git*: the handoff's push note is folded into the last
+    commit before it goes, so the push adds no commit. Print the prompt again after the push.
+    The chat ends there.
+
+The session is the human's review unit. Between sessions they read the diff and try the build,
+and work that runs past the boundary arrives unreviewed and too large to judge.
+
+## What each commit touches
+
+| Commit | Adds | Updates | Removes |
+|---|---|---|---|
+| **Intake**: `docs: open round <N> — <theme>` | the round's spec files and `SESSIONS.md` | `docs/BACKLOG.md` (what the intake declined); the handoff, which now opens the first session | from `docs/BACKLOG.md`, the items the round picked up |
+| **Session**: `feat:`, `fix:` or `refactor:`, ending `(x.y.z)` | the code and its tests; the version's CHANGELOG entry; the block's done-note | the manifest's version; `ARCHITECTURE.md` and its baseline; `USER-GUIDE.md`; `README.md`; `CLAUDE.md`; `docs/BACKLOG.md`; the handoff | code the session retires, and every doc line that described it |
+| **Review**: `review: …` | the fixes and their tests; the done-note's Review section | that version's CHANGELOG entry; the docs the fixes touched; the handoff; `SESSIONS.md`, if the review opened a session | — |
+| **Close**: `docs: close round <N>` | — | the handoff, which now says no round is in progress | every file in `docs/spec/` |
+
+- **An intake's review** fixes the spec and the plan. It has no CHANGELOG entry and no version.
+- **A session nobody can see** (docs, comments, an invisible refactor) has no CHANGELOG entry
+  and no version bump, and its subject carries no version.
+- **Before round 1's documentation pass**, `ARCHITECTURE.md` and `USER-GUIDE.md` do not exist
+  yet. Sessions keep the README and `CLAUDE.md` true, and their done-notes carry what the pass
+  will need: the deliberate decisions and the counts.
+- **Never removed or rewritten:** a CHANGELOG entry's content; a done-note, which the review
+  only adds to; a resolved decision, which is amended beside itself rather than edited.
+
+## The rules
+
+1. **One chat per session, never two sessions in one chat.** The split exists so no session
+   inherits stale context or a half-formed plan.
+2. **The spec is read-only.** A session that finds the spec wrong stops and says so. Agreed
+   divergence is recorded as an amendment in the block, and a decision the human changes is
+   added to the spec as a dated amendment. The spec's original text stays true to its moment.
+3. **The plan is amendable, but every amendment carries a reason, logged.** An unexplained
+   scope change six sessions deep is indistinguishable from a session quietly dropping work
+   it could not finish.
+4. **Nothing ships past a red gate.** `verify` green is the condition for every commit. No CI
+   enforces it; the session does, and the human's review and push approval stand behind it.
+5. **Every session ends with a done-note, a handoff and a commit.** No exceptions for short
+   sessions. An intake's plan stands in for its done-note.
+6. **Pushes and tags are a human decision**, approved one at a time.
+7. **When a session goes wrong, stop** (step 4 of the cycle).
+
+## Git
+
+- **Commit locally; push only on explicit approval, each time.** Approval for one push does not
+  extend to the next, and approving a plan is not approving a push. The human's review comes
+  before the push.
+- **Before any push, list `git log --format='%h %s' origin/main..HEAD`.** Parallel sessions may
+  share a checkout, and a push carries whatever is on the branch, not only this session's work.
+  If a commit is not this session's, stop and say so.
+- **Stage explicit paths; never `git add -A`.** Same reason.
+- **Never undo with `git checkout <path>`.** It silently discards changes that may not be
+  yours. Revert your own edits by editing, and falsify a check by copying the file aside and
+  back.
+- **A commit subject is typed and names what changed in plain words**, the way a reader of the
+  product would put it. The body says what changed and why.
+  - `docs: open round <N> — <theme>` for an intake.
+  - `feat:`, `fix:` or `refactor:` for a session's work, ending with the version when it cuts
+    one: `feat: quiet copies — one a day, kept 7 days, restored from Help (0.41.0)`.
+  - `review: <the findings, in plain words>, and <n> smaller` for the review commit.
+  - `docs: close round <N>` for the close.
+- **An approved push carries its own note.** The prompt was written before the push, so before
+  pushing, the session rewrites the handoff's push status to say what the remote will hold,
+  folds that into the last unpushed commit (`git commit --amend`; it is this session's own and
+  not yet on the remote), lists `origin/main..HEAD` again, and pushes once. The note names that
+  commit by its subject, since amending changes its sha. No commit follows the push, so the
+  next session starts with `origin/main..HEAD` empty. If the push fails, amend the note back
+  before anything else.
+- **Tags mark milestones only**, such as a first build for testers or 1.0. The session that
+  cuts the version tags it locally, and the tag is pushed only with its own approval.
+
+## Versions and the changelog
+
+- **Each session is a release.** `SESSIONS.md`'s table gives each session its version:
+  - a minor bump for a session that adds or changes behaviour;
+  - a fix bump for one that only fixes;
+  - no bump for one whose changes no user can see.
+
+  The version is `major.minor.fix` in the manifest and is shown in the product.
+- **One entry per version**, `## [x.y.z] — YYYY-MM-DD`, using only Keep a Changelog's headings
+  (Added, Changed, Deprecated, Removed, Fixed, Security). Prose that fits none of them goes in
+  the entry's lead paragraph. `[Unreleased]` stays at the top and stays empty, because each
+  session writes its own version's entry.
+- **Written for the person using the product.** Each line leads with what they will notice, in
+  bold, then what it means for them. No file names, no session ids.
+- **Review fixes join the session's entry**, under the same version.
+- **Append-only for content.** A shipped entry's substance is never reworded. Normalising a
+  heading to the set above is allowed.
+- **Every version has a link reference** at the foot of the file once the repo has a remote.
+  A tagged version links to its tag, and an untagged one to the commit that bumped the manifest
+  to it. `[Unreleased]` compares the newest tag with `HEAD`; until the first tag it has no link.
+
+## The handoff
+
+`docs/next-session-prompt.md`, rewritten by every session and printed as its last message (the
+templates are at the end of this file). It holds:
+
+- **The opening paragraph:** the read order, the session to do and what it covers, and the
+  version it releases.
+- **State you need that is not in the specs:**
+  - the round's progress: which sessions are done, which remain;
+  - the push status: what the remote holds (`origin/main` holds everything through `<sha>`),
+    and which local commits wait for the next approved push;
+  - what shipped that this session builds on, specifically: the names, files and mechanisms
+    it will touch, as they are now;
+  - what deferred work this session now owns;
+  - what the spec said that turned out wrong or harder than described (be specific — this is
+    the part that saves a session);
+  - decisions made that are written down nowhere else;
+  - the baseline counts this session must not move, or must move by a stated amount;
+  - what was not done, and why.
+- **Watch for:**
+  - **the standing traps**, the environment's gotchas that every session hits (the shell, the
+    toolchain, the harnesses, git). They are carried forward verbatim from handoff to handoff,
+    and edited only when one stops being true, or when a new one has cost a session time;
+  - this session's own traps: the block's, plus anything newly discovered.
+
+Two rules govern it:
+
+1. **Report what happened, not what was intended.** If something was skipped, say it was
+   skipped and why. A handoff that describes the plan rather than the outcome is worse than
+   no handoff, because the next session trusts it.
+2. **It adds context; it does not replace the contract.** The next session still reads the
+   spec first.
+
+When no round is in progress, the prompt says so in its first line, and the next session is an
+intake.
+
+## Engineering practices
+
+- **Falsify every new check before believing it.** Break the assertion, watch it fail at its
+  own step and nowhere else, restore it. A check that cannot fail looks identical to a passing
+  one. When two layers guard one promise, break the layer the check is about, or the
+  falsification passes for the wrong reason.
+- **Keep a baseline of counts** (tests passed and skipped, harness checks, endpoints or
+  channels) in `ARCHITECTURE.md`. A refactor or a docs change must not move any of them; if
+  one moves, that is the finding.
+- **Measure, don't assume.** A claim about how the runtime behaves (a timestamp, a platform
+  default, a size) is measured in the real runtime and recorded in the done-note as measured,
+  with the version it was measured on.
+- **Real-runtime probes for anything version-sensitive.** When the test runner and the shipped
+  runtime differ, keep one-command probes that re-answer the load-bearing questions inside
+  the real runtime.
+- **Record checks by hand too.** When the human tries the build, or a session runs something no
+  harness can, the done-note records each outcome. What nobody checked goes to BACKLOG's *Not
+  yet checked by hand*, with the automated check that covers most of it.
+- **Design for headless drivability.** Automation never opens anything it cannot dismiss
+  (native dialogs, OS prompts, modal pickers). Split every dialog-then-write flow into two
+  separately drivable steps, so a harness asserts the control and drives the write directly.
+- **Harnesses own their state and clean it up structurally.** A harness creates its own data
+  directory, never touches one a person owns, and registers its cleanup with the runner
+  rather than relying on each caller to remember. Sweep stale leftovers at startup, which
+  covers a run that was killed. Measure the leak before and after rather than assuming.
+- **Measurements are committed tests.** A performance number that matters lives in a gated
+  benchmark with a budget that fails rather than warns, not in a table typed by hand.
+- **A test whose outcome depends on the clock pins the clock.** Otherwise it can pass
+  vacuously for weeks.
+- **One home per shape.** A duplicate that has drifted once will drift again. The second
+  copy of a component, hook or rule is the moment to share it, not the fifth.
+- **Comments and names state the present.** A comment, a name or a test title says why the
+  code is shaped the way it is now. It never carries a session id, "used to", "until v0.x" or
+  a review story; git history and the done-notes keep those. Where the story *is* the reason,
+  keep one clause.
+- **"Watch for" lines.** Every session block ends with its specific traps, because traps are
+  what a fresh context misses. When a trap costs a session an hour anyway, the next prompt
+  names it.
+- **Deviations over corrections.** When mockups, spec and build disagree, resolve the conflict
+  once, write down which one wins and why, and leave the artifacts as they are.
+- **Keep the rules file lean.** `CLAUDE.md` holds what is always true; the done-notes and
+  `ARCHITECTURE.md` hold why. A rule keeps its "why" only when the why changes the action.
+  Duplicating prose between them guarantees drift.
+
+## Adapting the workflow
+
+The method was written on a desktop app with a UI, a local database and several harnesses.
+Other projects keep its core, adapt the rest, and say which parts they adapted in their *In
+this repository* paragraph.
+
+- **The core, which no project drops:**
+  - scope and state kept apart: `docs/spec/` and the handoff;
+  - one session per chat, planned with the human before any edit;
+  - stopping to ask rather than guessing;
+  - intake decisions that are not re-litigated, and amendments logged with their reasons;
+  - a done-note, a handoff and a local commit at the end of every session, then the human's
+    review and a separate review commit;
+  - pushes and tags only with approval;
+  - every new check falsified.
+- **What depends on the project:**
+  - what `verify` runs, and which harnesses exist beside it;
+  - whether every session cuts a version and a CHANGELOG entry, or the project releases at
+    milestones;
+  - whether there is a user guide, and what "user-visible" means;
+  - headless drivability, which matters only where there is something to drive;
+  - the git remote, which decides pushes, tags and changelog links;
+  - CI, which this workflow does not use; a project that adds it says so.
+
+## Templates
+
+Each template is generalised from a real round. Fill every `<…>`; the text around it is the
+real wording, to be kept unless it is wrong for the project.
+
+### `docs/spec/SESSIONS.md`: the header and the table
+
+In round 1 the spec file is `SPEC.md` (with `PDD.md` beside it), and the read order drops
+`docs/ARCHITECTURE.md` until the documentation pass writes it.
+
+```markdown
+# The session plan: round <N>, <theme>
+
+One chat per session. Never run two sessions in one chat: the point of the split is that no
+session inherits stale context.
+
+- **Scope** lives here, fixed in advance. The request and its resolved decisions are in
+  `<FEATURE-name.md>` beside this file, which is read-only; do not re-litigate them. If a
+  session finds a block wrong, it amends the block and records the reason both in the block
+  and in `docs/next-session-prompt.md`.
+- **State** is `CHANGELOG.md` (what shipped) and `docs/next-session-prompt.md` (what the next
+  session needs that the docs do not say). Every session rewrites the prompt as its last act.
+- **When this round closes,** <last id> deletes this file and the feature file(s). Git history
+  keeps them, and anything left open moves to `docs/BACKLOG.md`.
+
+**Before starting**, confirm the tree is clean and that `docs/next-session-prompt.md` names the
+session you are about to do. **Read order:** `<FEATURE-name.md>`, `CLAUDE.md`,
+`docs/ARCHITECTURE.md`, then the prompt. **Then plan, in plan mode,** and ask the block's *Ask
+at the start* questions before any edit.
+
+**Every session ends the same way:**
+1. `<verify command>` green, plus the harnesses the block names.
+2. Every new check falsified.
+3. A `CHANGELOG.md` entry for anything user-visible, and the version bumped as the table says.
+4. The docs the block names kept true, and ARCHITECTURE's baseline table updated for any count
+   that moved.
+5. A done-note appended to the block, then the prompt rewritten, then a local commit.
+6. The user's `/code-review high`, then a review-fixes commit.
+7. The next prompt printed as the chat's last message.
+
+Never push without being asked.
+
+| Session | Scope | Decisions | Version |
+|---|---|---|---|
+| <id> | <one line> | <decision numbers> | **<x.y.z>** |
+| <last id> | Docs, changelog, manual runs; close the round | <decision numbers> | **<x.y.z>** |
+```
+
+### A session block
+
+```markdown
+---
+
+## <id>: <title>
+
+<Only for a session inserted mid-round: when and why it was added, in the user's words where
+they gave them.>
+
+- **<Scope item>** (decision <n>).
+  - <What changes, with `file:line` pointers to the code as the intake saw it.>
+  - <The constraints: which invariant it touches, which layer the new code belongs in.>
+- **<Scope item>** (decision <n>).
+- **Docs.**
+  - `CLAUDE.md`: <the rule that changes>.
+  - `USER-GUIDE.md`: <the sections that change>.
+  - `ARCHITECTURE.md`: <the sections that change>.
+  - README: <what changes>.
+- **Ask at the start of <id>:** <a decision left to this session, because only it will have
+  the context>. <For a proposal the user has not confirmed: "Proposed at intake, not yet
+  confirmed.">
+
+**Gates:**
+- `<verify command>`, with these tests:
+  - <each behaviour the session must prove>.
+- `<harness>`: <what it must show>.
+
+**Watch for:**
+- **<The trap>.** <Why it bites, and what to do instead.>
+```
+
+### The done-note
+
+The session appends it to its block before the local commit; the review adds its section
+before the review commit. Leave out a line that has nothing in it.
+
+```markdown
+**Done (<YYYY-MM-DD>, <x.y.z>).**
+- **Decided with the user at the start:**
+  - <each *Ask at the start* answer, and anything settled in plan mode>.
+- **<What shipped, one bullet per area>.** <The names, files and mechanisms, as built.>
+- **Amendments:**
+  - **<What differs from the block>.** <Why, and who decided: "amended at plan time, with the
+    user", "added mid-session by the user", or the session's own finding.>
+- **Measured:** <each claim about runtime behaviour, and the version it was measured on>.
+- **Checked by hand:** <each manual run, and the user's look at the build, with the outcome.
+  What was left unchecked goes to `docs/BACKLOG.md`.>
+- **Falsified:**
+  - <each new check: what was broken, and that it failed at its own step>.
+- **Numbers:** <n> unit tests (<±d>), <n> `<harness>` checks (<±d>), <the other baseline
+  counts>.
+- **Review (`/code-review high`), <n> findings: <n> fixed and <n> skipped.**
+  - **<The finding, as fixed>.** <One line; "the user chose" where they decided.>
+  - **Skipped:** <the finding>, because <the reason>.
+  - **Falsified:** <the checks the fixes added>.
+  - **Numbers after the review:** <counts>.
+```
+
+### `docs/spec/FEATURE-<name>.md`
+
+```markdown
+# FEATURE: <name> (round <N>)
+
+## The request, verbatim (<YYYY-MM-DD>)
+
+> <The user's words, exactly as given.>
+
+<One paragraph: what the intake did (an audit, a proposal of groups of work), what the user
+took and what they declined, and anything they said about audience or platform.>
+
+## <Optional: the promise or contract the round exists to keep>
+
+## Resolved decisions (<YYYY-MM-DD>, at intake)
+
+1. **<The decision, in one sentence>.** <The detail a session needs, and the why where the
+   why changes the action.>
+2. **<The sessions, in order>:** <ids and versions>, when the intake decided them.
+3. <…>
+<n>. **Out of this round:** <what was declined or deferred; each item also goes to
+   `docs/BACKLOG.md`>.
+```
+
+A decision the user changes later is added beside the one it changes, never edited in:
+
+```markdown
+**Amended <YYYY-MM-DD> by the user, in <id>.** <Which decision changes, to what, and why.>
+```
+
+### `docs/next-session-prompt.md`, mid-round
+
+```markdown
+Read docs/spec/<FEATURE-name.md>, CLAUDE.md, docs/ARCHITECTURE.md, then this file, and do
+Session <id> of docs/spec/SESSIONS.md: <one line>. <id> has <n> parts:
+- <part>;
+- <part>.
+
+Release <x.y.z>.
+
+## State you need that is not in the specs
+
+- **Round <N> is <theme>**: <ids> are done; <ids> remain.
+- **<Previous id> and its review fixes are committed locally, not pushed.** `origin/main` holds
+  everything through `<sha>`. List `origin/main..HEAD` before any push.
+- **What <previous id> left that <id> builds on:**
+  - <the names, files and mechanisms this session will touch, as they are now>.
+- **What the spec said that turned out wrong or harder:** <specifically>.
+- **Decisions written down nowhere else:** <…>.
+- **Baseline** (ARCHITECTURE's table, v<x.y.z>): <the counts>.
+- **Not done:** <what was skipped, and why>.
+
+## Watch for
+
+- **The standing traps:**
+  - **Never `git checkout <path>`.** Falsify by copying the file aside and back.
+  - **Stage explicit paths.**
+  - **Give stdin-reading commands `< /dev/null`.** A bare `cat > file` with no heredoc hangs.
+  - <the environment's other gotchas, carried forward verbatim>.
+- **<A trap specific to this session>.** <Why it bites, and what to do instead.>
+- **Comments state the present.** No session ids, no "used to", no review stories.
+- **Every push needs its own approval.** List `origin/main..HEAD` first, because parallel
+  sessions share this checkout.
+```
+
+### `docs/next-session-prompt.md`, between rounds
+
+```markdown
+No round is in progress. Read CLAUDE.md, docs/ARCHITECTURE.md, then this file. The next session
+is an **intake**: write the user's request down verbatim, ask what it leaves open, and plan the
+round in `docs/spec/` (see `docs/DEVELOPMENT-WORKFLOW.md`, *Rounds*).
+
+## State you need that is not in the docs
+
+- **<Product> <x.y.z> is released.** Round <N> (<theme>: <ids>) is closed. Its spec files are
+  deleted; the last done-note is in `docs/spec/SESSIONS.md` as of the release commit (`<sha>`).
+- **Push status:** <what the remote holds, and what waits for the next approved push>.
+- **Open items live in `docs/BACKLOG.md`**, <including what this round added there>.
+- **Baseline** (ARCHITECTURE's table, v<x.y.z>): <the counts>.
+
+## Watch for
+
+- **The standing traps:**
+  - <carried forward verbatim>.
+- **Comments state the present.** No session ids, no "used to", no review stories.
+```
+
+### `docs/BACKLOG.md`
+
+```markdown
+# Backlog
+
+Work that has been named but belongs to no session. Each item needs its own intake before it runs
+(a `docs/spec/FEATURE-*.md` with the request verbatim and the decisions resolved, then a block
+in `docs/spec/SESSIONS.md`; see `docs/DEVELOPMENT-WORKFLOW.md`). When an item is picked up, it
+moves out of this file.
+
+## Deferred
+
+- **<The item>.** <What it is, and where it was left out: "left out at the round <N> intake".>
+
+## Not yet checked by hand
+
+Checks that need a person at the machine. Each has an automated check covering most of it;
+these are the parts only a person can see.
+
+- **<What to check>** (<version>): <how to check it, and which automated check covers the rest>.
+
+## Directions
+
+- **<A possible future>.** <What it would be, and what already points towards it.>
+
+## Decided against
+
+- <What, and the reason in a clause.>
+```
+
+### `CHANGELOG.md`
+
+```markdown
+# Changelog
+
+All notable changes to <Product> are documented here. The format follows
+[Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions follow
+`major.minor.fix`.
+
+## [Unreleased]
+
+## [0.2.0] — <YYYY-MM-DD>
+
+### Added
+
+- **<What the user notices>.** <What it means for them.>
+
+### Fixed
+
+- **<What now works>.** <What went wrong before.>
+
+## [0.1.0] — <YYYY-MM-DD>
+
+### Added
+
+- **<…>.**
+
+[Unreleased]: <repo URL>/compare/<newest tag>...HEAD
+[0.2.0]: <repo URL>/commit/<full sha of the commit that bumped the manifest to 0.2.0>
+[0.1.0]: <repo URL>/commit/<full sha>
+```
+
+### `docs/ARCHITECTURE.md`: the outline
+
+```markdown
+# <Product> — architecture, as built
+
+<One paragraph: this is the system as it stands, kept true by every session.>
+
+## Overview
+
+## The invariants
+
+<Numbered, each with how it is enforced: a lint rule, a type, a test.>
+
+## <The contract between the layers>
+
+## <The data layer: storage, migrations, backups, durability>
+
+## <One section per subsystem>
+
+## Testing strategy — <n> layers, and what each cannot see
+
+## Packaging
+
+## Deliberate decisions
+
+<The choices that look wrong until you know why, each with its why.>
+
+## Known debt, deliberately deferred
+
+## Baseline (v<x.y.z>)
+
+| Check | Expected |
+|---|---|
+| `<verify command>` | green — <n> unit tests passed (<n> skipped: <which, and why>) |
+| `<harness>` | <n> PASS; <how long it takes, and its quirks> |
+| <an interface count: channels, endpoints, commands> | <n> |
+
+A documentation or refactoring change should not move any of these. If one moves, that
+is the finding.
+```

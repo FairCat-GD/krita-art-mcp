@@ -1,0 +1,199 @@
+# krita-art-mcp
+
+An MCP server and a Krita plugin that let AI agents paint in Krita. An agent can inspect a
+painting, protect accepted work, paint with Krita's own brush engine, check the result at game
+size, and undo or keep it. It is for painted (non-pixel) 2D game art, run by one developer on
+macOS (Apple Silicon) with Krita 5.3.x.
+
+Machine identifiers keep their spelling even if the product is renamed, because configuration and
+data live under them:
+- package and CLI `krita-art-mcp`, imported as `krita_art_mcp`;
+- plugin module `krita_art_mcp_bridge`, with kritarc key `enable_krita_art_mcp_bridge`;
+- MCP server `krita-art`, with tools `krita_*`;
+- `~/Library/Application Support/krita-art-mcp/`, `KRITA_ART_MCP_DATA_DIR` and `bridge.json`.
+
+**Read `docs/spec/SPEC.md` before changing code.** `docs/DEVELOPMENT-WORKFLOW.md` is the
+session-based workflow this repo follows. `docs/BACKLOG.md` lists what has been named but not
+planned.
+
+## Working protocol
+
+Every session runs the cycle in `docs/DEVELOPMENT-WORKFLOW.md`:
+1. entry gate;
+2. read order;
+3. a plan agreed in plan mode;
+4. the verify gate;
+5. docs kept true;
+6. the changelog;
+7. a done-note in its `SESSIONS.md` block;
+8. the handoff prompt for the next session;
+9. a local commit;
+10. the owner's `/code-review high`, then a review-fixes commit;
+11. the next session's prompt, printed as the last message.
+
+One session per chat. A push or tag needs explicit approval, each time.
+
+**Scope lives in `docs/spec/SESSIONS.md`**, one block per session, in order, and in the round's
+spec files. In round 1 that is `SPEC.md`, beside the frozen `PDD.md` and the contract package in
+`reference/`. After round 1, each request gets one `FEATURE-*.md`, holding the request verbatim
+plus the decisions resolved at intake; it is read-only and not re-litigated.
+
+`docs/spec/` holds only the round in progress. When a round closes, its files are deleted (git
+history keeps them), and anything still open moves to `docs/BACKLOG.md`.
+
+**State lives in `docs/next-session-prompt.md`**, rewritten by every session as its last act.
+
+**Read order:**
+1. the spec file(s) the session block names;
+2. this file;
+3. `docs/ARCHITECTURE.md`, once it exists;
+4. the prompt.
+
+**Rules:**
+
+1. `uv run scripts/verify.py` (format check, lint, typecheck, tests, plugin tests on 3.10,
+   hygiene) must be green before you commit.
+   - Run the live harness (`uv run krita-art-mcp probe`) whenever your change could affect what
+     it covers.
+   - Expected results are in the done-notes until `docs/ARCHITECTURE.md`'s baseline table exists.
+2. Falsify each new check once before trusting it: break the assertion, watch it fail at its own
+   step, restore it. Checks that already existed are not falsified again.
+3. User-visible changes get a line in `CHANGELOG.md`. Version is `major.minor.fix` in
+   `pyproject.toml`, surfaced in `krita-art-mcp --version`, in the MCP `serverInfo`, and in
+   `krita_server_info`.
+4. If a decision is genuinely underdetermined, stop and ask rather than guessing — a guess
+   becomes load-bearing for everything after it.
+5. Comments state the present: why the code is shaped this way now. No session ids, no "until
+   v0.x", no review stories — git history keeps those.
+   - Keep comments short: one line where possible, and only where the why is not obvious from the
+     code.
+   - No paragraphs, and no docstrings that restate the signature.
+
+## Invariants — these are rules, not preferences
+
+The why for each is in `docs/spec/SPEC.md` §5.
+
+1. **No raw pixel writes, and no tool runs code.** No tool, harness operation or fixture writes
+   raw pixels into a layer. *Enforced by* the plugin source scan, which bans `setPixelData`,
+   `Filter.apply`, `saveAs`, `exec` and `eval`.
+2. **Accepted sources are never opened for writing, and no save overwrites a file.** *Enforced
+   by* working copies with hash checks, and `FILE_EXISTS`.
+3. **Every path an agent names resolves (realpath) inside an allowed root,** checked on both the
+   server and the plugin. *Enforced by* unit tests and the harness.
+4. **Protection only tightens.** *Enforced by* `protection_set` tests.
+5. **Every mutation is verified inside its own main-thread job.**
+   - A violation is rolled back by native undo, and the rollback is confirmed; if it can't be,
+     the document is marked unsafe.
+   - A rollback undoes only the steps its operation pushed.
+   - *Enforced by* plugin-core tests and the harness leak tests.
+6. **Every libkis call runs on Krita's main thread, one job at a time.** `waitForDone()` comes
+   before any read after a paint, undo, redo or save. *Enforced by* the adapter's thread check
+   and the re-entry guard.
+7. **The plugin's layers stay apart.**
+   - Every `krita` and PyQt import lives in `krita_adapter`.
+   - `bridge_core` is pure, and valid under Python 3.10.
+   - The plugin uses only the standard library, PyQt and `krita`.
+   - *Enforced by* the import scan and the 3.10 test stage.
+8. **Inputs are exact; results are typed and small.**
+   - Inputs reject unknown fields and are never clamped, normalised or substituted.
+   - Every result, errors included, validates against its output schema.
+   - Errors are returned, never raised.
+   - Every message stays under 6 MB.
+   - *Enforced by* schema and size tests.
+9. **Retries are safe.** The journal line is written before dispatch, a retried `request_id`
+   never repeats work, and an uncertain call is never re-sent. *Enforced by* journal and dedup
+   tests.
+10. **The capability matrix is true at every release,** and a tool is registered only once it is
+    built. *Enforced by* the registered-tools test and the harness.
+11. **No stale plugin.** `probe` and `doctor` refuse a plugin whose source hash differs from the
+    repo's.
+12. **The bridge is closed to everyone but the owner.**
+    - It listens on 127.0.0.1 only and requires the token (constant-time compare, `Host` check,
+      64 MB body limit).
+    - The token is never logged, and `bridge.json` is 0600.
+    - *Enforced by* plugin-core tests.
+13. **Harnesses leave the owner's things alone.**
+    - They never touch the owner's documents, files, `kritarc` or `config.json`.
+    - They work only in `<data dir>/harness/`, and restore the brush state afterwards.
+    - *Enforced by* the `harness.*` folder gate.
+14. **Nothing private enters the repository.** *Enforced by* the hygiene stage (see below).
+
+## `mcp` is pinned to 2.3.x: FastMCP is `MCPServer`, and errors are returned
+
+- `mcp>=2.3,<2.4`. Import it with `from mcp.server.mcpserver import MCPServer, Image`; importing
+  `mcp.server.fastmcp` raises.
+- A raised exception reaches the client only as "Error executing tool X". Return
+  `CallToolResult(is_error=True, …)` with the envelope instead.
+- `Image` takes no `_meta`. Build `ImageContent` directly when the image needs
+  `{"codex/imageDetail": "original"}`.
+- Moving past 2.3 is a decision, never a routine bump.
+
+## The plugin runs inside Krita: Python 3.10 syntax, the standard library, one thread
+
+- **The runtime.** Krita 5.3.4 on macOS runs the plugin on its bundled Python 3.13 with PyQt5
+  5.15.11. The code still targets 3.10, so other Krita builds can load it, and `verify` tests
+  `bridge_core` on 3.10.
+- **Imports.** PyQt goes through the shim (`try: PyQt6 … except ImportError: PyQt5 …`). Avoid Qt
+  enums. Use `Krita.getAppDataLocation()`, not `QStandardPaths`.
+- **The main thread.** The `krita` bindings never release the GIL, so the HTTP thread is silent
+  during any long libkis call. The server owns the wait budget.
+- **Restarts.** A changed plugin loads only after a Krita restart: run `install-plugin`, then
+  restart. A session may restart Krita itself only when no open document has unsaved changes;
+  otherwise it asks the owner. The harness never quits Krita.
+
+## This repository is public: nothing private goes in
+
+Its whole history will be published, so every file, test, fixture, done-note, handoff and commit
+message follows these rules:
+- **No personal names, game names or agent personas.** Write "the owner", "the first game" and
+  "the Codex agent".
+- **No home-directory paths.** Write `~`.
+- **No AI attribution:** no co-author trailers, no "generated with" lines, no session links, no
+  AI as author or addressee. Claude Code and Codex are named only as MCP clients the server
+  supports.
+- **Fixtures are fictional.**
+
+The hygiene stage of `verify` checks tracked files against hashed private terms, and commit
+messages against attribution trailers.
+
+## Commands
+
+| Command | Does |
+|---|---|
+| <filled in by Session 1> | |
+
+**What only the live harness can see.** The unit tests never touch Krita. `uv run krita-art-mcp
+probe` drives a real `serve` over stdio against the owner's running Krita 5.3.x. It needs the
+plugin installed, enabled and current.
+
+**How it treats the owner's data.** The harness works only in `<data dir>/harness/`, sweeps
+leftovers at start, closes what it opened, and restores the brush state. No test or harness
+touches the owner's documents or `config.json`.
+
+## Git
+
+- Commit locally; a push or tag needs explicit approval, each time.
+  - Before any push, list `git log origin/main..HEAD`; parallel sessions may share this checkout.
+  - There is no remote until the owner asks for one.
+- Stage explicit paths, never `git add -A`. Never undo with `git checkout <path>`.
+- **Subjects.** Typed (`feat:`, `fix:`, `refactor:`, `docs:`, `review:`), in plain words, at most
+  72 characters, ending `(x.y.z)` when the commit cuts a version.
+- **Bodies.** Short, wrapped at 72: what changed and why.
+- **Review commits.** `review: <main finding>, and <n> smaller`.
+- **Attribution and identity.** No trailers. Commits use the owner's global git identity.
+
+## Do not
+
+- Write raw pixels, call `setPixelData`, `Filter.apply` or `saveAs`, or add anything that runs
+  code.
+- Call libkis off Krita's main thread or outside a job, or read after a mutation without
+  `waitForDone()`.
+- Touch the owner's documents, files, `kritarc` or `config.json` from a test or harness, or
+  restart Krita while a document has unsaved changes.
+- Edit `docs/spec/` beyond your block's done-note and logged amendments, or edit
+  `docs/spec/reference/` at all.
+- Loosen a schema to make an example pass, or relax a budget to make a benchmark pass.
+- Upgrade a pinned dependency in passing, or rename a machine identifier.
+- Put anything private in a file or a commit message.
+- Finish with `uv run scripts/verify.py` red, or with user-visible changes missing from
+  `CHANGELOG.md`.

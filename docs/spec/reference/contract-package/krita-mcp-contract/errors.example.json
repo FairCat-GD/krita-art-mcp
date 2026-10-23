@@ -1,0 +1,160 @@
+[
+  {
+    "content": [
+      {
+        "type": "text",
+        "text": "Expected revision 16; current revision is 17."
+      }
+    ],
+    "structuredContent": {
+      "api_version": "0.1.0",
+      "status": "failed",
+      "document_id": "doc-1",
+      "revision": 17,
+      "operation_id": null,
+      "data": null,
+      "error": {
+        "code": "STALE_REVISION",
+        "message": "Expected revision 16; current revision is 17.",
+        "retryable": false,
+        "details": {
+          "expected": 16,
+          "actual": 17,
+          "writes_performed": false
+        }
+      }
+    },
+    "isError": true
+  },
+  {
+    "content": [
+      {
+        "type": "text",
+        "text": "Commit rejected; changes escaped the allowed mask."
+      }
+    ],
+    "structuredContent": {
+      "api_version": "0.1.0",
+      "status": "failed",
+      "document_id": "doc-1",
+      "revision": 17,
+      "operation_id": null,
+      "data": null,
+      "error": {
+        "code": "PROTECTED_REGION_CHANGED",
+        "message": "Commit rejected; changes escaped the allowed mask.",
+        "retryable": false,
+        "details": {
+          "changed_pixels_outside": 2,
+          "rolled_back": true,
+          "rollback_verified": true,
+          "checkpoint_id": "cp-edit-1"
+        }
+      }
+    },
+    "isError": true
+  },
+  {
+    "content": [
+      {
+        "type": "text",
+        "text": "This brush backend does not support requested tilt."
+      }
+    ],
+    "structuredContent": {
+      "api_version": "0.1.0",
+      "status": "failed",
+      "document_id": "doc-1",
+      "revision": 17,
+      "operation_id": null,
+      "data": null,
+      "error": {
+        "code": "UNSUPPORTED_CAPABILITY",
+        "message": "This brush backend does not support requested tilt.",
+        "retryable": false,
+        "details": {
+          "setting": "tilt",
+          "writes_performed": false
+        }
+      }
+    },
+    "isError": true
+  },
+  {
+    "content": [
+      {
+        "type": "text",
+        "text": "Request ID already used with different arguments."
+      }
+    ],
+    "structuredContent": {
+      "api_version": "0.1.0",
+      "status": "failed",
+      "document_id": "doc-1",
+      "revision": 17,
+      "operation_id": null,
+      "data": null,
+      "error": {
+        "code": "REQUEST_ID_CONFLICT",
+        "message": "Request ID already used with different arguments.",
+        "retryable": false,
+        "details": {
+          "writes_performed": false
+        }
+      }
+    },
+    "isError": true
+  },
+  {
+    "content": [
+      {
+        "type": "text",
+        "text": "Human edit detected during transaction; recoverable branches retained."
+      }
+    ],
+    "structuredContent": {
+      "api_version": "0.1.0",
+      "status": "failed",
+      "document_id": "doc-1",
+      "revision": 17,
+      "operation_id": null,
+      "data": null,
+      "error": {
+        "code": "EXTERNAL_EDIT_CONFLICT",
+        "message": "Human edit detected during transaction; recoverable branches retained.",
+        "retryable": false,
+        "details": {
+          "rollback_verified": false,
+          "recovery_id": "recovery-1"
+        }
+      }
+    },
+    "isError": true
+  },
+  {
+    "content": [
+      {
+        "type": "text",
+        "text": "Document has another active operation."
+      }
+    ],
+    "structuredContent": {
+      "api_version": "0.1.0",
+      "status": "failed",
+      "document_id": "doc-1",
+      "revision": 17,
+      "operation_id": null,
+      "data": null,
+      "error": {
+        "code": "BUSY",
+        "message": "Document has another active operation.",
+        "retryable": true,
+        "details": {
+          "retry_after_ms": 500,
+          "writes_performed": false
+        }
+      }
+    },
+    "isError": true
+  }
+]

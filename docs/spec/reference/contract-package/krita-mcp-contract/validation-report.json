@@ -1,0 +1,10 @@
+{
+  "status": "PASS",
+  "checks": 236,
+  "failed": [],
+  "scope": "Offline example/schema-subset, negative-input and document-link checks. No Krita/MCP server implementation or runtime tests performed.",
+  "tools": 69,
+  "mvp_tools": 27,
+  "extension_tools": 42,
+  "workflow_steps": 14
+}

@@ -1,0 +1,182 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "schema_version": {
+      "const": "0.1.0"
+    },
+    "project_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "version": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "working_roots": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "minLength": 1
+      },
+      "minItems": 1
+    },
+    "art_mode": {
+      "type": "string",
+      "enum": [
+        "painted",
+        "high_resolution_ui",
+        "mixed_raster"
+      ]
+    },
+    "color_profile_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "export_pixels_per_unit": {
+      "anyOf": [
+        {
+          "type": "number",
+          "exclusiveMinimum": 0
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "palette_id": {
+      "anyOf": [
+        {
+          "type": "string",
+          "minLength": 1
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "filter": {
+      "type": "string",
+      "enum": [
+        "nearest",
+        "box",
+        "bilinear",
+        "bicubic",
+        "lanczos"
+      ]
+    },
+    "review_recipes": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "target_pixels_per_unit": {
+            "anyOf": [
+              {
+                "type": "number",
+                "exclusiveMinimum": 0
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "target_size_px": {
+            "anyOf": [
+              {
+                "type": "array",
+                "prefixItems": [
+                  {
+                    "type": "integer",
+                    "minimum": 1
+                  },
+                  {
+                    "type": "integer",
+                    "minimum": 1
+                  }
+                ],
+                "items": false,
+                "minItems": 2,
+                "maxItems": 2
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "integer_zoom": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "minimum": 1
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "id",
+          "target_pixels_per_unit",
+          "target_size_px",
+          "integer_zoom"
+        ],
+        "additionalProperties": false
+      },
+      "minItems": 1
+    },
+    "defaults": {
+      "type": "object",
+      "properties": {
+        "preserve_accepted_sources": {
+          "type": "boolean"
+        },
+        "automatic_palette_conversion": {
+          "const": false
+        },
+        "automatic_contour_replacement": {
+          "const": false
+        }
+      },
+      "required": [
+        "preserve_accepted_sources",
+        "automatic_palette_conversion",
+        "automatic_contour_replacement"
+      ],
+      "additionalProperties": false
+    },
+    "validator_ids": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "minLength": 1
+      },
+      "minItems": 0
+    },
+    "approval_policy_id": {
+      "type": "string",
+      "minLength": 1
+    }
+  },
+  "required": [
+    "schema_version",
+    "project_id",
+    "version",
+    "working_roots",
+    "art_mode",
+    "color_profile_id",
+    "export_pixels_per_unit",
+    "palette_id",
+    "filter",
+    "review_recipes",
+    "defaults",
+    "validator_ids",
+    "approval_policy_id"
+  ],
+  "additionalProperties": false
+}
