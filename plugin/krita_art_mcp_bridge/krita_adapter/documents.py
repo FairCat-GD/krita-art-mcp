@@ -34,7 +34,9 @@ class KritaDocuments:
             # setChildNodes swaps it without an undo step, so undo cannot bring the white back.
             layer = document.createNode(INITIAL_LAYER, "paintlayer")
             document.rootNode().setChildNodes([layer])
-            app.activeWindow().addView(document)
+            # The refusal at job start leaves exactly one window; activeWindow() may be None.
+            app.windows()[0].addView(document)
+            document.setActiveNode(layer)
             document.waitForDone()
         except BaseException:
             self.close(document)
@@ -54,6 +56,8 @@ class KritaDocuments:
 
     def layers(self, document: Any) -> tuple[str, list[dict[str, Any]]]:
         root = document.rootNode()
+        active = document.activeNode()
+        active_id = None if active is None else _layer_id(active)
         children = []
         for node in root.childNodes():
             pixel = bytes(node.pixelData(0, 0, 1, 1))
@@ -62,6 +66,7 @@ class KritaDocuments:
                     "id": _layer_id(node),
                     "type": str(node.type()),
                     "opacity": int(node.opacity()),
+                    "active": _layer_id(node) == active_id,
                     # Integer RGBA is stored B, G, R, A (K12).
                     "alpha_at_origin": pixel[3] if len(pixel) == 4 else None,
                 }

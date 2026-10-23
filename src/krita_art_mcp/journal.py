@@ -10,7 +10,7 @@ from typing import Any
 
 VERSION = 1
 # Within one Krita session the bridge dedups however old the id; across a Krita restart only
-# the journal can, and it reads this far back (invariant 9, amended 2026-10-24).
+# the journal can, and it reads this far back.
 WINDOW_DAYS = 7
 
 # What became of one attempt. The bridge dedups within a Krita session, so a receipt or a
@@ -174,11 +174,14 @@ class Journal:
                 chunk = stream.read()
         except FileNotFoundError:
             return
-        # Only whole lines: another process may be mid-write.
-        end = chunk.rfind(b"\n") + 1
-        for raw in chunk[:end].splitlines():
+        # Only whole lines: another process may be mid-write. The offset moves line by line,
+        # so a line that stops the read is never applied twice.
+        for raw in chunk.splitlines(keepends=True):
+            if not raw.endswith(b"\n"):
+                break
             self._apply(path, raw)
-        self._offsets[path] = start + end
+            start += len(raw)
+            self._offsets[path] = start
 
     def _apply(self, path: Path, raw: bytes) -> None:
         try:
@@ -193,23 +196,32 @@ class Journal:
                 f"{path.name} holds a journal line of version {version}, written by a newer "
                 f"krita-art-mcp; this server reads up to version {VERSION}. Update it."
             )
-        prior = self._requests.setdefault(line["request_id"], Prior())
-        if line["phase"] == "dispatched":
-            self._sessions[line["operation_id"]] = line["session_id"]
-            prior.attempts.append(
-                Attempt(line["operation_id"], line["session_id"], line["tool"], line["args_sha256"])
-            )
+        try:
+            self._index(line)
+        except (KeyError, TypeError, AttributeError):
+            # Not a line this server wrote; it records nothing it sent.
+            log.warning("skipped a malformed line in %s", path.name)
+
+    def _index(self, line: dict[str, Any]) -> None:
+        # Every field is read before anything changes, so a malformed line changes nothing.
+        request_id, phase = line["request_id"], line["phase"]
+        operation_id, session_id = line["operation_id"], line["session_id"]
+        tool, digest = line["tool"], line["args_sha256"]
+        if phase == "dispatched":
+            prior = self._requests.setdefault(request_id, Prior())
+            self._sessions[operation_id] = session_id
+            prior.attempts.append(Attempt(operation_id, session_id, tool, digest))
             return
-        outcome = line["outcome"]
+        outcome, result = line["outcome"], line.get("result")
+        if phase != "finished" or outcome not in OUTCOMES:
+            raise KeyError(phase)
+        prior = self._requests.setdefault(request_id, Prior())
         for attempt in prior.attempts:
             if outcome in (CONFLICT, NOT_SENT):
-                same = attempt.operation_id == line["operation_id"]
+                same = attempt.operation_id == operation_id
             else:
-                same = (attempt.session_id, attempt.args_sha256) == (
-                    line["session_id"],
-                    line["args_sha256"],
-                )
+                same = (attempt.session_id, attempt.args_sha256) == (session_id, digest)
             if same and attempt.outcome == UNKNOWN and outcome != UNKNOWN:
                 attempt.outcome = outcome
         if outcome == RECEIPT:
-            prior.receipt = line["result"]
+            prior.receipt = result

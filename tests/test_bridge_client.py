@@ -19,6 +19,7 @@ from mcp.types import CallToolResult
 
 from krita_art_mcp import schemas
 from krita_art_mcp.bridge_client import BridgeClient, Done, Failed, Pending
+from krita_art_mcp.journal import Journal
 from krita_art_mcp.server import build_server
 from krita_art_mcp.setup_checks import Step
 
@@ -336,9 +337,9 @@ def test_a_bridge_that_stops_listening_mid_call_is_uncertain(tmp_path: Path) -> 
     assert isinstance(outcome, Failed) and "stopped accepting" in outcome.error["message"]
 
 
-def _call_tool(client: BridgeClient, name: str) -> CallToolResult:
+def _call_tool(client: BridgeClient, name: str, data_dir: Path) -> CallToolResult:
     async def call() -> CallToolResult:
-        async with Client(build_server(client)) as mcp:
+        async with Client(build_server(client, Journal(data_dir / "journal"))) as mcp:
             return await mcp.call_tool(name, {})
 
     return asyncio.run(call())
@@ -353,7 +354,7 @@ def _valid(result: CallToolResult) -> dict[str, Any]:
 
 
 def test_krita_server_info_reports_the_bridge(live: Live) -> None:
-    result = _call_tool(live.client(), "krita_server_info")
+    result = _call_tool(live.client(), "krita_server_info", live.bridge_file.parent)
     content = _valid(result)
     assert result.is_error is False
     assert content["status"] == "completed"
@@ -365,7 +366,7 @@ def test_krita_server_info_reports_the_bridge(live: Live) -> None:
 
 
 def test_krita_server_info_names_the_missing_step(tmp_path: Path) -> None:
-    result = _call_tool(_client(tmp_path / "bridge.json"), "krita_server_info")
+    result = _call_tool(_client(tmp_path / "bridge.json"), "krita_server_info", tmp_path)
     content = _valid(result)
     assert result.is_error is True
     assert content["status"] == "failed"
@@ -378,7 +379,7 @@ def test_krita_server_info_reports_running_after_the_budget(tmp_path: Path) -> N
         silent.bind(("127.0.0.1", 0))
         silent.listen(16)
         path = _write_bridge_file(tmp_path, silent.getsockname()[1], "silent")
-        result = _call_tool(_client(path, budget_s=0.4), "krita_server_info")
+        result = _call_tool(_client(path, budget_s=0.4), "krita_server_info", tmp_path)
     content = _valid(result)
     assert result.is_error is False
     assert content["status"] == "running"

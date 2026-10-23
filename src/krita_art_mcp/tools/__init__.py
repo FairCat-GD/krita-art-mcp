@@ -79,9 +79,7 @@ def build(name: str, run: Run) -> Tool:
     def call(arguments: dict[str, Any], ctx: Context) -> CallToolResult:
         client_name = _client_name(ctx)
         with _CALLS:
-            return _checked(
-                name, arguments, functools.partial(_named, run, client_name), inputs, outputs
-            )
+            return _checked(name, arguments, client_name, run, inputs, outputs)
 
     return Tool(
         fn=call,
@@ -99,7 +97,8 @@ def build(name: str, run: Run) -> Tool:
 def _checked(
     name: str,
     arguments: dict[str, Any],
-    run: Callable[[dict[str, Any]], CallToolResult],
+    client_name: str | None,
+    run: Run,
     inputs: Draft202012Validator,
     outputs: Draft202012Validator,
 ) -> CallToolResult:
@@ -119,7 +118,7 @@ def _checked(
         )
     else:
         try:
-            result = run(arguments)
+            result = run(arguments, client_name)
         except Exception:
             log.exception("%s raised", name)
             result = envelope.failure("INTERNAL_ERROR")
@@ -128,10 +127,6 @@ def _checked(
         return result
     log.error("%s returned a result that breaks its contract: %s", name, problem)
     return envelope.failure("INTERNAL_ERROR", details={"reason": problem})
-
-
-def _named(run: Run, client_name: str | None, arguments: dict[str, Any]) -> CallToolResult:
-    return run(arguments, client_name)
 
 
 def _client_name(ctx: Any) -> str | None:

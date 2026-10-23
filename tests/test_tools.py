@@ -1,6 +1,7 @@
 import asyncio
 import threading
 import time
+from pathlib import Path
 from typing import Any
 
 from mcp import Client
@@ -9,6 +10,7 @@ from mcp.types import CallToolResult
 
 from krita_art_mcp import envelope, schemas, tools
 from krita_art_mcp.bridge_client import BridgeClient
+from krita_art_mcp.journal import Journal
 from krita_art_mcp.server import build_server
 
 INFO_DATA: dict[str, Any] = schemas.load("krita_server_info")["example"]["structuredContent"][
@@ -32,9 +34,9 @@ def _completed(arguments: dict[str, Any], client_name: str | None = None) -> Cal
     return envelope.completed(INFO_DATA, "ok")
 
 
-def test_only_built_tools_are_registered_with_their_contract_schemas() -> None:
+def test_only_built_tools_are_registered_with_their_contract_schemas(tmp_path: Path) -> None:
     async def listed() -> list[Any]:
-        async with Client(build_server(BridgeClient())) as mcp:
+        async with Client(build_server(BridgeClient(), Journal(tmp_path / "journal"))) as mcp:
             return list((await mcp.list_tools()).tools)
 
     registered = asyncio.run(listed())

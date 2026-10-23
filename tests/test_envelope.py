@@ -5,10 +5,11 @@ import bridge_core
 import pytest
 from bridge_core import documents as bridge_documents
 from bridge_core import errors as bridge_errors
+from bridge_core import processes as bridge_processes
 from bridge_core.source_hash import source_hash as plugin_source_hash
 from jsonschema import Draft202012Validator
 
-from krita_art_mcp import envelope, errors, paths, plugin_files, schemas
+from krita_art_mcp import envelope, errors, paths, plugin_files, processes, schemas
 from krita_art_mcp.bridge_client import WAIT_BUDGET_S
 from krita_art_mcp.instructions import INSTRUCTIONS
 from krita_art_mcp.tools import documents as tool_documents
@@ -44,6 +45,7 @@ def test_every_schema_carries_the_same_envelope_at_this_api_version() -> None:
 def test_the_server_and_plugin_constants_agree() -> None:
     assert errors.PROTOCOL == bridge_core.PROTOCOL
     assert list(errors.CODES) == list(bridge_errors.CODES)
+    assert processes.PS_ENV == bridge_processes.PS_ENV
     assert (tool_documents.SRGB_PROFILE, tool_documents.DEPTH) == (
         bridge_documents.SRGB_PROFILE,
         bridge_documents.DEPTH,

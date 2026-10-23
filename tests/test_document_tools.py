@@ -641,3 +641,68 @@ def test_a_poll_waits_for_a_call_the_bridge_has_not_registered_yet(world: World)
     outcome = world.client().operation("op-late", sent_in=world.bridge.session_id)
     assert isinstance(outcome, Done)
     assert outcome.result == {"documents": []}
+
+
+@pytest.mark.parametrize(
+    "line",
+    [
+        {"v": 1},
+        {"v": 1, "request_id": "req-x", "phase": "dispatched"},
+        {
+            "v": 1,
+            "request_id": "req-x",
+            "phase": "elsewhere",
+            "operation_id": "o",
+            "session_id": "s",
+            "tool": "t",
+            "args_sha256": "0",
+        },
+        {
+            "v": 1,
+            "request_id": "req-x",
+            "phase": "finished",
+            "operation_id": "o",
+            "session_id": "s",
+            "tool": "t",
+            "args_sha256": "0",
+            "outcome": "maybe",
+        },
+    ],
+)
+def test_a_malformed_line_is_skipped_and_the_journal_keeps_working(
+    world: World, line: dict[str, Any]
+) -> None:
+    folder = world.tmp_path / "a" / "journal"
+    folder.mkdir(parents=True)
+    (folder / "2026-10-24.jsonl").write_text(json.dumps(line) + "\n")
+    server = world.server()
+    first = server.content("krita_document_create", _create())
+    assert first["status"] == "completed"
+    assert server.content("krita_document_create", _create()) == first
+    assert world.port.created == 1
+
+
+def test_a_refused_read_never_applies_a_line_twice(tmp_path: Path) -> None:
+    writer = _journal_on(tmp_path, NOW)
+    _attempt(writer, "op-1")
+    path = tmp_path / "journal" / "2026-10-24.jsonl"
+    with path.open("a") as stream:
+        stream.write(json.dumps({"v": 2, "request_id": "req-new"}) + "\n")
+    reader = _journal_on(tmp_path, NOW)
+    for _ in range(2):
+        with pytest.raises(journal.JournalError):
+            reader.lookup("req-1")
+    lines = path.read_text().splitlines()
+    path.write_text(lines[0] + "\n")
+    prior = reader.lookup("req-1")
+    assert prior is not None and len(prior.attempts) == 1
+
+
+def test_a_finished_call_is_not_remembered_by_the_client(world: World) -> None:
+    client = world.client()
+    done = client.call("document.list")
+    assert isinstance(done, Done) and done.operation_id is not None
+    # A finished id this process sent is followed like any other: strict, and found.
+    again = client.operation(done.operation_id)
+    assert isinstance(again, Done)
+    assert client._sent == {}

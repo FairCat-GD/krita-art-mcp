@@ -907,6 +907,38 @@ cases*), Part 6 (*Entities*), Part 8 (*Bridge protocol*, *Plugin internals*, K6,
   - 138 plugin-core tests passed, 0 skipped (+51);
   - `probe`: 23 PASS, 0 FAIL, 4 MEASURED;
   - 6 registered tools; 19 schema files.
+- **Review (`/code-review high`), 10 findings, all fixed at the owner's request.**
+  - **A malformed journal line no longer stops every journaled call.** A line that parses but
+    lacks a field, or names an unknown phase or outcome, is skipped. All its fields are read
+    before the index changes. The read offset now moves line by line, so a line that stops a
+    read is never applied twice.
+  - **Create gives the view to Krita's one window,** `windows()[0]`, not `activeWindow()`,
+    which can be None.
+  - **Create makes "Layer 1" the active node** (`setActiveNode`, after `addView`). It then
+    checks that the layer is active, beside its opacity and its pixel.
+  - **`build_server` needs a journal.** Every test passes a temporary one, so no test can write
+    the owner's journal.
+  - **A test holds the two `PS_ENV` copies equal,** because the lease depends on both sides
+    formatting start times alike.
+  - **The client remembers only calls it left running,** not every call it ever sent.
+  - **The runner passes the client's name in one step,** not through two wrappers.
+  - **The changelog says calls are refused,** not that they wait, while a dialog is open.
+  - **The handoff no longer names a dialog nobody saw.**
+  - **The journal's window comment carries no amendment date.**
+  - **Falsified:**
+    - the skipped malformed line;
+    - the per-line offset;
+    - the client remembering only running calls;
+    - the `PS_ENV` agreement;
+    - the active initial layer.
+
+    Each failed at its own test, and passed once restored.
+  - **Numbers after the review:**
+    - `verify`: 6 stages, all PASS;
+    - 169 server tests passed, 0 skipped (+6);
+    - 139 plugin-core tests passed, 0 skipped (+1);
+    - `probe`: 23 PASS, 0 FAIL, 4 MEASURED, on the reinstalled plugin after a self-restart
+      (0 unsaved documents).
 
 ---
 

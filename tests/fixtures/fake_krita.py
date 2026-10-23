@@ -26,7 +26,7 @@ class FakePort:
         self.next_key = 1
         self.refuse: BridgeError | None = None
         self.space = SPACE
-        self.layer = {"type": "paintlayer", "opacity": 255, "alpha_at_origin": 0}
+        self.layer = {"type": "paintlayer", "opacity": 255, "active": True, "alpha_at_origin": 0}
         self.close_works = True
         self.closed: list[int] = []
         self.created = 0

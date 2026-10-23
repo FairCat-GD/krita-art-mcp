@@ -33,8 +33,9 @@ Agents can now make, list and close documents, and every change is safe to retry
 - **One agent per document.** The server process that made a document holds it; another agent's
   changes to it are refused with `DOCUMENT_IN_USE` until that process has exited. Reading stays
   open to everyone.
-- **Calls wait while Krita has a dialog open or more than one window,** and report
-  `KRITA_MODAL_DIALOG` or `MULTIPLE_WINDOWS`. Both are retryable.
+- **Calls are refused at once while Krita has a dialog open or more than one window,** with
+  `KRITA_MODAL_DIALOG` or `MULTIPLE_WINDOWS`. Both are retryable: close the dialog or the extra
+  window, then retry.
 
 ### Changed
 
@@ -88,5 +89,6 @@ The first release is the scaffold that the Phase 1 tools are built on.
   reports its version to the client; it offers no tools yet.
 - **`krita-art-mcp --version`.** It prints the installed version.
 
+[0.3.0]: https://github.com/FairCat-GD/krita-art-mcp/commit/ef279d377f4aa515edb0ef36a69d60654f9744d1
 [0.2.0]: https://github.com/FairCat-GD/krita-art-mcp/commit/6e9237f4f728f237ec855f84855f2c6eba2d077d
 [0.1.0]: https://github.com/FairCat-GD/krita-art-mcp/commit/6588c86b268e321401b27af53842d58c759f6b13

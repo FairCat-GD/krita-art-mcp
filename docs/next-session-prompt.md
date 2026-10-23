@@ -19,9 +19,8 @@ Release 0.4.0.
 - **Round 1 is the Phase 1 build.** Sessions 0 to 3 are done; 4 to 15 remain, and 6, 10 and 13
   are architecture reviews.
 - **The push status.** `origin` is the private GitHub repository `FairCat-GD/krita-art-mcp`.
-  `origin/main` holds everything through `review: a bridge that fails to publish now stops, and
-  6 smaller`. Session 3's `feat:` commit, and its `review:` commit once the review is done, wait
-  for the next approved push. List `origin/main..HEAD` before any push.
+  `origin/main` holds everything through `review: a malformed journal line no longer blocks
+  calls, and 9 smaller`, so `origin/main..HEAD` starts empty. List `origin/main..HEAD` before any push.
 - **What Session 3 left that Session 4 builds on:**
   - **The plugin's registry** (`bridge_core/registry.py`).
     - A `Handle` has `document_id`, `document` (the strong reference), `owned`, `mode`, `dirty`,
@@ -65,6 +64,10 @@ Release 0.4.0.
   - **`krita_document_close`** returns `baseline_untouched: null` without a source. Session 4
     fills it, and removes the `as_opened` baseline on close.
   - **`mode`** is `new` (create), `working_copy` or `read_only`.
+  - **`build_server(client, journal)` needs both.** Tests always pass a `Journal` in a temporary
+    folder, so none can write the owner's journal.
+  - **Create** gives its view to `windows()[0]` and makes "Layer 1" the active node. Open should
+    do the same.
   - **The test fakes** live in `tests/fixtures/fake_krita.py` (`FakePort`, `FakeDocument`,
     `MainThread`). They are on pytest's `pythonpath` and mypy's `mypy_path`, and are 3.10-valid
     for the plugin run.
@@ -83,9 +86,10 @@ Release 0.4.0.
     Krita call.
   - **`ps -o lstart` depends on the locale and time zone,** which differ between a shell and
     Krita launched from the Dock. Both sides run `ps` with `LC_ALL=C TZ=UTC`.
-  - **The owner works in Krita while sessions run.** Twice the probe met a modal dialog (an
-    open-file dialog) and correctly refused with `KRITA_MODAL_DIALOG`; it passed once the
-    dialog was closed. A probe FAIL of that kind means "wait", not a bug.
+  - **The owner works in Krita while sessions run.** Twice, while the owner was working, a modal
+    dialog was open (which one was not seen), and the probe correctly refused with
+    `KRITA_MODAL_DIALOG`. It passed once the dialog had closed. A probe FAIL of that kind means
+    "wait", not a bug.
 - **Decisions written down nowhere else** (deliberate, for ARCHITECTURE):
   - **Retry layers.** The bridge dedups within a Krita session. The journal answers a receipt
     from any session, and refuses an `unknown` attempt from another session as uncertain.
@@ -99,14 +103,11 @@ Release 0.4.0.
     owner's data dir.
 - **Baseline** (the next session moves these only by what it adds):
   - `verify`: 6 stages, all PASS;
-  - 163 server tests passed, 0 skipped;
-  - 138 plugin-core tests passed, 0 skipped;
+  - 169 server tests passed, 0 skipped;
+  - 139 plugin-core tests passed, 0 skipped;
   - `probe`: 23 PASS, 0 FAIL, 4 MEASURED;
   - 6 registered tools.
-- **Not done:**
-  - the owner's own look at N-03 in Activity Monitor (in `docs/BACKLOG.md`);
-  - the `CHANGELOG.md` link reference for 0.3.0, which needs the session commit's sha and is
-    added with the review commit.
+- **Not done:** the owner's own look at N-03 in Activity Monitor (in `docs/BACKLOG.md`).
 
 ## Watch for
 

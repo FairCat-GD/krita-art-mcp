@@ -250,8 +250,9 @@ def test_create_refuses_what_phase_1_cannot_make(
     "broken",
     [
         {"space": ("RGBA", "U8", "sRGB-elle-V2-g10.icc")},
-        {"layer": {"type": "paintlayer", "opacity": 255, "alpha_at_origin": 255}},
-        {"layer": {"type": "paintlayer", "opacity": 0, "alpha_at_origin": 0}},
+        {"layer": {"type": "paintlayer", "opacity": 255, "active": True, "alpha_at_origin": 255}},
+        {"layer": {"type": "paintlayer", "opacity": 0, "active": True, "alpha_at_origin": 0}},
+        {"layer": {"type": "paintlayer", "opacity": 255, "active": False, "alpha_at_origin": 0}},
     ],
 )
 def test_a_document_krita_made_wrong_is_closed_in_the_same_job(

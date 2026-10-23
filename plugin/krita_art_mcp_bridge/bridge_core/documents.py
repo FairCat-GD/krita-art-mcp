@@ -22,7 +22,7 @@ class DocumentsPort(Protocol):
 
     def describe(self, document: Any) -> dict[str, Any]: ...
 
-    # The root's id, then each child as {id, type, opacity, alpha_at_origin}.
+    # The root's id, then each child as {id, type, opacity, active, alpha_at_origin}.
     def layers(self, document: Any) -> tuple[str, list[dict[str, Any]]]: ...
 
     # Waits, clears the modified flag so Krita never asks to save, then closes.
@@ -117,6 +117,7 @@ def _check_created(
         layer is not None
         and layer["type"] == "paintlayer"
         and layer["opacity"] == 255
+        and layer["active"] is True
         and layer["alpha_at_origin"] == 0
     )
     if space != (COLOR_MODEL, DEPTH, SRGB_PROFILE) or info["size_px"] != [width, height]:
@@ -124,7 +125,7 @@ def _check_created(
         raise BridgeError("INTERNAL_ERROR", "Krita made another document.", False, details)
     if not transparent:
         details = {"layers": children}
-        message = "The new document has no single transparent paint layer."
+        message = "The new document has no single, active, transparent paint layer."
         raise BridgeError("INTERNAL_ERROR", message, False, details)
 
 

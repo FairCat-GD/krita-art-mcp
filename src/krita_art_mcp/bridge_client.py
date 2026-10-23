@@ -80,8 +80,8 @@ class BridgeClient:
         self._is_live_krita = is_live_krita
         self._explain = explain or _explain_not_running
         self._identity = identity
-        # The Krita session each operation this process sent went to, so a later poll can tell
-        # a call still on its way from one the bridge never heard of.
+        # The Krita session of each call this process left running, so a later poll can tell a
+        # call still on its way from one the bridge never heard of.
         self._sent: dict[str, str] = {}
 
     def health(self) -> Done | Failed:
@@ -130,7 +130,6 @@ class BridgeClient:
         refused = before_send(bridge.session_id, operation_id) if before_send else None
         if refused is not None:
             return refused
-        self._sent[operation_id] = bridge.session_id
         return self._follow(bridge, operation_id, call, deadline)
 
     def operation(self, operation_id: str, *, sent_in: str | None = None) -> Outcome:
@@ -225,9 +224,9 @@ class BridgeClient:
                     op = outcome.op or op
                     # A retry is answered with the original operation; follow that one.
                     operation_id = outcome.operation_id
-                    self._sent[operation_id] = bridge.session_id
             call = None
             if time.monotonic() >= deadline:
+                self._sent[operation_id] = bridge.session_id
                 return Pending(last_status, operation_id, op)
 
     def _open(self) -> _Bridge | Failed:
