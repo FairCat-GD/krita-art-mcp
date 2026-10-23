@@ -1,0 +1,47 @@
+[project]
+name = "krita-art-mcp"
+version = "0.1.0"
+description = "MCP server that lets AI agents paint in Krita"
+readme = "README.md"
+license = "GPL-3.0-or-later"
+license-files = ["LICENSE"]
+requires-python = ">=3.12"
+dependencies = [
+    "jsonschema>=4.26,<5",
+    "mcp>=2.3,<2.4",
+]
+
+[project.scripts]
+krita-art-mcp = "krita_art_mcp.cli:main"
+
+[dependency-groups]
+dev = [
+    "mypy>=2.4,<3",
+    "pytest>=9.1,<10",
+    "ruff>=0.17,<0.18",
+    "types-jsonschema>=4.26",
+]
+
+[build-system]
+requires = ["uv_build>=0.12.3,<0.13"]
+build-backend = "uv_build"
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+extend-exclude = ["docs"]
+per-file-target-version = { "plugin/**/*.py" = "py310", "tests/plugin/**/*.py" = "py310" }
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "UP", "B", "RUF"]
+
+[tool.mypy]
+strict = true
+python_version = "3.12"
+mypy_path = ["plugin/krita_art_mcp_bridge", "scripts"]
+exclude = ["^docs/"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["plugin/krita_art_mcp_bridge", "scripts"]
+addopts = ["--import-mode=importlib"]

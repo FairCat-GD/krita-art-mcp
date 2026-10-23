@@ -1,0 +1,577 @@
+{
+  "name": "krita_preview_render",
+  "description": "Render a project-defined game-size or comparison/composition recipe.",
+  "inputSchema": {
+    "type": "object",
+    "properties": {
+      "project_id": {
+        "type": "string",
+        "minLength": 1
+      },
+      "recipe_id": {
+        "type": "string",
+        "minLength": 1
+      },
+      "sources": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "properties": {
+            "asset_id": {
+              "type": "string",
+              "minLength": 1
+            },
+            "source": {
+              "type": "object",
+              "properties": {
+                "document_id": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "revision": {
+                  "type": "integer",
+                  "minimum": 0
+                },
+                "frame": {
+                  "type": "integer",
+                  "minimum": 0
+                }
+              },
+              "required": [
+                "document_id",
+                "revision",
+                "frame"
+              ],
+              "additionalProperties": false
+            },
+            "registration_id": {
+              "type": "string",
+              "minLength": 1
+            }
+          },
+          "required": [
+            "asset_id",
+            "source",
+            "registration_id"
+          ],
+          "additionalProperties": false
+        },
+        "minItems": 1,
+        "maxItems": 256
+      },
+      "baseline_id": {
+        "anyOf": [
+          {
+            "type": "string",
+            "minLength": 1
+          },
+          {
+            "type": "null"
+          }
+        ]
+      },
+      "overlays": {
+        "type": "array",
+        "items": {
+          "type": "string",
+          "enum": [
+            "anchor",
+            "collision",
+            "envelope",
+            "selection"
+          ]
+        },
+        "minItems": 0,
+        "maxItems": 4
+      }
+    },
+    "required": [
+      "project_id",
+      "recipe_id",
+      "sources",
+      "baseline_id",
+      "overlays"
+    ],
+    "additionalProperties": false
+  },
+  "outputSchema": {
+    "type": "object",
+    "properties": {
+      "api_version": {
+        "const": "0.1.0"
+      },
+      "status": {
+        "type": "string",
+        "enum": [
+          "completed",
+          "queued",
+          "running",
+          "failed",
+          "cancelled"
+        ]
+      },
+      "document_id": {
+        "anyOf": [
+          {
+            "type": "string",
+            "minLength": 1
+          },
+          {
+            "type": "null"
+          }
+        ]
+      },
+      "revision": {
+        "anyOf": [
+          {
+            "type": "integer",
+            "minimum": 0
+          },
+          {
+            "type": "null"
+          }
+        ]
+      },
+      "operation_id": {
+        "anyOf": [
+          {
+            "type": "string",
+            "minLength": 1
+          },
+          {
+            "type": "null"
+          }
+        ]
+      },
+      "data": {
+        "anyOf": [
+          {
+            "type": "object",
+            "properties": {
+              "images": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "artifact": {
+                      "type": "object",
+                      "properties": {
+                        "uri": {
+                          "type": "string"
+                        },
+                        "mime_type": {
+                          "type": "string"
+                        },
+                        "sha256": {
+                          "type": "string"
+                        },
+                        "size_bytes": {
+                          "type": "integer"
+                        }
+                      },
+                      "required": [
+                        "uri",
+                        "mime_type",
+                        "sha256",
+                        "size_bytes"
+                      ],
+                      "additionalProperties": false
+                    },
+                    "size_px": {
+                      "type": "array",
+                      "items": {
+                        "type": "integer"
+                      },
+                      "minItems": 0
+                    },
+                    "target_pixels_per_unit": {
+                      "anyOf": [
+                        {
+                          "type": "number",
+                          "exclusiveMinimum": 0
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "export_pixels_per_unit": {
+                      "anyOf": [
+                        {
+                          "type": "number",
+                          "exclusiveMinimum": 0
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "filter": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "artifact",
+                    "size_px",
+                    "target_pixels_per_unit",
+                    "export_pixels_per_unit",
+                    "filter"
+                  ],
+                  "additionalProperties": false
+                },
+                "minItems": 0
+              },
+              "recipe_sha256": {
+                "type": "string"
+              },
+              "static_only": {
+                "type": "boolean"
+              },
+              "source_pixels_changed": {
+                "type": "integer"
+              },
+              "clean_images": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "uri": {
+                      "type": "string",
+                      "minLength": 1
+                    },
+                    "mime_type": {
+                      "type": "string",
+                      "minLength": 1
+                    },
+                    "sha256": {
+                      "type": "string",
+                      "pattern": "^[0-9a-f]{64}$"
+                    },
+                    "size_bytes": {
+                      "type": "integer",
+                      "minimum": 0
+                    }
+                  },
+                  "required": [
+                    "uri",
+                    "mime_type",
+                    "sha256",
+                    "size_bytes"
+                  ],
+                  "additionalProperties": false
+                },
+                "minItems": 1
+              }
+            },
+            "required": [
+              "images",
+              "recipe_sha256",
+              "static_only",
+              "source_pixels_changed",
+              "clean_images"
+            ],
+            "additionalProperties": false
+          },
+          {
+            "type": "null"
+          }
+        ]
+      },
+      "error": {
+        "anyOf": [
+          {
+            "type": "object",
+            "properties": {
+              "code": {
+                "type": "string",
+                "minLength": 1
+              },
+              "message": {
+                "type": "string",
+                "minLength": 1
+              },
+              "retryable": {
+                "type": "boolean"
+              },
+              "details": {
+                "type": "object"
+              }
+            },
+            "required": [
+              "code",
+              "message",
+              "retryable",
+              "details"
+            ],
+            "additionalProperties": false
+          },
+          {
+            "type": "null"
+          }
+        ]
+      }
+    },
+    "required": [
+      "api_version",
+      "status",
+      "document_id",
+      "revision",
+      "operation_id",
+      "data",
+      "error"
+    ],
+    "additionalProperties": false,
+    "allOf": [
+      {
+        "if": {
+          "properties": {
+            "status": {
+              "const": "completed"
+            }
+          }
+        },
+        "then": {
+          "properties": {
+            "data": {
+              "type": "object",
+              "properties": {
+                "images": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "artifact": {
+                        "type": "object",
+                        "properties": {
+                          "uri": {
+                            "type": "string"
+                          },
+                          "mime_type": {
+                            "type": "string"
+                          },
+                          "sha256": {
+                            "type": "string"
+                          },
+                          "size_bytes": {
+                            "type": "integer"
+                          }
+                        },
+                        "required": [
+                          "uri",
+                          "mime_type",
+                          "sha256",
+                          "size_bytes"
+                        ],
+                        "additionalProperties": false
+                      },
+                      "size_px": {
+                        "type": "array",
+                        "items": {
+                          "type": "integer"
+                        },
+                        "minItems": 0
+                      },
+                      "target_pixels_per_unit": {
+                        "anyOf": [
+                          {
+                            "type": "number",
+                            "exclusiveMinimum": 0
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      },
+                      "export_pixels_per_unit": {
+                        "anyOf": [
+                          {
+                            "type": "number",
+                            "exclusiveMinimum": 0
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      },
+                      "filter": {
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "artifact",
+                      "size_px",
+                      "target_pixels_per_unit",
+                      "export_pixels_per_unit",
+                      "filter"
+                    ],
+                    "additionalProperties": false
+                  },
+                  "minItems": 0
+                },
+                "recipe_sha256": {
+                  "type": "string"
+                },
+                "static_only": {
+                  "type": "boolean"
+                },
+                "source_pixels_changed": {
+                  "type": "integer"
+                },
+                "clean_images": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "uri": {
+                        "type": "string",
+                        "minLength": 1
+                      },
+                      "mime_type": {
+                        "type": "string",
+                        "minLength": 1
+                      },
+                      "sha256": {
+                        "type": "string",
+                        "pattern": "^[0-9a-f]{64}$"
+                      },
+                      "size_bytes": {
+                        "type": "integer",
+                        "minimum": 0
+                      }
+                    },
+                    "required": [
+                      "uri",
+                      "mime_type",
+                      "sha256",
+                      "size_bytes"
+                    ],
+                    "additionalProperties": false
+                  },
+                  "minItems": 1
+                }
+              },
+              "required": [
+                "images",
+                "recipe_sha256",
+                "static_only",
+                "source_pixels_changed",
+                "clean_images"
+              ],
+              "additionalProperties": false
+            },
+            "error": {
+              "type": "null"
+            }
+          }
+        }
+      },
+      {
+        "if": {
+          "properties": {
+            "status": {
+              "const": "failed"
+            }
+          }
+        },
+        "then": {
+          "properties": {
+            "error": {
+              "type": "object"
+            }
+          }
+        }
+      },
+      {
+        "if": {
+          "properties": {
+            "status": {
+              "enum": [
+                "queued",
+                "running"
+              ]
+            }
+          }
+        },
+        "then": {
+          "properties": {
+            "operation_id": {
+              "type": "string",
+              "minLength": 1
+            },
+            "data": {
+              "type": "null"
+            },
+            "error": {
+              "type": "null"
+            }
+          }
+        }
+      }
+    ]
+  },
+  "annotations": {
+    "readOnlyHint": true,
+    "destructiveHint": false,
+    "idempotentHint": true,
+    "openWorldHint": false
+  },
+  "example": {
+    "input": {
+      "project_id": "project-1",
+      "recipe_id": "native-and-game-size",
+      "sources": [
+        {
+          "asset_id": "hero",
+          "source": {
+            "document_id": "doc-1",
+            "revision": 12,
+            "frame": 0
+          },
+          "registration_id": "reg-1"
+        }
+      ],
+      "baseline_id": "baseline-1",
+      "overlays": [
+        "anchor"
+      ]
+    },
+    "structuredContent": {
+      "api_version": "0.1.0",
+      "status": "completed",
+      "document_id": "doc-1",
+      "revision": 12,
+      "operation_id": null,
+      "data": {
+        "images": [
+          {
+            "artifact": {
+              "uri": "krita-artifact://example/game-size.png",
+              "mime_type": "image/png",
+              "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+              "size_bytes": 4096
+            },
+            "size_px": [
+              36,
+              36
+            ],
+            "target_pixels_per_unit": 2,
+            "export_pixels_per_unit": 4,
+            "filter": "lanczos"
+          }
+        ],
+        "recipe_sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        "static_only": true,
+        "source_pixels_changed": 0,
+        "clean_images": [
+          {
+            "uri": "krita-artifact://example/game-size-clean.png",
+            "mime_type": "image/png",
+            "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "size_bytes": 4096
+          }
+        ]
+      },
+      "error": null
+    }
+  }
+}

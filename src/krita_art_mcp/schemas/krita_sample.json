@@ -1,0 +1,424 @@
+{
+  "name": "krita_sample",
+  "description": "Sample known pixel locations with explicit layer/composite scope.",
+  "inputSchema": {
+    "type": "object",
+    "properties": {
+      "source": {
+        "type": "object",
+        "properties": {
+          "document_id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "revision": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "frame": {
+            "type": "integer",
+            "minimum": 0
+          }
+        },
+        "required": [
+          "document_id",
+          "revision",
+          "frame"
+        ],
+        "additionalProperties": false
+      },
+      "target": {
+        "type": "string",
+        "enum": [
+          "composite",
+          "layer"
+        ]
+      },
+      "layer_id": {
+        "anyOf": [
+          {
+            "type": "string",
+            "minLength": 1
+          },
+          {
+            "type": "null"
+          }
+        ]
+      },
+      "points": {
+        "type": "array",
+        "items": {
+          "type": "array",
+          "prefixItems": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "integer"
+            }
+          ],
+          "items": false,
+          "minItems": 2,
+          "maxItems": 2
+        },
+        "minItems": 1,
+        "maxItems": 256
+      }
+    },
+    "required": [
+      "source",
+      "target",
+      "layer_id",
+      "points"
+    ],
+    "additionalProperties": false,
+    "allOf": [
+      {
+        "if": {
+          "properties": {
+            "target": {
+              "const": "layer"
+            }
+          }
+        },
+        "then": {
+          "properties": {
+            "layer_id": {
+              "type": "string",
+              "minLength": 1
+            }
+          }
+        },
+        "else": {
+          "properties": {
+            "layer_id": {
+              "type": "null"
+            }
+          }
+        }
+      }
+    ]
+  },
+  "outputSchema": {
+    "type": "object",
+    "properties": {
+      "api_version": {
+        "const": "0.1.0"
+      },
+      "status": {
+        "type": "string",
+        "enum": [
+          "completed",
+          "queued",
+          "running",
+          "failed",
+          "cancelled"
+        ]
+      },
+      "document_id": {
+        "anyOf": [
+          {
+            "type": "string",
+            "minLength": 1
+          },
+          {
+            "type": "null"
+          }
+        ]
+      },
+      "revision": {
+        "anyOf": [
+          {
+            "type": "integer",
+            "minimum": 0
+          },
+          {
+            "type": "null"
+          }
+        ]
+      },
+      "operation_id": {
+        "anyOf": [
+          {
+            "type": "string",
+            "minLength": 1
+          },
+          {
+            "type": "null"
+          }
+        ]
+      },
+      "data": {
+        "anyOf": [
+          {
+            "type": "object",
+            "properties": {
+              "samples": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "point_px": {
+                      "type": "array",
+                      "items": {
+                        "type": "integer"
+                      },
+                      "minItems": 0
+                    },
+                    "srgb_rgba": {
+                      "type": "array",
+                      "items": {
+                        "type": "number"
+                      },
+                      "minItems": 0
+                    },
+                    "native_channels": {
+                      "type": "array",
+                      "items": {
+                        "type": "integer"
+                      },
+                      "minItems": 0
+                    }
+                  },
+                  "required": [
+                    "point_px",
+                    "srgb_rgba",
+                    "native_channels"
+                  ],
+                  "additionalProperties": false
+                },
+                "minItems": 0
+              },
+              "native_profile_id": {
+                "type": "string"
+              },
+              "native_channel_order": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "samples",
+              "native_profile_id",
+              "native_channel_order"
+            ],
+            "additionalProperties": false
+          },
+          {
+            "type": "null"
+          }
+        ]
+      },
+      "error": {
+        "anyOf": [
+          {
+            "type": "object",
+            "properties": {
+              "code": {
+                "type": "string",
+                "minLength": 1
+              },
+              "message": {
+                "type": "string",
+                "minLength": 1
+              },
+              "retryable": {
+                "type": "boolean"
+              },
+              "details": {
+                "type": "object"
+              }
+            },
+            "required": [
+              "code",
+              "message",
+              "retryable",
+              "details"
+            ],
+            "additionalProperties": false
+          },
+          {
+            "type": "null"
+          }
+        ]
+      }
+    },
+    "required": [
+      "api_version",
+      "status",
+      "document_id",
+      "revision",
+      "operation_id",
+      "data",
+      "error"
+    ],
+    "additionalProperties": false,
+    "allOf": [
+      {
+        "if": {
+          "properties": {
+            "status": {
+              "const": "completed"
+            }
+          }
+        },
+        "then": {
+          "properties": {
+            "data": {
+              "type": "object",
+              "properties": {
+                "samples": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "point_px": {
+                        "type": "array",
+                        "items": {
+                          "type": "integer"
+                        },
+                        "minItems": 0
+                      },
+                      "srgb_rgba": {
+                        "type": "array",
+                        "items": {
+                          "type": "number"
+                        },
+                        "minItems": 0
+                      },
+                      "native_channels": {
+                        "type": "array",
+                        "items": {
+                          "type": "integer"
+                        },
+                        "minItems": 0
+                      }
+                    },
+                    "required": [
+                      "point_px",
+                      "srgb_rgba",
+                      "native_channels"
+                    ],
+                    "additionalProperties": false
+                  },
+                  "minItems": 0
+                },
+                "native_profile_id": {
+                  "type": "string"
+                },
+                "native_channel_order": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "samples",
+                "native_profile_id",
+                "native_channel_order"
+              ],
+              "additionalProperties": false
+            },
+            "error": {
+              "type": "null"
+            }
+          }
+        }
+      },
+      {
+        "if": {
+          "properties": {
+            "status": {
+              "const": "failed"
+            }
+          }
+        },
+        "then": {
+          "properties": {
+            "error": {
+              "type": "object"
+            }
+          }
+        }
+      },
+      {
+        "if": {
+          "properties": {
+            "status": {
+              "enum": [
+                "queued",
+                "running"
+              ]
+            }
+          }
+        },
+        "then": {
+          "properties": {
+            "operation_id": {
+              "type": "string",
+              "minLength": 1
+            },
+            "data": {
+              "type": "null"
+            },
+            "error": {
+              "type": "null"
+            }
+          }
+        }
+      }
+    ]
+  },
+  "annotations": {
+    "readOnlyHint": true,
+    "destructiveHint": false,
+    "idempotentHint": true,
+    "openWorldHint": false
+  },
+  "example": {
+    "input": {
+      "source": {
+        "document_id": "doc-1",
+        "revision": 12,
+        "frame": 0
+      },
+      "target": "composite",
+      "layer_id": null,
+      "points": [
+        [
+          20,
+          20
+        ]
+      ]
+    },
+    "structuredContent": {
+      "api_version": "0.1.0",
+      "status": "completed",
+      "document_id": "doc-1",
+      "revision": 12,
+      "operation_id": null,
+      "data": {
+        "samples": [
+          {
+            "point_px": [
+              20,
+              20
+            ],
+            "srgb_rgba": [
+              0.5,
+              0.3,
+              0.2,
+              1.0
+            ],
+            "native_channels": [
+              128,
+              77,
+              51,
+              255
+            ]
+          }
+        ],
+        "native_profile_id": "srgb-profile-1",
+        "native_channel_order": "RGBA"
+      },
+      "error": null
+    }
+  }
+}

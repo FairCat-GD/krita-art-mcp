@@ -161,7 +161,10 @@ messages against attribution trailers.
 
 | Command | Does |
 |---|---|
-| <filled in by Session 1> | |
+| `uv run scripts/verify.py` | The gate, in six stages: `format`, `lint`, `types`, `tests` (3.12), `plugin-tests` (3.10, pytest only) and `hygiene`. It then prints a summary and exits 1 if any stage failed. |
+| `uv run scripts/verify.py <stage>…` | Runs only the named stages, for example `hygiene` after a commit to check its message. |
+| `uv run krita-art-mcp --version` | Prints the package version. |
+| `uv run krita-art-mcp serve` | Runs the MCP server `krita-art` over stdio; the clients start it this way. |
 
 **What only the live harness can see.** The unit tests never touch Krita. `uv run krita-art-mcp
 probe` drives a real `serve` over stdio against the owner's running Krita 5.3.x. It needs the

@@ -135,6 +135,144 @@ takes the next version, and every later version shifts by one; the handoff says 
   importing `mcp.server.fastmcp` raises (C1).
 - **Don't add a dependency before it is used.**
 
+**Done (2026-10-23, 0.1.0).**
+- **Decided with the owner at the start:**
+  - **`CHANGELOG.md` gets link references now.** Decision 17 ruled them out only until a remote
+    existed, and `origin` exists.
+    - `[0.1.0]` links to this session's commit, so it is written in the review commit, the first
+      moment that sha exists.
+    - `[Unreleased]` stays unlinked until the first tag.
+- **The project.**
+  - `pyproject.toml` uses `uv_build`, the `src/` layout and GPL-3.0-or-later, beside
+    `.python-version` (3.12) and `uv.lock`.
+  - **Dependencies:** `mcp` 2.3.0 and `jsonschema` 4.26.0.
+  - **Dev:** pytest 9.1.1, ruff 0.17.2, mypy 2.4.0, and `types-jsonschema`, because
+    `jsonschema` ships no `py.typed`.
+  - **Ruff** targets py310 for `plugin/` and `tests/plugin/` through `per-file-target-version`.
+- **The plugin root.**
+  - `plugin/krita_art_mcp_bridge/` has no `__init__.py` yet.
+  - `bridge_core` (holding `PLUGIN_VERSION`) and an empty `krita_adapter` are top-level packages
+    for pytest (`pythonpath`) and for mypy (`mypy_path`, `-p`).
+  - Tests import `bridge_core`, never `krita_art_mcp_bridge.bridge_core`. They then never run the
+    package `__init__.py`, which will import Krita.
+- **`--version` and `serve`.**
+  - `krita_art_mcp.cli` uses argparse.
+    - `--version` prints `krita-art-mcp 0.1.0`.
+    - With no command, it prints usage and exits 2.
+  - `server.build_server()` returns `MCPServer("krita-art", version=__version__)`, with no tools
+    and no instructions. `__version__` comes from the package metadata.
+- **Schemas.**
+  - **The copy.** 19 files, `src/krita_art_mcp/schemas/krita_<tool>.json`, copied by a one-off
+    script that is not committed.
+    - Each holds the `mvp.tools.json` entry unamended (`name`, `description`, `inputSchema`,
+      `outputSchema`, `annotations`), plus `example` from `tools.json`.
+    - They are written as 2-space JSON.
+    - `schemas.tool_names()` and `schemas.load()` read them as package data.
+  - **Full Draft 2020-12 validation (jsonschema 4.26.0)** needed no example fix. The package's six
+    error examples also validate against all 19 output schemas.
+- **C1 holds.**
+  - **What was checked.** An `MCPServer` tool is built by hand: `mcp.server.mcpserver.tools.Tool`
+    with `FuncMetadata(arg_model=…, output_schema=<the contract's JSON Schema>)`.
+    - It returns `CallToolResult(is_error=True, content=[…], structured_content=<envelope>)`.
+    - An in-process `mcp.Client` receives it unchanged, and the contract's output schema is listed
+      as it is.
+  - **Why it passes.**
+    - `MCPServer` validates results only against a pydantic `output_model`, which hand-built
+      metadata lacks (`func_metadata.py`, `convert_result`).
+    - The client skips output-schema validation for `is_error` results (`client/session.py`,
+      `call_tool`).
+  - **What it means for later sessions.**
+    - Errors are returned this way.
+    - The hand-built `Tool` is how a tool publishes the contract's exact schemas.
+    - Its pydantic `arg_model` filters the arguments. An empty model passes none through, even
+      with `extra="allow"` (measured). How exact arguments reach a tool and are validated against
+      its JSON Schema is session 2's design.
+- **The scans** (`tests/plugin/test_source_scans.py`, with `ast`, on 3.10).
+  - **Banned:** any name, attribute, imported name or string constant equal to `setPixelData`,
+    `saveAs`, `exec` or `eval`, and every `.apply` attribute.
+  - **Allowed imports:** absolute imports only from 3.10's `sys.stdlib_module_names`, `krita`,
+    `PyQt5`, `PyQt6` and the plugin's own packages.
+  - **Placement:** `krita` and PyQt imports only under `krita_adapter/`.
+- **Hygiene.** `scripts/hygiene.py`, with the seven hashes in `scripts/hygiene_terms.txt`.
+  - **Files.** It checks the contents and paths of tracked files and of untracked files that are
+    not ignored. Files containing NUL are skipped as binary.
+  - **Commit messages.** Every message reachable from `HEAD` is checked against the attribution
+    patterns (assembled from pieces) and the term hashes.
+  - **Reporting.** A hit names the file and line, or the commit and message line, with a
+    12-character hash prefix.
+- **`verify`** is `scripts/verify.py`, in six stages.
+  - **`format`** and **`lint`.**
+  - **`types`** runs mypy three times, because mypy takes either packages or files in one run:
+    - strict on 3.12, over `src`, `scripts` and `tests`;
+    - `--python-version 3.10`, over `-p bridge_core -p krita_adapter`;
+    - `--python-version 3.10`, over `tests/plugin`.
+  - **`tests`.**
+  - **`plugin-tests`:** `uv run --isolated --no-project --python 3.10 --with pytest==<uv.lock's>`.
+    Its environment holds pytest and pytest's own dependencies, nothing else.
+  - **`hygiene`.**
+  - Every stage runs whatever the others do. `verify.py <stage>…` runs only the stages named.
+- **Repository files.**
+  - **`LICENSE`:** the GPL-3.0 text, copied from Krita's bundled `pyqtbuild/.../LICENSE.gpl3`
+    (674 lines, sha256 `8ceb4b9e…5b903`), so nothing was downloaded.
+  - `CHANGELOG.md`, `README.md`, `tests/fixtures/README.md`, and the Commands table in
+    `CLAUDE.md`.
+- **Amendments:**
+  - **CHANGELOG link references.** The block said none, citing decision 17. `origin` exists now,
+    so `[0.1.0]` gets one in the review commit. Amended at plan time, with the owner.
+  - **Hygiene checks more than the block names:**
+    - untracked files, so a new file is checked before it is staged;
+    - file paths;
+    - private terms in commit messages.
+
+    The session's own finding: each closes a gap in the same invariant.
+  - **`types` runs mypy three times,** because mypy refuses packages and files in one run. The
+    session's own finding.
+- **Measured** (mcp 2.3.0):
+  - **The stdio `initialize`** (protocol `2025-06-18`) answers `serverInfo {krita-art, 0.1.0}`.
+  - **Closing stdin early.** When stdin closes right after a burst of requests, the server can
+    exit before answering the later ones. The stdio test therefore waits for each reply.
+  - **The 3.10 environment** holds pytest 9.1.1, exceptiongroup, iniconfig, packaging, pluggy,
+    Pygments, tomli and typing_extensions, on CPython 3.10.20.
+  - **Ruff's py310 target works.** A `type` alias statement is flagged in `plugin/` and not in
+    `src/`.
+- **Checked by hand:**
+  - `uv run krita-art-mcp --version` prints `krita-art-mcp 0.1.0`;
+  - `krita-art-mcp` with no command prints usage and exits 2;
+  - `serve < /dev/null` exits 0.
+- **Falsified:**
+  - **Stages:**
+    - `x=[1,2]` in `server.py` failed `format` only;
+    - an unused `import os` failed `lint` only;
+    - `x: int = "a"` in `cli.py` failed `types` only;
+    - a changed `--version` expectation failed `tests` only;
+    - a throwaway word in an untracked file, with its hash added, failed `hygiene` only;
+    - `from typing import Self` in `bridge_core` failed `types` (its 3.10 run; the 3.12 run
+      passed) and `plugin-tests`, and nowhere else.
+  - **Tests.** Each failed when broken and passed again once restored:
+    - a schema file removed;
+    - a stray field in an example;
+    - top-level `additionalProperties: true` (a first attempt edited a nested one and proved
+      nothing);
+    - a changed envelope in C1;
+    - the plugin version changed (equality) and shortened (shape);
+    - a changed `serverInfo` expectation. This first hung the stdio test for 10 minutes, until
+      the test closed stdin in a `finally`;
+    - the plugin path misspelt (sources found);
+    - `doc.saveAs` planted (banned call);
+    - `import numpy` (stdlib, Qt and Krita imports);
+    - `import krita` in `bridge_core` (adapter only);
+    - the terms file emptied;
+    - the lowercasing removed (file and line);
+    - the path scan disabled;
+    - the binary skip removed;
+    - the trailer pattern changed;
+    - `--others` dropped (untracked files).
+- **Numbers:**
+  - `verify`: 6 stages, all PASS;
+  - 49 server tests passed, 0 skipped;
+  - 5 plugin-core tests passed, 0 skipped;
+  - 19 schema files and 7 term hashes.
+
 ---
 
 ## 2: Bridge alive

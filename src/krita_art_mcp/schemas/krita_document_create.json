@@ -1,0 +1,328 @@
+{
+  "name": "krita_document_create",
+  "description": "Create new artwork with explicit canvas and colour settings.",
+  "inputSchema": {
+    "type": "object",
+    "properties": {
+      "project_id": {
+        "type": "string",
+        "minLength": 1
+      },
+      "name": {
+        "type": "string",
+        "minLength": 1
+      },
+      "size_px": {
+        "type": "array",
+        "prefixItems": [
+          {
+            "type": "integer",
+            "minimum": 1
+          },
+          {
+            "type": "integer",
+            "minimum": 1
+          }
+        ],
+        "items": false,
+        "minItems": 2,
+        "maxItems": 2
+      },
+      "color_model": {
+        "type": "string",
+        "enum": [
+          "RGBA"
+        ]
+      },
+      "depth": {
+        "type": "string",
+        "enum": [
+          "U8",
+          "U16",
+          "F16",
+          "F32"
+        ]
+      },
+      "profile_id": {
+        "type": "string",
+        "minLength": 1
+      },
+      "background": {
+        "type": "string",
+        "enum": [
+          "transparent"
+        ]
+      },
+      "request_id": {
+        "type": "string",
+        "minLength": 1
+      }
+    },
+    "required": [
+      "project_id",
+      "name",
+      "size_px",
+      "color_model",
+      "depth",
+      "profile_id",
+      "background",
+      "request_id"
+    ],
+    "additionalProperties": false
+  },
+  "outputSchema": {
+    "type": "object",
+    "properties": {
+      "api_version": {
+        "const": "0.1.0"
+      },
+      "status": {
+        "type": "string",
+        "enum": [
+          "completed",
+          "queued",
+          "running",
+          "failed",
+          "cancelled"
+        ]
+      },
+      "document_id": {
+        "anyOf": [
+          {
+            "type": "string",
+            "minLength": 1
+          },
+          {
+            "type": "null"
+          }
+        ]
+      },
+      "revision": {
+        "anyOf": [
+          {
+            "type": "integer",
+            "minimum": 0
+          },
+          {
+            "type": "null"
+          }
+        ]
+      },
+      "operation_id": {
+        "anyOf": [
+          {
+            "type": "string",
+            "minLength": 1
+          },
+          {
+            "type": "null"
+          }
+        ]
+      },
+      "data": {
+        "anyOf": [
+          {
+            "type": "object",
+            "properties": {
+              "canvas_px": {
+                "type": "array",
+                "items": {
+                  "type": "integer"
+                },
+                "minItems": 0
+              },
+              "root_layer_id": {
+                "type": "string"
+              },
+              "initial_layer_id": {
+                "type": "string"
+              },
+              "profile_id": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "canvas_px",
+              "root_layer_id",
+              "initial_layer_id",
+              "profile_id"
+            ],
+            "additionalProperties": false
+          },
+          {
+            "type": "null"
+          }
+        ]
+      },
+      "error": {
+        "anyOf": [
+          {
+            "type": "object",
+            "properties": {
+              "code": {
+                "type": "string",
+                "minLength": 1
+              },
+              "message": {
+                "type": "string",
+                "minLength": 1
+              },
+              "retryable": {
+                "type": "boolean"
+              },
+              "details": {
+                "type": "object"
+              }
+            },
+            "required": [
+              "code",
+              "message",
+              "retryable",
+              "details"
+            ],
+            "additionalProperties": false
+          },
+          {
+            "type": "null"
+          }
+        ]
+      }
+    },
+    "required": [
+      "api_version",
+      "status",
+      "document_id",
+      "revision",
+      "operation_id",
+      "data",
+      "error"
+    ],
+    "additionalProperties": false,
+    "allOf": [
+      {
+        "if": {
+          "properties": {
+            "status": {
+              "const": "completed"
+            }
+          }
+        },
+        "then": {
+          "properties": {
+            "data": {
+              "type": "object",
+              "properties": {
+                "canvas_px": {
+                  "type": "array",
+                  "items": {
+                    "type": "integer"
+                  },
+                  "minItems": 0
+                },
+                "root_layer_id": {
+                  "type": "string"
+                },
+                "initial_layer_id": {
+                  "type": "string"
+                },
+                "profile_id": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "canvas_px",
+                "root_layer_id",
+                "initial_layer_id",
+                "profile_id"
+              ],
+              "additionalProperties": false
+            },
+            "error": {
+              "type": "null"
+            }
+          }
+        }
+      },
+      {
+        "if": {
+          "properties": {
+            "status": {
+              "const": "failed"
+            }
+          }
+        },
+        "then": {
+          "properties": {
+            "error": {
+              "type": "object"
+            }
+          }
+        }
+      },
+      {
+        "if": {
+          "properties": {
+            "status": {
+              "enum": [
+                "queued",
+                "running"
+              ]
+            }
+          }
+        },
+        "then": {
+          "properties": {
+            "operation_id": {
+              "type": "string",
+              "minLength": 1
+            },
+            "data": {
+              "type": "null"
+            },
+            "error": {
+              "type": "null"
+            }
+          }
+        }
+      }
+    ]
+  },
+  "annotations": {
+    "readOnlyHint": false,
+    "destructiveHint": true,
+    "idempotentHint": true,
+    "openWorldHint": false
+  },
+  "example": {
+    "input": {
+      "project_id": "project-1",
+      "name": "new-icon",
+      "size_px": [
+        32,
+        32
+      ],
+      "color_model": "RGBA",
+      "depth": "U8",
+      "profile_id": "srgb-profile-1",
+      "background": "transparent",
+      "request_id": "req-new"
+    },
+    "structuredContent": {
+      "api_version": "0.1.0",
+      "status": "completed",
+      "document_id": "doc-1",
+      "revision": 1,
+      "operation_id": null,
+      "data": {
+        "canvas_px": [
+          32,
+          32
+        ],
+        "root_layer_id": "root-2",
+        "initial_layer_id": "paint-1",
+        "profile_id": "srgb-profile-1"
+      },
+      "error": null
+    }
+  }
+}

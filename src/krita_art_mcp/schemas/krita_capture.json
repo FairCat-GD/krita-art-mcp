@@ -1,0 +1,512 @@
+{
+  "name": "krita_capture",
+  "description": "Return a fresh lossless crop of a layer, composite or selection.",
+  "inputSchema": {
+    "type": "object",
+    "properties": {
+      "source": {
+        "type": "object",
+        "properties": {
+          "document_id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "revision": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "frame": {
+            "type": "integer",
+            "minimum": 0
+          }
+        },
+        "required": [
+          "document_id",
+          "revision",
+          "frame"
+        ],
+        "additionalProperties": false
+      },
+      "target": {
+        "type": "string",
+        "enum": [
+          "composite",
+          "layer",
+          "selection"
+        ]
+      },
+      "layer_id": {
+        "anyOf": [
+          {
+            "type": "string",
+            "minLength": 1
+          },
+          {
+            "type": "null"
+          }
+        ]
+      },
+      "rect": {
+        "type": "object",
+        "properties": {
+          "x": {
+            "type": "integer"
+          },
+          "y": {
+            "type": "integer"
+          },
+          "width": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "height": {
+            "type": "integer",
+            "minimum": 1
+          }
+        },
+        "required": [
+          "x",
+          "y",
+          "width",
+          "height"
+        ],
+        "additionalProperties": false
+      },
+      "scale": {
+        "type": "number",
+        "exclusiveMinimum": 0
+      },
+      "filter": {
+        "type": "string",
+        "enum": [
+          "nearest",
+          "box",
+          "bilinear",
+          "bicubic",
+          "lanczos"
+        ]
+      }
+    },
+    "required": [
+      "source",
+      "target",
+      "layer_id",
+      "rect",
+      "scale",
+      "filter"
+    ],
+    "additionalProperties": false,
+    "allOf": [
+      {
+        "if": {
+          "properties": {
+            "target": {
+              "const": "layer"
+            }
+          }
+        },
+        "then": {
+          "properties": {
+            "layer_id": {
+              "type": "string",
+              "minLength": 1
+            }
+          }
+        },
+        "else": {
+          "properties": {
+            "layer_id": {
+              "type": "null"
+            }
+          }
+        }
+      }
+    ]
+  },
+  "outputSchema": {
+    "type": "object",
+    "properties": {
+      "api_version": {
+        "const": "0.1.0"
+      },
+      "status": {
+        "type": "string",
+        "enum": [
+          "completed",
+          "queued",
+          "running",
+          "failed",
+          "cancelled"
+        ]
+      },
+      "document_id": {
+        "anyOf": [
+          {
+            "type": "string",
+            "minLength": 1
+          },
+          {
+            "type": "null"
+          }
+        ]
+      },
+      "revision": {
+        "anyOf": [
+          {
+            "type": "integer",
+            "minimum": 0
+          },
+          {
+            "type": "null"
+          }
+        ]
+      },
+      "operation_id": {
+        "anyOf": [
+          {
+            "type": "string",
+            "minLength": 1
+          },
+          {
+            "type": "null"
+          }
+        ]
+      },
+      "data": {
+        "anyOf": [
+          {
+            "type": "object",
+            "properties": {
+              "image": {
+                "type": "object",
+                "properties": {
+                  "uri": {
+                    "type": "string"
+                  },
+                  "mime_type": {
+                    "type": "string"
+                  },
+                  "sha256": {
+                    "type": "string"
+                  },
+                  "size_bytes": {
+                    "type": "integer"
+                  }
+                },
+                "required": [
+                  "uri",
+                  "mime_type",
+                  "sha256",
+                  "size_bytes"
+                ],
+                "additionalProperties": false
+              },
+              "output_size_px": {
+                "type": "array",
+                "items": {
+                  "type": "integer"
+                },
+                "minItems": 0
+              },
+              "source_rect": {
+                "type": "object",
+                "properties": {
+                  "x": {
+                    "type": "integer"
+                  },
+                  "y": {
+                    "type": "integer"
+                  },
+                  "width": {
+                    "type": "integer"
+                  },
+                  "height": {
+                    "type": "integer"
+                  }
+                },
+                "required": [
+                  "x",
+                  "y",
+                  "width",
+                  "height"
+                ],
+                "additionalProperties": false
+              },
+              "source_to_image": {
+                "type": "array",
+                "items": {
+                  "type": "integer"
+                },
+                "minItems": 0
+              },
+              "profile_id": {
+                "type": "string"
+              },
+              "fresh": {
+                "type": "boolean"
+              }
+            },
+            "required": [
+              "image",
+              "output_size_px",
+              "source_rect",
+              "source_to_image",
+              "profile_id",
+              "fresh"
+            ],
+            "additionalProperties": false
+          },
+          {
+            "type": "null"
+          }
+        ]
+      },
+      "error": {
+        "anyOf": [
+          {
+            "type": "object",
+            "properties": {
+              "code": {
+                "type": "string",
+                "minLength": 1
+              },
+              "message": {
+                "type": "string",
+                "minLength": 1
+              },
+              "retryable": {
+                "type": "boolean"
+              },
+              "details": {
+                "type": "object"
+              }
+            },
+            "required": [
+              "code",
+              "message",
+              "retryable",
+              "details"
+            ],
+            "additionalProperties": false
+          },
+          {
+            "type": "null"
+          }
+        ]
+      }
+    },
+    "required": [
+      "api_version",
+      "status",
+      "document_id",
+      "revision",
+      "operation_id",
+      "data",
+      "error"
+    ],
+    "additionalProperties": false,
+    "allOf": [
+      {
+        "if": {
+          "properties": {
+            "status": {
+              "const": "completed"
+            }
+          }
+        },
+        "then": {
+          "properties": {
+            "data": {
+              "type": "object",
+              "properties": {
+                "image": {
+                  "type": "object",
+                  "properties": {
+                    "uri": {
+                      "type": "string"
+                    },
+                    "mime_type": {
+                      "type": "string"
+                    },
+                    "sha256": {
+                      "type": "string"
+                    },
+                    "size_bytes": {
+                      "type": "integer"
+                    }
+                  },
+                  "required": [
+                    "uri",
+                    "mime_type",
+                    "sha256",
+                    "size_bytes"
+                  ],
+                  "additionalProperties": false
+                },
+                "output_size_px": {
+                  "type": "array",
+                  "items": {
+                    "type": "integer"
+                  },
+                  "minItems": 0
+                },
+                "source_rect": {
+                  "type": "object",
+                  "properties": {
+                    "x": {
+                      "type": "integer"
+                    },
+                    "y": {
+                      "type": "integer"
+                    },
+                    "width": {
+                      "type": "integer"
+                    },
+                    "height": {
+                      "type": "integer"
+                    }
+                  },
+                  "required": [
+                    "x",
+                    "y",
+                    "width",
+                    "height"
+                  ],
+                  "additionalProperties": false
+                },
+                "source_to_image": {
+                  "type": "array",
+                  "items": {
+                    "type": "integer"
+                  },
+                  "minItems": 0
+                },
+                "profile_id": {
+                  "type": "string"
+                },
+                "fresh": {
+                  "type": "boolean"
+                }
+              },
+              "required": [
+                "image",
+                "output_size_px",
+                "source_rect",
+                "source_to_image",
+                "profile_id",
+                "fresh"
+              ],
+              "additionalProperties": false
+            },
+            "error": {
+              "type": "null"
+            }
+          }
+        }
+      },
+      {
+        "if": {
+          "properties": {
+            "status": {
+              "const": "failed"
+            }
+          }
+        },
+        "then": {
+          "properties": {
+            "error": {
+              "type": "object"
+            }
+          }
+        }
+      },
+      {
+        "if": {
+          "properties": {
+            "status": {
+              "enum": [
+                "queued",
+                "running"
+              ]
+            }
+          }
+        },
+        "then": {
+          "properties": {
+            "operation_id": {
+              "type": "string",
+              "minLength": 1
+            },
+            "data": {
+              "type": "null"
+            },
+            "error": {
+              "type": "null"
+            }
+          }
+        }
+      }
+    ]
+  },
+  "annotations": {
+    "readOnlyHint": true,
+    "destructiveHint": false,
+    "idempotentHint": true,
+    "openWorldHint": false
+  },
+  "example": {
+    "input": {
+      "source": {
+        "document_id": "doc-1",
+        "revision": 12,
+        "frame": 0
+      },
+      "target": "composite",
+      "layer_id": null,
+      "rect": {
+        "x": 16,
+        "y": 16,
+        "width": 32,
+        "height": 32
+      },
+      "scale": 1,
+      "filter": "nearest"
+    },
+    "structuredContent": {
+      "api_version": "0.1.0",
+      "status": "completed",
+      "document_id": "doc-1",
+      "revision": 12,
+      "operation_id": null,
+      "data": {
+        "image": {
+          "uri": "krita-artifact://example/preview.png",
+          "mime_type": "image/png",
+          "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "size_bytes": 4096
+        },
+        "output_size_px": [
+          32,
+          32
+        ],
+        "source_rect": {
+          "x": 16,
+          "y": 16,
+          "width": 32,
+          "height": 32
+        },
+        "source_to_image": [
+          1,
+          0,
+          -16,
+          0,
+          1,
+          -16
+        ],
+        "profile_id": "srgb-profile-1",
+        "fresh": true
+      },
+      "error": null
+    }
+  }
+}

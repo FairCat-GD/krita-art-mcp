@@ -1,0 +1,512 @@
+{
+  "name": "krita_selection_set",
+  "description": "Create or combine an explicit document-space selection.",
+  "inputSchema": {
+    "type": "object",
+    "properties": {
+      "guard": {
+        "type": "object",
+        "properties": {
+          "document_id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "expected_revision": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "request_id": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "required": [
+          "document_id",
+          "expected_revision",
+          "request_id"
+        ],
+        "additionalProperties": false
+      },
+      "combine": {
+        "type": "string",
+        "enum": [
+          "replace",
+          "add",
+          "subtract",
+          "intersect"
+        ]
+      },
+      "shape": {
+        "oneOf": [
+          {
+            "type": "object",
+            "properties": {
+              "type": {
+                "const": "rect"
+              },
+              "rect": {
+                "type": "object",
+                "properties": {
+                  "x": {
+                    "type": "integer"
+                  },
+                  "y": {
+                    "type": "integer"
+                  },
+                  "width": {
+                    "type": "integer",
+                    "minimum": 1
+                  },
+                  "height": {
+                    "type": "integer",
+                    "minimum": 1
+                  }
+                },
+                "required": [
+                  "x",
+                  "y",
+                  "width",
+                  "height"
+                ],
+                "additionalProperties": false
+              }
+            },
+            "required": [
+              "type",
+              "rect"
+            ],
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "properties": {
+              "type": {
+                "const": "polygon"
+              },
+              "points": {
+                "type": "array",
+                "items": {
+                  "type": "array",
+                  "prefixItems": [
+                    {
+                      "type": "number"
+                    },
+                    {
+                      "type": "number"
+                    }
+                  ],
+                  "items": false,
+                  "minItems": 2,
+                  "maxItems": 2
+                },
+                "minItems": 3,
+                "maxItems": 4096
+              }
+            },
+            "required": [
+              "type",
+              "points"
+            ],
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "properties": {
+              "type": {
+                "const": "raster"
+              },
+              "mask_uri": {
+                "type": "string",
+                "minLength": 1
+              },
+              "mask_sha256": {
+                "type": "string",
+                "pattern": "^[0-9a-f]{64}$"
+              },
+              "origin_px": {
+                "type": "array",
+                "prefixItems": [
+                  {
+                    "type": "integer"
+                  },
+                  {
+                    "type": "integer"
+                  }
+                ],
+                "items": false,
+                "minItems": 2,
+                "maxItems": 2
+              }
+            },
+            "required": [
+              "type",
+              "mask_uri",
+              "mask_sha256",
+              "origin_px"
+            ],
+            "additionalProperties": false
+          }
+        ]
+      },
+      "feather_px": {
+        "type": "number",
+        "minimum": 0
+      },
+      "invert": {
+        "type": "boolean"
+      }
+    },
+    "required": [
+      "guard",
+      "combine",
+      "shape",
+      "feather_px",
+      "invert"
+    ],
+    "additionalProperties": false
+  },
+  "outputSchema": {
+    "type": "object",
+    "properties": {
+      "api_version": {
+        "const": "0.1.0"
+      },
+      "status": {
+        "type": "string",
+        "enum": [
+          "completed",
+          "queued",
+          "running",
+          "failed",
+          "cancelled"
+        ]
+      },
+      "document_id": {
+        "anyOf": [
+          {
+            "type": "string",
+            "minLength": 1
+          },
+          {
+            "type": "null"
+          }
+        ]
+      },
+      "revision": {
+        "anyOf": [
+          {
+            "type": "integer",
+            "minimum": 0
+          },
+          {
+            "type": "null"
+          }
+        ]
+      },
+      "operation_id": {
+        "anyOf": [
+          {
+            "type": "string",
+            "minLength": 1
+          },
+          {
+            "type": "null"
+          }
+        ]
+      },
+      "data": {
+        "anyOf": [
+          {
+            "type": "object",
+            "properties": {
+              "selection_id": {
+                "type": "string"
+              },
+              "mask": {
+                "type": "object",
+                "properties": {
+                  "uri": {
+                    "type": "string"
+                  },
+                  "mime_type": {
+                    "type": "string"
+                  },
+                  "sha256": {
+                    "type": "string"
+                  },
+                  "size_bytes": {
+                    "type": "integer"
+                  }
+                },
+                "required": [
+                  "uri",
+                  "mime_type",
+                  "sha256",
+                  "size_bytes"
+                ],
+                "additionalProperties": false
+              },
+              "bounds_px": {
+                "type": "object",
+                "properties": {
+                  "x": {
+                    "type": "integer"
+                  },
+                  "y": {
+                    "type": "integer"
+                  },
+                  "width": {
+                    "type": "integer"
+                  },
+                  "height": {
+                    "type": "integer"
+                  }
+                },
+                "required": [
+                  "x",
+                  "y",
+                  "width",
+                  "height"
+                ],
+                "additionalProperties": false
+              },
+              "selected_pixels": {
+                "type": "integer"
+              }
+            },
+            "required": [
+              "selection_id",
+              "mask",
+              "bounds_px",
+              "selected_pixels"
+            ],
+            "additionalProperties": false
+          },
+          {
+            "type": "null"
+          }
+        ]
+      },
+      "error": {
+        "anyOf": [
+          {
+            "type": "object",
+            "properties": {
+              "code": {
+                "type": "string",
+                "minLength": 1
+              },
+              "message": {
+                "type": "string",
+                "minLength": 1
+              },
+              "retryable": {
+                "type": "boolean"
+              },
+              "details": {
+                "type": "object"
+              }
+            },
+            "required": [
+              "code",
+              "message",
+              "retryable",
+              "details"
+            ],
+            "additionalProperties": false
+          },
+          {
+            "type": "null"
+          }
+        ]
+      }
+    },
+    "required": [
+      "api_version",
+      "status",
+      "document_id",
+      "revision",
+      "operation_id",
+      "data",
+      "error"
+    ],
+    "additionalProperties": false,
+    "allOf": [
+      {
+        "if": {
+          "properties": {
+            "status": {
+              "const": "completed"
+            }
+          }
+        },
+        "then": {
+          "properties": {
+            "data": {
+              "type": "object",
+              "properties": {
+                "selection_id": {
+                  "type": "string"
+                },
+                "mask": {
+                  "type": "object",
+                  "properties": {
+                    "uri": {
+                      "type": "string"
+                    },
+                    "mime_type": {
+                      "type": "string"
+                    },
+                    "sha256": {
+                      "type": "string"
+                    },
+                    "size_bytes": {
+                      "type": "integer"
+                    }
+                  },
+                  "required": [
+                    "uri",
+                    "mime_type",
+                    "sha256",
+                    "size_bytes"
+                  ],
+                  "additionalProperties": false
+                },
+                "bounds_px": {
+                  "type": "object",
+                  "properties": {
+                    "x": {
+                      "type": "integer"
+                    },
+                    "y": {
+                      "type": "integer"
+                    },
+                    "width": {
+                      "type": "integer"
+                    },
+                    "height": {
+                      "type": "integer"
+                    }
+                  },
+                  "required": [
+                    "x",
+                    "y",
+                    "width",
+                    "height"
+                  ],
+                  "additionalProperties": false
+                },
+                "selected_pixels": {
+                  "type": "integer"
+                }
+              },
+              "required": [
+                "selection_id",
+                "mask",
+                "bounds_px",
+                "selected_pixels"
+              ],
+              "additionalProperties": false
+            },
+            "error": {
+              "type": "null"
+            }
+          }
+        }
+      },
+      {
+        "if": {
+          "properties": {
+            "status": {
+              "const": "failed"
+            }
+          }
+        },
+        "then": {
+          "properties": {
+            "error": {
+              "type": "object"
+            }
+          }
+        }
+      },
+      {
+        "if": {
+          "properties": {
+            "status": {
+              "enum": [
+                "queued",
+                "running"
+              ]
+            }
+          }
+        },
+        "then": {
+          "properties": {
+            "operation_id": {
+              "type": "string",
+              "minLength": 1
+            },
+            "data": {
+              "type": "null"
+            },
+            "error": {
+              "type": "null"
+            }
+          }
+        }
+      }
+    ]
+  },
+  "annotations": {
+    "readOnlyHint": false,
+    "destructiveHint": true,
+    "idempotentHint": true,
+    "openWorldHint": false
+  },
+  "example": {
+    "input": {
+      "guard": {
+        "document_id": "doc-1",
+        "expected_revision": 12,
+        "request_id": "req-001"
+      },
+      "combine": "replace",
+      "shape": {
+        "type": "rect",
+        "rect": {
+          "x": 16,
+          "y": 16,
+          "width": 32,
+          "height": 32
+        }
+      },
+      "feather_px": 0,
+      "invert": false
+    },
+    "structuredContent": {
+      "api_version": "0.1.0",
+      "status": "completed",
+      "document_id": "doc-1",
+      "revision": 13,
+      "operation_id": null,
+      "data": {
+        "selection_id": "selection-1",
+        "mask": {
+          "uri": "krita-artifact://example/selection.png",
+          "mime_type": "image/png",
+          "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "size_bytes": 4096
+        },
+        "bounds_px": {
+          "x": 16,
+          "y": 16,
+          "width": 32,
+          "height": 32
+        },
+        "selected_pixels": 1024
+      },
+      "error": null
+    }
+  }
+}
