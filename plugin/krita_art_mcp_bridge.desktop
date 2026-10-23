@@ -1,0 +1,6 @@
+[Desktop Entry]
+Type=Service
+ServiceTypes=Krita/PythonPlugin
+X-KDE-Library=krita_art_mcp_bridge
+Name=Krita Art MCP Bridge
+Comment=Lets AI agents paint in Krita through the krita-art-mcp server.

@@ -127,7 +127,7 @@
     "type": "object",
     "properties": {
       "api_version": {
-        "const": "0.1.0"
+        "const": "0.2.0"
       },
       "status": {
         "type": "string",
@@ -151,15 +151,7 @@
         ]
       },
       "revision": {
-        "anyOf": [
-          {
-            "type": "integer",
-            "minimum": 0
-          },
-          {
-            "type": "null"
-          }
-        ]
+        "type": "null"
       },
       "operation_id": {
         "anyOf": [
@@ -268,7 +260,38 @@
             "properties": {
               "code": {
                 "type": "string",
-                "minLength": 1
+                "enum": [
+                  "INVALID_ARGUMENT",
+                  "UNSUPPORTED_CAPABILITY",
+                  "KRITA_NOT_RUNNING",
+                  "PROTOCOL_MISMATCH",
+                  "KRITA_MODAL_DIALOG",
+                  "MULTIPLE_WINDOWS",
+                  "BUSY",
+                  "TIMEOUT",
+                  "CANCELLED",
+                  "REQUEST_ID_CONFLICT",
+                  "DOCUMENT_NOT_FOUND",
+                  "LAYER_NOT_FOUND",
+                  "LOCKED_TARGET",
+                  "LAYER_NOT_PAINTABLE",
+                  "LAYER_HAS_LOCAL_SELECTION",
+                  "PROTECTED_REGION_CHANGED",
+                  "OUTSIDE_ALLOWED_MASK",
+                  "RESOURCE_HASH_MISMATCH",
+                  "SOURCE_HASH_MISMATCH",
+                  "COLOR_PROFILE_MISMATCH",
+                  "DOCUMENT_DIRTY",
+                  "DOCUMENT_UNSAFE",
+                  "DOCUMENT_READ_ONLY",
+                  "DOCUMENT_IN_USE",
+                  "SAVE_VERIFY_FAILED",
+                  "PATH_NOT_ALLOWED",
+                  "FILE_EXISTS",
+                  "IO_ERROR",
+                  "ROLLBACK_FAILED",
+                  "INTERNAL_ERROR"
+                ]
               },
               "message": {
                 "type": "string",
@@ -408,16 +431,25 @@
         "if": {
           "properties": {
             "status": {
-              "const": "failed"
+              "enum": [
+                "failed",
+                "cancelled"
+              ]
             }
           }
         },
         "then": {
           "properties": {
+            "data": {
+              "type": "null"
+            },
             "error": {
               "type": "object"
             }
-          }
+          },
+          "required": [
+            "error"
+          ]
         }
       },
       {
@@ -473,10 +505,10 @@
       "filter": "nearest"
     },
     "structuredContent": {
-      "api_version": "0.1.0",
+      "api_version": "0.2.0",
       "status": "completed",
       "document_id": "doc-1",
-      "revision": 12,
+      "revision": null,
       "operation_id": null,
       "data": {
         "image": {

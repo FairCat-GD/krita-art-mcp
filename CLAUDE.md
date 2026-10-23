@@ -165,6 +165,9 @@ messages against attribution trailers.
 | `uv run scripts/verify.py <stage>…` | Runs only the named stages, for example `hygiene` after a commit to check its message. |
 | `uv run krita-art-mcp --version` | Prints the package version. |
 | `uv run krita-art-mcp serve` | Runs the MCP server `krita-art` over stdio; the clients start it this way. |
+| `uv run krita-art-mcp install-plugin [--krita-data-dir DIR]` | Copies the plugin into Krita's `pykrita/` (default `~/Library/Application Support/Krita`) and prints the steps left. It never edits `kritarc`. |
+| `uv run krita-art-mcp doctor` | Checks the setup in five ordered steps and names the first one that fails, with its fix. Then it prints Krita's open and unsaved document counts, which the restart rule reads. |
+| `uv run krita-art-mcp probe` | The live harness: plugin hash first, then health, `krita_server_info` over stdio, H4 idle and the runtime probes. Prints PASS, FAIL or MEASURED per check, and exits 1 on any FAIL. |
 
 **What only the live harness can see.** The unit tests never touch Krita. `uv run krita-art-mcp
 probe` drives a real `serve` over stdio against the owner's running Krita 5.3.x. It needs the

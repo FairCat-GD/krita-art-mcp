@@ -11,7 +11,7 @@ from mcp.types import CallToolResult, TextContent
 from krita_art_mcp import schemas
 
 BUSY_ENVELOPE: dict[str, Any] = {
-    "api_version": "0.1.0",
+    "api_version": "0.2.0",
     "status": "failed",
     "document_id": "doc-1",
     "revision": None,

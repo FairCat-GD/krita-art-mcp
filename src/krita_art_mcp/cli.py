@@ -1,6 +1,7 @@
 import argparse
 import sys
 from collections.abc import Sequence
+from pathlib import Path
 
 from krita_art_mcp import __version__
 
@@ -12,6 +13,14 @@ def _parser() -> argparse.ArgumentParser:
     parser.add_argument("--version", action="version", version=f"krita-art-mcp {__version__}")
     commands = parser.add_subparsers(dest="command", metavar="command")
     commands.add_parser("serve", help="run the MCP server over stdio")
+    install = commands.add_parser("install-plugin", help="copy the plugin into Krita's pykrita")
+    install.add_argument(
+        "--krita-data-dir",
+        type=Path,
+        help="Krita's resource folder (default: ~/Library/Application Support/Krita)",
+    )
+    commands.add_parser("doctor", help="name the first failing setup step")
+    commands.add_parser("probe", help="run the live harness against the running Krita")
     return parser
 
 
@@ -23,5 +32,17 @@ def main(argv: Sequence[str] | None = None) -> int:
 
         serve()
         return 0
+    if args.command == "install-plugin":
+        from krita_art_mcp import install, paths
+
+        return install.run(args.krita_data_dir or paths.krita_data_dir(), paths.kritarc())
+    if args.command == "doctor":
+        from krita_art_mcp import doctor
+
+        return doctor.run()
+    if args.command == "probe":
+        from krita_art_mcp import probe
+
+        return probe.run()
     parser.print_usage(sys.stderr)
     return 2

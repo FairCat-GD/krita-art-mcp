@@ -52,6 +52,10 @@ runs; after it closes, read it from git history at round 1's release commit.
 Checks that need a person at the machine. Each has an automated check covering most of it;
 these are the parts only a person can see.
 
+- **N-03 in Activity Monitor** (0.2.0). With the plugin loaded and Krita idle, Krita's CPU should
+  stay under 1%. `top` measured 0.0% in six samples 5 s apart. Look at Krita's row in Activity
+  Monitor for a minute while it is idle.
+
 ## Directions
 
 - **The trial (H1, H7).** After round 1: a Codex agent and a fresh Claude Code session each fix a

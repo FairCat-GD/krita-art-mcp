@@ -423,6 +423,219 @@ internals*, K1, K14, K19, K40, K41, K48, C1, C3, C4).
   ask the owner (decision 21). The health answer should expose what the restart check needs.
 - **Apps launched from the Dock don't inherit `PATH`.** Client registrations use absolute paths.
 
+**Done (2026-10-23, 0.2.0).**
+- **Decided with the owner at the start:**
+  - **The `edit_undo` probe runs on a throwaway document of its own,** and only when no
+    document has unsaved changes. Otherwise it is skipped and recorded as skipped.
+- **The plugin.**
+  - **The files.** `krita_art_mcp_bridge.desktop` sits beside the package. The package
+    `__init__.py` only registers the extension.
+  - **`bridge_core`** (pure stdlib):
+    - `jobs.py`: one `threading.Condition` guards every state change. `drain()` carries the
+      `job_active` re-entry guard and refuses to run off the main thread. Cancel acts only on
+      queued jobs, and `stop()` fails the queue with `CANCELLED`.
+    - `server.py`: a `ThreadingHTTPServer` on `127.0.0.1:0`, with daemon threads, a backlog of 64
+      and a 10 s handler timeout.
+      - It checks, in order: `Host`, the token (as bytes, with `hmac.compare_digest`), 503 while
+        stopping, then the body (411 with no length or when chunked; 413 over 64 MB, before
+        reading).
+      - Its four endpoints are as PDD Part 8.
+    - `bridge.py`: `start()` and `stop()` in PDD Part 8's order. `shutdown()` runs only while the
+      serve thread is alive.
+    - `bridge_file.py`: 0600, written through a temp file and `os.replace`. Single instance by a
+      live pid whose name is `krita`. It deletes the file only when the file is its own.
+    - The rest: `log.py` (5 MB rotation, the token redacted from the formatted text),
+      `capabilities.py`, `source_hash.py`, `errors.py`, and `paths.py` with `private_dir`.
+  - **`krita_adapter`:**
+    - `extension.py`: `setup()` and the `applicationClosing` stop, each wrapped in a catch-all
+      that logs. It activates the Notifier if it is inactive.
+    - `main_thread.py`: the `Waker` queued signal, with an `@pyqtSlot` drain.
+    - `runtime.py` and `ops.py`.
+- **The server.**
+  - `bridge_client.py`: `BridgeClient.call` and `.operation` return `Done`, `Failed` or
+    `Pending`.
+    - It pins the bridge for each call, and maps every bridge failure as the plan set out.
+    - After a send, a lost bridge is `INTERNAL_ERROR` with `outcome: "uncertain"`.
+  - `tools/__init__.py`:
+    - `ExactArguments` passes the client's arguments through untouched.
+    - The runner holds a lock, so each server process serialises its calls. It validates the
+      arguments (Draft 2020-12), catches every exception, and checks each result against its
+      schema and 6 MiB.
+    - `TOOLS` and `BUILT_TOOLS = ["krita_server_info"]`.
+  - `tools/observe.py` has `krita_server_info`. `envelope.py`, `errors.py` and
+    `instructions.py` (936 characters) complete it.
+  - **The schemas.** The envelope is amended in all 19 by a one-off script, not committed.
+- **The CLI.** `install-plugin` (`install.py`, `plugin_files.py`), and `doctor` (`doctor.py`,
+  `setup_checks.py`, shared with the `KRITA_NOT_RUNNING` hint).
+- **The probe.** `probe/__init__.py`.
+  - It owns `<data dir>/harness/`: it sweeps the folder at start, and an `ExitStack` sweeps it at
+    the end.
+  - It checks the plugin hash first and stops on a mismatch, then health, stdio, H4 and the
+    runtime probes.
+- **Amendments:**
+  - **The restart check is an op, not part of health.** The block suggested the health answer
+    expose it. But health is cached at start, and a document's modified flag needs the main
+    thread. So `bridge.unsaved_documents` exists, and `doctor` prints its counts. Settled in the
+    plan.
+  - **`doctor` prints those counts whichever step fails.** The check matters most when the
+    plugin is stale, which the first live restart showed. The session's own finding.
+  - **Protocol 1 carries more than PDD Part 8 lists:**
+    - every reply carries `session_id`, `operation_id` and `request_id`;
+    - one error body serves every refusal;
+    - `wait_s` is capped at 10 s;
+    - cancel answers a `cancelled` flag;
+    - `/v1/health` answers in the common reply shape;
+    - `bridge.json` gained `session_id`, which SPEC §4's Bridge entity lacks.
+
+    These are so that Session 3's dedup, lease and uncertain outcome need no new protocol.
+    Settled in the plan, after its design review.
+  - **The envelope amendment also closes the error codes and the `cancelled` status:**
+    - `error.code` is an enum of the 30 Phase 1 codes;
+    - `failed` and `cancelled` require an error and null data.
+
+    Beside them, `api_version` is `"0.2.0"` and `revision` is always null. Settled in the plan.
+  - **`krita_server_info`'s data.**
+    - It is `{session_id, server_version, plugin_version, protocol, krita_version, qt_major,
+      capabilities, limits}`.
+    - Dropped: `profile_schema_version`, `unsupported` and `edit_timeout_seconds`.
+    - `allowed_roots` joins with roots in Session 4.
+
+    Settled in the plan.
+  - **The 3.10 mypy run checks `-p krita_art_mcp_bridge`,** with `plugin` on `mypy_path`, so
+    the adapter's relative `..bridge_core` resolves. Per-module overrides cover `krita` and
+    PyQt. The previous handoff foresaw it.
+- **Measured** (Krita 5.3.4 on macOS, Apple Silicon):
+  - **The runtime.**
+    - `Krita.instance().version()` is `"5.3.4.1 (git bd6e8d0)"`.
+    - Python 3.13.5, PyQt 5.15.11, Qt 5.15.7.
+    - `Node.paintPolylineStroke` is absent.
+    - `Extension.setup()` runs on Python's main thread.
+  - **H4 idle**, 500 `krita_server_info` calls over stdio, in three runs:
+    - p95 5.5, 4.9 and 5.3 ms;
+    - p50 4.5 to 4.9 ms;
+    - max 7.9 to 48.1 ms;
+    - 0 failed.
+  - **`edit_undo`'s text is `Undo <top label>`.**
+    - After adding a layer it read `"Undo Add Layer"`.
+    - It is `"Undo"` at Krita start, and `"Undo "` once a document has closed.
+    - The tooltip, `"Undo last action (⌘Z)"`, carries no label.
+    - **Read straight after `waitForDone()`, it was stale (`"Undo "`) in 2 of 7 reads,**
+      whether or not Krita was frontmost. The label updates asynchronously, so the rollback
+      label check of block 9 cannot read it straight after the step.
+  - **Seven create, layer and close cycles** of a 64 × 64 never-saved document: no crash.
+  - **Shutdown.** Once the Notifier is activated, `applicationClosing` fires on quit. The log
+    shows the bridge stopped, and `bridge.json` is gone.
+  - **`osascript … quit` returns "User canceled (-128)"** even when Krita quits cleanly.
+  - **The data dir.** Created as the log's parent, it came out 0755. `private_dir` now makes it
+    0700, which a test holds.
+  - **Krita's bundled `python3.13` cannot run on its own,** because its `Python.app` is not
+    shipped.
+  - **mcp 2.3.0.**
+    - It dispatches tool calls concurrently.
+    - It never validates input over stdio.
+    - A `FuncMetadata` subclass that overrides `validate_arguments` passes arguments
+      unchanged.
+  - **Python 3.13's `socketserver`.**
+    - `shutdown()` waits forever unless `serve_forever` runs.
+    - Daemon handler threads are never joined.
+- **Checked by hand:**
+  - **The plugin-enable flow.** The owner restarted Krita, enabled *Krita Art MCP Bridge*,
+    and restarted it again. The bridge answered on its first load.
+  - **N-03.** Krita idle with the plugin loaded: 0.0% CPU in six `top` samples 5 s apart, as
+    without the plugin. The owner's own look in Activity Monitor is in `docs/BACKLOG.md`.
+  - **A restart under decision 21.**
+    1. `doctor` reported 0 unsaved documents.
+    2. Krita was quit with `osascript` and relaunched with `open -a krita`.
+    3. The new plugin answered, and `doctor` passed all five steps.
+- **Falsified:** 62 checks, each broken in the product code. Each failed at its own test, and
+  passed again once the file was restored byte for byte. Each break:
+  - **The HTTP refusals.**
+    - `Host`;
+    - the token;
+    - the token compared as text;
+    - the body cap;
+    - the chunked and length refusals;
+    - 503 while stopping;
+    - the reply ids;
+    - the health snapshot;
+    - the cancel flag;
+    - the 404;
+    - `localhost`;
+    - the malformed call.
+  - **The jobs.**
+    - FIFO;
+    - the re-entry guard;
+    - cancel acting on queued jobs only;
+    - stop refusing new jobs;
+    - the main-thread check;
+    - an exception becoming `INTERNAL_ERROR`;
+    - an unknown op;
+    - a resent id.
+  - **The lifecycle.**
+    - The 0600 mode;
+    - the atomic replace;
+    - single instance;
+    - deleting only its own `bridge.json`;
+    - the stop order;
+    - stop with no serve thread;
+    - the token redaction;
+    - the rotation size;
+    - the private data folder.
+  - **The core.**
+    - The matrix's shape;
+    - nothing supported before it is built;
+    - the hash skipping caches;
+    - known codes only;
+    - a 3.11 import in the adapter, which failed `types` alone.
+  - **The server.**
+    - The constants and the hashes agree;
+    - the error and pending envelopes;
+    - the `cancelled` status;
+    - the instructions' length, and that they are served;
+    - built tools only;
+    - exact arguments;
+    - argument validation;
+    - a raising tool;
+    - result validation and size;
+    - call serialisation.
+  - **The client.**
+    - Done;
+    - running after the budget;
+    - polls capped at the budget;
+    - error passthrough;
+    - the missing step named;
+    - a stale or malformed `bridge.json`;
+    - a refused connection, retryable or after Krita died;
+    - the protocol mismatch;
+    - the silent bridge;
+    - each of the four uncertain cases;
+    - a refused connection while polling;
+    - `krita_server_info`'s data, missing step and pending result.
+  - **The commands.**
+    - `install-plugin`: caches skipped, the old copy removed, the restart-only message, a
+      missing folder;
+    - `doctor`: the step order, the hash steps (installed and running), the `.desktop` file,
+      the kritarc parsing, and the document counts reported or held back;
+    - the probe: the stale-plugin stop, both sweeps, and the health failure.
+  - **Tests strengthened while falsifying,** where the first version passed for the wrong
+    reason:
+    - the chunked case now sends a length;
+    - kritarc's "not enabled" case writes `=false`;
+    - the malformed-`bridge.json` case checks its message;
+    - the probe records what it saw at start;
+    - a mid-call stop must be uncertain.
+
+    Tests added for gaps the falsification found:
+    - another session's `bridge.json` is left alone;
+    - a bridge that stops listening mid-call;
+    - a stale installed copy.
+- **Numbers:**
+  - `verify`: 6 stages, all PASS;
+  - 120 server tests passed, 0 skipped (+66);
+  - 85 plugin-core tests passed, 0 skipped (+38);
+  - `probe`: 10 PASS, 0 FAIL, 3 MEASURED;
+  - 1 registered tool; 19 schema files.
+
 ---
 
 ## 3: Operations and the document registry

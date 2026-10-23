@@ -10,9 +10,12 @@ from typing import Any
 
 import bridge_core
 
+from krita_art_mcp.instructions import INSTRUCTIONS
+from krita_art_mcp.tools import BUILT_TOOLS
+
 CLI = str(Path(sys.executable).with_name("krita-art-mcp"))
 # The release this checkout is; bumped with the package version.
-EXPECTED_VERSION = "0.1.0"
+EXPECTED_VERSION = "0.2.0"
 
 
 def test_plugin_version_equals_package_version() -> None:
@@ -24,7 +27,7 @@ def test_cli_prints_its_version() -> None:
     assert result.stdout == f"krita-art-mcp {EXPECTED_VERSION}\n"
 
 
-def test_stdio_initialize_names_the_server_and_lists_no_tools() -> None:
+def test_stdio_initialize_names_the_server_and_lists_the_built_tools() -> None:
     initialize = {
         "protocolVersion": "2025-06-18",
         "capabilities": {},
@@ -58,10 +61,12 @@ def test_stdio_initialize_names_the_server_and_lists_no_tools() -> None:
 
     try:
         send({"id": 1, "method": "initialize", "params": initialize})
-        assert reply(1)["serverInfo"] == {"name": "krita-art", "version": EXPECTED_VERSION}
+        initialized = reply(1)
+        assert initialized["serverInfo"] == {"name": "krita-art", "version": EXPECTED_VERSION}
+        assert initialized["instructions"] == INSTRUCTIONS
         send({"method": "notifications/initialized"})
         send({"id": 2, "method": "tools/list"})
-        assert reply(2)["tools"] == []
+        assert [tool["name"] for tool in reply(2)["tools"]] == BUILT_TOOLS
     finally:
         # Closing stdin first lets the server exit, so a failed assertion cannot hang the run.
         stdin.close()

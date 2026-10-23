@@ -1,6 +1,6 @@
 [project]
 name = "krita-art-mcp"
-version = "0.1.0"
+version = "0.2.0"
 description = "MCP server that lets AI agents paint in Krita"
 readme = "README.md"
 license = "GPL-3.0-or-later"
@@ -38,8 +38,19 @@ select = ["E", "F", "W", "I", "UP", "B", "RUF"]
 [tool.mypy]
 strict = true
 python_version = "3.12"
-mypy_path = ["plugin/krita_art_mcp_bridge", "scripts"]
+# Tests import the plugin's core as `bridge_core`; the 3.10 run checks the whole package.
+mypy_path = ["plugin/krita_art_mcp_bridge", "plugin", "scripts"]
 exclude = ["^docs/"]
+
+[[tool.mypy.overrides]]
+module = ["krita", "krita.*", "PyQt5", "PyQt5.*", "PyQt6", "PyQt6.*"]
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+# Krita's and Qt's classes and decorators are untyped, and the adapter must use them.
+module = ["krita_art_mcp_bridge.krita_adapter.*"]
+disallow_subclassing_any = false
+disallow_untyped_decorators = false
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

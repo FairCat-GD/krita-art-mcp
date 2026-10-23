@@ -14,7 +14,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 PYTHON = sys.executable
-PLUGIN_PACKAGES = ["-p", "bridge_core", "-p", "krita_adapter"]
+PLUGIN_PACKAGES = ["-p", "krita_art_mcp_bridge"]
 
 
 class SetupError(Exception):

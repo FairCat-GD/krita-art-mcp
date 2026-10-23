@@ -11,7 +11,7 @@
     "type": "object",
     "properties": {
       "api_version": {
-        "const": "0.1.0"
+        "const": "0.2.0"
       },
       "status": {
         "type": "string",
@@ -35,15 +35,7 @@
         ]
       },
       "revision": {
-        "anyOf": [
-          {
-            "type": "integer",
-            "minimum": 0
-          },
-          {
-            "type": "null"
-          }
-        ]
+        "type": "null"
       },
       "operation_id": {
         "anyOf": [
@@ -62,81 +54,120 @@
             "type": "object",
             "properties": {
               "session_id": {
-                "type": "string"
+                "type": "string",
+                "minLength": 1
               },
-              "krita_version": {
-                "type": "string"
+              "server_version": {
+                "type": "string",
+                "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+$"
               },
               "plugin_version": {
-                "type": "string"
+                "type": "string",
+                "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+$"
               },
-              "profile_schema_version": {
-                "type": "string"
+              "protocol": {
+                "type": "integer",
+                "minimum": 1
+              },
+              "krita_version": {
+                "type": "string",
+                "minLength": 1
+              },
+              "qt_major": {
+                "type": "integer",
+                "minimum": 5
               },
               "capabilities": {
                 "type": "object",
-                "properties": {
-                  "brush_strokes": {
-                    "type": "boolean"
+                "propertyNames": {
+                  "enum": [
+                    "stroke.native_brush",
+                    "stroke.per_point_input",
+                    "stroke.smoothing",
+                    "undo.grouping",
+                    "stroke.deterministic",
+                    "operation.cancel_running",
+                    "selection.enforced",
+                    "color_spaces",
+                    "filters",
+                    "animation"
+                  ]
+                },
+                "additionalProperties": {
+                  "type": "object",
+                  "properties": {
+                    "supported": {
+                      "type": "boolean"
+                    },
+                    "since": {
+                      "anyOf": [
+                        {
+                          "type": "string",
+                          "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+$"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "notes": {
+                      "type": "string",
+                      "minLength": 1
+                    }
                   },
-                  "pressure": {
-                    "type": "boolean"
-                  },
-                  "tilt": {
-                    "type": "boolean"
-                  },
-                  "native_animation": {
-                    "type": "boolean"
-                  },
-                  "verified_rollback": {
-                    "type": "boolean"
-                  }
+                  "required": [
+                    "supported",
+                    "since",
+                    "notes"
+                  ],
+                  "additionalProperties": false
                 },
                 "required": [
-                  "brush_strokes",
-                  "pressure",
-                  "tilt",
-                  "native_animation",
-                  "verified_rollback"
-                ],
-                "additionalProperties": false
+                  "stroke.native_brush",
+                  "stroke.per_point_input",
+                  "stroke.smoothing",
+                  "undo.grouping",
+                  "stroke.deterministic",
+                  "operation.cancel_running",
+                  "selection.enforced",
+                  "color_spaces",
+                  "filters",
+                  "animation"
+                ]
               },
               "limits": {
                 "type": "object",
                 "properties": {
                   "stroke_points": {
-                    "type": "integer"
+                    "type": "integer",
+                    "minimum": 1
                   },
                   "capture_pixels": {
-                    "type": "integer"
+                    "type": "integer",
+                    "minimum": 1
                   },
-                  "edit_timeout_seconds": {
-                    "type": "integer"
+                  "wait_budget_seconds": {
+                    "type": "integer",
+                    "minimum": 1
                   }
                 },
                 "required": [
                   "stroke_points",
                   "capture_pixels",
-                  "edit_timeout_seconds"
+                  "wait_budget_seconds"
                 ],
                 "additionalProperties": false
-              },
-              "unsupported": {
-                "type": "array",
-                "items": {
-                  "type": "string"
-                },
-                "minItems": 0
               }
             },
             "required": [
               "session_id",
-              "krita_version",
+              "server_version",
               "plugin_version",
-              "profile_schema_version",
+              "protocol",
+              "krita_version",
+              "qt_major",
               "capabilities",
-              "limits",
-              "unsupported"
+              "limits"
             ],
             "additionalProperties": false
           },
@@ -152,7 +183,38 @@
             "properties": {
               "code": {
                 "type": "string",
-                "minLength": 1
+                "enum": [
+                  "INVALID_ARGUMENT",
+                  "UNSUPPORTED_CAPABILITY",
+                  "KRITA_NOT_RUNNING",
+                  "PROTOCOL_MISMATCH",
+                  "KRITA_MODAL_DIALOG",
+                  "MULTIPLE_WINDOWS",
+                  "BUSY",
+                  "TIMEOUT",
+                  "CANCELLED",
+                  "REQUEST_ID_CONFLICT",
+                  "DOCUMENT_NOT_FOUND",
+                  "LAYER_NOT_FOUND",
+                  "LOCKED_TARGET",
+                  "LAYER_NOT_PAINTABLE",
+                  "LAYER_HAS_LOCAL_SELECTION",
+                  "PROTECTED_REGION_CHANGED",
+                  "OUTSIDE_ALLOWED_MASK",
+                  "RESOURCE_HASH_MISMATCH",
+                  "SOURCE_HASH_MISMATCH",
+                  "COLOR_PROFILE_MISMATCH",
+                  "DOCUMENT_DIRTY",
+                  "DOCUMENT_UNSAFE",
+                  "DOCUMENT_READ_ONLY",
+                  "DOCUMENT_IN_USE",
+                  "SAVE_VERIFY_FAILED",
+                  "PATH_NOT_ALLOWED",
+                  "FILE_EXISTS",
+                  "IO_ERROR",
+                  "ROLLBACK_FAILED",
+                  "INTERNAL_ERROR"
+                ]
               },
               "message": {
                 "type": "string",
@@ -204,81 +266,120 @@
               "type": "object",
               "properties": {
                 "session_id": {
-                  "type": "string"
+                  "type": "string",
+                  "minLength": 1
                 },
-                "krita_version": {
-                  "type": "string"
+                "server_version": {
+                  "type": "string",
+                  "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+$"
                 },
                 "plugin_version": {
-                  "type": "string"
+                  "type": "string",
+                  "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+$"
                 },
-                "profile_schema_version": {
-                  "type": "string"
+                "protocol": {
+                  "type": "integer",
+                  "minimum": 1
+                },
+                "krita_version": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "qt_major": {
+                  "type": "integer",
+                  "minimum": 5
                 },
                 "capabilities": {
                   "type": "object",
-                  "properties": {
-                    "brush_strokes": {
-                      "type": "boolean"
+                  "propertyNames": {
+                    "enum": [
+                      "stroke.native_brush",
+                      "stroke.per_point_input",
+                      "stroke.smoothing",
+                      "undo.grouping",
+                      "stroke.deterministic",
+                      "operation.cancel_running",
+                      "selection.enforced",
+                      "color_spaces",
+                      "filters",
+                      "animation"
+                    ]
+                  },
+                  "additionalProperties": {
+                    "type": "object",
+                    "properties": {
+                      "supported": {
+                        "type": "boolean"
+                      },
+                      "since": {
+                        "anyOf": [
+                          {
+                            "type": "string",
+                            "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+$"
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      },
+                      "notes": {
+                        "type": "string",
+                        "minLength": 1
+                      }
                     },
-                    "pressure": {
-                      "type": "boolean"
-                    },
-                    "tilt": {
-                      "type": "boolean"
-                    },
-                    "native_animation": {
-                      "type": "boolean"
-                    },
-                    "verified_rollback": {
-                      "type": "boolean"
-                    }
+                    "required": [
+                      "supported",
+                      "since",
+                      "notes"
+                    ],
+                    "additionalProperties": false
                   },
                   "required": [
-                    "brush_strokes",
-                    "pressure",
-                    "tilt",
-                    "native_animation",
-                    "verified_rollback"
-                  ],
-                  "additionalProperties": false
+                    "stroke.native_brush",
+                    "stroke.per_point_input",
+                    "stroke.smoothing",
+                    "undo.grouping",
+                    "stroke.deterministic",
+                    "operation.cancel_running",
+                    "selection.enforced",
+                    "color_spaces",
+                    "filters",
+                    "animation"
+                  ]
                 },
                 "limits": {
                   "type": "object",
                   "properties": {
                     "stroke_points": {
-                      "type": "integer"
+                      "type": "integer",
+                      "minimum": 1
                     },
                     "capture_pixels": {
-                      "type": "integer"
+                      "type": "integer",
+                      "minimum": 1
                     },
-                    "edit_timeout_seconds": {
-                      "type": "integer"
+                    "wait_budget_seconds": {
+                      "type": "integer",
+                      "minimum": 1
                     }
                   },
                   "required": [
                     "stroke_points",
                     "capture_pixels",
-                    "edit_timeout_seconds"
+                    "wait_budget_seconds"
                   ],
                   "additionalProperties": false
-                },
-                "unsupported": {
-                  "type": "array",
-                  "items": {
-                    "type": "string"
-                  },
-                  "minItems": 0
                 }
               },
               "required": [
                 "session_id",
-                "krita_version",
+                "server_version",
                 "plugin_version",
-                "profile_schema_version",
+                "protocol",
+                "krita_version",
+                "qt_major",
                 "capabilities",
-                "limits",
-                "unsupported"
+                "limits"
               ],
               "additionalProperties": false
             },
@@ -292,16 +393,25 @@
         "if": {
           "properties": {
             "status": {
-              "const": "failed"
+              "enum": [
+                "failed",
+                "cancelled"
+              ]
             }
           }
         },
         "then": {
           "properties": {
+            "data": {
+              "type": "null"
+            },
             "error": {
               "type": "object"
             }
-          }
+          },
+          "required": [
+            "error"
+          ]
         }
       },
       {
@@ -341,32 +451,75 @@
   "example": {
     "input": {},
     "structuredContent": {
-      "api_version": "0.1.0",
+      "api_version": "0.2.0",
       "status": "completed",
       "document_id": null,
       "revision": null,
       "operation_id": null,
       "data": {
-        "session_id": "session-1",
-        "krita_version": "detected-at-runtime",
-        "plugin_version": "0.1.0",
-        "profile_schema_version": "0.1.0",
+        "session_id": "3f2a9c41d7e84b0c9a61f2d5c8e07b13",
+        "server_version": "0.2.0",
+        "plugin_version": "0.2.0",
+        "protocol": 1,
+        "krita_version": "5.3.4",
+        "qt_major": 5,
         "capabilities": {
-          "brush_strokes": true,
-          "pressure": true,
-          "tilt": false,
-          "native_animation": false,
-          "verified_rollback": true
+          "stroke.native_brush": {
+            "supported": false,
+            "since": null,
+            "notes": "Native brush strokes are not built in this release."
+          },
+          "stroke.per_point_input": {
+            "supported": false,
+            "since": null,
+            "notes": "Per-point pressure, tilt, rotation and timing need Krita 6.1 / 5.4."
+          },
+          "stroke.smoothing": {
+            "supported": false,
+            "since": null,
+            "notes": "Server-side smoothing (none, catmull_rom) comes with native brush strokes."
+          },
+          "undo.grouping": {
+            "supported": false,
+            "since": null,
+            "notes": "Krita's scripting API cannot group undo steps; each change is its own step."
+          },
+          "stroke.deterministic": {
+            "supported": false,
+            "since": null,
+            "notes": "Stochastic presets have no seed control, so their strokes do not repeat exactly."
+          },
+          "operation.cancel_running": {
+            "supported": false,
+            "since": null,
+            "notes": "A running Krita call cannot be interrupted; only queued operations can be cancelled."
+          },
+          "selection.enforced": {
+            "supported": false,
+            "since": null,
+            "notes": "Selections are not built in this release."
+          },
+          "color_spaces": {
+            "supported": false,
+            "since": null,
+            "notes": "Documents are not created or painted in this release; Phase 1 paints RGBA / U8 / sRGB."
+          },
+          "filters": {
+            "supported": false,
+            "since": null,
+            "notes": "Filters arrive in Phase 2."
+          },
+          "animation": {
+            "supported": false,
+            "since": null,
+            "notes": "Animation arrives in Phase 5."
+          }
         },
         "limits": {
           "stroke_points": 4096,
           "capture_pixels": 16777216,
-          "edit_timeout_seconds": 120
-        },
-        "unsupported": [
-          "native_animation",
-          "tilt"
-        ]
+          "wait_budget_seconds": 45
+        }
       },
       "error": null
     }

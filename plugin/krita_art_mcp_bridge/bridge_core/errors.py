@@ -1,0 +1,62 @@
+from typing import Any
+
+# The Phase 1 error codes; the server holds an equal copy.
+CODES = (
+    "INVALID_ARGUMENT",
+    "UNSUPPORTED_CAPABILITY",
+    "KRITA_NOT_RUNNING",
+    "PROTOCOL_MISMATCH",
+    "KRITA_MODAL_DIALOG",
+    "MULTIPLE_WINDOWS",
+    "BUSY",
+    "TIMEOUT",
+    "CANCELLED",
+    "REQUEST_ID_CONFLICT",
+    "DOCUMENT_NOT_FOUND",
+    "LAYER_NOT_FOUND",
+    "LOCKED_TARGET",
+    "LAYER_NOT_PAINTABLE",
+    "LAYER_HAS_LOCAL_SELECTION",
+    "PROTECTED_REGION_CHANGED",
+    "OUTSIDE_ALLOWED_MASK",
+    "RESOURCE_HASH_MISMATCH",
+    "SOURCE_HASH_MISMATCH",
+    "COLOR_PROFILE_MISMATCH",
+    "DOCUMENT_DIRTY",
+    "DOCUMENT_UNSAFE",
+    "DOCUMENT_READ_ONLY",
+    "DOCUMENT_IN_USE",
+    "SAVE_VERIFY_FAILED",
+    "PATH_NOT_ALLOWED",
+    "FILE_EXISTS",
+    "IO_ERROR",
+    "ROLLBACK_FAILED",
+    "INTERNAL_ERROR",
+)
+
+
+def error(
+    code: str, message: str, retryable: bool = False, details: dict[str, Any] | None = None
+) -> dict[str, Any]:
+    if code not in CODES:
+        raise ValueError(f"unknown error code {code}")
+    return {"code": code, "message": message, "retryable": retryable, "details": details or {}}
+
+
+# An op raises this to fail with a typed error body instead of INTERNAL_ERROR.
+class BridgeError(Exception):
+    def __init__(
+        self,
+        code: str,
+        message: str,
+        retryable: bool = False,
+        details: dict[str, Any] | None = None,
+    ) -> None:
+        super().__init__(message)
+        self.body = error(code, message, retryable, details)
+
+
+def no_arguments(args: dict[str, Any]) -> None:
+    if args:
+        details = {"unexpected": sorted(args)}
+        raise BridgeError("INVALID_ARGUMENT", "This op takes no arguments.", False, details)

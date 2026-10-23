@@ -6,10 +6,9 @@ size, and undo or keep it. It is for painted (non-pixel) 2D game art.
 
 ## Status
 
-Phase 1 is being built. Version 0.1.0 is the scaffold: `krita-art-mcp serve` starts an MCP server
-named `krita-art` over stdio, which reports its version and offers no tools yet. The Krita plugin,
-installation and client registration arrive in the coming releases; `CHANGELOG.md` lists what each
-one adds.
+Phase 1 is being built. Version 0.2.0 connects the server to a running Krita through the plugin
+and offers one tool, `krita_server_info`, which reports Krita's version and what this build can
+do. The painting tools arrive in the coming releases; `CHANGELOG.md` lists what each one adds.
 
 ## Requirements
 
@@ -17,6 +16,53 @@ one adds.
 - Krita 5.3.x.
 - [uv](https://docs.astral.sh/uv/). It installs Python 3.12 for the server, and Python 3.10 for
   the plugin's tests.
+
+## Installing
+
+1. From this repository, copy the plugin into Krita:
+
+   ```bash
+   uv run krita-art-mcp install-plugin
+   ```
+
+2. Quit Krita and start it again.
+3. In *Configure Krita › Python Plugin Manager* (in the application menu on macOS), enable
+   *Krita Art MCP Bridge*.
+4. Quit Krita and start it again.
+5. Check the setup. `doctor` names the first step that fails, and how to fix it:
+
+   ```bash
+   uv run krita-art-mcp doctor
+   ```
+
+To update the plugin, run `install-plugin` again and restart Krita.
+
+## Registering the server
+
+Apps started from the Dock do not inherit your shell's `PATH`, so both registrations use absolute
+paths. Replace `/Users/<you>/.local/bin/uv` with the output of `which uv`, and
+`/ABS/PATH/krita-art-mcp` with this repository's folder.
+
+**Codex**, in `~/.codex/config.toml`:
+
+```toml
+[mcp_servers.krita-art]
+command = "/Users/<you>/.local/bin/uv"
+args = ["run", "--project", "/ABS/PATH/krita-art-mcp", "krita-art-mcp", "serve"]
+startup_timeout_sec = 20
+tool_timeout_sec = 300
+```
+
+**Claude Code**, in a `.mcp.json`:
+
+```json
+{"mcpServers": {"krita-art": {"type": "stdio", "command": "/Users/<you>/.local/bin/uv",
+  "args": ["run", "--project", "/ABS/PATH/krita-art-mcp", "krita-art-mcp", "serve"],
+  "timeout": 300000}}}
+```
+
+Then ask the agent to call `krita_server_info`. It returns Krita's version and the capability
+matrix, or names the setup step that is missing.
 
 ## Running it
 
@@ -39,6 +85,10 @@ uv run krita-art-mcp serve
 - `hygiene`: keeps private details and attribution out of files and commit messages.
 
 `uv run scripts/verify.py <stage>…` runs only the stages named.
+
+`uv run krita-art-mcp probe` is the live harness. It checks the running plugin against this
+repository, then drives a real `serve` over stdio against your running Krita. It works only in
+`~/Library/Application Support/krita-art-mcp/harness/`.
 
 ## Documentation
 
