@@ -59,31 +59,75 @@
                   "type": "object",
                   "properties": {
                     "document_id": {
-                      "type": "string"
+                      "type": "string",
+                      "minLength": 1
                     },
                     "name": {
                       "type": "string"
                     },
-                    "revision": {
-                      "type": "integer"
+                    "path": {
+                      "anyOf": [
+                        {
+                          "type": "string",
+                          "minLength": 1
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "size_px": {
+                      "type": "array",
+                      "prefixItems": [
+                        {
+                          "type": "integer",
+                          "minimum": 1
+                        },
+                        {
+                          "type": "integer",
+                          "minimum": 1
+                        }
+                      ],
+                      "items": false,
+                      "minItems": 2,
+                      "maxItems": 2
+                    },
+                    "color_model": {
+                      "type": "string",
+                      "minLength": 1
+                    },
+                    "depth": {
+                      "type": "string",
+                      "minLength": 1
+                    },
+                    "profile_id": {
+                      "type": "string"
                     },
                     "dirty": {
                       "type": "boolean"
                     },
-                    "project_id": {
-                      "type": "string"
+                    "mode": {
+                      "type": "string",
+                      "enum": [
+                        "new",
+                        "working_copy",
+                        "read_only"
+                      ]
                     }
                   },
                   "required": [
                     "document_id",
                     "name",
-                    "revision",
+                    "path",
+                    "size_px",
+                    "color_model",
+                    "depth",
+                    "profile_id",
                     "dirty",
-                    "project_id"
+                    "mode"
                   ],
                   "additionalProperties": false
-                },
-                "minItems": 0
+                }
               }
             },
             "required": [
@@ -191,31 +235,75 @@
                     "type": "object",
                     "properties": {
                       "document_id": {
-                        "type": "string"
+                        "type": "string",
+                        "minLength": 1
                       },
                       "name": {
                         "type": "string"
                       },
-                      "revision": {
-                        "type": "integer"
+                      "path": {
+                        "anyOf": [
+                          {
+                            "type": "string",
+                            "minLength": 1
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      },
+                      "size_px": {
+                        "type": "array",
+                        "prefixItems": [
+                          {
+                            "type": "integer",
+                            "minimum": 1
+                          },
+                          {
+                            "type": "integer",
+                            "minimum": 1
+                          }
+                        ],
+                        "items": false,
+                        "minItems": 2,
+                        "maxItems": 2
+                      },
+                      "color_model": {
+                        "type": "string",
+                        "minLength": 1
+                      },
+                      "depth": {
+                        "type": "string",
+                        "minLength": 1
+                      },
+                      "profile_id": {
+                        "type": "string"
                       },
                       "dirty": {
                         "type": "boolean"
                       },
-                      "project_id": {
-                        "type": "string"
+                      "mode": {
+                        "type": "string",
+                        "enum": [
+                          "new",
+                          "working_copy",
+                          "read_only"
+                        ]
                       }
                     },
                     "required": [
                       "document_id",
                       "name",
-                      "revision",
+                      "path",
+                      "size_px",
+                      "color_model",
+                      "depth",
+                      "profile_id",
                       "dirty",
-                      "project_id"
+                      "mode"
                     ],
                     "additionalProperties": false
-                  },
-                  "minItems": 0
+                  }
                 }
               },
               "required": [
@@ -300,10 +388,17 @@
         "documents": [
           {
             "document_id": "doc-1",
-            "name": "hero-working.kra",
-            "revision": 12,
-            "dirty": true,
-            "project_id": "project-1"
+            "name": "new-icon",
+            "path": null,
+            "size_px": [
+              32,
+              32
+            ],
+            "color_model": "RGBA",
+            "depth": "U8",
+            "profile_id": "sRGB-elle-V2-srgbtrc.icc",
+            "dirty": false,
+            "mode": "new"
           }
         ]
       },

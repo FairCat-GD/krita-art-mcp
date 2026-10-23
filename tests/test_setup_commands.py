@@ -6,7 +6,7 @@ from typing import Any
 import pytest
 
 from krita_art_mcp import doctor, install, paths, plugin_files, probe
-from krita_art_mcp.bridge_client import BridgeClient, Done, Failed, Outcome
+from krita_art_mcp.bridge_client import BeforeSend, BridgeClient, Done, Failed, Outcome
 from krita_art_mcp.errors import error_body
 from krita_art_mcp.setup_checks import Setup
 
@@ -88,7 +88,12 @@ class _Client(BridgeClient):
         return self._health
 
     def call(
-        self, op: str, args: dict[str, Any] | None = None, *, request_id: str | None = None
+        self,
+        op: str,
+        args: dict[str, Any] | None = None,
+        *,
+        request_id: str | None = None,
+        before_send: BeforeSend | None = None,
     ) -> Outcome:
         assert op == "bridge.unsaved_documents"
         return self._documents

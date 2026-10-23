@@ -15,7 +15,7 @@ from krita_art_mcp.tools import BUILT_TOOLS
 
 CLI = str(Path(sys.executable).with_name("krita-art-mcp"))
 # The release this checkout is; bumped with the package version.
-EXPECTED_VERSION = "0.2.0"
+EXPECTED_VERSION = "0.3.0"
 
 
 def test_plugin_version_equals_package_version() -> None:
@@ -66,7 +66,7 @@ def test_stdio_initialize_names_the_server_and_lists_the_built_tools() -> None:
         assert initialized["instructions"] == INSTRUCTIONS
         send({"method": "notifications/initialized"})
         send({"id": 2, "method": "tools/list"})
-        assert [tool["name"] for tool in reply(2)["tools"]] == BUILT_TOOLS
+        assert sorted(tool["name"] for tool in reply(2)["tools"]) == BUILT_TOOLS
     finally:
         # Closing stdin first lets the server exit, so a failed assertion cannot hang the run.
         stdin.close()

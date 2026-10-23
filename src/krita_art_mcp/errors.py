@@ -13,7 +13,7 @@ CODES: dict[str, tuple[bool, str]] = {
     "KRITA_NOT_RUNNING": (False, "Krita is not running with the bridge plugin."),
     "PROTOCOL_MISMATCH": (False, "Reinstall the plugin, then restart Krita."),
     "KRITA_MODAL_DIALOG": (True, "Close the dialog open in Krita, then retry."),
-    "MULTIPLE_WINDOWS": (False, "Close Krita's extra windows, then retry."),
+    "MULTIPLE_WINDOWS": (True, "Close Krita's extra windows, then retry."),
     "BUSY": (True, "Krita is busy; retry shortly."),
     "TIMEOUT": (False, "The operation exceeded its hard limit."),
     "CANCELLED": (False, "The operation was cancelled before it ran."),

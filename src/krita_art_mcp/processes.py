@@ -1,11 +1,19 @@
 import os
 import subprocess
 
+# The plugin runs ps alike, so both sides format the lease's start time the same way.
+PS_ENV = {"LC_ALL": "C", "TZ": "UTC"}
+
 
 def _ps(*args: str) -> str | None:
     try:
         found = subprocess.run(
-            ["/bin/ps", *args], capture_output=True, text=True, timeout=5, check=False
+            ["/bin/ps", *args],
+            capture_output=True,
+            text=True,
+            timeout=5,
+            check=False,
+            env=PS_ENV,
         )
     except (OSError, subprocess.TimeoutExpired):
         return None

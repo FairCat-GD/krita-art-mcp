@@ -6,6 +6,45 @@ All notable changes to krita-art-mcp are documented here. The format follows
 
 ## [Unreleased]
 
+## [0.3.0] — 2026-10-24
+
+Agents can now make, list and close documents, and every change is safe to retry.
+
+### Added
+
+- **`krita_document_create`.** It makes a new transparent RGBA / 8-bit / sRGB canvas, opens it in
+  Krita's window, and returns its id and its first paint layer. Other depths and colour profiles
+  are refused with `UNSUPPORTED_CAPABILITY`.
+- **`krita_document_list`.** It lists every open document with its id, name, path, size, colour
+  space, whether an agent has changed it since its last save, and its mode. It never switches the
+  document you are looking at. Documents you opened yourself are `read_only` to agents.
+- **`krita_document_close`.** `refuse` will not close a document with unsaved agent changes;
+  `discard` closes it anyway, without asking Krita to save. Documents you opened yourself are never
+  closed by an agent.
+- **`krita_operation_get` and `krita_operation_cancel`.** A call that comes back `running` can be
+  followed to its final receipt. A call still waiting in the queue can be cancelled; one Krita is
+  already running cannot.
+- **Retries are safe.** Repeating a call with the same `request_id` returns the original receipt
+  and never does the work twice, even through another agent's server. The same id with other
+  arguments is refused with `REQUEST_ID_CONFLICT`. A call that Krita may or may not have finished
+  before it quit is never sent again; it reports `outcome: "uncertain"`.
+- **A journal of every change.** Each call that carries a `request_id` is written to
+  `journal/YYYY-MM-DD.jsonl` in the data folder before it is sent, and again when it finishes.
+- **One agent per document.** The server process that made a document holds it; another agent's
+  changes to it are refused with `DOCUMENT_IN_USE` until that process has exited. Reading stays
+  open to everyone.
+- **Calls wait while Krita has a dialog open or more than one window,** and report
+  `KRITA_MODAL_DIALOG` or `MULTIPLE_WINDOWS`. Both are retryable.
+
+### Changed
+
+- **`guard` is `{document_id, request_id}`** in every tool. `expected_revision` arrives with
+  revisions in a later phase.
+- **The instructions for agents** now cover fresh request ids, one working copy per agent, and
+  following a `running` call with `krita_operation_get`.
+- **`krita-art-mcp probe`** now makes and closes its own documents, including 20 create and close
+  cycles. It runs those checks only when none of your documents has unsaved changes.
+
 ## [0.2.0] — 2026-10-23
 
 The server now reaches a running Krita through a plugin, and offers its first tool.

@@ -4,10 +4,6 @@
   "inputSchema": {
     "type": "object",
     "properties": {
-      "project_id": {
-        "type": "string",
-        "minLength": 1
-      },
       "name": {
         "type": "string",
         "minLength": 1
@@ -59,7 +55,6 @@
       }
     },
     "required": [
-      "project_id",
       "name",
       "size_px",
       "color_model",
@@ -118,26 +113,45 @@
             "properties": {
               "canvas_px": {
                 "type": "array",
-                "items": {
-                  "type": "integer"
-                },
-                "minItems": 0
+                "prefixItems": [
+                  {
+                    "type": "integer",
+                    "minimum": 1
+                  },
+                  {
+                    "type": "integer",
+                    "minimum": 1
+                  }
+                ],
+                "items": false,
+                "minItems": 2,
+                "maxItems": 2
               },
               "root_layer_id": {
-                "type": "string"
+                "type": "string",
+                "minLength": 1
               },
               "initial_layer_id": {
-                "type": "string"
+                "type": "string",
+                "minLength": 1
               },
               "profile_id": {
-                "type": "string"
+                "type": "string",
+                "minLength": 1
+              },
+              "mode": {
+                "type": "string",
+                "enum": [
+                  "new"
+                ]
               }
             },
             "required": [
               "canvas_px",
               "root_layer_id",
               "initial_layer_id",
-              "profile_id"
+              "profile_id",
+              "mode"
             ],
             "additionalProperties": false
           },
@@ -237,26 +251,45 @@
               "properties": {
                 "canvas_px": {
                   "type": "array",
-                  "items": {
-                    "type": "integer"
-                  },
-                  "minItems": 0
+                  "prefixItems": [
+                    {
+                      "type": "integer",
+                      "minimum": 1
+                    },
+                    {
+                      "type": "integer",
+                      "minimum": 1
+                    }
+                  ],
+                  "items": false,
+                  "minItems": 2,
+                  "maxItems": 2
                 },
                 "root_layer_id": {
-                  "type": "string"
+                  "type": "string",
+                  "minLength": 1
                 },
                 "initial_layer_id": {
-                  "type": "string"
+                  "type": "string",
+                  "minLength": 1
                 },
                 "profile_id": {
-                  "type": "string"
+                  "type": "string",
+                  "minLength": 1
+                },
+                "mode": {
+                  "type": "string",
+                  "enum": [
+                    "new"
+                  ]
                 }
               },
               "required": [
                 "canvas_px",
                 "root_layer_id",
                 "initial_layer_id",
-                "profile_id"
+                "profile_id",
+                "mode"
               ],
               "additionalProperties": false
             },
@@ -327,7 +360,6 @@
   },
   "example": {
     "input": {
-      "project_id": "project-1",
       "name": "new-icon",
       "size_px": [
         32,
@@ -335,7 +367,7 @@
       ],
       "color_model": "RGBA",
       "depth": "U8",
-      "profile_id": "srgb-profile-1",
+      "profile_id": "sRGB-elle-V2-srgbtrc.icc",
       "background": "transparent",
       "request_id": "req-new"
     },
@@ -344,15 +376,16 @@
       "status": "completed",
       "document_id": "doc-1",
       "revision": null,
-      "operation_id": null,
+      "operation_id": "op-new",
       "data": {
         "canvas_px": [
           32,
           32
         ],
-        "root_layer_id": "root-2",
-        "initial_layer_id": "paint-1",
-        "profile_id": "srgb-profile-1"
+        "root_layer_id": "6f1c2a40-1b7e-4d2a-9c11-0a5e3b7d9f21",
+        "initial_layer_id": "0d8e4b52-7a3c-4f19-b6e2-91c7d4a8e305",
+        "profile_id": "sRGB-elle-V2-srgbtrc.icc",
+        "mode": "new"
       },
       "error": null
     }

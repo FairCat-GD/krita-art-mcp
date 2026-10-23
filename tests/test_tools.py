@@ -1,7 +1,6 @@
 import asyncio
 import threading
 import time
-from collections.abc import Callable
 from typing import Any
 
 from mcp import Client
@@ -25,11 +24,11 @@ def _call(server: MCPServer, arguments: dict[str, Any], name: str = "krita_serve
     return asyncio.run(call())
 
 
-def _server(run: Callable[[dict[str, Any]], CallToolResult]) -> MCPServer:
+def _server(run: tools.Run) -> MCPServer:
     return MCPServer("tools-test", tools=[tools.build("krita_server_info", run)])
 
 
-def _completed(arguments: dict[str, Any]) -> CallToolResult:
+def _completed(arguments: dict[str, Any], client_name: str | None = None) -> CallToolResult:
     return envelope.completed(INFO_DATA, "ok")
 
 
@@ -39,7 +38,18 @@ def test_only_built_tools_are_registered_with_their_contract_schemas() -> None:
             return list((await mcp.list_tools()).tools)
 
     registered = asyncio.run(listed())
-    assert sorted(tool.name for tool in registered) == tools.BUILT_TOOLS == ["krita_server_info"]
+    assert (
+        sorted(tool.name for tool in registered)
+        == tools.BUILT_TOOLS
+        == [
+            "krita_document_close",
+            "krita_document_create",
+            "krita_document_list",
+            "krita_operation_cancel",
+            "krita_operation_get",
+            "krita_server_info",
+        ]
+    )
     for tool in registered:
         spec = schemas.load(tool.name)
         assert tool.input_schema == spec["inputSchema"]
@@ -52,7 +62,7 @@ def test_only_built_tools_are_registered_with_their_contract_schemas() -> None:
 def test_arguments_reach_the_tool_exactly_as_sent() -> None:
     received: list[dict[str, Any]] = []
 
-    def record(arguments: dict[str, Any]) -> CallToolResult:
+    def record(arguments: dict[str, Any], client_name: str | None = None) -> CallToolResult:
         received.append(arguments)
         return envelope.failure("INTERNAL_ERROR")
 
@@ -65,7 +75,7 @@ def test_arguments_reach_the_tool_exactly_as_sent() -> None:
 def test_an_unknown_field_is_an_invalid_argument_envelope() -> None:
     ran: list[dict[str, Any]] = []
 
-    def run(arguments: dict[str, Any]) -> CallToolResult:
+    def run(arguments: dict[str, Any], client_name: str | None = None) -> CallToolResult:
         ran.append(arguments)
         return _completed(arguments)
 
@@ -89,7 +99,7 @@ def test_a_huge_invalid_argument_gets_a_short_message() -> None:
 
 
 def test_a_raising_tool_returns_internal_error() -> None:
-    def run(arguments: dict[str, Any]) -> CallToolResult:
+    def run(arguments: dict[str, Any], client_name: str | None = None) -> CallToolResult:
         raise RuntimeError("boom")
 
     result = _call(_server(run), {})
@@ -98,7 +108,7 @@ def test_a_raising_tool_returns_internal_error() -> None:
 
 
 def test_a_result_that_breaks_its_schema_becomes_internal_error() -> None:
-    def run(arguments: dict[str, Any]) -> CallToolResult:
+    def run(arguments: dict[str, Any], client_name: str | None = None) -> CallToolResult:
         return envelope.completed({"krita_version": "5.3.4"}, "incomplete data")
 
     result = _call(_server(run), {})
@@ -109,7 +119,7 @@ def test_a_result_that_breaks_its_schema_becomes_internal_error() -> None:
 
 
 def test_a_result_over_6_mb_becomes_internal_error() -> None:
-    def run(arguments: dict[str, Any]) -> CallToolResult:
+    def run(arguments: dict[str, Any], client_name: str | None = None) -> CallToolResult:
         result = _completed(arguments)
         result.content[0].text = "x" * (6 * 1024 * 1024)  # type: ignore[union-attr]
         return result
@@ -124,7 +134,7 @@ def test_calls_from_one_server_process_run_one_at_a_time() -> None:
     overlaps = 0
     guard = threading.Lock()
 
-    def run(arguments: dict[str, Any]) -> CallToolResult:
+    def run(arguments: dict[str, Any], client_name: str | None = None) -> CallToolResult:
         nonlocal active, overlaps
         with guard:
             active += 1

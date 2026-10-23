@@ -734,6 +734,180 @@ cases*), Part 6 (*Entities*), Part 8 (*Bridge protocol*, *Plugin internals*, K6,
 - **The harness closes only documents it created.**
 - **The server mints `operation_id`.**
 
+**Done (2026-10-24, 0.3.0).**
+- **Decided with the owner at the start:**
+  - **The probe's document checks run only when no Krita document has unsaved changes.**
+    Otherwise they FAIL with "save your documents first".
+  - **A created document reports `mode: "new"`.** Modes are `new`, `working_copy` and
+    `read_only`.
+  - **Only calls that carry a `request_id` are journaled.** Reads are not.
+  - **Invariant 9 gains a 7-day window across Krita restarts.** It is an owner amendment, noted
+    beside invariant 9 in `SPEC.md`. Within one Krita session the bridge dedups however old the
+    id.
+- **A design review in plan mode found nine holes;** the plan folded in their fixes:
+  - the alias of a retry's own operation id;
+  - non-200 answers counted as not submitted;
+  - the lease passing only on proof;
+  - bridge conflicts that do not bind an id;
+  - the three 404 cases of `operation_get`;
+  - op args as a pure function of the tool arguments;
+  - the window as an owner decision;
+  - `addView` before any check, with cleanup on failure;
+  - retryable meaning "changed nothing".
+- **The plugin.**
+  - **`bridge_core/jobs.py`.**
+    - A `request_id` names one operation for the Krita session. Its `args_sha256` is the SHA-256
+      of canonical `{op, args}`.
+    - A duplicate returns the original operation, and its own `operation_id` becomes an alias of
+      it. Other arguments answer `REQUEST_ID_CONFLICT`.
+    - A retryable failure releases the id but keeps its hash bound. A reused `operation_id` is
+      `INVALID_ARGUMENT`.
+    - `stop()` fails queued calls as retryable `CANCELLED`, because they never ran.
+    - Finished operations are kept for the session, with their args dropped.
+    - Handlers receive a `Call` (`operation_id`, `request_id`, `client`). Every reply carries
+      `op`.
+  - **`server.py`** requires `client = {pid, started_at}`, with a non-empty start time. A call's
+    reply follows the operation it submitted.
+  - **`bridge_core/registry.py`** holds the handles:
+    - a random `doc-` id;
+    - a strong reference to the wrapper;
+    - `owned`, `mode`, `dirty`, `unsafe` and `lease`.
+
+    `sync()` matches wrappers by `==`, prunes documents that are gone, and gives the owner's
+    documents `read_only` handles. `guarded()` runs, in order:
+    1. the job-start refusal;
+    2. the lookup;
+    3. `DOCUMENT_READ_ONLY`;
+    4. `DOCUMENT_UNSAFE`;
+    5. the lease;
+    6. the handler;
+    7. `dirty`.
+  - **`bridge_core/documents.py`** has the ops `document.create`, `document.list` and
+    `document.close`, behind a port.
+  - **`bridge_core/processes.py`** runs `ps` with `LC_ALL=C TZ=UTC`, and holds `holder_alive`
+    and `is_live_krita`, which moved there from `bridge_file`.
+  - **`krita_adapter/documents.py`** implements the port.
+- **The server.**
+  - **`journal.py`.** The day file is 0600 in a 0700 folder. Each line is written in one
+    `os.write` under `flock`, after a newline if a crashed writer left a partial line.
+    - It indexes the last 7 UTC days and follows appended lines.
+    - Each attempt's outcome is `receipt`, `no_effect`, `not_sent`, `conflict` or `unknown`.
+      `receipt` and `no_effect` settle every attempt the bridge deduplicated in that session.
+      `not_sent` and `conflict` settle only their own attempt.
+  - **`tools/dispatch.py`** checks, in order:
+    1. a conflict;
+    2. a receipt;
+    3. uncertain under another Krita session, checked in `before_send`;
+    4. otherwise it journals and sends.
+  - **`bridge_client.py`** gains:
+    - `before_send`, an adopted `operation_id`, and `Failed.submitted`;
+    - `request_id` and `session_id` on outcomes;
+    - `operation(sent_in=)`, which is strict for unknown ids and uncertain across sessions;
+    - `cancel()`;
+    - no send without a start time.
+  - **The runner** passes `ToolCall(bridge, journal, client_name)`. The client name comes from
+    the MCP `initialize`.
+  - **`paths.server_data_dir()`** honours `KRITA_ART_MCP_DATA_DIR`.
+  - **The tools** are `tools/documents.py` and `tools/operations.py`. `RECEIPTS` maps ops to
+    receipts.
+- **The schemas.**
+  - **`guard`** is `{document_id, request_id}` in the 8 schemas that carry it, with its examples
+    amended. A test holds every copy identical, and `expected_revision` absent everywhere.
+  - **The five tools are amended** as the plan set out.
+  - **The amendment was made by a one-off script,** which is not committed.
+- **The probe.**
+  - Each `serve` gets `KRITA_ART_MCP_DATA_DIR=<harness>/server-a|server-b`.
+  - It runs the 13 new checks only after the unsaved gate.
+  - It sweeps probe-named, bridge-made documents at start and end.
+- **Amendments:**
+  - **A retryable failure releases its `request_id`.** Without that, a call refused while a
+    dialog was open could never run under its id. Settled in the plan.
+  - **The lease goes to the creator.** PDD Part 4 says the first process to mutate; create is
+    taken as that first mutation, or a second process's close would take the lease. Settled in
+    the plan.
+  - **Create's other models and backgrounds are `INVALID_ARGUMENT`** through the contract's
+    enums. The block says `UNSUPPORTED_CAPABILITY`; PDD names depths only. Settled in the plan.
+  - **`operation_get` drops `result_uri`,** a Phase 3 resource URI, as well as `rollback_state`.
+    Its data is `{operation_id, tool, state, progress, receipt}`. Settled in the plan.
+  - **Close's `baseline_untouched` is `boolean | null`,** null without a source. Settled in the
+    plan.
+  - **Protocol 1 gains `op` in operation replies, and a stricter `client`.** Both are additive.
+    Settled in the plan.
+  - **`MULTIPLE_WINDOWS` is retryable on both sides.** The owner closes the window and the call
+    can run. Settled in the plan.
+  - **`Krita.createDocument` makes an opaque white "Background" layer,** not a transparent one.
+    The plugin replaces it with a new paint layer, "Layer 1", through `Node.setChildNodes`,
+    which pushes no undo step, so undo cannot bring the white back. It then checks that layer's
+    opacity, and the alpha of its pixel (0, 0). Found from Krita's source
+    (`libs/libkis/Krita.cpp`, `KisDocument::newImage`, `Node::setChildNodes`) while building.
+  - **A poll waits on a 404 until the bridge has answered once.** The bridge keeps every
+    operation for its session, so a 404 before an answer means the call is not registered yet.
+    Before, `operation()` reported such a call as uncertain. Found by falsification.
+  - **`krita_operation_get` writes a finished line only for an attempt still open.** The probe
+    found it writing a second one. Found by the live probe.
+- **Measured** (Krita 5.3.4 on macOS, Apple Silicon):
+  - **20 create and close cycles, no crash,** in four runs. Each cycle took 149 to 150 ms on
+    average, 156 to 166 ms at most. `krita_document_close` stays (decision 8).
+  - **A new document's profile is `sRGB-elle-V2-srgbtrc.icc`.** It is RGBA / U8, and its
+    initial layer is transparent at opacity 255.
+  - **libkis `Document` wrappers compare by document with `==`.** Two lists give one stable id.
+  - **H4 idle:** p95 5.7 to 7.2 ms.
+  - **Twice, the owner was working in Krita during the session.** The probe's job-start check
+    refused with `KRITA_MODAL_DIALOG` each time, as designed. The owner also saved before the
+    document checks ran.
+- **Falsified:**
+  - **The method.** Each check was broken in the product code. It failed at its own test, then
+    was restored and compared byte for byte.
+  - **Plugin core, 30 checks.**
+    - Dedup, the alias, the conflict and key-order hashing.
+    - Release on a retryable failure, with the hash kept.
+    - `stop()`'s retryable cancel, args dropped, `op` in replies, a reused operation id, the
+      handler's client.
+    - The client shape, and the reply following its own operation.
+    - The owner's documents not owned, pruning, and the lease refusing a live holder.
+    - The holder never asked about itself, dirty on success only, unsafe, and read-only writes.
+    - The job-start refusals, random ids, create's cleanup, the transparent-layer check, and
+      the profile refusal.
+    - Close refusing dirty and close confirmed.
+    - The start-time compare, and a failed `ps` keeping the lease.
+  - **The server, 30 checks.**
+    - The journal before the send, the receipt from the journal, and both conflict sides.
+    - A conflict not binding, uncertain never re-sent, and the `not_sent` and `no_effect`
+      outcomes.
+    - `submitted` only on 200, the adopted id, and the three 404 cases.
+    - The start time required, `operation_get` finishing a call, receipt validation, and
+      cancel refusing a running op.
+    - The 7-day window, following appended lines, the newline after a cut line, and a newer
+      version refused.
+    - The private file, outcome settling (both ways), the data-dir variable, and the server's
+      depth refusal.
+    - The lease end to end, `guard` identical, no `expected_revision`, the sRGB constants, and
+      no second finished line.
+  - **The probe, live, 11 of its 13 new checks.**
+    - **By real failures:** create and the 20 cycles (both refused by a modal dialog), and the
+      journal line count.
+    - **By breaks in the server:** list, `operation_get`, cancel, the unsaved gate, the retry,
+      the conflict, the 16-bit refusal and close.
+    - **Lease and unknown id** are plugin-side; they are falsified in the unit tests, and were
+      not reinstalled to break them live.
+  - **Tests strengthened while falsifying:**
+    - the release test now conflicts before the retry;
+    - the tail test has the file before the first lookup.
+
+    Tests added for gaps:
+    - a retry of a running call follows the original;
+    - no send without a start time;
+    - a receipt that breaks its schema;
+    - outcome settling;
+    - a poll waiting for a late registration;
+    - no second finished line.
+- **Numbers:**
+  - `verify`: 6 stages, all PASS;
+  - 163 server tests passed, 0 skipped (+41);
+  - 138 plugin-core tests passed, 0 skipped (+51);
+  - `probe`: 23 PASS, 0 FAIL, 4 MEASURED;
+  - 6 registered tools; 19 schema files.
+
 ---
 
 ## 4: Opening files

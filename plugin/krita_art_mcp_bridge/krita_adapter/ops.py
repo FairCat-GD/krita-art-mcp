@@ -3,11 +3,11 @@ from typing import Any
 from krita import Krita
 
 from ..bridge_core.errors import no_arguments
-from ..bridge_core.jobs import Handler
+from ..bridge_core.jobs import Call, Handler
 from .qt import QApplication
 
 
-def unsaved_documents(args: dict[str, Any]) -> dict[str, Any]:
+def unsaved_documents(args: dict[str, Any], call: Call) -> dict[str, Any]:
     # A session restarts Krita only when this reports nothing unsaved (decision 21).
     no_arguments(args)
     documents = Krita.instance().documents()
@@ -17,7 +17,7 @@ def unsaved_documents(args: dict[str, Any]) -> dict[str, Any]:
     }
 
 
-def undo_action(args: dict[str, Any]) -> dict[str, Any]:
+def undo_action(args: dict[str, Any], call: Call) -> dict[str, Any]:
     # Measures how edit_undo shows the top undo label, on a throwaway document of its own.
     no_arguments(args)
     app = Krita.instance()

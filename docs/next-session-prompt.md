@@ -1,126 +1,112 @@
-Read docs/spec/SPEC.md (§1 decisions 5, 8, 27, 29; §4; §5 invariants 5, 9), docs/spec/PDD.md
-(Part 4 *Conventions*: IDs, guard, one writer, request IDs; `krita_document_list`,
-`krita_document_create`, `krita_document_close`, `krita_operation_get`/`cancel`; *States & edge
-cases*; Part 6 *Entities*; Part 8 *Bridge protocol*, *Plugin internals*, K6, K14, K45), CLAUDE.md,
-then this file. Then do Session 3 of docs/spec/SESSIONS.md: operations and the document registry.
-Session 3 has five parts:
-- **retries and the journal:** journaled before dispatch, the bridge's `request_id` dedup and
-  `REQUEST_ID_CONFLICT`, and the uncertain outcome never re-sent;
-- **`krita_operation_get` and `krita_operation_cancel`**, with their schemas amended;
-- **the plugin's document registry:** ids, strong references and `addView`, mode, the writer
-  lease, dirty and unsafe, and the job-start refusals;
-- **the tools:** `krita_document_create`, `krita_document_list` and `krita_document_close`, with
-  `guard` amended in all 19 schemas;
-- **the 20-cycle check** (decision 8).
+Read docs/spec/SPEC.md (§1 decisions 9, 20, 25–27; §4; §5 invariants 2, 3, 13), docs/spec/PDD.md
+(Part 4 *Conventions*: coordinates, IDs; `krita_document_open`, `krita_document_inspect`; Part 6
+*Files*, *Formats*; Part 8 *Pixel transfer*, *Security & privacy*, K12, K14, K39, K46), CLAUDE.md,
+then this file. Then do Session 4 of docs/spec/SESSIONS.md: opening files. Session 4 has five
+parts:
+- **roots:** `krita-art-mcp roots add|list|remove`, `config.json` with its version, `realpath`
+  on both sides (`PATH_NOT_ALLOWED`), and `doctor`'s "no roots" step;
+- **the transfer path:** raw `pixelData` files in `transfer/`, BGRA to RGBA in the server, masks
+  the other way with their SHA-256, Pillow and NumPy added;
+- **`harness.*`:** the namespace, its folder gate, and the server-side ORA fixture writer;
+- **`krita_document_open`:** working copies and read-only opens, KRA / ORA / PNG, protection by
+  default, and the `as_opened` baseline;
+- **`krita_document_inspect`**, frame 0 only.
 
-Release 0.3.0.
+Release 0.4.0.
 
 ## State you need that is not in the specs
 
-- **Round 1 is the Phase 1 build.** Sessions 0, 1 and 2 are done; 3–15 remain, and 6, 10 and 13
+- **Round 1 is the Phase 1 build.** Sessions 0 to 3 are done; 4 to 15 remain, and 6, 10 and 13
   are architecture reviews.
-- **Session 2 and its review fixes are pushed.** `origin` is the private GitHub repository
-  `FairCat-GD/krita-art-mcp`. `origin/main` holds everything through `review: a bridge that fails
-  to publish now stops, and 6 smaller`, so `origin/main..HEAD` starts empty. List it before any
-  push.
-- **What Session 2 left that Session 3 builds on:**
-  - **The plugin** (`plugin/krita_art_mcp_bridge/`).
-    - **`bridge_core/` is pure stdlib.**
-      - `jobs.py`: `Jobs`, with one `threading.Condition` around every state change. Operations
-        are keyed by the server-minted `operation_id`. A resent `operation_id` returns the same
-        operation. It covers `submit`, `drain` (the `job_active` re-entry guard), `wait`,
-        `cancel` (queued only) and `stop`. `request_id` and `client` are stored on each
-        `Operation` but not yet used: dedup and the lease are Session 3's.
-      - `server.py`: the HTTP layer. It checks `Host`, then the token, then 503, then the body.
-        Every reply carries `session_id`, `operation_id` and `request_id`. One error body,
-        `{code, message, retryable, details}`, serves every refusal. `wait_s` is capped at 10 s.
-      - `bridge.py`: `Bridge`. Its `start()` and `stop()` run in the order PDD Part 8 gives. Its
-        built-in `server_info` op returns the health snapshot as a job.
-      - `bridge_file.py`, `log.py`, `paths.py` (`private_dir`), `capabilities.py`,
-        `source_hash.py` and `errors.py` (`CODES`, `BridgeError`, `no_arguments`).
-    - **`krita_adapter/`.**
-      - `extension.py` (`setup()` and the `applicationClosing` stop).
-      - `main_thread.py`: the `Waker` queued signal, and `main_thread_check()`.
-      - `runtime.py`: the facts cached at start.
-      - `ops.py`: `bridge.unsaved_documents` and `probe.undo_action`. A new op goes in
-        `ops.HANDLERS`.
-    - **The package `__init__.py`** only registers the extension.
-  - **The server** (`src/krita_art_mcp/`).
-    - `bridge_client.py`: `BridgeClient.call(op, args, request_id=)` and `.operation(id)` return
-      `Done | Failed | Pending`. The bridge is pinned per call. After a send, a lost bridge is
-      `INTERNAL_ERROR` with `details.outcome: "uncertain"`. `request_id` defaults to a minted
-      `req-…`, and `client` is `{pid, started_at}` (`ps lstart`).
-    - `tools/__init__.py`: `TOOLS` and `BUILT_TOOLS`, `build()`, `ExactArguments`, and the runner.
-      The runner holds the call lock, validates the arguments, catches everything, and checks
-      each result against its schema and 6 MiB. A new tool is one entry in `TOOLS` and a module
-      function `(client, arguments) -> CallToolResult`.
-    - `envelope.py`: `completed`, `pending`, `failed` and `failure`.
-    - `errors.py`: `PROTOCOL`, `API_VERSION` and `CODES` (with hints).
-    - Also `setup_checks.py` (with `plugin_current`, invariant 11's one check, shared by
-      `doctor` and the probe), `doctor.py` (a 5 s budget), `install.py`, `plugin_files.py`,
-      `processes.py`, `paths.py` and `instructions.py`.
-    - `probe/__init__.py`: `Report` and `run()`. A new live check is a function called from
-      `_probe`.
-  - **The schemas.**
-    - The envelope is amended in all 19 schemas: `api_version` `"0.2.0"`, `revision` null, the
-      `error.code` enum, and `failed`/`cancelled` carrying an error and null data.
-    - `krita_server_info` is fully amended. The other 18 keep their tool-specific parts
-      unamended.
-    - `guard` is Session 3's shared shape.
-  - **The live setup.** The plugin is installed and enabled in the owner's Krita 5.3.4. The data
-    dir `~/Library/Application Support/krita-art-mcp/` exists (0700) with `bridge.json`, `logs/`
-    and `harness/`.
-- **What the spec said that turned out wrong or harder:**
-  - **`Krita.instance().version()` is `"5.3.4.1 (git bd6e8d0)"`,** not a bare version. The
-    schema takes any non-empty string.
-  - **`osascript -e 'tell application "krita" to quit'` reports "User canceled (-128)"** even
-    when Krita quits cleanly: Krita exits before it replies. Check `pgrep -x krita`, not the
-    exit code.
-  - **A directory created as a parent gets 0755.** The plugin's `paths.private_dir` makes the
-    data dir 0700 even when the log created it first.
-  - **`doctor` must report the unsaved count when an earlier step fails.** The restart check is
-    needed exactly when the plugin is stale.
-  - **Krita's bundled `python3.13` cannot run on its own** (its `Python.app` stub is not
-    shipped). The live probe is the only check in Krita's runtime.
-  - **`edit_undo`'s text is `Undo <top label>`, but it updates asynchronously.**
-    - Read straight after `waitForDone()`, it was stale (`"Undo "`) in 2 of 7 reads, whether or
-      not Krita was frontmost.
-    - Block 9's "rollback … with its label checked" cannot read it straight after the step.
-    - Carry this forward until Session 9 designs that check. The measurements are in Session 2's
-      done-note.
-- **Decisions written down nowhere else** (deliberate, for ARCHITECTURE):
-  - **`krita_server_info` runs as a main-thread job,** so its answer proves the main thread is
-    free. `/v1/health` is cached and answered on the HTTP thread alone.
-  - **The restart check is an op** (`bridge.unsaved_documents`) printed by `doctor`, not part of
-    health. Health is cached, and a document's modified flag needs the main thread.
-  - **The capability matrix lives in `bridge_core.capabilities`,** and the tool relays it.
-    `allowed_roots` joins `krita_server_info` with roots in Session 4.
-  - **Protocol 1's fields are fixed.**
-    - `request_id`, `client`, every reply's `session_id` and the uniform error body are there
-      for Session 3; the lease and dedup need no new protocol.
-    - Session 3 decides how long finished operations are kept: today the map only grows, per
-      Krita session. A resent `operation_id` with other arguments returns the first operation;
-      the `request_id` conflict rule is Session 3's. Both were review findings, skipped for
-      Session 3.
-  - **`doctor` and the not-running hint share `setup_checks`.** `KRITA_NOT_RUNNING` names the
-    first failing local step in `details.{step, detail, fix}`.
-- **Restarting Krita.** The bridge answers now, so a session restarts Krita itself when
-  `uv run krita-art-mcp doctor` ends with `0 unsaved`:
-  1. run `uv run krita-art-mcp install-plugin`;
-  2. quit Krita with `osascript -e 'tell application "krita" to quit'`;
-  3. wait until `pgrep -x krita` finds nothing;
-  4. run `open -a krita`;
-  5. wait for `bridge.json`;
-  6. run `doctor` again.
+- **The push status.** `origin` is the private GitHub repository `FairCat-GD/krita-art-mcp`.
+  `origin/main` holds everything through `review: a bridge that fails to publish now stops, and
+  6 smaller`. Session 3's `feat:` commit, and its `review:` commit once the review is done, wait
+  for the next approved push. List `origin/main..HEAD` before any push.
+- **What Session 3 left that Session 4 builds on:**
+  - **The plugin's registry** (`bridge_core/registry.py`).
+    - A `Handle` has `document_id`, `document` (the strong reference), `owned`, `mode`, `dirty`,
+      `unsafe` and `lease`. Session 4 adds the source path and hash, the baseline id, and the
+      protection fields.
+    - `Registry.add(document, mode, client)` registers a document the bridge made and gives the
+      lease to the caller. Open will use it with `working_copy` or `read_only`.
+    - `sync()` matches wrappers with `==` (libkis wrappers are unhashable) and prunes documents
+      that are gone. It gives the owner's documents `read_only` handles with `owned=False`.
+    - `guarded(handler, dirties=, writes=, allow_unsafe=)` wraps every document mutation. Its
+      order:
+      1. the job-start refusal (modal dialog, not exactly one window; both retryable);
+      2. the lookup (`DOCUMENT_NOT_FOUND`);
+      3. `DOCUMENT_READ_ONLY` (not owned, or `writes` on a `read_only` mode);
+      4. `DOCUMENT_UNSAFE`;
+      5. the lease (`DOCUMENT_IN_USE`);
+      6. the handler;
+      7. `dirty` when `dirties(args)`.
 
-  With any unsaved document, ask the owner (decision 21).
-- **Baseline:**
+      A close is `writes=False`, so an agent can close its own read-only opens.
+  - **The plugin's document ops** (`bridge_core/documents.py`, behind a port that
+    `krita_adapter/documents.py` implements): `document.create`, `document.list` and
+    `document.close`. New ops join `documents.handlers()` or a sibling, and the extension
+    merges them into the bridge's handlers.
+  - **Jobs** (`bridge_core/jobs.py`): a handler is `(args, call)`, and `call.client` is the
+    lease identity.
+    - A `request_id` names one operation for the Krita session.
+    - A retryable `BridgeError` means "changed nothing" and releases the id, so raise a
+      retryable error only before an op changes anything.
+  - **The server's journaled path** (`tools/dispatch.py`). `journaled(call, tool, arguments,
+    request_id, send, receipt)` is how `krita_document_open` must dispatch.
+    - **Op args must be a pure function of the tool's arguments,** or a genuine retry hashes
+      differently and conflicts. Session 7's mask transfer files must be named by their
+      SHA-256.
+    - **A receipt depends only on the op's outcome** (`from_outcome`), and `RECEIPTS` in
+      `tools/operations.py` maps each op to its tool, so `krita_operation_get` can rebuild it.
+      Add open's and inspect's ops there.
+  - **The journal** (`journal.py`): `<server data dir>/journal/YYYY-MM-DD.jsonl`. It indexes 7
+    UTC days. The server data dir is `paths.server_data_dir()`, which honours
+    `KRITA_ART_MCP_DATA_DIR`; the baselines and captures go there too.
+  - **`krita_document_close`** returns `baseline_untouched: null` without a source. Session 4
+    fills it, and removes the `as_opened` baseline on close.
+  - **`mode`** is `new` (create), `working_copy` or `read_only`.
+  - **The test fakes** live in `tests/fixtures/fake_krita.py` (`FakePort`, `FakeDocument`,
+    `MainThread`). They are on pytest's `pythonpath` and mypy's `mypy_path`, and are 3.10-valid
+    for the plugin run.
+  - **The probe** gives each `serve` its own `KRITA_ART_MCP_DATA_DIR` under `harness/`
+    (`server-a`, `server-b`).
+    - Its document checks run only after the gate "no Krita document has unsaved changes".
+    - It sweeps documents named `krita-art-mcp probe…` that the bridge made, at start and end.
+- **What the spec said that turned out wrong or harder:**
+  - **`Krita.createDocument` makes an opaque white "Background" paint layer,** whatever
+    "transparent" means elsewhere: the default pixel is opaque white and the layer opacity 255.
+    Create swaps it for a fresh paint layer "Layer 1" through `Node.setChildNodes`, which pushes
+    no undo step (`addChildNode` and `Node.remove` do). Session 7's undo floor needs no special
+    case for created documents.
+  - **`Krita.createDocument` asserts that the colour space exists** (`Q_ASSERT(cs)`), so a
+    wrong profile name could abort Krita. The plugin re-checks the colour space before any
+    Krita call.
+  - **`ps -o lstart` depends on the locale and time zone,** which differ between a shell and
+    Krita launched from the Dock. Both sides run `ps` with `LC_ALL=C TZ=UTC`.
+  - **The owner works in Krita while sessions run.** Twice the probe met a modal dialog (an
+    open-file dialog) and correctly refused with `KRITA_MODAL_DIALOG`; it passed once the
+    dialog was closed. A probe FAIL of that kind means "wait", not a bug.
+- **Decisions written down nowhere else** (deliberate, for ARCHITECTURE):
+  - **Retry layers.** The bridge dedups within a Krita session. The journal answers a receipt
+    from any session, and refuses an `unknown` attempt from another session as uncertain.
+  - **Outcomes.** `receipt` and `no_effect` settle every deduplicated attempt in their session;
+    `not_sent` and `conflict` settle only their own.
+  - **Polls.** A poll treats a 404 as "not registered yet" until the bridge has answered once,
+    because operations are kept for the whole session.
+  - **Document ids** are `doc-` plus 12 random hex characters, never reused across Krita
+    restarts.
+  - **Probe journals.** The harness's servers write their journals under `harness/`, never the
+    owner's data dir.
+- **Baseline** (the next session moves these only by what it adds):
   - `verify`: 6 stages, all PASS;
-  - 122 server tests passed, 0 skipped;
-  - 87 plugin-core tests passed, 0 skipped;
-  - `probe`: 10 PASS, 0 FAIL, plus 3 MEASURED.
-- **Not done:** the owner's own look at N-03 in Activity Monitor (`top` measured 0.0%; it is in
-  `docs/BACKLOG.md`).
+  - 163 server tests passed, 0 skipped;
+  - 138 plugin-core tests passed, 0 skipped;
+  - `probe`: 23 PASS, 0 FAIL, 4 MEASURED;
+  - 6 registered tools.
+- **Not done:**
+  - the owner's own look at N-03 in Activity Monitor (in `docs/BACKLOG.md`);
+  - the `CHANGELOG.md` link reference for 0.3.0, which needs the session commit's sha and is
+    added with the review commit.
 
 ## Watch for
 
@@ -137,6 +123,7 @@ Release 0.3.0.
   - **The owner's Krita is live, with their documents open.** No session touches them, and none
     restarts Krita while a document has unsaved changes.
   - **Nothing private in any file or commit message** (`CLAUDE.md`, *This repository is public*).
+    Never record the names of the owner's open documents.
 - **The plugin's import root.**
   - Tests see `bridge_core` as a top-level package through `plugin/krita_art_mcp_bridge` on
     `pythonpath`. Keep `bridge_core`'s own imports relative, and never import the
@@ -159,29 +146,40 @@ Release 0.3.0.
   - Qt's `loop.exec()` and `getattr(loop, "exec", None)` pass.
   - Modules removed by Python 3.12 or 3.13 are refused.
 - **No `tests/conftest.py`.** The 3.10 run loads every conftest from the rootdir down, and its
-  environment holds only pytest.
+  environment holds only pytest. Shared fakes go in `tests/fixtures/`, 3.10-valid.
 - **A stdio test waits for each reply, and closes stdin in a `finally`.**
   - The server can exit at end of input before answering queued requests.
   - With the subprocess's own context manager, a failed assertion hung the run for 10 minutes.
 - **A plugin change loads only after a Krita restart.**
   - Run `install-plugin`, then restart.
   - `doctor` step 5 and the probe's first check refuse a stale plugin.
-  - Each restart follows *Restarting Krita* above.
+  - **Restarting Krita.** When `uv run krita-art-mcp doctor` ends with `0 unsaved`:
+    1. run `uv run krita-art-mcp install-plugin`;
+    2. quit Krita with `osascript -e 'tell application "krita" to quit'` (it reports "User
+       canceled (-128)" even when Krita quits cleanly);
+    3. wait until `pgrep -x krita` finds nothing;
+    4. run `open -a krita`;
+    5. wait for `bridge.json`;
+    6. run `doctor` again.
+
+    With any unsaved document, ask the owner (decision 21).
 - **An exception escaping a PyQt5 slot aborts Krita.** Every slot and `setup()` catch everything
   and log to `plugin.log`. Keep that for new signal handlers.
 - **Each server process serialises its tool calls** with the runner's lock. A tool function is
   sync, because mcp runs it on a worker thread. Never make one async while it blocks on the
   bridge.
-- **A test that needs a live bridge** builds a real `Bridge` with a fake main thread, as the
-  `MainThread` class in `tests/test_bridge_client.py` and `tests/plugin/test_bridge_http.py`
-  does.
-- **Session 3's own traps** are in its block:
-  - hold the wrappers `openDocument` and `createDocument` return (K6);
-  - measure `close`, don't assume it;
-  - the harness closes only documents it created;
-  - the server mints `operation_id`.
-- **`Document.close()` on a modified document may ask to save.** The undo probe clears the
-  modified flag first. A harness close must do the same, or use `dirty_policy: discard`'s path.
+- **A test that needs a live bridge** builds a real `Bridge` with `fake_krita.MainThread`, as
+  `tests/test_document_tools.py` does with the real registry and a `FakePort`.
+- **Session 4's own traps** are in its block:
+  - ORA and PNG store no layer ids, so match them by name and order;
+  - the projection's `pixelData` is BGRA;
+  - the harness folder sits inside the real data directory, so sweep only `harness/`.
+- **Also for Session 4:**
+  - **Open with batch mode and `addView` at once** (K6, K14), as create does.
+  - **On any failure after `openDocument`,** clear the modified flag and close the document in
+    the same job, or it lingers as an owner `read_only` document the probe never sweeps.
+  - **`Document.close()` on a modified document may ask to save.** The port's `close()` clears
+    the modified flag first; keep every close going through it.
 - **Comments state the present, briefly.** No session ids, no "used to", no review stories, no
   paragraphs.
 - **Every push needs its own approval.** List `origin/main..HEAD` first, because parallel

@@ -1,3 +1,4 @@
+import os
 from pathlib import Path
 
 PLUGIN_NAME = "krita_art_mcp_bridge"
@@ -7,6 +8,16 @@ def default_data_dir() -> Path:
     # bridge.json, logs and the harness folder stay here whatever KRITA_ART_MCP_DATA_DIR says,
     # because Krita launched from the Dock never sees the variable (decision 25).
     return Path.home() / "Library" / "Application Support" / "krita-art-mcp"
+
+
+def server_data_dir() -> Path:
+    # Only what the server owns (captures, baselines, the journal) follows the variable.
+    override = os.environ.get("KRITA_ART_MCP_DATA_DIR")
+    return Path(override) if override else default_data_dir()
+
+
+def journal_dir() -> Path:
+    return server_data_dir() / "journal"
 
 
 def bridge_file() -> Path:

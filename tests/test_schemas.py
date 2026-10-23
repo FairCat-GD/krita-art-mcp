@@ -52,3 +52,38 @@ def test_example_validates_against_its_schemas(tool_name: str) -> None:
 @pytest.mark.parametrize("tool_name", PHASE_1_TOOLS)
 def test_input_schema_rejects_unknown_fields(tool_name: str) -> None:
     assert schemas.load(tool_name)["inputSchema"]["additionalProperties"] is False
+
+
+GUARD = {
+    "type": "object",
+    "properties": {
+        "document_id": {"type": "string", "minLength": 1},
+        "request_id": {"type": "string", "minLength": 1},
+    },
+    "required": ["document_id", "request_id"],
+    "additionalProperties": False,
+}
+
+
+def _shapes(value: Any, key: str) -> list[Any]:
+    if isinstance(value, dict):
+        found = [value[key]] if key in value else []
+        return found + [shape for item in value.values() for shape in _shapes(item, key)]
+    if isinstance(value, list):
+        return [shape for item in value for shape in _shapes(item, key)]
+    return []
+
+
+def test_every_copy_of_guard_is_the_phase_1_guard() -> None:
+    guards = [
+        guard
+        for name in PHASE_1_TOOLS
+        for guard in _shapes(schemas.load(name)["inputSchema"].get("properties", {}), "guard")
+    ]
+    assert len(guards) == 8
+    assert all(guard == GUARD for guard in guards)
+
+
+def test_no_schema_or_example_carries_expected_revision() -> None:
+    for name in PHASE_1_TOOLS:
+        assert _shapes(schemas.load(name), "expected_revision") == [], name

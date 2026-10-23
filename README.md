@@ -6,9 +6,17 @@ size, and undo or keep it. It is for painted (non-pixel) 2D game art.
 
 ## Status
 
-Phase 1 is being built. Version 0.2.0 connects the server to a running Krita through the plugin
-and offers one tool, `krita_server_info`, which reports Krita's version and what this build can
-do. The painting tools arrive in the coming releases; `CHANGELOG.md` lists what each one adds.
+Phase 1 is being built. Version 0.3.0 connects the server to a running Krita through the plugin
+and offers these tools:
+
+- `krita_server_info`: Krita's version and what this build can do;
+- `krita_document_create`, `krita_document_list` and `krita_document_close`: new transparent
+  RGBA / 8-bit / sRGB canvases, every open document, and closing an agent's own documents;
+- `krita_operation_get` and `krita_operation_cancel`: following a long call to its receipt, and
+  cancelling one still queued.
+
+Every change is journaled before it is sent and is safe to retry with the same `request_id`.
+The painting tools arrive in the coming releases; `CHANGELOG.md` lists what each one adds.
 
 ## Requirements
 
@@ -88,7 +96,8 @@ uv run krita-art-mcp serve
 
 `uv run krita-art-mcp probe` is the live harness. It checks the running plugin against this
 repository, then drives a real `serve` over stdio against your running Krita. It works only in
-`~/Library/Application Support/krita-art-mcp/harness/`.
+`~/Library/Application Support/krita-art-mcp/harness/`. Its document checks run only when none
+of your Krita documents has unsaved changes, and close only the documents the probe made.
 
 ## Documentation
 

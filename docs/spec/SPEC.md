@@ -251,6 +251,10 @@ Each is a rule, not a preference. *Enforced by* names what fails when it breaks.
 9. **The journal line is written before dispatch; a retried `request_id` never repeats work; an
    uncertain call is never re-sent.** *Why:* a duplicated stroke is a silent defect. *Enforced
    by* journal and dedup tests on both sides.
+   **Amended 2026-10-24 by the owner:** within one Krita session the bridge deduplicates however
+   old the `request_id`; across a Krita restart only the server's journal can, and it reads the
+   last 7 days of journal files. A retry of an open or a create more than 7 days later, after a
+   Krita restart, would run again.
 10. **The capability matrix is true at every release, and a tool is registered only once built.**
     *Why:* agents adapt to capabilities, not versions. *Enforced by* a test comparing registered
     tools to the built list, and harness checks of each capability.

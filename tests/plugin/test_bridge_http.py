@@ -9,30 +9,11 @@ from typing import Any
 import pytest
 from bridge_core import bridge_file
 from bridge_core.bridge import Bridge
+from bridge_core.jobs import Call
+from fake_krita import MainThread
 
 PLUGIN_PACKAGE = Path(__file__).resolve().parents[2] / "plugin" / "krita_art_mcp_bridge"
 FACTS = {"krita_version": "5.3.4", "qt_major": 5}
-
-
-class MainThread:
-    # Stands in for Krita's main thread: it drains the jobs whenever they are woken.
-    def __init__(self) -> None:
-        self.woken = threading.Event()
-        self.stopping = False
-        self.bridge: Bridge | None = None
-        self.thread = threading.Thread(target=self._loop, daemon=True)
-
-    def wake(self) -> None:
-        self.woken.set()
-
-    def is_current(self) -> bool:
-        return threading.current_thread() is self.thread
-
-    def _loop(self) -> None:
-        while not self.stopping:
-            if self.woken.wait(0.05) and self.bridge is not None:
-                self.woken.clear()
-                self.bridge.drain()
 
 
 class Live:
@@ -89,7 +70,7 @@ def live(tmp_path: Path) -> Iterator[Live]:
     main = MainThread()
     release = threading.Event()
 
-    def hold(args: dict[str, Any]) -> dict[str, Any]:
+    def hold(args: dict[str, Any], call: Call) -> dict[str, Any]:
         release.wait(5)
         return {"held": True}
 
@@ -97,7 +78,7 @@ def live(tmp_path: Path) -> Iterator[Live]:
         data_dir=tmp_path,
         package_dir=PLUGIN_PACKAGE,
         facts=FACTS,
-        handlers={"echo": lambda args: {"echo": args}, "hold": hold},
+        handlers={"echo": lambda args, call: {"echo": args}, "hold": hold},
         wake=main.wake,
         on_main_thread=main.is_current,
         is_live_krita=lambda pid: False,
@@ -134,6 +115,7 @@ def test_a_call_runs_on_the_main_thread_and_carries_its_ids(live: Live) -> None:
         "status": "done",
         "operation_id": "op-1",
         "request_id": "req-op-1",
+        "op": "echo",
         "result": {"echo": {"colour": "red"}},
     }
     assert live.call("server_info", "op-2")["result"] == live.bridge.health
@@ -208,6 +190,47 @@ def test_a_body_without_a_length_is_refused(live: Live, headers: dict[str, str])
 def test_a_malformed_call_is_refused(live: Live) -> None:
     status, reply = live.request("POST", "/v1/call", {"op": "echo"})
     assert status == 400
+    assert reply["error"]["code"] == "INVALID_ARGUMENT"
+
+
+@pytest.mark.parametrize(
+    "client",
+    [
+        {"pid": 1},
+        {"pid": 1, "started_at": ""},
+        {"pid": True, "started_at": "x"},
+        {"pid": "1", "started_at": "x"},
+        {"pid": 1, "started_at": "x", "extra": 1},
+        [],
+    ],
+)
+def test_a_call_needs_a_client_the_lease_can_tell_apart(live: Live, client: Any) -> None:
+    body = {
+        "op": "echo",
+        "args": {},
+        "request_id": "req-1",
+        "operation_id": "op-1",
+        "client": client,
+        "wait_s": 1,
+    }
+    status, reply = live.request("POST", "/v1/call", body)
+    assert status == 400
+    assert "client" in reply["error"]["message"]
+
+
+def test_a_reused_operation_id_is_refused_without_reporting_the_other_call(live: Live) -> None:
+    assert live.call("echo", "op-1", colour="red")["status"] == "done"
+    body = {
+        "op": "echo",
+        "args": {"colour": "blue"},
+        "request_id": "req-other",
+        "operation_id": "op-1",
+        "client": {"pid": 1, "started_at": "test"},
+        "wait_s": 1,
+    }
+    status, reply = live.request("POST", "/v1/call", body)
+    assert status == 200
+    assert reply["request_id"] == "req-other"
     assert reply["error"]["code"] == "INVALID_ARGUMENT"
 
 

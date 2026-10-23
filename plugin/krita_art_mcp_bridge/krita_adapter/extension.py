@@ -4,10 +4,12 @@ from typing import Any
 
 from krita import Extension, Krita
 
-from ..bridge_core import log, paths
+from ..bridge_core import documents, log, paths
 from ..bridge_core.bridge import Bridge
-from ..bridge_core.bridge_file import is_live_krita
+from ..bridge_core.processes import holder_alive, is_live_krita
+from ..bridge_core.registry import Registry
 from . import ops, runtime
+from .documents import KritaDocuments
 from .main_thread import Waker, main_thread_check
 
 PACKAGE_DIR = Path(__file__).resolve().parent.parent
@@ -34,11 +36,13 @@ class KritaArtMcpExtension(Extension):
 
     def _start(self, data_dir: Path) -> None:
         self._waker = Waker(self._drain, self._log)
+        port = KritaDocuments()
+        registry = Registry(port, holder_alive)
         bridge = Bridge(
             data_dir=data_dir,
             package_dir=PACKAGE_DIR,
             facts=runtime.facts(),
-            handlers=ops.HANDLERS,
+            handlers={**ops.HANDLERS, **documents.handlers(registry, port)},
             wake=self._waker.emit,
             on_main_thread=main_thread_check(),
             is_live_krita=is_live_krita,

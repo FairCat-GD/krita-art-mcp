@@ -5,13 +5,16 @@ from collections.abc import Callable
 from typing import Any
 
 from jsonschema import Draft202012Validator, ValidationError
+from mcp.server.mcpserver import Context
 from mcp.server.mcpserver.tools import Tool
 from mcp.server.mcpserver.utilities.func_metadata import ArgModelBase, FuncMetadata
 from mcp.types import CallToolResult, ToolAnnotations
 
 from krita_art_mcp import envelope, schemas
 from krita_art_mcp.bridge_client import BridgeClient
-from krita_art_mcp.tools import observe
+from krita_art_mcp.journal import Journal
+from krita_art_mcp.tools import documents, observe, operations
+from krita_art_mcp.tools.dispatch import ToolCall
 
 # Every message stays under Codex's 8 MiB line limit, with room to spare (C5).
 MAX_RESULT_BYTES = 6 * 1024 * 1024
@@ -19,11 +22,18 @@ MAX_REPORTED_PROBLEMS = 20
 # jsonschema quotes the offending value, which may be a 4096-point array.
 MAX_MESSAGE_CHARS = 200
 
-ToolFunction = Callable[[BridgeClient, dict[str, Any]], CallToolResult]
+ToolFunction = Callable[[ToolCall, dict[str, Any]], CallToolResult]
+# The arguments, and the MCP client's name for the journal.
+Run = Callable[[dict[str, Any], str | None], CallToolResult]
 
 # A tool is registered only once it is built and tested (invariant 10).
 TOOLS: dict[str, ToolFunction] = {
     "krita_server_info": observe.server_info,
+    "krita_document_list": documents.document_list,
+    "krita_document_create": documents.document_create,
+    "krita_document_close": documents.document_close,
+    "krita_operation_get": operations.operation_get,
+    "krita_operation_cancel": operations.operation_cancel,
 }
 BUILT_TOOLS = sorted(TOOLS)
 
@@ -43,19 +53,35 @@ class ExactArguments(FuncMetadata):
         return {"arguments": arguments_to_validate}
 
 
-def build_all(client: BridgeClient) -> list[Tool]:
-    return [build(name, functools.partial(run, client)) for name, run in TOOLS.items()]
+def build_all(bridge: BridgeClient, journal: Journal) -> list[Tool]:
+    return [
+        build(name, functools.partial(_bound, tool, bridge, journal))
+        for name, tool in TOOLS.items()
+    ]
 
 
-def build(name: str, run: Callable[[dict[str, Any]], CallToolResult]) -> Tool:
+def _bound(
+    tool: ToolFunction,
+    bridge: BridgeClient,
+    journal: Journal,
+    arguments: dict[str, Any],
+    client_name: str | None,
+) -> CallToolResult:
+    return tool(ToolCall(bridge, journal, client_name), arguments)
+
+
+def build(name: str, run: Run) -> Tool:
     spec = schemas.load(name)
     inputs = Draft202012Validator(spec["inputSchema"])
     outputs = Draft202012Validator(spec["outputSchema"])
 
     # Sync on purpose: mcp runs it on a worker thread, so a 45 s bridge wait never stalls stdio.
-    def call(arguments: dict[str, Any]) -> CallToolResult:
+    def call(arguments: dict[str, Any], ctx: Context) -> CallToolResult:
+        client_name = _client_name(ctx)
         with _CALLS:
-            return _checked(name, arguments, run, inputs, outputs)
+            return _checked(
+                name, arguments, functools.partial(_named, run, client_name), inputs, outputs
+            )
 
     return Tool(
         fn=call,
@@ -65,7 +91,7 @@ def build(name: str, run: Callable[[dict[str, Any]], CallToolResult]) -> Tool:
         parameters=spec["inputSchema"],
         fn_metadata=ExactArguments(arg_model=_NoFields, output_schema=spec["outputSchema"]),
         is_async=False,
-        context_kwarg=None,
+        context_kwarg="ctx",
         annotations=ToolAnnotations(**spec["annotations"]),
     )
 
@@ -102,6 +128,19 @@ def _checked(
         return result
     log.error("%s returned a result that breaks its contract: %s", name, problem)
     return envelope.failure("INTERNAL_ERROR", details={"reason": problem})
+
+
+def _named(run: Run, client_name: str | None, arguments: dict[str, Any]) -> CallToolResult:
+    return run(arguments, client_name)
+
+
+def _client_name(ctx: Any) -> str | None:
+    # Optional on newer protocol versions, so a missing name is simply not recorded.
+    try:
+        params = ctx.session.client_params
+    except Exception:
+        return None
+    return None if params is None else str(params.client_info.name)
 
 
 def _result_problem(result: CallToolResult, outputs: Draft202012Validator) -> str | None:

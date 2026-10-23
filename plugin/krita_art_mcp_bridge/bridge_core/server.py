@@ -163,7 +163,7 @@ class _Handler(BaseHTTPRequestHandler):
         )
         if operation is None:
             return _failure(503, "KRITA_NOT_RUNNING", "Krita is quitting.")
-        return self._operation(operation.operation_id, _wait_s(body["wait_s"]))
+        return 200, self.server.jobs.follow(operation, _wait_s(body["wait_s"]))
 
     def _operation(self, operation_id: str, wait_s: float) -> Reply:
         reply = self.server.jobs.wait(operation_id, wait_s)
@@ -185,8 +185,19 @@ def _call_problem(body: dict[str, Any]) -> str | None:
     for field in ("op", "request_id", "operation_id"):
         if not isinstance(body[field], str) or not body[field]:
             return f"{field} must be a non-empty string."
-    if not isinstance(body["args"], dict) or not isinstance(body["client"], dict):
-        return "args and client must be objects."
+    if not isinstance(body["args"], dict):
+        return "args must be an object."
+    client = body["client"]
+    # The writer lease tells server processes apart by both fields.
+    if (
+        not isinstance(client, dict)
+        or set(client) != {"pid", "started_at"}
+        or isinstance(client["pid"], bool)
+        or not isinstance(client["pid"], int)
+        or not isinstance(client["started_at"], str)
+        or not client["started_at"]
+    ):
+        return "client must be {pid, started_at}, with a non-empty start time."
     wait_s = body["wait_s"]
     if isinstance(wait_s, bool) or not isinstance(wait_s, (int, float)) or wait_s < 0:
         return "wait_s must be a number of seconds, zero or more."

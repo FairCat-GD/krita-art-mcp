@@ -1,6 +1,6 @@
 {
   "name": "krita_operation_cancel",
-  "description": "Request cancellation and report verified final state.",
+  "description": "Cancel a queued operation, or report the final state of a finished one.",
   "inputSchema": {
     "type": "object",
     "properties": {
@@ -66,31 +66,21 @@
             "type": "object",
             "properties": {
               "operation_id": {
-                "type": "string"
+                "type": "string",
+                "minLength": 1
               },
               "state": {
                 "type": "string",
                 "enum": [
                   "cancelled",
-                  "completed"
+                  "completed",
+                  "failed"
                 ]
-              },
-              "rollback_state": {
-                "type": "string",
-                "enum": [
-                  "not_needed",
-                  "verified"
-                ]
-              },
-              "checkpoint_id": {
-                "type": "string"
               }
             },
             "required": [
               "operation_id",
-              "state",
-              "rollback_state",
-              "checkpoint_id"
+              "state"
             ],
             "additionalProperties": false
           },
@@ -189,31 +179,21 @@
               "type": "object",
               "properties": {
                 "operation_id": {
-                  "type": "string"
+                  "type": "string",
+                  "minLength": 1
                 },
                 "state": {
                   "type": "string",
                   "enum": [
                     "cancelled",
-                    "completed"
+                    "completed",
+                    "failed"
                   ]
-                },
-                "rollback_state": {
-                  "type": "string",
-                  "enum": [
-                    "not_needed",
-                    "verified"
-                  ]
-                },
-                "checkpoint_id": {
-                  "type": "string"
                 }
               },
               "required": [
                 "operation_id",
-                "state",
-                "rollback_state",
-                "checkpoint_id"
+                "state"
               ],
               "additionalProperties": false
             },
@@ -290,14 +270,12 @@
     "structuredContent": {
       "api_version": "0.2.0",
       "status": "completed",
-      "document_id": "doc-1",
+      "document_id": null,
       "revision": null,
-      "operation_id": null,
+      "operation_id": "op-paint-1",
       "data": {
         "operation_id": "op-paint-1",
-        "state": "cancelled",
-        "rollback_state": "verified",
-        "checkpoint_id": "cp-edit-1"
+        "state": "cancelled"
       },
       "error": null
     }

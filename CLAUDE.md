@@ -101,8 +101,8 @@ The why for each is in `docs/spec/SPEC.md` §5.
    - Every message stays under 6 MB.
    - *Enforced by* schema and size tests.
 9. **Retries are safe.** The journal line is written before dispatch, a retried `request_id`
-   never repeats work, and an uncertain call is never re-sent. *Enforced by* journal and dedup
-   tests.
+   never repeats work (within a Krita session; across a Krita restart, for 7 days), and an
+   uncertain call is never re-sent. *Enforced by* journal and dedup tests.
 10. **The capability matrix is true at every release,** and a tool is registered only once it is
     built. *Enforced by* the registered-tools test and the harness.
 11. **No stale plugin.** `probe` and `doctor` refuse a plugin whose source hash differs from the

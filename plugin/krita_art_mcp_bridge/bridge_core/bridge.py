@@ -10,7 +10,7 @@ from typing import Any
 from . import PLUGIN_VERSION, PROTOCOL, bridge_file, capabilities, paths
 from . import log as bridge_log
 from .errors import no_arguments
-from .jobs import Handler, Jobs
+from .jobs import Call, Handler, Jobs
 from .server import BridgeHTTPServer
 from .source_hash import source_hash
 
@@ -49,7 +49,7 @@ class Bridge:
         self._thread: threading.Thread | None = None
         self._stopped = False
 
-    def _server_info(self, args: dict[str, Any]) -> dict[str, Any]:
+    def _server_info(self, args: dict[str, Any], call: Call) -> dict[str, Any]:
         # A job, not a cached read, so the answer proves Krita's main thread is free.
         no_arguments(args)
         return dict(self.health)

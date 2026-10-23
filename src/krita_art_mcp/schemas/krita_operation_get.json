@@ -61,7 +61,19 @@
             "type": "object",
             "properties": {
               "operation_id": {
-                "type": "string"
+                "type": "string",
+                "minLength": 1
+              },
+              "tool": {
+                "anyOf": [
+                  {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
               },
               "state": {
                 "type": "string",
@@ -85,34 +97,23 @@
                   }
                 ]
               },
-              "result_uri": {
+              "receipt": {
                 "anyOf": [
                   {
-                    "type": "string",
-                    "minLength": 1
+                    "type": "object"
                   },
                   {
                     "type": "null"
                   }
                 ]
-              },
-              "rollback_state": {
-                "type": "string",
-                "enum": [
-                  "not_needed",
-                  "pending",
-                  "verified",
-                  "failed",
-                  "conflict"
-                ]
               }
             },
             "required": [
               "operation_id",
+              "tool",
               "state",
               "progress",
-              "result_uri",
-              "rollback_state"
+              "receipt"
             ],
             "additionalProperties": false
           },
@@ -211,7 +212,19 @@
               "type": "object",
               "properties": {
                 "operation_id": {
-                  "type": "string"
+                  "type": "string",
+                  "minLength": 1
+                },
+                "tool": {
+                  "anyOf": [
+                    {
+                      "type": "string",
+                      "minLength": 1
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
                 },
                 "state": {
                   "type": "string",
@@ -235,34 +248,23 @@
                     }
                   ]
                 },
-                "result_uri": {
+                "receipt": {
                   "anyOf": [
                     {
-                      "type": "string",
-                      "minLength": 1
+                      "type": "object"
                     },
                     {
                       "type": "null"
                     }
                   ]
-                },
-                "rollback_state": {
-                  "type": "string",
-                  "enum": [
-                    "not_needed",
-                    "pending",
-                    "verified",
-                    "failed",
-                    "conflict"
-                  ]
                 }
               },
               "required": [
                 "operation_id",
+                "tool",
                 "state",
                 "progress",
-                "result_uri",
-                "rollback_state"
+                "receipt"
               ],
               "additionalProperties": false
             },
@@ -333,20 +335,30 @@
   },
   "example": {
     "input": {
-      "operation_id": "op-export-1"
+      "operation_id": "op-new"
     },
     "structuredContent": {
       "api_version": "0.2.0",
       "status": "completed",
-      "document_id": "doc-1",
+      "document_id": null,
       "revision": null,
-      "operation_id": null,
+      "operation_id": "op-new",
       "data": {
-        "operation_id": "op-export-1",
+        "operation_id": "op-new",
+        "tool": "krita_document_list",
         "state": "completed",
-        "progress": 1.0,
-        "result_uri": "krita-artifact://example/export-receipt.json",
-        "rollback_state": "not_needed"
+        "progress": null,
+        "receipt": {
+          "api_version": "0.2.0",
+          "status": "completed",
+          "document_id": null,
+          "revision": null,
+          "operation_id": "op-new",
+          "data": {
+            "documents": []
+          },
+          "error": null
+        }
       },
       "error": null
     }

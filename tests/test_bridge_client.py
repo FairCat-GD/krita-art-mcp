@@ -11,6 +11,8 @@ from typing import Any
 
 import pytest
 from bridge_core.bridge import Bridge
+from bridge_core.jobs import Call
+from fake_krita import MainThread
 from jsonschema import Draft202012Validator
 from mcp import Client
 from mcp.types import CallToolResult
@@ -23,27 +25,6 @@ from krita_art_mcp.setup_checks import Step
 PLUGIN_PACKAGE = Path(__file__).resolve().parents[1] / "plugin" / "krita_art_mcp_bridge"
 FACTS = {"krita_version": "5.3.4", "qt_major": 5}
 NOT_RUNNING = Step("Krita is running", False, "no krita process", "Start Krita.")
-
-
-class MainThread:
-    # Stands in for Krita's main thread: it drains the jobs whenever they are woken.
-    def __init__(self) -> None:
-        self.woken = threading.Event()
-        self.stopping = False
-        self.bridge: Bridge | None = None
-        self.thread = threading.Thread(target=self._loop, daemon=True)
-
-    def wake(self) -> None:
-        self.woken.set()
-
-    def is_current(self) -> bool:
-        return threading.current_thread() is self.thread
-
-    def _loop(self) -> None:
-        while not self.stopping:
-            if self.woken.wait(0.05) and self.bridge is not None:
-                self.woken.clear()
-                self.bridge.drain()
 
 
 class Live:
@@ -75,18 +56,18 @@ def live(tmp_path: Path) -> Iterator[Live]:
     main = MainThread()
     release = threading.Event()
 
-    def hold(args: dict[str, Any]) -> dict[str, Any]:
+    def hold(args: dict[str, Any], call: Call) -> dict[str, Any]:
         release.wait(10)
         return {"held": True}
 
-    def boom(args: dict[str, Any]) -> dict[str, Any]:
+    def boom(args: dict[str, Any], call: Call) -> dict[str, Any]:
         raise RuntimeError("boom")
 
     bridge = Bridge(
         data_dir=tmp_path,
         package_dir=PLUGIN_PACKAGE,
         facts=FACTS,
-        handlers={"echo": lambda args: {"echo": args}, "hold": hold, "boom": boom},
+        handlers={"echo": lambda args, call: {"echo": args}, "hold": hold, "boom": boom},
         wake=main.wake,
         on_main_thread=main.is_current,
         is_live_krita=lambda pid: False,

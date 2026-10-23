@@ -1,6 +1,5 @@
 import json
 import os
-import subprocess
 from collections.abc import Callable
 from pathlib import Path
 from typing import Any
@@ -29,30 +28,6 @@ def read(path: Path) -> dict[str, Any] | None:
     except (OSError, ValueError):
         return None
     return content if isinstance(content, dict) else None
-
-
-def is_live_krita(pid: int) -> bool:
-    # A pid reused after a crash belongs to some other program, so the name must be Krita's.
-    if pid <= 0:
-        return False
-    try:
-        os.kill(pid, 0)
-    except ProcessLookupError:
-        return False
-    except PermissionError:
-        pass
-    try:
-        found = subprocess.run(
-            ["/bin/ps", "-p", str(pid), "-o", "comm="],
-            capture_output=True,
-            text=True,
-            timeout=5,
-            check=False,
-        )
-    except (OSError, subprocess.TimeoutExpired):
-        # Unsure means live: refusing to start beats taking over another Krita's bridge.
-        return True
-    return os.path.basename(found.stdout.strip()).lower() == "krita"
 
 
 def other_instance(path: Path, own_pid: int, is_live: Callable[[int], bool]) -> int | None:
