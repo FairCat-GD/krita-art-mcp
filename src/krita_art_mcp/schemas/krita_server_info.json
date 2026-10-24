@@ -149,12 +149,17 @@
                   "wait_budget_seconds": {
                     "type": "integer",
                     "minimum": 1
+                  },
+                  "capture_source_pixels": {
+                    "type": "integer",
+                    "minimum": 1
                   }
                 },
                 "required": [
                   "stroke_points",
                   "capture_pixels",
-                  "wait_budget_seconds"
+                  "wait_budget_seconds",
+                  "capture_source_pixels"
                 ],
                 "additionalProperties": false
               },
@@ -369,12 +374,17 @@
                     "wait_budget_seconds": {
                       "type": "integer",
                       "minimum": 1
+                    },
+                    "capture_source_pixels": {
+                      "type": "integer",
+                      "minimum": 1
                     }
                   },
                   "required": [
                     "stroke_points",
                     "capture_pixels",
-                    "wait_budget_seconds"
+                    "wait_budget_seconds",
+                    "capture_source_pixels"
                   ],
                   "additionalProperties": false
                 },
@@ -534,7 +544,8 @@
         "limits": {
           "stroke_points": 4096,
           "capture_pixels": 16777216,
-          "wait_budget_seconds": 45
+          "wait_budget_seconds": 45,
+          "capture_source_pixels": 67108864
         },
         "allowed_roots": [
           "/projects/demo"

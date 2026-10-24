@@ -1,9 +1,11 @@
+import hashlib
 from typing import Any
 
-from krita import Krita
+from krita import Krita, Preset
 
 from ..bridge_core.errors import no_arguments
 from ..bridge_core.jobs import Call, Handler
+from ..bridge_core.resources import fingerprint
 from .qt import QApplication
 
 
@@ -45,6 +47,21 @@ def undo_action(args: dict[str, Any], call: Call) -> dict[str, Any]:
     return {"action_found": True, "before": before, "after_add_layer": after}
 
 
+def preset_digests(args: dict[str, Any], call: Call) -> dict[str, Any]:
+    # Measures whether presets' settings, raw and canonical, survive a Krita restart unchanged.
+    no_arguments(args)
+    raw, canonical = hashlib.sha256(), hashlib.sha256()
+    found = Krita.instance().resources("preset")
+    for name in sorted(found):
+        try:
+            xml = str(Preset(found[name]).toXML())
+        except Exception:
+            xml = ""
+        raw.update(f"{name}\t{hashlib.sha256(xml.encode('utf-8')).hexdigest()}\n".encode())
+        canonical.update(f"{name}\t{fingerprint(xml)[1]}\n".encode())
+    return {"presets": len(found), "raw": raw.hexdigest(), "canonical": canonical.hexdigest()}
+
+
 def _unsafe_to_probe(app: Any) -> str | None:
     if QApplication.activeModalWidget() is not None:
         return "a modal dialog is open"
@@ -62,4 +79,5 @@ def _texts(action: Any) -> dict[str, str]:
 HANDLERS: dict[str, Handler] = {
     "bridge.unsaved_documents": unsaved_documents,
     "probe.undo_action": undo_action,
+    "probe.preset_digests": preset_digests,
 }

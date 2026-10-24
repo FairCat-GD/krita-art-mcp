@@ -9,7 +9,7 @@ from krita_art_mcp import envelope, schemas
 from krita_art_mcp.bridge_client import BeforeSend, Done, Failed, Outcome
 from krita_art_mcp.journal import JournalError
 from krita_art_mcp.paths import Places
-from krita_art_mcp.tools import documents, observe
+from krita_art_mcp.tools import documents, observe, pixels
 from krita_art_mcp.tools.dispatch import Receipt, ToolCall, journaled, record
 
 Resolver = Callable[[Places, Outcome], Outcome]
@@ -35,6 +35,9 @@ RECEIPTS: dict[str, Known] = {
     "document.close": Known(
         "krita_document_close", documents.close_receipt, documents.resolve_close
     ),
+    "resource.list": Known("krita_resource_list", observe.resource_receipt),
+    "capture.read": Known("krita_capture", pixels.capture_receipt, pixels.resolve_capture),
+    "sample.read": Known("krita_sample", pixels.sample_receipt, pixels.resolve_sample),
 }
 
 
@@ -75,9 +78,12 @@ def operation_get(call: ToolCall, arguments: dict[str, Any]) -> CallToolResult:
     _finish_journaled(call, outcome, receipt)
     content = receipt.structured_content or {}
     text = f"Operation {data['operation_id']} ({tool}) {data['state']}."
-    return envelope.completed(
+    result = envelope.completed(
         data, text, document_id=content.get("document_id"), operation_id=data["operation_id"]
     )
+    # The receipt's own line and any image it carries, as the call itself would have shown.
+    result.content.extend(receipt.content)
+    return result
 
 
 def _state(outcome: Outcome) -> str:

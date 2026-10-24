@@ -1,7 +1,7 @@
 from pathlib import Path
 from typing import Any
 
-from . import files, inspection, opening
+from . import files, inspection, opening, pixels
 from .errors import BridgeError, exact, no_arguments
 from .jobs import Call, Handler
 from .port import DocumentsPort
@@ -83,6 +83,7 @@ def handlers(registry: Registry, port: DocumentsPort, data: Path) -> dict[str, H
         "document.close": close_document,
         **opening.handlers(registry, port, data),
         **inspection.handlers(registry, port, data),
+        **pixels.handlers(registry, port, data),
     }
 
 

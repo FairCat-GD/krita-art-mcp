@@ -28,10 +28,6 @@
                   "type": "string",
                   "minLength": 1
                 },
-                "revision": {
-                  "type": "integer",
-                  "minimum": 0
-                },
                 "frame": {
                   "type": "integer",
                   "minimum": 0
@@ -39,7 +35,6 @@
               },
               "required": [
                 "document_id",
-                "revision",
                 "frame"
               ],
               "additionalProperties": false
@@ -556,7 +551,6 @@
           "asset_id": "hero",
           "source": {
             "document_id": "doc-1",
-            "revision": 12,
             "frame": 0
           },
           "registration_id": "reg-1"

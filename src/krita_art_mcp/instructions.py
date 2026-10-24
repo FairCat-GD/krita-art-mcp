@@ -26,6 +26,14 @@ never written; read_only opens the source itself and refuses every change.
 own to change anything. To resume your own earlier layers, reopen with editable_layer_ids (KRA) \
 or editable_layer_names (ORA and PNG, which store no layer ids).
 - krita_document_inspect shows the layer tree, which layers are protected, and the selection.
+- krita_capture returns an image and the path of its PNG. scale 1 is the native crop, alpha \
+included; any other scale is resampled with your filter onto a background, checker by default. \
+max_px (1600 by default, 4096 at most) bounds the long edge: capture tiles for more. A layer \
+capture is the layer's own pixels, without its opacity, masks or inherit-alpha clip.
+- Use krita_sample for exact colours (RGBA 0-255, hex, L*a*b*, L*C*h); a radius averages a disc, \
+weighted by alpha. Never judge a colour from a capture.
+- krita_resource_list lists brush presets: a brush's id and sha256 are what paint calls take as \
+preset_id and preset_sha256. It also lists blend modes, profiles and palettes.
 - No tool writes raw pixels or runs code. Pixels change only through Krita's brushes.
 - The owner may be watching Krita while you work.
 """

@@ -8,9 +8,13 @@ from krita_art_mcp.tools.dispatch import ToolCall, from_outcome
 
 LIMITS = {
     "stroke_points": 4096,
+    # The largest capture image: max_px is 4096 at most.
     "capture_pixels": 4096 * 4096,
+    # The largest area one capture reads, a whole 8k master; the plugin holds an equal copy.
+    "capture_source_pixels": 8192 * 8192,
     "wait_budget_seconds": int(WAIT_BUDGET_S),
 }
+RESOURCE_DATA = ("kind", "total", "resources", "next_cursor")
 
 
 def server_info(call: ToolCall, arguments: dict[str, Any]) -> CallToolResult:
@@ -40,3 +44,19 @@ def _text(health: dict[str, Any]) -> str:
         f"Krita {health['krita_version']}, plugin {health['plugin_version']}, "
         f"server {__version__}, protocol {health['protocol']}."
     )
+
+
+def resource_list(call: ToolCall, arguments: dict[str, Any]) -> CallToolResult:
+    op_args = {key: arguments[key] for key in ("kind", "cursor", "limit")}
+    return resource_receipt(call.bridge.call("resource.list", op_args))
+
+
+def resource_receipt(outcome: Outcome) -> CallToolResult:
+    def data(result: dict[str, Any]) -> dict[str, Any]:
+        return {key: result[key] for key in RESOURCE_DATA}
+
+    def text(result: dict[str, Any]) -> str:
+        shown = len(result["resources"])
+        return f"{shown} of {result['total']} {result['kind']} resources."
+
+    return from_outcome(outcome, data, text)

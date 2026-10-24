@@ -150,11 +150,19 @@ def open_receipt(outcome: Outcome) -> CallToolResult:
     return from_outcome(outcome, data, text, lambda result: result["document_id"])
 
 
+def frame_refusal(frame: int) -> CallToolResult | None:
+    # The plugin checks too; refusing here costs no trip to Krita.
+    if frame == 0:
+        return None
+    details = {"frame": frame, "supported": [0]}
+    message = "Phase 1 reads frame 0 only; animation arrives in Phase 5."
+    return envelope.failure("UNSUPPORTED_CAPABILITY", message, details=details)
+
+
 def document_inspect(call: ToolCall, arguments: dict[str, Any]) -> CallToolResult:
-    if arguments["frame"] != 0:
-        details = {"frame": arguments["frame"], "supported": [0]}
-        message = "Phase 1 reads frame 0 only; animation arrives in Phase 5."
-        return envelope.failure("UNSUPPORTED_CAPABILITY", message, details=details)
+    refused = frame_refusal(arguments["frame"])
+    if refused is not None:
+        return refused
     op_args = {"document_id": arguments["document_id"], "frame": 0}
     return inspect_receipt(
         resolve_inspect(call.places, call.bridge.call("document.inspect", op_args))

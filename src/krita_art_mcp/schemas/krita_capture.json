@@ -1,6 +1,6 @@
 {
   "name": "krita_capture",
-  "description": "Return a fresh lossless crop of a layer, composite or selection.",
+  "description": "Return a fresh crop of a layer, composite or selection: native at scale 1, resampled otherwise.",
   "inputSchema": {
     "type": "object",
     "properties": {
@@ -11,10 +11,6 @@
             "type": "string",
             "minLength": 1
           },
-          "revision": {
-            "type": "integer",
-            "minimum": 0
-          },
           "frame": {
             "type": "integer",
             "minimum": 0
@@ -22,7 +18,6 @@
         },
         "required": [
           "document_id",
-          "revision",
           "frame"
         ],
         "additionalProperties": false
@@ -50,10 +45,12 @@
         "type": "object",
         "properties": {
           "x": {
-            "type": "integer"
+            "type": "integer",
+            "minimum": 0
           },
           "y": {
-            "type": "integer"
+            "type": "integer",
+            "minimum": 0
           },
           "width": {
             "type": "integer",
@@ -85,6 +82,69 @@
           "bicubic",
           "lanczos"
         ]
+      },
+      "background": {
+        "anyOf": [
+          {
+            "type": "string",
+            "enum": [
+              "checker",
+              "transparent"
+            ]
+          },
+          {
+            "type": "object",
+            "properties": {
+              "space": {
+                "type": "string",
+                "enum": [
+                  "srgb"
+                ]
+              },
+              "rgba": {
+                "type": "array",
+                "prefixItems": [
+                  {
+                    "type": "number",
+                    "minimum": 0,
+                    "maximum": 1
+                  },
+                  {
+                    "type": "number",
+                    "minimum": 0,
+                    "maximum": 1
+                  },
+                  {
+                    "type": "number",
+                    "minimum": 0,
+                    "maximum": 1
+                  },
+                  {
+                    "type": "number",
+                    "minimum": 0,
+                    "maximum": 1
+                  }
+                ],
+                "items": false,
+                "minItems": 4,
+                "maxItems": 4
+              }
+            },
+            "required": [
+              "space",
+              "rgba"
+            ],
+            "additionalProperties": false
+          }
+        ]
+      },
+      "greyscale": {
+        "type": "boolean"
+      },
+      "max_px": {
+        "type": "integer",
+        "minimum": 1,
+        "maximum": 4096
       }
     },
     "required": [
@@ -173,47 +233,134 @@
                 "type": "object",
                 "properties": {
                   "uri": {
-                    "type": "string"
+                    "type": "string",
+                    "minLength": 2,
+                    "pattern": "^/"
+                  },
+                  "path": {
+                    "type": "string",
+                    "minLength": 2,
+                    "pattern": "^/"
                   },
                   "mime_type": {
-                    "type": "string"
+                    "const": "image/png"
                   },
                   "sha256": {
-                    "type": "string"
+                    "type": "string",
+                    "pattern": "^[0-9a-f]{64}$"
                   },
                   "size_bytes": {
-                    "type": "integer"
+                    "type": "integer",
+                    "minimum": 1
+                  },
+                  "retention_days": {
+                    "type": "integer",
+                    "minimum": 1
                   }
                 },
                 "required": [
                   "uri",
+                  "path",
                   "mime_type",
                   "sha256",
-                  "size_bytes"
+                  "size_bytes",
+                  "retention_days"
                 ],
                 "additionalProperties": false
               },
-              "output_size_px": {
-                "type": "array",
-                "items": {
-                  "type": "integer"
+              "inline": {
+                "type": "object",
+                "properties": {
+                  "preview": {
+                    "type": "boolean"
+                  },
+                  "output_size_px": {
+                    "type": "array",
+                    "prefixItems": [
+                      {
+                        "type": "integer",
+                        "minimum": 1
+                      },
+                      {
+                        "type": "integer",
+                        "minimum": 1
+                      }
+                    ],
+                    "items": false,
+                    "minItems": 2,
+                    "maxItems": 2
+                  },
+                  "source_to_image": {
+                    "type": "array",
+                    "items": {
+                      "type": "number"
+                    },
+                    "minItems": 6,
+                    "maxItems": 6
+                  },
+                  "filter": {
+                    "anyOf": [
+                      {
+                        "type": "string",
+                        "enum": [
+                          "nearest",
+                          "box",
+                          "bilinear",
+                          "bicubic",
+                          "lanczos"
+                        ]
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  }
                 },
-                "minItems": 0
+                "required": [
+                  "preview",
+                  "output_size_px",
+                  "source_to_image",
+                  "filter"
+                ],
+                "additionalProperties": false
+              },
+              "target": {
+                "type": "string",
+                "enum": [
+                  "composite",
+                  "layer",
+                  "selection"
+                ]
+              },
+              "layer_id": {
+                "anyOf": [
+                  {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
               },
               "source_rect": {
                 "type": "object",
                 "properties": {
                   "x": {
-                    "type": "integer"
+                    "type": "integer",
+                    "minimum": 0
                   },
                   "y": {
-                    "type": "integer"
+                    "type": "integer",
+                    "minimum": 0
                   },
                   "width": {
-                    "type": "integer"
+                    "type": "integer",
+                    "minimum": 1
                   },
                   "height": {
-                    "type": "integer"
+                    "type": "integer",
+                    "minimum": 1
                   }
                 },
                 "required": [
@@ -224,25 +371,139 @@
                 ],
                 "additionalProperties": false
               },
+              "output_size_px": {
+                "type": "array",
+                "prefixItems": [
+                  {
+                    "type": "integer",
+                    "minimum": 1
+                  },
+                  {
+                    "type": "integer",
+                    "minimum": 1
+                  }
+                ],
+                "items": false,
+                "minItems": 2,
+                "maxItems": 2
+              },
+              "scale": {
+                "type": "number",
+                "exclusiveMinimum": 0
+              },
               "source_to_image": {
                 "type": "array",
                 "items": {
-                  "type": "integer"
+                  "type": "number"
                 },
-                "minItems": 0
+                "minItems": 6,
+                "maxItems": 6
+              },
+              "filter": {
+                "anyOf": [
+                  {
+                    "type": "string",
+                    "enum": [
+                      "nearest",
+                      "box",
+                      "bilinear",
+                      "bicubic",
+                      "lanczos"
+                    ]
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "background": {
+                "anyOf": [
+                  {
+                    "type": "string",
+                    "enum": [
+                      "checker",
+                      "transparent"
+                    ]
+                  },
+                  {
+                    "type": "object",
+                    "properties": {
+                      "space": {
+                        "type": "string",
+                        "enum": [
+                          "srgb"
+                        ]
+                      },
+                      "rgba": {
+                        "type": "array",
+                        "prefixItems": [
+                          {
+                            "type": "number",
+                            "minimum": 0,
+                            "maximum": 1
+                          },
+                          {
+                            "type": "number",
+                            "minimum": 0,
+                            "maximum": 1
+                          },
+                          {
+                            "type": "number",
+                            "minimum": 0,
+                            "maximum": 1
+                          },
+                          {
+                            "type": "number",
+                            "minimum": 0,
+                            "maximum": 1
+                          }
+                        ],
+                        "items": false,
+                        "minItems": 4,
+                        "maxItems": 4
+                      }
+                    },
+                    "required": [
+                      "space",
+                      "rgba"
+                    ],
+                    "additionalProperties": false
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "greyscale": {
+                "type": "boolean"
               },
               "profile_id": {
-                "type": "string"
+                "anyOf": [
+                  {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
               },
               "fresh": {
-                "type": "boolean"
+                "const": true
               }
             },
             "required": [
               "image",
-              "output_size_px",
+              "inline",
+              "target",
+              "layer_id",
               "source_rect",
+              "output_size_px",
+              "scale",
               "source_to_image",
+              "filter",
+              "background",
+              "greyscale",
               "profile_id",
               "fresh"
             ],
@@ -346,47 +607,134 @@
                   "type": "object",
                   "properties": {
                     "uri": {
-                      "type": "string"
+                      "type": "string",
+                      "minLength": 2,
+                      "pattern": "^/"
+                    },
+                    "path": {
+                      "type": "string",
+                      "minLength": 2,
+                      "pattern": "^/"
                     },
                     "mime_type": {
-                      "type": "string"
+                      "const": "image/png"
                     },
                     "sha256": {
-                      "type": "string"
+                      "type": "string",
+                      "pattern": "^[0-9a-f]{64}$"
                     },
                     "size_bytes": {
-                      "type": "integer"
+                      "type": "integer",
+                      "minimum": 1
+                    },
+                    "retention_days": {
+                      "type": "integer",
+                      "minimum": 1
                     }
                   },
                   "required": [
                     "uri",
+                    "path",
                     "mime_type",
                     "sha256",
-                    "size_bytes"
+                    "size_bytes",
+                    "retention_days"
                   ],
                   "additionalProperties": false
                 },
-                "output_size_px": {
-                  "type": "array",
-                  "items": {
-                    "type": "integer"
+                "inline": {
+                  "type": "object",
+                  "properties": {
+                    "preview": {
+                      "type": "boolean"
+                    },
+                    "output_size_px": {
+                      "type": "array",
+                      "prefixItems": [
+                        {
+                          "type": "integer",
+                          "minimum": 1
+                        },
+                        {
+                          "type": "integer",
+                          "minimum": 1
+                        }
+                      ],
+                      "items": false,
+                      "minItems": 2,
+                      "maxItems": 2
+                    },
+                    "source_to_image": {
+                      "type": "array",
+                      "items": {
+                        "type": "number"
+                      },
+                      "minItems": 6,
+                      "maxItems": 6
+                    },
+                    "filter": {
+                      "anyOf": [
+                        {
+                          "type": "string",
+                          "enum": [
+                            "nearest",
+                            "box",
+                            "bilinear",
+                            "bicubic",
+                            "lanczos"
+                          ]
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    }
                   },
-                  "minItems": 0
+                  "required": [
+                    "preview",
+                    "output_size_px",
+                    "source_to_image",
+                    "filter"
+                  ],
+                  "additionalProperties": false
+                },
+                "target": {
+                  "type": "string",
+                  "enum": [
+                    "composite",
+                    "layer",
+                    "selection"
+                  ]
+                },
+                "layer_id": {
+                  "anyOf": [
+                    {
+                      "type": "string",
+                      "minLength": 1
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
                 },
                 "source_rect": {
                   "type": "object",
                   "properties": {
                     "x": {
-                      "type": "integer"
+                      "type": "integer",
+                      "minimum": 0
                     },
                     "y": {
-                      "type": "integer"
+                      "type": "integer",
+                      "minimum": 0
                     },
                     "width": {
-                      "type": "integer"
+                      "type": "integer",
+                      "minimum": 1
                     },
                     "height": {
-                      "type": "integer"
+                      "type": "integer",
+                      "minimum": 1
                     }
                   },
                   "required": [
@@ -397,25 +745,139 @@
                   ],
                   "additionalProperties": false
                 },
+                "output_size_px": {
+                  "type": "array",
+                  "prefixItems": [
+                    {
+                      "type": "integer",
+                      "minimum": 1
+                    },
+                    {
+                      "type": "integer",
+                      "minimum": 1
+                    }
+                  ],
+                  "items": false,
+                  "minItems": 2,
+                  "maxItems": 2
+                },
+                "scale": {
+                  "type": "number",
+                  "exclusiveMinimum": 0
+                },
                 "source_to_image": {
                   "type": "array",
                   "items": {
-                    "type": "integer"
+                    "type": "number"
                   },
-                  "minItems": 0
+                  "minItems": 6,
+                  "maxItems": 6
+                },
+                "filter": {
+                  "anyOf": [
+                    {
+                      "type": "string",
+                      "enum": [
+                        "nearest",
+                        "box",
+                        "bilinear",
+                        "bicubic",
+                        "lanczos"
+                      ]
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "background": {
+                  "anyOf": [
+                    {
+                      "type": "string",
+                      "enum": [
+                        "checker",
+                        "transparent"
+                      ]
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "space": {
+                          "type": "string",
+                          "enum": [
+                            "srgb"
+                          ]
+                        },
+                        "rgba": {
+                          "type": "array",
+                          "prefixItems": [
+                            {
+                              "type": "number",
+                              "minimum": 0,
+                              "maximum": 1
+                            },
+                            {
+                              "type": "number",
+                              "minimum": 0,
+                              "maximum": 1
+                            },
+                            {
+                              "type": "number",
+                              "minimum": 0,
+                              "maximum": 1
+                            },
+                            {
+                              "type": "number",
+                              "minimum": 0,
+                              "maximum": 1
+                            }
+                          ],
+                          "items": false,
+                          "minItems": 4,
+                          "maxItems": 4
+                        }
+                      },
+                      "required": [
+                        "space",
+                        "rgba"
+                      ],
+                      "additionalProperties": false
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "greyscale": {
+                  "type": "boolean"
                 },
                 "profile_id": {
-                  "type": "string"
+                  "anyOf": [
+                    {
+                      "type": "string",
+                      "minLength": 1
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
                 },
                 "fresh": {
-                  "type": "boolean"
+                  "const": true
                 }
               },
               "required": [
                 "image",
-                "output_size_px",
+                "inline",
+                "target",
+                "layer_id",
                 "source_rect",
+                "output_size_px",
+                "scale",
                 "source_to_image",
+                "filter",
+                "background",
+                "greyscale",
                 "profile_id",
                 "fresh"
               ],
@@ -490,7 +952,6 @@
     "input": {
       "source": {
         "document_id": "doc-1",
-        "revision": 12,
         "frame": 0
       },
       "target": "composite",
@@ -509,24 +970,45 @@
       "status": "completed",
       "document_id": "doc-1",
       "revision": null,
-      "operation_id": null,
+      "operation_id": "op-0123456789abcdef0123456789abcdef",
       "data": {
         "image": {
-          "uri": "krita-artifact://example/preview.png",
+          "uri": "/data/krita-art-mcp/captures/2026-10-24/op-0123456789abcdef0123456789abcdef.png",
+          "path": "/data/krita-art-mcp/captures/2026-10-24/op-0123456789abcdef0123456789abcdef.png",
           "mime_type": "image/png",
           "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
-          "size_bytes": 4096
+          "size_bytes": 4096,
+          "retention_days": 7
         },
-        "output_size_px": [
-          32,
-          32
-        ],
+        "inline": {
+          "preview": false,
+          "output_size_px": [
+            32,
+            32
+          ],
+          "source_to_image": [
+            1,
+            0,
+            -16,
+            0,
+            1,
+            -16
+          ],
+          "filter": null
+        },
+        "target": "composite",
+        "layer_id": null,
         "source_rect": {
           "x": 16,
           "y": 16,
           "width": 32,
           "height": 32
         },
+        "output_size_px": [
+          32,
+          32
+        ],
+        "scale": 1,
         "source_to_image": [
           1,
           0,
@@ -535,7 +1017,10 @@
           1,
           -16
         ],
-        "profile_id": "srgb-profile-1",
+        "filter": null,
+        "background": null,
+        "greyscale": false,
+        "profile_id": "sRGB-elle-V2-srgbtrc.icc",
         "fresh": true
       },
       "error": null

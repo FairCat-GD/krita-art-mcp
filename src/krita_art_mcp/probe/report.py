@@ -2,6 +2,7 @@ import uuid
 from typing import Any, TextIO
 
 from mcp import Client
+from mcp.types import CallToolResult
 
 
 class Report:
@@ -30,6 +31,11 @@ class Report:
 
     def _line(self, outcome: str, name: str, detail: str) -> None:
         self.note(f"{outcome:<8} {name}" + (f": {detail}" if detail else ""))
+
+
+async def call(mcp: Client, name: str, arguments: dict[str, Any]) -> CallToolResult:
+    # The whole result, images included.
+    return await mcp.call_tool(name, arguments)
 
 
 async def tool(mcp: Client, name: str, arguments: dict[str, Any]) -> dict[str, Any]:

@@ -1,11 +1,14 @@
+import logging
 from typing import Any
 
-from krita import InfoObject, Krita
+from krita import InfoObject, Krita, Selection
 
+from ..bridge_core import log
 from ..bridge_core.errors import BridgeError
 from .qt import QApplication
 
 INITIAL_LAYER = "Layer 1"
+PROBE_MASK = "krita-art-mcp probe mask"
 
 
 class KritaDocuments:
@@ -70,6 +73,7 @@ class KritaDocuments:
             "color_model": str(document.colorModel()),
             "depth": str(document.colorDepth()),
             "profile_id": str(document.colorProfile()),
+            "current_time": int(document.currentTime()),
         }
 
     def layers(self, document: Any) -> tuple[str, list[dict[str, Any]]]:
@@ -132,6 +136,73 @@ class KritaDocuments:
         data = selection.pixelData(bounds["x"], bounds["y"], bounds["width"], bounds["height"])
         return bounds, _buffer(data)
 
+    def composite_rects(self, document: Any, rects: list[dict[str, int]]) -> list[Any]:
+        document.waitForDone()
+        return [_buffer(document.pixelData(*_xywh(rect))) for rect in rects]
+
+    def layer_rects(self, document: Any, layer_id: str, rects: list[dict[str, int]]) -> list[Any]:
+        document.waitForDone()
+        node = _node(document, layer_id)
+        # The layer's own paint device, in document coordinates (K12).
+        return [_buffer(node.pixelData(*_xywh(rect))) for rect in rects]
+
+    def selection_rect(self, document: Any, rect: dict[str, int]) -> Any | None:
+        document.waitForDone()
+        selection = document.selection()
+        if selection is None:
+            return None
+        return _buffer(selection.pixelData(*_xywh(rect)))
+
+    def mask_active(self, document: Any) -> bool:
+        active = document.activeNode()
+        return active is not None and str(active.type()) == "selectionmask"
+
+    def bring_forward(self, document: Any) -> Any:
+        # The refusal at job start leaves exactly one window; activeWindow() may be None.
+        window = Krita.instance().windows()[0]
+        previous = window.activeView()
+        if previous is not None and previous.document() == document:
+            return None
+        view = next((view for view in window.views() if view.document() == document), None)
+        if view is None:
+            raise BridgeError("INTERNAL_ERROR", "The document has no view to bring forward.")
+        # setVisible activates the view's own sub-window; Window.showView would give its widget
+        # a new one.
+        view.setVisible()
+        now = window.activeView()
+        if now is None or now.document() != document:
+            if previous is not None:
+                self.restore_view(previous)
+            raise BridgeError("INTERNAL_ERROR", "Krita did not bring the document's view forward.")
+        return previous
+
+    def restore_view(self, view: Any) -> None:
+        # Never raises, so a failure here cannot hide the read's own outcome.
+        try:
+            view.setVisible()
+        except Exception:
+            logging.getLogger(log.NAME).exception("the previous view was not put back")
+
+    def front(self) -> Any:
+        windows = Krita.instance().windows()
+        view = windows[0].activeView() if windows else None
+        return None if view is None else view.document()
+
+    def add_active_mask(self, document: Any, layer_id: str, rect: dict[str, int]) -> bool:
+        layer = _node(document, layer_id)
+        document.waitForDone()
+        before = bytes(document.pixelData(*_xywh(rect)))
+        selection = Selection()
+        selection.select(*_xywh(rect), 255)
+        mask = document.createSelectionMask(PROBE_MASK)
+        mask.setSelection(selection)
+        layer.addChildNode(mask, None)
+        document.setActiveNode(mask)
+        document.waitForDone()
+        if not self.mask_active(document):
+            raise BridgeError("INTERNAL_ERROR", "Krita did not make the selection mask active.")
+        return bytes(document.pixelData(*_xywh(rect))) != before
+
     def export_kra(self, document: Any, target: str) -> bool:
         # exportImage, never saveAs: the document keeps pointing at its own file (K39).
         batch = bool(document.batchmode())
@@ -187,6 +258,20 @@ def _walk(parent: Any, parent_id: str, nodes: list[dict[str, Any]]) -> None:
             }
         )
         _walk(node, node_id, nodes)
+
+
+def _xywh(rect: dict[str, int]) -> tuple[int, int, int, int]:
+    return rect["x"], rect["y"], rect["width"], rect["height"]
+
+
+def _node(document: Any, layer_id: str) -> Any:
+    pending = list(document.rootNode().childNodes())
+    while pending:
+        node = pending.pop()
+        if _layer_id(node) == layer_id:
+            return node
+        pending.extend(node.childNodes())
+    raise BridgeError("LAYER_NOT_FOUND", "No layer has that id.", False, {"layer_id": layer_id})
 
 
 def _unmasked(document: Any, mask: Any) -> Any:

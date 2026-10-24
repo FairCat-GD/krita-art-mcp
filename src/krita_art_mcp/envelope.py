@@ -4,6 +4,9 @@ from mcp.types import CallToolResult, TextContent
 
 from krita_art_mcp.errors import API_VERSION, error_body
 
+# Every message stays under Codex's 8 MiB line limit, with room to spare (C5).
+MAX_RESULT_BYTES = 6 * 1024 * 1024
+
 
 def structured(
     status: str,

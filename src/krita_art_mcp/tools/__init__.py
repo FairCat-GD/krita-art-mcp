@@ -12,13 +12,12 @@ from mcp.types import CallToolResult, ToolAnnotations
 
 from krita_art_mcp import envelope, schemas
 from krita_art_mcp.bridge_client import BridgeClient
+from krita_art_mcp.envelope import MAX_RESULT_BYTES
 from krita_art_mcp.journal import Journal
 from krita_art_mcp.paths import Places
-from krita_art_mcp.tools import documents, observe, operations
+from krita_art_mcp.tools import documents, observe, operations, pixels
 from krita_art_mcp.tools.dispatch import ToolCall
 
-# Every message stays under Codex's 8 MiB line limit, with room to spare (C5).
-MAX_RESULT_BYTES = 6 * 1024 * 1024
 MAX_REPORTED_PROBLEMS = 20
 # jsonschema quotes the offending value, which may be a 4096-point array.
 MAX_MESSAGE_CHARS = 200
@@ -35,6 +34,9 @@ TOOLS: dict[str, ToolFunction] = {
     "krita_document_create": documents.document_create,
     "krita_document_inspect": documents.document_inspect,
     "krita_document_close": documents.document_close,
+    "krita_resource_list": observe.resource_list,
+    "krita_capture": pixels.capture,
+    "krita_sample": pixels.sample,
     "krita_operation_get": operations.operation_get,
     "krita_operation_cancel": operations.operation_cancel,
 }

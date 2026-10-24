@@ -46,12 +46,31 @@ runs; after it closes, read it from git history at round 1's release commit.
   round 1 intake.
 - **A plugin zip for other users,** importable through Krita's *Import Python Plugin from File*.
   Left out at the round 1 intake; round 1 installs with `install-plugin`.
+- **Layer reads of groups and masks** (0.5.0). `krita_capture` and `krita_sample` read paint
+  layers only: a group has no pixels of its own, and a mask is one channel. A group could be read
+  through `Node.projectionPixelData`, and a mask as a grey image.
+- **Colour maths for documents outside sRGB** (0.5.0). `krita_sample` gives L\*a\*b\* and
+  L\*C\*h only for Krita's sRGB profiles, and greyscale captures need them. Converting through
+  the document's ICC profile would lift that.
+- **Reading a frame other than the one on screen** (0.5.0). Reads refuse a document whose current
+  frame is not 0, and never move the owner's timeline. `Node.pixelDataAtTime` (K32) could read a
+  layer at any frame without moving it; Phase 5 decides.
+- **Composite reads in two Krita states** (0.5.0). "Isolate active layer" mode changes the
+  composite a read sees, and a document with two views reports the first view's active node. Both
+  are untested.
 
 ## Not yet checked by hand
 
 Checks that need a person at the machine. Each has an automated check covering most of it;
 these are the parts only a person can see.
 
+- **The selection overlay K46 guards against** (0.5.0). With marching ants, Krita's default
+  selection display, an active selection mask changed no composite byte, so the probe measures the
+  overlay rather than checking it. With the mask display mode on, a capture should still show no
+  overlay; the harness never changes display settings, so only a person can try it.
+- **Whether a capture's K46 switch visibly moves the tab** (0.5.0). The probe confirms that
+  Krita makes the document's view active and puts the previous one back; whether the tab bar shows
+  it is for a person to see.
 - **N-03 in Activity Monitor** (0.2.0). With the plugin loaded and Krita idle, Krita's CPU should
   stay under 1%. `top` measured 0.0% in six samples 5 s apart. Look at Krita's row in Activity
   Monitor for a minute while it is idle.

@@ -38,14 +38,14 @@ class Opened:
     seconds: float
 
 
-def _sha(path: Path) -> str:
+def sha(path: Path) -> str:
     return hashlib.sha256(path.read_bytes()).hexdigest()
 
 
-def _open_args(source: Path, mode: str, work: Path | None = None, **extra: Any) -> dict[str, Any]:
+def open_args(source: Path, mode: str, work: Path | None = None, **extra: Any) -> dict[str, Any]:
     arguments: dict[str, Any] = {
         "source_path": str(source),
-        "source_sha256": _sha(source),
+        "source_sha256": sha(source),
         "mode": mode,
         "request_id": str(uuid.uuid4()),
     }
@@ -71,7 +71,7 @@ async def run(report: Report, a: Client, b: Client, client: BridgeClient, harnes
     )
     if not await _make_kra(report, a, client, ora, kra):
         return
-    hashes = {path: _sha(path) for path in (ora, kra, png)}
+    hashes = {path: sha(path) for path in (ora, kra, png)}
     ora_tree = fixtures.expected_tree(stack)
     png_tree = [{**ora_tree[0], "name": None, "bounds_px": fixtures.bounds(composite)}]
     opened: dict[tuple[str, str], Opened] = {}
@@ -91,7 +91,7 @@ async def run(report: Report, a: Client, b: Client, client: BridgeClient, harnes
     await _refusals(report, a, b, client, png, harness, allowed or [])
     report.check(
         "every fixture is unchanged by the opens",
-        all(_sha(path) == digest for path, digest in hashes.items()),
+        all(sha(path) == digest for path, digest in hashes.items()),
     )
     _kritarc(report, harness)
     _measured(report, opened)
@@ -99,7 +99,7 @@ async def run(report: Report, a: Client, b: Client, client: BridgeClient, harnes
 
 async def _make_kra(report: Report, a: Client, client: BridgeClient, ora: Path, kra: Path) -> bool:
     # A KRA no tool can write yet: Krita's own exporter writes it from the ORA (decision 20).
-    opened = await tool(a, "krita_document_open", _open_args(ora, "read_only"))
+    opened = await tool(a, "krita_document_open", open_args(ora, "read_only"))
     if opened.get("status") != "completed":
         report.check("harness.export_kra writes the KRA fixture", False, str(opened.get("error")))
         return False
@@ -110,7 +110,7 @@ async def _make_kra(report: Report, a: Client, client: BridgeClient, ora: Path, 
         again = _harness_export(client, document_id, kra)
     finally:
         await close(a, document_id)
-    written = isinstance(made, Done) and kra.exists() and made.result.get("sha256") == _sha(kra)
+    written = isinstance(made, Done) and kra.exists() and made.result.get("sha256") == sha(kra)
     report.check(
         "harness.export_kra writes the KRA fixture with Krita's own exporter",
         written,
@@ -146,7 +146,7 @@ async def _round_trip(
 ) -> Opened | None:
     name = f"{label} {mode}: opens protected, matches the fixture, keeps a baseline until close"
     started = time.perf_counter()
-    result = await tool(a, "krita_document_open", _open_args(source, mode, work))
+    result = await tool(a, "krita_document_open", open_args(source, mode, work))
     seconds = time.perf_counter() - started
     if result.get("status") != "completed":
         report.check(name, False, f"{code(result)}: {(result.get('error') or {}).get('message')}")
@@ -264,7 +264,7 @@ async def _editable(
         (ora, {"editable_layer_names": ["probe locked"]}),
     ):
         result = await tool(
-            a, "krita_document_open", _open_args(source, "working_copy", work, **extra)
+            a, "krita_document_open", open_args(source, "working_copy", work, **extra)
         )
         layers = (result.get("data") or {}).get("layers", [])
         unprotected.append(sorted(layer["name"] for layer in layers if not layer["protected"]))
@@ -291,7 +291,7 @@ async def _refusals(
     allowed: list[str],
 ) -> None:
     mismatch = harness / "work" / "mismatch"
-    wrong = _open_args(png, "working_copy", mismatch, source_sha256="0" * 64)
+    wrong = open_args(png, "working_copy", mismatch, source_sha256="0" * 64)
     refused = await tool(a, "krita_document_open", wrong)
     left = sorted(os.listdir(mismatch)) if mismatch.exists() else []
     report.check(
@@ -312,9 +312,9 @@ async def _escapes(
     link.symlink_to(UNWRITABLE / "probe-escape.png")
     dotdot = harness / "fixtures" / ".." / ".." / "probe-outside.png"
     cases = {
-        "..": _open_args(png, "read_only", source_path=str(dotdot)),
-        "a symlink": _open_args(png, "read_only", source_path=str(link)),
-        "a working_dir": _open_args(png, "working_copy", UNWRITABLE / "probe-work"),
+        "..": open_args(png, "read_only", source_path=str(dotdot)),
+        "a symlink": open_args(png, "read_only", source_path=str(link)),
+        "a working_dir": open_args(png, "working_copy", UNWRITABLE / "probe-work"),
     }
     reals = [os.path.realpath(dotdot), os.path.realpath(link), str(UNWRITABLE / "probe-work")]
     rooted = [os.path.realpath(root) for root in allowed]
@@ -332,7 +332,7 @@ async def _escapes(
     )
     op_args = {
         "source_path": str(link),
-        "source_sha256": _sha(png),
+        "source_sha256": sha(png),
         "mode": "read_only",
         "working_dir": None,
         "editable_layer_ids": None,
@@ -354,7 +354,7 @@ async def _retry(
     report: Report, a: Client, b: Client, client: BridgeClient, png: Path, harness: Path
 ) -> None:
     work = harness / "work" / "retry"
-    arguments = _open_args(png, "working_copy", work)
+    arguments = open_args(png, "working_copy", work)
     first = await tool(a, "krita_document_open", arguments)
     unsaved = client.call("bridge.unsaved_documents")
     again = await tool(a, "krita_document_open", arguments)

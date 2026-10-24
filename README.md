@@ -6,13 +6,18 @@ size, and undo or keep it. It is for painted (non-pixel) 2D game art.
 
 ## Status
 
-Phase 1 is being built. Version 0.4.0 connects the server to a running Krita through the plugin
+Phase 1 is being built. Version 0.5.0 connects the server to a running Krita through the plugin
 and offers these tools:
 
 - `krita_server_info`: Krita's version, what this build can do, and the folders agents may use;
 - `krita_document_open`: a KRA, ORA or PNG as a working copy or read-only, with every existing
   layer protected;
 - `krita_document_inspect`: a document's layer tree, protection and selection;
+- `krita_capture`: any part of a document, a layer or the selection as an image, native or
+  resampled onto a background, with its PNG's path;
+- `krita_sample`: exact colours at given pixels, as RGBA, hex, L\*a\*b\* and L\*C\*h;
+- `krita_resource_list`: brush presets with their fingerprints, blend modes, profiles and
+  palettes;
 - `krita_document_create`, `krita_document_list` and `krita_document_close`: new transparent
   RGBA / 8-bit / sRGB canvases, every open document, and closing an agent's own documents;
 - `krita_operation_get` and `krita_operation_cancel`: following a long call to its receipt, and

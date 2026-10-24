@@ -72,6 +72,16 @@ class FakePort:
         self.fail: dict[str, BaseException] = {}
         self.prepared: list[int] = []
         self.export_works = True
+        # The document whose view is active; a new or opened document comes to the front.
+        self.front_key: int | None = None
+        # The order of the K46 steps and reads.
+        self.calls: list[str] = []
+        # One BGRA pixel per layer id; a layer reads as that pixel everywhere.
+        self.layer_pixels: dict[str, bytes] = {}
+        self.overlay = True
+        # A document's composite, by key, in place of bgra(); and hooks run at each read.
+        self.canvas: dict[int, bytes] = {}
+        self.on_read: list[Any] = []
 
     def open_by_hand(self, name: str) -> int:
         key = self._add(name, 640, 480)
@@ -81,6 +91,7 @@ class FakePort:
     def _add(self, name: str, width: int, height: int) -> int:
         key, self.next_key = self.next_key, self.next_key + 1
         self.live[key] = {"name": name, "path": None, "size_px": [width, height]}
+        self.front_key = key
         return key
 
     def documents(self) -> list[Any]:
@@ -128,6 +139,7 @@ class FakePort:
             "color_model": model,
             "depth": depth,
             "profile_id": profile,
+            "current_time": info.get("current_time", 0),
         }
 
     def tree(self, document: Any) -> dict[str, Any]:
@@ -143,6 +155,7 @@ class FakePort:
     def prepare_read(self, document: Any) -> None:
         self.live[document.key]["active_mask"] = False
         self.prepared.append(document.key)
+        self.calls.append("prepare")
 
     def composite(self, document: Any) -> bytes:
         self._maybe_fail("composite")
@@ -152,6 +165,60 @@ class FakePort:
     def selection(self, document: Any) -> tuple[dict[str, int], bytes] | None:
         found: tuple[dict[str, int], bytes] | None = self.live[document.key].get("selection")
         return found
+
+    def composite_rects(self, document: Any, rects: list[dict[str, int]]) -> list[bytes]:
+        self._maybe_fail("composite")
+        for hook in self.on_read:
+            hook()
+        self.calls.append("read")
+        width, height = self.live[document.key]["size_px"]
+        canvas = self.canvas.get(document.key) or bgra(width, height)
+        return [crop(canvas, width, rect, 4) for rect in rects]
+
+    def layer_rects(self, document: Any, layer_id: str, rects: list[dict[str, int]]) -> list[bytes]:
+        self.calls.append("read")
+        if layer_id not in {node["id"] for node in self.tree(document)["nodes"]}:
+            raise BridgeError("LAYER_NOT_FOUND", "No layer has that id.")
+        pixel = self.layer_pixels.get(layer_id, bytes([30, 20, 10, 255]))
+        return [pixel * (rect["width"] * rect["height"]) for rect in rects]
+
+    def selection_rect(self, document: Any, rect: dict[str, int]) -> bytes | None:
+        found = self.live[document.key].get("selection")
+        if found is None:
+            return None
+        bounds, data = found
+        width, height = self.live[document.key]["size_px"]
+        canvas = bytearray(width * height)
+        for row in range(bounds["height"]):
+            start = (bounds["y"] + row) * width + bounds["x"]
+            canvas[start : start + bounds["width"]] = data[
+                row * bounds["width"] : (row + 1) * bounds["width"]
+            ]
+        return crop(bytes(canvas), width, rect, 1)
+
+    def mask_active(self, document: Any) -> bool:
+        return bool(self.live[document.key].get("active_mask"))
+
+    def bring_forward(self, document: Any) -> Any:
+        self.calls.append("forward")
+        if self.front_key == document.key:
+            return None
+        previous, self.front_key = self.front_key, document.key
+        return previous
+
+    def restore_view(self, view: Any) -> None:
+        self.calls.append("restore")
+        self.front_key = view
+
+    def front(self) -> Any:
+        key = self.front_key
+        return None if key is None or key not in self.live else FakeDocument(key)
+
+    def add_active_mask(self, document: Any, layer_id: str, rect: dict[str, int]) -> bool:
+        if layer_id not in {node["id"] for node in self.tree(document)["nodes"]}:
+            raise BridgeError("LAYER_NOT_FOUND", "No layer has that id.")
+        self.live[document.key]["active_mask"] = True
+        return self.overlay
 
     def export_kra(self, document: Any, target: str) -> bool:
         if self.export_works:
@@ -172,6 +239,51 @@ class FakePort:
         if self.close_works:
             del self.live[document.key]
         return True
+
+
+def crop(canvas: bytes, width: int, rect: dict[str, int], depth: int) -> bytes:
+    rows = (
+        canvas[((rect["y"] + row) * width + rect["x"]) * depth :][: rect["width"] * depth]
+        for row in range(rect["height"])
+    )
+    return b"".join(rows)
+
+
+PRESET_XML = (
+    '<Preset paintopid="paintbrush" name="Basic Round">'
+    '<param type="string" name="EraserMode">false</param></Preset>'
+)
+
+
+class FakeResources:
+    # Krita's resources as resource.list sees them.
+    def __init__(self) -> None:
+        self.preset_list = [
+            {"name": "Basic Round", "file": "basic-round.kpp"},
+            {"name": "Soft Airbrush", "file": "airbrush-soft.kpp"},
+            {"name": "Broken", "file": "broken.kpp"},
+        ]
+        self.xmls = {
+            "Basic Round": PRESET_XML,
+            "Soft Airbrush": '<Preset name="Soft Airbrush" paintopid="airbrush"/>',
+            "Broken": "",
+        }
+        self.profile_names = ["sRGB-elle-V2-srgbtrc.icc", "sRGB built-in"]
+        self.palette_list = [{"name": "Default", "file": "default.kpl"}]
+        self.asked: list[list[str]] = []
+
+    def presets(self) -> list[dict[str, str]]:
+        return list(self.preset_list)
+
+    def preset_xmls(self, names: list[str]) -> dict[str, str]:
+        self.asked.append(list(names))
+        return {name: self.xmls.get(name, "") for name in names}
+
+    def profiles(self, model: str, depth: str) -> list[str]:
+        return list(self.profile_names) if (model, depth) == ("RGBA", "U8") else []
+
+    def palettes(self) -> list[dict[str, str]]:
+        return list(self.palette_list)
 
 
 class MainThread:

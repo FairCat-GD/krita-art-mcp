@@ -1,6 +1,6 @@
 [project]
 name = "krita-art-mcp"
-version = "0.4.0"
+version = "0.5.0"
 description = "MCP server that lets AI agents paint in Krita"
 readme = "README.md"
 license = "GPL-3.0-or-later"
@@ -41,7 +41,7 @@ select = ["E", "F", "W", "I", "UP", "B", "RUF"]
 strict = true
 python_version = "3.12"
 # Tests import the plugin's core as `bridge_core`; the 3.10 run checks the whole package.
-mypy_path = ["plugin/krita_art_mcp_bridge", "plugin", "scripts", "tests/fixtures"]
+mypy_path = ["plugin/krita_art_mcp_bridge", "plugin", "scripts", "tests/fixtures", "tests/support"]
 exclude = ["^docs/"]
 
 [[tool.mypy.overrides]]
@@ -56,5 +56,6 @@ disallow_untyped_decorators = false
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
-pythonpath = ["plugin/krita_art_mcp_bridge", "scripts", "tests/fixtures"]
+# tests/fixtures stays valid on 3.10 for the plugin's tests; tests/support is the server's.
+pythonpath = ["plugin/krita_art_mcp_bridge", "scripts", "tests/fixtures", "tests/support"]
 addopts = ["--import-mode=importlib"]

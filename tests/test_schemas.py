@@ -100,3 +100,37 @@ def test_open_and_inspect_describe_a_layer_with_one_shape() -> None:
     entry = layers[0]["items"]
     assert entry["additionalProperties"] is False
     assert set(entry["required"]) == set(entry["properties"]) >= {"id", "parent_id", "protected"}
+
+
+SOURCE = {
+    "type": "object",
+    "properties": {
+        "document_id": {"type": "string", "minLength": 1},
+        "frame": {"type": "integer", "minimum": 0},
+    },
+    "required": ["document_id", "frame"],
+    "additionalProperties": False,
+}
+
+
+def test_every_copy_of_source_is_the_phase_1_source() -> None:
+    found = {
+        name: _shapes(schemas.load(name)["inputSchema"].get("properties", {}), "source")
+        for name in PHASE_1_TOOLS
+    }
+    assert len(found["krita_capture"]) == len(found["krita_sample"]) == 1
+    assert all(source == SOURCE for copies in found.values() for source in copies)
+
+
+def test_no_example_source_carries_revision() -> None:
+    for name in PHASE_1_TOOLS:
+        for source in _shapes(schemas.load(name)["example"]["input"], "source"):
+            assert "revision" not in source, name
+
+
+@pytest.mark.parametrize("tool_name", PHASE_1_TOOLS)
+def test_the_two_copies_of_data_in_an_output_schema_agree(tool_name: str) -> None:
+    output = schemas.load(tool_name)["outputSchema"]
+    assert (
+        output["properties"]["data"]["anyOf"][0] == output["allOf"][0]["then"]["properties"]["data"]
+    )

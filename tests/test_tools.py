@@ -46,6 +46,7 @@ def test_only_built_tools_are_registered_with_their_contract_schemas(tmp_path: P
         sorted(tool.name for tool in registered)
         == tools.BUILT_TOOLS
         == [
+            "krita_capture",
             "krita_document_close",
             "krita_document_create",
             "krita_document_inspect",
@@ -53,6 +54,8 @@ def test_only_built_tools_are_registered_with_their_contract_schemas(tmp_path: P
             "krita_document_open",
             "krita_operation_cancel",
             "krita_operation_get",
+            "krita_resource_list",
+            "krita_sample",
             "krita_server_info",
         ]
     )

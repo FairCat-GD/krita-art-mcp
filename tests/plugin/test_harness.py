@@ -9,7 +9,7 @@ from bridge_core import documents, harness
 from bridge_core.errors import BridgeError
 from bridge_core.jobs import Call
 from bridge_core.registry import Registry
-from fake_krita import FakePort
+from fake_krita import FakePort, layer_id
 
 A: dict[str, Any] = {"pid": 101, "started_at": "Sat Oct 24 10:00:00 2026"}
 PROBE: dict[str, Any] = {"pid": 303, "started_at": "Sat Oct 24 10:10:00 2026"}
@@ -104,3 +104,45 @@ def test_an_export_krita_refuses_is_busy_and_retryable(world: World) -> None:
     with pytest.raises(BridgeError) as refused:
         world.export(document_id, world.harness / "x.kra")
     assert refused.value.body["code"] == "BUSY" and refused.value.body["retryable"]
+
+
+def _mask(world: World, document_id: str, layer: str = "") -> Any:
+    args = {
+        "document_id": document_id,
+        "layer_id": layer or layer_id(1, 0),
+        "rect": {"x": 1, "y": 1, "width": 2, "height": 2},
+    }
+    # The probe's own client: a fixture op takes no lease.
+    return world.run("harness.select_mask", args, PROBE)
+
+
+def test_select_mask_makes_an_active_mask_and_says_whether_its_overlay_shows(
+    world: World,
+) -> None:
+    document_id = world.open(world.harness)
+    assert _mask(world, document_id) == {"document_id": document_id, "overlay_seen": True}
+    assert world.port.live[1]["active_mask"] is True
+    world.port.overlay = False
+    assert _mask(world, document_id)["overlay_seen"] is False
+
+
+def test_select_mask_takes_only_a_harness_document_in_front(world: World) -> None:
+    inside = world.open(world.harness)
+    outside = world.open(world.art)
+    with pytest.raises(BridgeError) as refused:
+        _mask(world, outside)
+    assert refused.value.body["code"] == "PATH_NOT_ALLOWED"
+    # The second open came to the front; setActiveNode would do nothing for the first.
+    with pytest.raises(BridgeError) as refused:
+        _mask(world, inside)
+    assert refused.value.body["code"] == "INVALID_ARGUMENT"
+    assert world.port.live[1].get("active_mask") is not True
+
+
+def test_front_document_names_only_a_harness_document(world: World) -> None:
+    inside = world.open(world.harness)
+    assert world.run("harness.front_document", {}) == {"document_id": inside}
+    world.open(world.art)
+    assert world.run("harness.front_document", {}) == {"document_id": None}
+    world.port.open_by_hand("their painting")
+    assert world.run("harness.front_document", {}) == {"document_id": None}

@@ -17,7 +17,7 @@
         "anyOf": [
           {
             "type": "string",
-            "minLength": 1
+            "pattern": "^(0|[1-9][0-9]*)$"
           },
           {
             "type": "null"
@@ -83,43 +83,69 @@
           {
             "type": "object",
             "properties": {
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "brush",
+                  "profile",
+                  "palette",
+                  "blend_mode"
+                ]
+              },
+              "total": {
+                "type": "integer",
+                "minimum": 0
+              },
               "resources": {
                 "type": "array",
                 "items": {
                   "type": "object",
                   "properties": {
                     "id": {
-                      "type": "string"
+                      "type": "string",
+                      "minLength": 1
                     },
                     "name": {
                       "type": "string"
                     },
-                    "sha256": {
-                      "type": "string"
+                    "engine": {
+                      "anyOf": [
+                        {
+                          "type": "string",
+                          "minLength": 1
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
                     },
-                    "supported_settings": {
-                      "type": "array",
-                      "items": {
-                        "type": "string"
-                      },
-                      "minItems": 0
+                    "sha256": {
+                      "anyOf": [
+                        {
+                          "type": "string",
+                          "pattern": "^[0-9a-f]{64}$"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
                     }
                   },
                   "required": [
                     "id",
                     "name",
-                    "sha256",
-                    "supported_settings"
+                    "engine",
+                    "sha256"
                   ],
                   "additionalProperties": false
                 },
-                "minItems": 0
+                "maxItems": 100
               },
               "next_cursor": {
                 "anyOf": [
                   {
                     "type": "string",
-                    "minLength": 1
+                    "pattern": "^(0|[1-9][0-9]*)$"
                   },
                   {
                     "type": "null"
@@ -128,6 +154,8 @@
               }
             },
             "required": [
+              "kind",
+              "total",
               "resources",
               "next_cursor"
             ],
@@ -227,43 +255,69 @@
             "data": {
               "type": "object",
               "properties": {
+                "kind": {
+                  "type": "string",
+                  "enum": [
+                    "brush",
+                    "profile",
+                    "palette",
+                    "blend_mode"
+                  ]
+                },
+                "total": {
+                  "type": "integer",
+                  "minimum": 0
+                },
                 "resources": {
                   "type": "array",
                   "items": {
                     "type": "object",
                     "properties": {
                       "id": {
-                        "type": "string"
+                        "type": "string",
+                        "minLength": 1
                       },
                       "name": {
                         "type": "string"
                       },
-                      "sha256": {
-                        "type": "string"
+                      "engine": {
+                        "anyOf": [
+                          {
+                            "type": "string",
+                            "minLength": 1
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
                       },
-                      "supported_settings": {
-                        "type": "array",
-                        "items": {
-                          "type": "string"
-                        },
-                        "minItems": 0
+                      "sha256": {
+                        "anyOf": [
+                          {
+                            "type": "string",
+                            "pattern": "^[0-9a-f]{64}$"
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
                       }
                     },
                     "required": [
                       "id",
                       "name",
-                      "sha256",
-                      "supported_settings"
+                      "engine",
+                      "sha256"
                     ],
                     "additionalProperties": false
                   },
-                  "minItems": 0
+                  "maxItems": 100
                 },
                 "next_cursor": {
                   "anyOf": [
                     {
                       "type": "string",
-                      "minLength": 1
+                      "pattern": "^(0|[1-9][0-9]*)$"
                     },
                     {
                       "type": "null"
@@ -272,6 +326,8 @@
                 }
               },
               "required": [
+                "kind",
+                "total",
                 "resources",
                 "next_cursor"
               ],
@@ -353,23 +409,16 @@
       "status": "completed",
       "document_id": null,
       "revision": null,
-      "operation_id": null,
+      "operation_id": "op-0123456789abcdef0123456789abcdef",
       "data": {
+        "kind": "brush",
+        "total": 1,
         "resources": [
           {
-            "id": "brush-ink-1",
-            "name": "Ink",
-            "sha256": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
-            "supported_settings": [
-              "size_px",
-              "opacity",
-              "flow",
-              "color",
-              "pressure",
-              "eraser",
-              "smoothing",
-              "antialias"
-            ]
+            "id": "basic-round.kpp",
+            "name": "Basic Round",
+            "engine": "paintbrush",
+            "sha256": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd"
           }
         ],
         "next_cursor": null

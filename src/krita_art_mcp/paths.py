@@ -57,6 +57,7 @@ class Places:
     transfer_dir: Path
     harness_dir: Path
     baselines_dir: Path
+    captures_dir: Path
 
     @classmethod
     def under(cls, default_data: Path, server_data: Path) -> "Places":
@@ -66,6 +67,7 @@ class Places:
             transfer_dir=default_data / "transfer",
             harness_dir=default_data / "harness",
             baselines_dir=server_data / "baselines",
+            captures_dir=server_data / "captures",
         )
 
     @classmethod

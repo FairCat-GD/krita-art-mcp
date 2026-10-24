@@ -6,6 +6,48 @@ All notable changes to krita-art-mcp are documented here. The format follows
 
 ## [Unreleased]
 
+## [0.5.0] — 2026-10-24
+
+Agents can now see pixels: capture any part of a document as an image, sample exact colours, and
+list the brushes, blend modes, profiles and palettes Krita has.
+
+### Added
+
+- **`krita_capture`.** It returns a part of a document as an image, shown to the agent and saved
+  as a PNG whose path comes with it.
+  - It captures the composite, one paint layer's own pixels (without the layer's opacity, masks or
+    inherit-alpha clip), or the selection as a grey mask.
+  - At `scale: 1` it is the native crop, alpha included. Any other scale is resampled with the
+    named filter onto a background: a checker by default, `transparent`, or a colour. It can also
+    show values in greyscale.
+  - `max_px` (1600 by default, 4096 at most) bounds the image's long edge, and one capture reads at
+    most 8192 × 8192 pixels. Larger areas are captured in tiles; nothing is clamped.
+  - The result gives the exact rect, the size, the filter, the colour profile, and the transform
+    from document to image pixels.
+  - An image too large to send whole is shown as a preview of at most 1600 px, made from the
+    native pixels; the full image is at its path.
+  - Captures are kept 7 days.
+  - A capture never shows a selection mask's red overlay. For an agent's own document, its view is
+    brought forward for the read and yours is put back. One of your own documents in that state
+    is never changed: the read is refused until you select a layer.
+- **`krita_sample`.** It reads the colour at given pixels, from the composite or one layer: RGBA
+  0–255, hex, CIE L\*a\*b\* (D65) and L\*C\*h. A radius averages a disc, weighted by alpha, and
+  adds the spread of its lightness and its pixel count. L\*a\*b\* is given for sRGB documents
+  only.
+- **`krita_resource_list`.** It lists brush presets, with each one's file name, engine and a
+  fingerprint of its settings; the blend modes paint calls accept; and Krita's RGBA / 8-bit
+  profiles and its palettes. Long lists come in pages.
+
+### Changed
+
+- **`krita_server_info`** reports `capture_source_pixels`, the largest area one capture reads.
+- **`krita_operation_get`** shows the line and the image the call it follows would have shown.
+- **A document's `source`** in `krita_capture`, `krita_sample` and `krita_preview_render` is
+  `{document_id, frame}`; `revision` is refused until revisions exist.
+- **The instructions for agents** cover capturing, sampling and the resource lists.
+- **`krita-art-mcp probe`** also checks captures, samples and resource lists on documents of its
+  own, and that a capture of a document behind, with a selection mask active, puts your view back.
+
 ## [0.4.0] — 2026-10-24
 
 Agents can now open your accepted art safely: as a working copy in a folder you allow, with every

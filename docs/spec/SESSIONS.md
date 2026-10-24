@@ -1298,6 +1298,127 @@ C2, C4, C5).
   every image.
 - **Never resample an image that was already resampled.**
 
+**Done (2026-10-24, 0.5.0).**
+- **Decided with the owner at the start:**
+  - **K46 on reads: switch only when needed.** A composite read whose document has a selection
+    mask as its active node brings an agent's own document forward, makes the mask's layer active,
+    reads, puts the previous view back, then writes the transfer file. An owner's document in that
+    state is refused with `DOCUMENT_READ_ONLY` (`reason: selection_mask_active`) and left alone.
+    Every other read touches no view.
+  - **Colour maths for sRGB only.** `lab`, `lch`, `stdev_l` and greyscale captures need
+    `sRGB-elle-V2-srgbtrc.icc` or `sRGB built-in`: the document's profile for a composite, the
+    layer's own for a layer. Otherwise they are null, and a greyscale capture is
+    `COLOR_PROFILE_MISMATCH`.
+  - **Scale 1 is native.** `background` or `greyscale` there is `INVALID_ARGUMENT`.
+  - **The read limit.** `limits.capture_pixels` (4096²) bounds the image; a new
+    `limits.capture_source_pixels` (8192²) bounds the area read. Raised by the design review.
+  - **After the live probe: keep the K46 guard, and measure the overlay.** With marching ants, an
+    active selection mask changed no composite byte, so the overlay is MEASURED, while the probe
+    still checks the switch, the active layer and the view put back.
+- **A design review in plan mode found one blocker and 27 smaller holes;** the plan folded in
+  their fixes. The blocker: composite reads of an owner's document in GrayA/U16 or LabA/U8 would
+  have passed the byte count as BGRA8 and reported wrong colours. Among the rest: frame 0 checked
+  against the document's current time; the fingerprint canonicalised; resolver order and
+  idempotence; NaN-free discs; the real read limit; `View.setVisible` instead of `Window.showView`;
+  harness ops without a lease; schema data copies held equal.
+- **The server.**
+  - **`colour.py`:** L\*a\*b\* with Part 12's matrix and white, L\*C\*h, hex, and the disc
+    statistics.
+  - **`imaging.py`:** output geometry and the transform, rendering (resample, then composite;
+    checker, colour, transparent; L\* greyscale), previews from the native crop, and the
+    `captures/` files and their 7-day sweep.
+  - **`tools/pixels.py`:** `krita_capture` and `krita_sample`, their server rules, resolvers and
+    receipts. **`tools/observe.py`:** `krita_resource_list` and the new limit.
+  - **`krita_operation_get`** appends the receipt's text line and image.
+  - **`envelope.MAX_RESULT_BYTES`** moved from `tools/__init__.py`; **`Places.captures_dir`** added;
+    **`documents.frame_refusal`** shared by inspect, capture and sample.
+- **The plugin.**
+  - **`bridge_core/pixels.py`:** `capture.read` and `sample.read`, with the K46 rule.
+  - **`bridge_core/resources.py`:** `resource.list`, the K21 whitelist, and the canonical
+    fingerprint.
+  - **`bridge_core/harness.py`:** `harness.select_mask {document_id, layer_id, rect}` and
+    `harness.front_document`.
+  - **The port** gains `composite_rects`, `layer_rects`, `selection_rect`, `mask_active`,
+    `bring_forward`, `restore_view`, `front`, `add_active_mask`, and `current_time` in `describe`;
+    a `ResourcesPort` beside it. **`krita_adapter/resources.py`** is new.
+  - **`probe.preset_digests`** (a runtime probe) digests every preset's raw and canonical XML.
+- **The schemas:** `source` is `{document_id, frame}` in capture, sample and preview_render;
+  capture, sample and resource_list amended; `limits.capture_source_pixels`. Amended by a one-off
+  script, not committed. 11 tools are registered.
+- **The probe:** `probe/pixels.py`, 10 new checks and 6 new MEASURED lines; `open_args` and `sha`
+  in `probe/opening.py` are now public.
+- **The tests:** `World` moved to `tests/support/worlds.py`, a 3.12-only folder on pytest's and
+  mypy's paths, because `tests/fixtures` stays 3.10-valid.
+- **Amendments:**
+  - **Resample, then composite.** The block says composite, then resample; a checker composited
+    first averages to flat grey at small scales. Settled in the plan.
+  - **The fingerprint is SHA-256 of `toXML()` canonicalised (C14N 2.0).** Measured: the raw digest
+    changed across a Krita restart and the canonical one did not. Settled in the plan (review);
+    confirmed live.
+  - **Resource entries keep the contract's `id` and `sha256`,** which are paint calls'
+    `preset_id` and `preset_sha256`; `supported_settings` is removed. Settled in the plan.
+  - **Sample's output follows PDD Part 4's list;** the contract's `srgb_rgba`, `native_channels`
+    and `native_channel_order` are replaced. Settled in the plan.
+  - **A capture's `uri` lies in the data folder,** where PDD Part 4 says every `uri` is in an
+    allowed root. Settled in the plan.
+  - **Layer reads are paint layers only;** a selection capture with no selection is refused; a
+    document showing another frame is refused. Settled in the plan.
+  - **Two harness ops** for the K46 check (decision 20). Settled in the plan; `select_mask`'s
+    layer and rect became arguments while building.
+  - **The K46 live check measures the overlay.** The plan made `overlay_seen` a FAIL that stops
+    the session; it was false, and the owner chose to keep the guard and measure. Found by the
+    live probe.
+- **Measured** (Krita 5.3.4 on macOS, Apple Silicon):
+  - **The selection overlay:** a local selection mask made the active node of a probe document in
+    front changed no composite byte (marching ants, the default display).
+  - **The K46 switch:** `View.setVisible` made the document's view active, `setActiveNode` then
+    took, and the previous view came back.
+  - **Preset fingerprints:** 144 presets, 144 distinct ids. Raw XML digest `fab1aa54e032233b`
+    before a restart and `844a95dcd1309fbc` after; canonical `d31399fb15465c79` both times; the
+    listed digest `ea6a5d3b3a45fb56` both times.
+  - **Resources:** 21 RGBA / U8 profiles, 13 palettes.
+  - **The fixtures open as `sRGB-elle-V2-srgbtrc.icc`.**
+  - **A native capture of the 64 × 48 fixture:** 36 ms through stdio.
+  - **After every probe run,** `transfer/` and `harness/` were empty, no document was left open,
+    and `plugin.log` held no error.
+- **Checked by hand:**
+  - **Two self-restarts under decision 21,** each at 0 unsaved documents (the owner saved first).
+  - **`doctor` after the restarts:** steps 1–5 PASS; step 6 FAILs with "no roots".
+- **Falsified:**
+  - **The method.** A script broke the product code, the check's own test failed, and the file
+    was copied back and compared byte for byte.
+  - **The unit tests, 69 checks:** the matrix, the white, the hue range, hex rounding, negative
+    zero, the achromatic hue, alpha weighting, colourless transparency, disc membership, sRGB only,
+    the stdev root; half-up sides, `max_px`, comparing before converting, the per-axis transform,
+    resample then composite, opaque RGB, L\* greyscale and its alpha, previews from the crop and
+    their halving, private writes, 7 days, `find`; discard after writing, the preview first, the
+    second lookup, greyscale needing sRGB, the resolver never raising, op ids naming files, the
+    image `_meta`, the path in the text, `operation_get`'s pass-through, the four server refusals
+    and the frame rule, the two copies of the read limit, samples kept and captures reused (both
+    lookups at once, since the second masks the first); the shared `source` and the data copies;
+    the owner's document left alone, the view put back on failure, the write after it, the
+    forward step, switching only for a mask, 8-bit RGBA composites, frame 0 on screen, the
+    canvas, the plugin's read cap, unknown, non-paint and 16-bit layers, clipped squares, points
+    on the canvas, the radius range, a selection to capture, `render` an object; the canonical
+    fingerprint, page-only fingerprints, the cursor past the end, no empty last page, the limit,
+    a broken preset, the whitelist; `select_mask` in front, `front_document`'s folder.
+  - **Tests strengthened while falsifying:** five passed with their check broken, and now fail:
+    hue range, a preview made from a resampled image, a crash between the two writes, a PNG
+    another server finished meanwhile, and the plugin's read cap (the canvas check had masked it).
+  - **The probe, live, 6 of its 10 new checks,** each by a break in the server code through a
+    driver running only `probe.pixels`: the native capture, the sub-rect, the checker resample,
+    the refusals, the exact samples, the discs. The layer captures, the resource lists and the K46
+    switch are plugin-side; they are falsified in the unit tests, and were not reinstalled to break
+    them live (the owner chose to drop those restarts).
+- **Known debt:** a resolver that fails without a retry (a malformed outcome) leaves its transfer
+  file to the plugin's one-hour expiry; three such files came from the falsification runs.
+- **Numbers:**
+  - `verify`: 6 stages, all PASS;
+  - 330 server tests passed, 0 skipped (+86);
+  - 246 plugin-core tests passed, 0 skipped (+46);
+  - `probe`: 55 PASS, 0 FAIL, 15 MEASURED (+10, +6);
+  - 11 registered tools; 19 schema files.
+
 ---
 
 ## 6: Architecture review: observe
