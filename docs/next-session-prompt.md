@@ -1,4 +1,4 @@
-Read docs/spec/SPEC.md §5 (invariants 6, 9, 12, 13), docs/spec/REVIEW-2026-10-24.md (§3 and
+Read docs/spec/SPEC.md §5 (invariants 3, 6, 9, 12, 13), docs/spec/REVIEW-2026-10-24.md (§3 and
 §5), docs/spec/PDD.md Part 8 (*Bridge protocol*, K41, K48), CLAUDE.md, then this file. Then do
 Session 6a of docs/spec/SESSIONS.md: the review fixes after the *observe* milestone, one item
 per finding of review 6. Release 0.6.0.
@@ -9,35 +9,16 @@ per finding of review 6. Release 0.6.0.
   inserted 6a on 2026-10-24, so sessions 7–15 now release 0.7.0–0.13.0 (the table in
   `SESSIONS.md` is updated; each block's Docs line says so).
 - **The push status.** `origin` is the private GitHub repository `FairCat-GD/krita-art-mcp`.
-  `origin/main` holds everything through `review: failed resolves discard their pixels, and 9
-  smaller` (`d5af786`). Session 6's commits (`docs: architecture review — observe, findings
-  only`, and its review commit) are local. List `origin/main..HEAD` before any push.
-- **What 6a fixes, by finding** (the pointers in block 6a are to `d5af786`, which is HEAD's
-  code):
-  - **F24** `bridge_client._follow`: the 404 grace runs for the whole budget and `operation()`
-    on an id in `_sent` is never strict, so a lost POST is `running` for ever. Bound the grace;
-    keep `test_a_poll_waits_for_a_call_the_bridge_has_not_registered_yet` passing.
-  - **F7** `Jobs.cancel` keeps the request id bound and is non-retryable; `stop()` releases and is
-    retryable. Make them one rule, on both sides (`errors.py` `CANCELLED` default).
-  - **F11** a non-JSON handler result raises in the HTTP handler and loops the client; serialise
-    once in `Jobs._run`.
-  - **F27** `Waker._run` and `Jobs._run` catch `Exception` only.
-  - **F9** `KritaDocuments.selection()` has no `waitForDone()`.
-  - **F6** `ops.undo_action` uses `activeWindow()` and `showView`; ask the owner at the start:
-    retire it, or route it through `bring_forward`/`restore_view`.
-  - **F12** `_expire` removes `.raw` only; masks stay until the next bridge start.
-  - **F8** every tool op needs its `RECEIPTS` entry held by a table or a test.
-  - **F19, F26** a server-side blend-mode whitelist, and `MAX_POINTS`, `MAX_RADIUS`, `MAX_LIMIT`
-    pinned to the schema limits, in `tests/test_envelope.py`'s constants test.
-  - **F15** `roots add` refuses `/`, the home folder and a folder containing the data directory.
-  - **F16** the baseline sweep thread runs under `_CALLS`. **F17** `tests/test_tools.py:41`
-    points its `BridgeClient` at `tmp_path`.
-  - **F14** `harness/` is made 0700 (`probe/__init__.py:51`); `plugin.log` 0600 (`log.py:30`).
-  - **F13** the probe's summary prints its wall time; a last check lists `transfer/` (empty) and
-    the probe's documents (none open).
-  - **F18** the schema amendment tooling is committed (or the shared shapes generated).
-  - **F20** `CHANGELOG.md` gets the `[0.5.0]` link reference
-    (`5ead34bc4e5624e92165b211d1daa2f66ed95fb1`) beside `[0.6.0]`'s.
+  `origin/main` holds everything through session 6's review commit, `review: the F24 remedy
+  keeps the late-registration case, and 9 smaller`, so `origin/main..HEAD` starts empty. List
+  `origin/main..HEAD` before any push.
+- **What 6a owns.** Block 6a in `SESSIONS.md` is the one home of its seventeen items, each with
+  its finding number and `file:line` pointer (to `d5af786`, which is HEAD's product code); read
+  it there, not here. In short, by area: the bridge client's 404 grace (F24); jobs (F7 cancel
+  release, F11 JSON-safe results, F27 `BaseException`); the adapter (F9 `selection()` wait, F6
+  the undo probe, which is 6a's *Ask at the start*); transfer (F12 mask expiry); receipts (F8);
+  constants (F19, F26); roots (F15); the server (F16, F17); file modes (F14); the probe's timing
+  and leftover check (F13); the schema tooling (F18); the changelog's `[0.5.0]` link (F20).
 - **What exists after Session 5** is unchanged (the done-notes of sessions 1–5 hold the detail):
   11 tools; the plugin's ops `server_info`, `document.*`, `capture.read`, `sample.read`,
   `resource.list`, `harness.*`, `bridge.unsaved_documents`, `probe.*`; the server modules

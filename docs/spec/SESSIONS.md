@@ -1502,8 +1502,8 @@ sessions 1–5.
   layering, every invariant traced to its enforcement and tests, the constants held equal, fit
   for Phases 2–6), 27 findings with `file:line` evidence, the drift inventory, the job system,
   transfer path and registry against sessions 7–12, where each finding landed, and the
-  measurements. A second cold read by an independent agent, without the first read's notes,
-  added F24–F27 and confirmed six others.
+  measurements. A second, independent cold read of the core files, without the first read's
+  notes, added F24–F27 and confirmed six others.
 - **The plan.** The table and the 6a block above; amendment lines in blocks 7, 8, 9, 11 and 14,
   each marked "amended by review 6"; the versions of 7–15 shifted.
 - **Amendments:** none to this block. The measurements ran after the owner approved the plan,
@@ -1526,6 +1526,28 @@ sessions 1–5.
   - 249 plugin-core tests passed, 0 skipped;
   - `probe`: 55 PASS, 0 FAIL, 15 MEASURED;
   - 11 registered tools; 19 schema files.
+- **Review (`/code-review high`), 10 findings, all fixed at the owner's request.** All in the
+  documents this session wrote.
+  - **Block 6a's F24 remedy would have broken the late-registration case:** a strict
+    `operation()` on an id never seen registered is the state a POST stuck behind a long save
+    leaves. The remedy now bounds the 404 window after the bridge's first answer and keeps waiting
+    while it answers nothing.
+  - **The F13 leftover check runs before the final sweeps,** so a leak the sweep would hide is a
+    FAIL.
+  - **The F2 amendment names its mechanism:** an additive protocol field the server sets on reads,
+    never the id's shape, since an agent may send any non-empty string.
+  - **F15's refusal covers the data directory itself and folders inside it,** not only its
+    parents.
+  - **The REVIEW's counts:** the server is 19 modules, not 25; the earlier doctor reading was six
+    minutes before the full run, not an hour.
+  - **6a's read order and the handoff name invariant 3,** since 6a changes `roots add`.
+  - **The done-note no longer credits findings to an agent;** it says what the REVIEW's method
+    says, a second independent cold read.
+  - **The handoff reports what exists:** this session's two commits, once the review commit is
+    made; and it points at block 6a as the one home of its items instead of restating them.
+  - **README's version line** joins 6a's Docs.
+  - **Falsified:** nothing; no check was added.
+  - **Numbers after the review:** unchanged.
 
 ---
 
@@ -1535,15 +1557,17 @@ Inserted by review 6 on 2026-10-24. The owner chose one fix session for the revi
 findings, so that session 7, the round's largest block, starts clean. Each item names its
 finding in `REVIEW-2026-10-24.md`; the pointers are to the code as the review saw it (`d5af786`).
 
-**Read:** `SPEC.md` §5 (invariants 6, 9, 12, 13); `REVIEW-2026-10-24.md` §3 and §5; `PDD.md`
+**Read:** `SPEC.md` §5 (invariants 3, 6, 9, 12, 13); `REVIEW-2026-10-24.md` §3 and §5; `PDD.md`
 Part 8 (*Bridge protocol*, K41, K48).
 
 - **The bridge client** (F24, invariant 9). A POST the bridge never registered is reported
   `running` for ever (`src/krita_art_mcp/bridge_client.py:200-230`, `:142-145`). Bound the 404
-  grace to a short window after the bridge first answers in the same follow; afterwards a 404 is
-  "unknown operation". `operation()` on an id this process sent but never saw registered answers
-  the same way instead of waiting out another budget. A retry of the tool call still runs, since
-  the bridge never saw its request id.
+  grace: once the bridge has answered anything in a follow, a 404 that persists past a short
+  window (seconds, not the budget) is "unknown operation", in `call()` and `operation()` alike.
+  A POST stuck behind a long Krita call must still be found: while the bridge answers nothing
+  (timeouts), the follow keeps waiting, and the first 404s after it answers get the window,
+  because the backlogged POST may register a moment after the GET. A retry of the tool call
+  still runs, since the bridge never saw its request id.
 - **Jobs** (F7, F11, F27).
   - `cancel` routes through `_finish_failed` and `CANCELLED` is retryable on both sides
     (`bridge_core/jobs.py:223-227`, `src/krita_art_mcp/errors.py:19`): a cancelled queued job
@@ -1568,22 +1592,24 @@ Part 8 (*Bridge protocol*, K41, K48).
   (`bridge_core/resources.py:16-27`; the probe's copy at `probe/pixels.py:23-34` reads it);
   `MAX_POINTS`, `MAX_RADIUS` and `MAX_LIMIT` pinned to the schema limits in the constants test
   (`tests/test_envelope.py:45-52`).
-- **Roots** (F15). `roots add` refuses `/`, the home folder and any folder containing the data
-  directory, with a message (`src/krita_art_mcp/roots.py:86-96`).
+- **Roots** (F15). `roots add` refuses `/`, the home folder, and any folder equal to, containing
+  or inside the data directory, with a message (`src/krita_art_mcp/roots.py:86-96`); invariant 3's
+  realpath rule applies to the refusal too.
 - **The server** (F16, F17). The baseline sweep runs under `_CALLS` (`src/krita_art_mcp/server.py:31-34`);
   `tests/test_tools.py:41` points its client at `tmp_path`.
 - **The data directory** (F14). The harness folder is made private (`probe/__init__.py:51`) and
   `plugin.log` is 0600 (`bridge_core/log.py:30`).
-- **The probe** (F13). The summary prints the run's wall time; a last check lists `transfer/`
-  (empty) and the probe's own documents (none open).
+- **The probe** (F13). The summary prints the run's wall time; a last check, run before the
+  final sweeps, lists `transfer/` (empty) and the probe's own documents (none open), so a leak the
+  sweep would hide is a FAIL.
 - **Schemas** (F18). The amendment tooling is committed under `scripts/` (or the shared shapes
   are generated into the 19 files from one source and the result tested), so sessions 7–12 amend
   with it instead of one-off scripts.
 - **Docs.**
   - `CHANGELOG.md`: 0.6.0, and the missing `[0.5.0]` link reference
     (`5ead34bc4e5624e92165b211d1daa2f66ed95fb1`) (F20).
-  - README and `CLAUDE.md`: the probe's run-time line and `roots add`'s refusals, where they
-    state the behaviour.
+  - README (the version in *Status*) and `CLAUDE.md`: the probe's run-time line and
+    `roots add`'s refusals, where they state the behaviour.
 - **Ask at the start of 6a:** retire `probe.undo_action`, or make it switch views as the adapter
   does. Proposed by review 6, not yet confirmed.
 
@@ -1619,7 +1645,9 @@ Part 8 (*Bridge protocol*, K41, K48).
     `CLAUDE.md`'s invariant line is updated here.
   - **F2: bounded retention in the bridge.** Operations whose `request_id` the server minted
     (reads) are kept only until first delivery plus a window; operations with an agent's
-    `request_id` stay for the session, as invariant 9 wants (`bridge_core/jobs.py:92-96`).
+    `request_id` stay for the session, as invariant 9 wants (`bridge_core/jobs.py:92-96`). The
+    bridge tells them apart by an additive protocol field the server sets on reads, never by the
+    id's shape: an agent may send any non-empty string.
   - **F4: the K46 node choice lives in the core.** `_unmasked`'s logic
     (`krita_adapter/documents.py:284-293`) becomes a pure function over `tree()`'s dict in
     `bridge_core`, tested with a global and a local mask; the adapter activates the chosen id.
