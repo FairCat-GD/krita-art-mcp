@@ -93,16 +93,20 @@ def fingerprint(port: DocumentsPort, document: Any) -> Fingerprint:
 
 
 def fingerprint_of(tree: dict[str, Any], state: tuple[dict[str, int], Any] | None) -> Fingerprint:
-    ids = tuple(
-        sorted(
-            node["id"]
-            for node in tree["nodes"]
-            if not (node["type"] == "selectionmask" and node["parent_id"] == tree["root_id"])
-        )
-    )
+    ids = node_ids(tree)
     if state is None:
         return ids, None
     bounds, pixels = state
     digest = hashlib.sha256(json.dumps(bounds, sort_keys=True).encode("utf-8"))
     digest.update(pixels)
     return ids, digest.hexdigest()
+
+
+def node_ids(tree: dict[str, Any]) -> tuple[str, ...]:
+    return tuple(
+        sorted(
+            node["id"]
+            for node in tree["nodes"]
+            if not (node["type"] == "selectionmask" and node["parent_id"] == tree["root_id"])
+        )
+    )

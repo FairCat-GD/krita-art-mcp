@@ -56,7 +56,8 @@ protected, and undo or redo their own steps.
 
 - **Krita no longer crashes when a document closes straight after a selection change.** Krita's
   layer docker updated the changed node from a timer and crashed if the document had closed by
-  then; a close now lets that update run first.
+  then. Closing the document in front, or one changed in the last half second, now waits half a
+  second for that update, so such a close takes about 0.5 s longer.
 
 ## [0.6.0] — 2026-10-24
 
@@ -282,6 +283,7 @@ The first release is the scaffold that the Phase 1 tools are built on.
   reports its version to the client; it offers no tools yet.
 - **`krita-art-mcp --version`.** It prints the installed version.
 
+[0.7.0]: https://github.com/FairCat-GD/krita-art-mcp/commit/d188986373e1e4975dcfc5d1412e862f12566b14
 [0.6.0]: https://github.com/FairCat-GD/krita-art-mcp/commit/b1c679e85ab9632372ea4114a8718e6a2a5328cc
 [0.5.0]: https://github.com/FairCat-GD/krita-art-mcp/commit/5ead34bc4e5624e92165b211d1daa2f66ed95fb1
 [0.4.0]: https://github.com/FairCat-GD/krita-art-mcp/commit/c081c59ff54e38b9a8799fa0a78955146745174c

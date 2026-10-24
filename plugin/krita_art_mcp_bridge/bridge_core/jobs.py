@@ -142,7 +142,7 @@ class Jobs:
                 conflict = Operation(operation_id, request_id, op, {}, client, ephemeral)
                 message = "That request_id was used with different arguments."
                 details = {"request_id": request_id}
-                conflict.fail(error("REQUEST_ID_CONFLICT", message, False, details))
+                self._finish_failed(conflict, error("REQUEST_ID_CONFLICT", message, False, details))
                 self._operations[operation_id] = conflict
                 return conflict
             existing = self._requests.get(request_id)
@@ -154,7 +154,8 @@ class Jobs:
             self._requests[request_id] = operation
             self._bound[request_id] = digest
             if op not in self._handlers:
-                operation.fail(error("INVALID_ARGUMENT", f"Unknown op {op!r}.", False, {"op": op}))
+                unknown = error("INVALID_ARGUMENT", f"Unknown op {op!r}.", False, {"op": op})
+                self._finish_failed(operation, unknown)
                 return operation
             self._queue.append(operation)
         self._wake()

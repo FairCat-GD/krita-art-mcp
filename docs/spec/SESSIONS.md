@@ -2063,6 +2063,38 @@ Part 8 (*Bridge protocol*, K41, K48).
   - 356 plugin-core tests passed, 0 skipped (+85);
   - `probe`: 66 PASS, 0 FAIL, 21 MEASURED (+11 PASS, +7 MEASURED), 18.4 s;
   - 15 registered tools (+4); 19 schema files; instructions 2,620 characters (−153).
+- **Review (`/code-review high`), 8 findings, all fixed at the owner's request.**
+  - **Harness ops changed nodes without counting as changes,** so a close soon after them got no
+    settle. `Handle.touched()` stamps `changed_at`; `before_change()`, `harness.select_mask`,
+    `harness.label_timing` and `harness.activate` call it.
+  - **The settle depended on bridge changes alone.** Krita's layer docker shows the document in
+    front whoever changed it, so a close of that document always waits `SETTLE_S`, one behind
+    only within it of a change, and a discard after a failed create or open waits too. The rule
+    lives in `bridge_core/closing.py`.
+  - **A history capture whose pixels another server took failed retryably for ever;** it is now
+    left out (`capture` and `content_sha256` null), as the selection's mask is. One helper,
+    `_kept_png`, writes both PNGs (the capture's own writer keeps its previews and greyscale).
+  - **Reads failed at once (a conflicting retry, an unknown op) were never forgotten:** they
+    now finish through `_finish_failed`, which stamps `finished_at`.
+  - **An undo Krita did not take left the document dirty** although refused as unchanged; `move`
+    restores `dirty` when it puts the step back.
+  - **History read and hashed the selection twice per step,** and layer creation twice per call:
+    a multi-step undo now reuses the state the previous step confirmed (N + 1 reads for N
+    steps), and a layer creation reuses the selection hash it read before (one read).
+  - **A probe comment told the crash's history;** it now states what the close does.
+  - **Falsified:** 13 breaks, each failing at its own test: the in-front settle and its use in
+    the close, the three harness stamps, both discards' settle, both immediate failures'
+    finish, the reversal's dirty restore, the reused state in history and in layer creation, and
+    the left-out capture.
+  - **Measured** on the reinstalled plugin (the session restarted Krita with 0 documents open):
+    `probe` 66 PASS, 0 FAIL, 21 MEASURED in 38.1 s, up from 18.4 s, because a close of the
+    document in front now waits 0.5 s: create and close mean 720 ms (149 ms before), H4 p95
+    6.2 ms; `transfer/` and `harness/` empty, `plugin.log` with no warning or error.
+  - **Numbers after the review:**
+    - `verify`: 6 stages, all PASS;
+    - 410 server tests passed, 0 skipped (+1);
+    - 364 plugin-core tests passed, 0 skipped (+8);
+    - `probe`: 66 PASS, 0 FAIL, 21 MEASURED, 38.1 s.
 
 ---
 

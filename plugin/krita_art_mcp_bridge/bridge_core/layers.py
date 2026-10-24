@@ -3,7 +3,7 @@ from typing import Any
 from .errors import BridgeError, exact
 from .history import DONE, LABELS, UNDO, in_front, move
 from .jobs import Call, Handler
-from .ledger import Step, fingerprint
+from .ledger import Step, fingerprint, node_ids
 from .opening import LAYER_ID
 from .port import DocumentsPort
 from .registry import Handle, Registry
@@ -26,7 +26,8 @@ def handlers(registry: Registry, port: DocumentsPort) -> dict[str, Handler]:
                 document, parent_id, above_id, KINDS[args["type"]], args["name"]
             )
             after = port.tree(document)
-            end = fingerprint(port, document)
+            # Adding a layer leaves the selection alone, so its hash is not read again.
+            end = (node_ids(after), start[1])
         except BaseException:
             # Krita may hold a step the ledger cannot name; history stops below it.
             handle.ledger.seal()
@@ -50,7 +51,7 @@ def handlers(registry: Registry, port: DocumentsPort) -> dict[str, Handler]:
     def _roll_back(handle: Handle, step: Step, was: bool, problem: BridgeError) -> None:
         # Invariant 5: native undo, confirmed, or the document is unsafe.
         with in_front(port, handle.document):
-            outcome, seen = move(port, handle, step, UNDO)
+            outcome, seen, _ = move(port, handle, step, UNDO)
         if outcome == DONE:
             handle.ledger.rolled_back()
             handle.dirty = was

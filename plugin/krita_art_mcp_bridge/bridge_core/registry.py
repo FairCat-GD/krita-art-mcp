@@ -50,8 +50,12 @@ class Handle:
         # document dirty (PDD Part 4: a bridge mutation since the last verified save).
         was = self.dirty
         self.dirty = True
-        self.changed_at = time.monotonic()
+        self.touched()
         return was
+
+    def touched(self) -> None:
+        # Its nodes changed: Krita's layer docker updates them a moment later (see the close).
+        self.changed_at = time.monotonic()
 
 
 DocumentHandler = Callable[[Handle, dict[str, Any], Call], dict[str, Any]]

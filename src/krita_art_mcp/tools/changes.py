@@ -166,7 +166,7 @@ def _selection_files(places: Places, outcome: Done) -> Outcome:
             selected_pixels=selection["selected_pixels"],
         )
         if selection["pixels"] is not None:
-            made = _mask_png(places, outcome, selection["pixels"])
+            made = _kept_png(places, outcome, selection["pixels"], "selection's mask")
             if isinstance(made, Failed):
                 return made
             if made is not None:
@@ -174,30 +174,31 @@ def _selection_files(places: Places, outcome: Done) -> Outcome:
     return replace(outcome, result={"document_id": result["document_id"], **data})
 
 
-def _mask_png(
-    places: Places, outcome: Done, spec: dict[str, Any]
+def _kept_png(
+    places: Places, outcome: Done, spec: dict[str, Any], what: str
 ) -> tuple[Path, bytes] | Failed | None:
-    # Found before made, so krita_operation_get rebuilds the receipt after the transfer file went.
-    # None when another server process took the pixels first (a retry it shared): the selection
-    # is set, and capture target selection shows it.
+    # The op's pixels as captures/<day>/<operation_id>.png, found before made so
+    # krita_operation_get rebuilds the receipt after the transfer file went. None when another
+    # server process took the pixels first (a retry it shared): the change itself is made.
     operation_id = operation_id_of(outcome)
     found = imaging.find(places.captures_dir, operation_id, ".png")
     if found is not None:
         return found, found.read_bytes()
     try:
-        values = transfer.take(places.transfer_dir, spec)[..., 0]
+        pixels = transfer.take(places.transfer_dir, spec)
     except transfer.TransferError:
         again = imaging.find(places.captures_dir, operation_id, ".png")
         if again is not None:
             return again, again.read_bytes()
-        log.warning("the mask of %s was not kept: its pixels were already taken", operation_id)
+        log.warning("the %s of %s was not kept: its pixels were already taken", what, operation_id)
         return None
-    png = imaging.encode(Image.fromarray(np.ascontiguousarray(values)))
+    grey = pixels.shape[2] == 1
+    png = imaging.encode(Image.fromarray(np.ascontiguousarray(pixels[..., 0] if grey else pixels)))
     target = imaging.folder_for(places.captures_dir, today()) / f"{operation_id}.png"
     try:
         imaging.write(target, png)
     except OSError as problem:
-        message = f"The selection's mask could not be written: {problem}"
+        message = f"The {what} could not be written: {problem}"
         return failed(outcome, error_body("IO_ERROR", message, retryable=True))
     discard(places, spec)
     imaging.sweep(places.captures_dir, today())
@@ -328,40 +329,16 @@ def _history_files(places: Places, outcome: Done) -> Outcome:
         "capture": None,
     }
     if result["pixels"] is not None:
-        made = _region_png(places, outcome, result["pixels"])
+        made = _kept_png(places, outcome, result["pixels"], "step's capture")
         if isinstance(made, Failed):
             return made
-        path, png, rgba = made
-        data["content_sha256"] = hashlib.sha256(rgba).hexdigest()
-        data["capture"] = _artifact(path, png)
+        if made is not None:
+            path, png = made
+            with Image.open(io.BytesIO(png)) as image:
+                rgba = np.array(image.convert("RGBA"), dtype=np.uint8).tobytes()
+            data["content_sha256"] = hashlib.sha256(rgba).hexdigest()
+            data["capture"] = _artifact(path, png)
     return replace(outcome, result={"document_id": result["document_id"], **data})
-
-
-def _region_png(
-    places: Places, outcome: Done, spec: dict[str, Any]
-) -> tuple[Path, bytes, bytes] | Failed:
-    operation_id = operation_id_of(outcome)
-    found = imaging.find(places.captures_dir, operation_id, ".png")
-    if found is None:
-        try:
-            pixels = transfer.take(places.transfer_dir, spec)
-        except transfer.TransferError:
-            message = "The step's pixels were already taken; capture the region."
-            return failed(outcome, error_body("INTERNAL_ERROR", message, retryable=True))
-        png = imaging.encode(Image.fromarray(np.ascontiguousarray(pixels)))
-        found = imaging.folder_for(places.captures_dir, today()) / f"{operation_id}.png"
-        try:
-            imaging.write(found, png)
-        except OSError as problem:
-            message = f"The step's capture could not be written: {problem}"
-            return failed(outcome, error_body("IO_ERROR", message, retryable=True))
-        discard(places, spec)
-        imaging.sweep(places.captures_dir, today())
-        return found, png, pixels.tobytes()
-    png = found.read_bytes()
-    with Image.open(io.BytesIO(png)) as image:
-        rgba = np.array(image.convert("RGBA"), dtype=np.uint8).tobytes()
-    return found, png, rgba
 
 
 def history_receipt(outcome: Outcome) -> CallToolResult:

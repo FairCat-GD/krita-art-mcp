@@ -569,8 +569,8 @@ async def _label_timing(report: Report, client: BridgeClient, document_id: str) 
 
 
 async def _close_at_once(report: Report, a: Client, ora: Path, harness: Path) -> None:
-    # Krita's layer docker updates a changed node from a timer, and once crashed when the
-    # document closed first.
+    # Krita's layer docker updates a changed node from a timer and crashes if the document has
+    # closed by then; the close waits for it.
     failures = []
     for cycle in range(CLOSE_CYCLES):
         opened = await tool(

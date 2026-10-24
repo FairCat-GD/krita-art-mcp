@@ -8,6 +8,7 @@ from pathlib import Path
 from typing import Any
 
 from . import files, nodes, paths, roots, transfer
+from .closing import settled_close
 from .errors import BridgeError, exact
 from .inspection import check_shown_frame, layer_entries
 from .jobs import Call, Handler
@@ -50,7 +51,7 @@ class _Made:
         transfer.remove(self.baseline)
         kept = None
         if self.document is not None:
-            kept = registry.discard(self.document, port.close, mode, call.client)
+            kept = registry.discard(self.document, settled_close(port), mode, call.client)
         if kept is not None and isinstance(raised, BridgeError):
             raised.body["details"]["document_id"] = kept
         if self.copy is not None and kept is None:

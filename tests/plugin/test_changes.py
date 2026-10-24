@@ -6,7 +6,7 @@ from pathlib import Path
 from typing import Any
 
 import pytest
-from bridge_core import documents, harness, history, nodes, protection, selections
+from bridge_core import closing, documents, harness, history, nodes, protection, selections
 from bridge_core.errors import BridgeError
 from bridge_core.jobs import Call
 from bridge_core.ledger import Ledger, Step, fingerprint
@@ -883,19 +883,56 @@ def test_a_fingerprint_ignores_the_global_selection_s_own_node(world: World) -> 
 # Closing a just-changed document.
 
 
-def test_a_document_changed_moments_ago_settles_before_it_closes(world: World) -> None:
+def test_a_document_behind_settles_only_moments_after_a_change(world: World) -> None:
     document_id, handle = world.created()
-    assert documents.settle_s(handle) == 0.0
+    assert closing.settle_s(handle, False) == 0.0
     world.select(document_id, {"kind": "all"})
     assert handle.changed_at is not None
-    assert documents.settle_s(handle, handle.changed_at) == documents.SETTLE_S
-    assert documents.settle_s(handle, handle.changed_at + 0.2) == pytest.approx(0.3)
-    assert documents.settle_s(handle, handle.changed_at + 5) == 0.0
+    assert closing.settle_s(handle, False, handle.changed_at) == closing.SETTLE_S
+    assert closing.settle_s(handle, False, handle.changed_at + 0.2) == pytest.approx(0.3)
+    assert closing.settle_s(handle, False, handle.changed_at + 5) == 0.0
+    # Whoever changed it, the document in front is the one Krita's layer docker shows.
+    assert closing.settle_s(handle, True, handle.changed_at + 5) == closing.SETTLE_S
+
+
+def test_a_close_settles_in_front_or_moments_after_a_change(world: World) -> None:
+    document_id, _ = world.created()
+    behind, behind_handle = world.created()
+    world.select(behind, {"kind": "all"})
+    assert world.port.front_key == 2
     world.run("document.close", {"document_id": document_id, "dirty_policy": "discard"})
-    assert 0 < world.port.settled[-1] <= documents.SETTLE_S
-    untouched, _ = world.created()
-    world.run("document.close", {"document_id": untouched, "dirty_policy": "discard"})
     assert world.port.settled[-1] == 0.0
+    world.run("document.close", {"document_id": behind, "dirty_policy": "discard"})
+    assert world.port.settled[-1] == closing.SETTLE_S
+    assert behind_handle.changed_at is not None
+
+
+def test_harness_ops_that_change_nodes_count_as_changes(world: World) -> None:
+    document_id = _harness_document(world)
+    handle = world.registry.find(document_id)
+    world.run(
+        "harness.select_mask",
+        {
+            "document_id": document_id,
+            "layer_id": layer_id(1, 0),
+            "rect": {"x": 0, "y": 0, "width": 1, "height": 1},
+        },
+    )
+    assert handle.changed_at is not None
+    stamped = handle.changed_at
+    world.run("harness.label_timing", {"document_id": document_id, "trials": 1})
+    assert handle.changed_at > stamped
+    stamped = handle.changed_at
+    node = world.port._tree(1)["nodes"][0]["id"]
+    world.run("harness.activate", {"document_id": document_id, "node_id": node})
+    assert handle.changed_at > stamped
+
+
+def test_a_failing_create_closes_its_document_with_a_settle(world: World) -> None:
+    world.port.layer = {**world.port.layer, "opacity": 10}
+    with pytest.raises(BridgeError):
+        world.run("document.create", CREATE)
+    assert world.port.settled == [closing.SETTLE_S]
 
 
 def test_history_reads_the_composite_over_the_regions_its_steps_changed(world: World) -> None:
@@ -910,3 +947,56 @@ def test_history_reads_the_composite_over_the_regions_its_steps_changed(world: W
     pixels = undone["pixels"]
     assert pixels["size_px"] == [6, 3] and pixels["format"] == "BGRA8"
     assert Path(pixels["path"]).stat().st_size == 6 * 3 * 4
+
+
+def test_an_undo_krita_did_not_take_leaves_a_clean_document_clean(world: World) -> None:
+    document_id, handle = world.created()
+    world.layer(document_id)
+    handle.dirty = False
+    world.port.undo_works = False
+    assert world.refused("history.step", _undo(document_id))["retryable"] is True
+    assert not handle.dirty
+
+
+def _counting_selection_reads(world: World) -> list[int]:
+    reads = [0]
+    bounds = world.port.selection_bounds
+
+    def counted(document: Any) -> dict[str, int] | None:
+        reads[0] += 1
+        return bounds(document)
+
+    world.port.selection_bounds = counted  # type: ignore[method-assign]
+    return reads
+
+
+def test_history_reads_the_selection_once_per_step_and_once_more(world: World) -> None:
+    document_id, _ = world.created()
+    for _ in range(3):
+        world.layer(document_id)
+    reads = _counting_selection_reads(world)
+    assert world.history(document_id, "undo", 3)["steps_applied"] == 3
+    assert reads[0] == 4
+
+
+def test_a_layer_creation_reads_the_selection_once(world: World) -> None:
+    document_id, _ = world.created()
+    reads = _counting_selection_reads(world)
+    world.layer(document_id)
+    assert reads[0] == 1
+
+
+def test_a_failing_open_closes_its_document_with_a_settle(world: World) -> None:
+    source = world.art / "fixture.ora"
+    source.write_bytes(b"ora")
+    world.port.fail["show"] = BridgeError("INTERNAL_ERROR", "no view")
+    args = {
+        "source_path": str(source),
+        "source_sha256": hashlib.sha256(b"ora").hexdigest(),
+        "mode": "read_only",
+        "working_dir": None,
+        "editable_layer_ids": None,
+        "editable_layer_names": None,
+    }
+    assert world.refused("document.open", args)["code"] == "INTERNAL_ERROR"
+    assert world.port.settled == [closing.SETTLE_S]

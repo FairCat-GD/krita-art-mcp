@@ -542,3 +542,17 @@ def test_pruning_runs_at_most_once_a_minute() -> None:
     clock.now += jobs_module.PRUNE_EVERY_S
     _sent(jobs, "op-tick-3", "req-tick-3", True)
     assert jobs.wait("op-read", 0) is None
+
+
+def test_a_read_refused_at_once_is_forgotten_like_any_other() -> None:
+    jobs, clock = _timed()
+    unknown = jobs.submit("op-unknown", "req-unknown", "missing", {}, CLIENT, True)
+    assert unknown is not None and unknown.state == "error"
+    _sent(jobs, "op-read", "req-minted", True)
+    jobs.drain()
+    conflict = jobs.submit("op-other", "req-minted", "record", {"id": "other"}, CLIENT, True)
+    assert conflict is not None and conflict.error is not None
+    assert conflict.error["code"] == "REQUEST_ID_CONFLICT"
+    clock.now += jobs_module.READ_UNSENT_S + jobs_module.PRUNE_EVERY_S
+    _sent(jobs, "op-tick", "req-tick", True)
+    assert jobs.wait("op-unknown", 0) is None and jobs.wait("op-other", 0) is None

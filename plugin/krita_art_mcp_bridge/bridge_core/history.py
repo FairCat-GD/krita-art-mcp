@@ -45,27 +45,35 @@ def in_front(port: DocumentsPort, document: Any) -> Iterator[None]:
 
 
 def move(
-    port: DocumentsPort, handle: Any, step: Step, direction: str
-) -> tuple[str, dict[str, Any]]:
+    port: DocumentsPort,
+    handle: Any,
+    step: Step,
+    direction: str,
+    known: Fingerprint | None = None,
+) -> tuple[str, dict[str, Any], Fingerprint | None]:
     # Undoes or redoes one ledger step, inside in_front(). Krita must show the step on top, by
     # its label and by the document's state, before and after; a move that cannot be confirmed
-    # is reversed once, and the document is unsafe if that cannot be confirmed either.
+    # is reversed once, and the document is unsafe if that cannot be confirmed either. known is
+    # the state the previous move confirmed in this job, so it is not read again; the state now
+    # confirmed comes back.
     document = handle.document
     back = direction == UNDO
     now, then = (step.after, step.before) if back else (step.before, step.after)
-    seen = _shows(port, document, step.label, UNDO if back else REDO, now)
+    seen = _shows(port, document, step.label, UNDO if back else REDO, now, known)
     if seen is not None:
-        return FOREIGN, seen
-    handle.before_change()
+        return FOREIGN, seen, None
+    was = handle.before_change()
     _act(port, document, back)
     seen = _shows(port, document, step.label, REDO if back else UNDO, then)
     if seen is None:
-        return DONE, {}
+        return DONE, {}, then
     _act(port, document, not back)
     if _shows(port, document, step.label, UNDO if back else REDO, now) is None:
-        return REVERSED, seen
+        # Back as it was, so nothing changed.
+        handle.dirty = was
+        return REVERSED, seen, now
     handle.unsafe = True
-    return LOST, seen
+    return LOST, seen, None
 
 
 def _act(port: DocumentsPort, document: Any, back: bool) -> None:
@@ -76,13 +84,18 @@ def _act(port: DocumentsPort, document: Any, back: bool) -> None:
 
 
 def _shows(
-    port: DocumentsPort, document: Any, label: str, action: str, state: Fingerprint
+    port: DocumentsPort,
+    document: Any,
+    label: str,
+    action: str,
+    state: Fingerprint,
+    known: Fingerprint | None = None,
 ) -> dict[str, Any] | None:
     # None when the action names the step and the document is in that state; else what was seen.
     front = port.front() == document
     undo_label, redo_label = port.undo_labels(document)
     found = undo_label if action == UNDO else redo_label
-    if front and found == label and fingerprint(port, document) == state:
+    if front and found == label and (known or fingerprint(port, document)) == state:
         return None
     return {"expected_label": label, "found_label": found, "action": action, "in_front": front}
 
@@ -104,10 +117,11 @@ def handlers(registry: Registry, port: DocumentsPort, data: Path) -> dict[str, H
             raise BridgeError("INVALID_ARGUMENT", message, False, details)
         applied: list[Step] = []
         stopped = None
+        current: Fingerprint | None = None
         with in_front(port, handle.document):
             for _ in range(count):
                 index = ledger.applied - 1 if action == UNDO else ledger.applied
-                outcome, seen = move(port, handle, ledger.steps[index], action)
+                outcome, seen, current = move(port, handle, ledger.steps[index], action, current)
                 if outcome == DONE:
                     (ledger.undone if action == UNDO else ledger.redone)()
                     applied.append(ledger.steps[index])

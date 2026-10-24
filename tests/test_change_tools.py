@@ -385,3 +385,25 @@ def test_a_history_region_becomes_a_capture_and_the_hash_of_its_rgba(world: Worl
     # Rebuilt from the capture once the transfer file has gone.
     again = changes.resolve_history(places, outcome)
     assert isinstance(again, Done) and again.result == data
+
+
+def test_a_history_capture_another_server_took_is_left_out_not_failed(world: World) -> None:
+    places = world.places()
+    places.transfer_dir.mkdir(parents=True, exist_ok=True)
+    spec = {"path": str(places.transfer_dir / "gone.raw"), "size_px": [1, 1], "format": "BGRA8"}
+    result = {
+        "document_id": "doc-1",
+        "action": "undo",
+        "steps_applied": 1,
+        "verified": True,
+        "stopped": None,
+        "steps": [],
+        "undo_available": 0,
+        "redo_available": 1,
+        "region_px": {"x": 0, "y": 0, "width": 1, "height": 1},
+        "pixels": spec,
+    }
+    resolved = changes.resolve_history(places, Done(result, "op-" + "a" * 32))
+    assert isinstance(resolved, Done)
+    assert (resolved.result["capture"], resolved.result["content_sha256"]) == (None, None)
+    assert resolved.result["region_px"] == result["region_px"]

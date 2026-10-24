@@ -70,6 +70,7 @@ def handlers(registry: Registry, port: DocumentsPort, data: Path) -> dict[str, H
         finally:
             # Adding the mask pushed an undo step the ledger cannot name.
             handle.ledger.seal()
+            handle.touched()
         return {"document_id": handle.document_id, "overlay_seen": overlay}
 
     def activate(args: dict[str, Any], call: Call) -> dict[str, Any]:
@@ -80,6 +81,7 @@ def handlers(registry: Registry, port: DocumentsPort, data: Path) -> dict[str, H
             raise BridgeError("INVALID_ARGUMENT", "node_id names a node.")
         if port.front() != handle.document:
             raise BridgeError("INVALID_ARGUMENT", "The document must be in front.")
+        handle.touched()
         port.activate(handle.document, args["node_id"])
         return {
             "document_id": handle.document_id,
@@ -107,6 +109,7 @@ def handlers(registry: Registry, port: DocumentsPort, data: Path) -> dict[str, H
                 reads = port.label_timing(handle.document, trials)
         finally:
             handle.ledger.seal()
+            handle.touched()
         return {"document_id": handle.document_id, "reads": reads}
 
     def front_document(args: dict[str, Any], call: Call) -> dict[str, Any]:
