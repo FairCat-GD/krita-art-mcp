@@ -19,6 +19,13 @@ with the same arguments: the retry returns the original receipt and never runs t
 retry reports outcome uncertain, inspect the document before deciding what to do.
 - Work on your own document: one working copy per agent. Another agent's document answers \
 DOCUMENT_IN_USE, and documents the owner opened by hand are read_only.
+- Open accepted art with krita_document_open, mode working_copy, and a working_dir inside one \
+of krita_server_info's allowed_roots, never the source's own folder. The source is copied and \
+never written; read_only opens the source itself and refuses every change.
+- Every layer that exists when a document opens is protected, on purpose: add a layer of your \
+own to change anything. To resume your own earlier layers, reopen with editable_layer_ids (KRA) \
+or editable_layer_names (ORA and PNG, which store no layer ids).
+- krita_document_inspect shows the layer tree, which layers are protected, and the selection.
 - No tool writes raw pixels or runs code. Pixels change only through Krita's brushes.
 - The owner may be watching Krita while you work.
 """

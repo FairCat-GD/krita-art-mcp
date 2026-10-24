@@ -87,3 +87,16 @@ def test_every_copy_of_guard_is_the_phase_1_guard() -> None:
 def test_no_schema_or_example_carries_expected_revision() -> None:
     for name in PHASE_1_TOOLS:
         assert _shapes(schemas.load(name), "expected_revision") == [], name
+
+
+def test_open_and_inspect_describe_a_layer_with_one_shape() -> None:
+    layers = [
+        shape
+        for name in ("krita_document_open", "krita_document_inspect")
+        for shape in _shapes(schemas.load(name)["outputSchema"], "layers")
+    ]
+    assert len(layers) == 4
+    assert all(layer == layers[0] for layer in layers)
+    entry = layers[0]["items"]
+    assert entry["additionalProperties"] is False
+    assert set(entry["required"]) == set(entry["properties"]) >= {"id", "parent_id", "protected"}

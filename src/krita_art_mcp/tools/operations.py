@@ -1,3 +1,4 @@
+from collections.abc import Callable
 from typing import Any
 
 from jsonschema import Draft202012Validator
@@ -6,6 +7,7 @@ from mcp.types import CallToolResult
 from krita_art_mcp import envelope, schemas
 from krita_art_mcp.bridge_client import BeforeSend, Done, Failed, Outcome
 from krita_art_mcp.journal import JournalError
+from krita_art_mcp.paths import Places
 from krita_art_mcp.tools import documents, observe
 from krita_art_mcp.tools.dispatch import Receipt, ToolCall, journaled, record
 
@@ -14,7 +16,15 @@ RECEIPTS: dict[str, tuple[str, Receipt]] = {
     "server_info": ("krita_server_info", observe.server_info_receipt),
     "document.list": ("krita_document_list", documents.list_receipt),
     "document.create": ("krita_document_create", documents.create_receipt),
+    "document.open": ("krita_document_open", documents.open_receipt),
+    "document.inspect": ("krita_document_inspect", documents.inspect_receipt),
     "document.close": ("krita_document_close", documents.close_receipt),
+}
+# The ops whose results name files the server must keep, read or remove before the receipt.
+RESOLVERS: dict[str, Callable[[Places, Outcome], Outcome]] = {
+    "document.open": documents.resolve_open,
+    "document.inspect": documents.resolve_inspect,
+    "document.close": documents.resolve_close,
 }
 
 
@@ -33,6 +43,9 @@ def operation_get(call: ToolCall, arguments: dict[str, Any]) -> CallToolResult:
         details = {"operation_id": operation_id, "op": outcome.op}
         message = "That operation belongs to no tool."
         return envelope.failure("INVALID_ARGUMENT", message, details=details)
+    resolve = RESOLVERS.get(outcome.op or "")
+    if resolve is not None:
+        outcome = resolve(call.places, outcome)
     tool = None if known is None else known[0]
     data: dict[str, Any] = {
         "operation_id": outcome.operation_id or operation_id,

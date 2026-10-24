@@ -1,4 +1,5 @@
 import os
+from dataclasses import dataclass
 from pathlib import Path
 
 PLUGIN_NAME = "krita_art_mcp_bridge"
@@ -18,6 +19,10 @@ def server_data_dir() -> Path:
 
 def journal_dir() -> Path:
     return server_data_dir() / "journal"
+
+
+def config_file() -> Path:
+    return default_data_dir() / "config.json"
 
 
 def bridge_file() -> Path:
@@ -43,3 +48,26 @@ def kritarc() -> Path:
 def plugin_source() -> Path:
     # The server runs from its checkout (`uv run --project <repo>`), so the plugin sits beside it.
     return Path(__file__).resolve().parents[2] / "plugin"
+
+
+@dataclass(frozen=True)
+class Places:
+    # Every folder a tool reaches, handed in, so no test can reach the owner's.
+    config_file: Path
+    transfer_dir: Path
+    harness_dir: Path
+    baselines_dir: Path
+
+    @classmethod
+    def under(cls, default_data: Path, server_data: Path) -> "Places":
+        # The plugin sees only the default data dir (decision 25); baselines are the server's.
+        return cls(
+            config_file=default_data / "config.json",
+            transfer_dir=default_data / "transfer",
+            harness_dir=default_data / "harness",
+            baselines_dir=server_data / "baselines",
+        )
+
+    @classmethod
+    def default(cls) -> "Places":
+        return cls.under(default_data_dir(), server_data_dir())

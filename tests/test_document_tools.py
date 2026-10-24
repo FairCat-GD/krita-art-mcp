@@ -1,7 +1,9 @@
 import asyncio
 import datetime
+import hashlib
 import json
 import logging
+import os
 import stat
 import threading
 import time
@@ -9,23 +11,27 @@ from collections.abc import Iterator
 from pathlib import Path
 from typing import Any
 
+import numpy as np
 import pytest
 from bridge_core import documents
 from bridge_core.bridge import Bridge
 from bridge_core.errors import BridgeError
 from bridge_core.jobs import Call
 from bridge_core.registry import Registry
-from fake_krita import FakePort, MainThread
+from fake_krita import FakePort, MainThread, bgra
 from mcp import Client
 from mcp.types import CallToolResult
+from PIL import Image
 
-from krita_art_mcp import journal, paths
+from krita_art_mcp import baselines, journal, paths, roots
 from krita_art_mcp.bridge_client import BridgeClient, Done, Failed
 from krita_art_mcp.journal import Journal
+from krita_art_mcp.paths import Places
 from krita_art_mcp.server import build_server
 from krita_art_mcp.setup_checks import Step
+from krita_art_mcp.tools import documents as documents_tools
 from krita_art_mcp.tools import operations
-from krita_art_mcp.tools.dispatch import outcome_of
+from krita_art_mcp.tools.dispatch import args_sha256, outcome_of
 
 PLUGIN_PACKAGE = Path(__file__).resolve().parents[1] / "plugin" / "krita_art_mcp_bridge"
 A: dict[str, Any] = {"pid": 101, "started_at": "Sat Oct 24 10:00:00 2026"}
@@ -59,6 +65,10 @@ class World:
     def journal(self, name: str = "a") -> Journal:
         return Journal(self.tmp_path / name / "journal", now=lambda: NOW)
 
+    def places(self, name: str = "a") -> Places:
+        # The bridge's data dir is tmp_path; each server keeps its own baselines.
+        return Places.under(self.tmp_path, self.tmp_path / name)
+
     def client(self, identity: dict[str, Any] = A, budget_s: float = 3.0) -> BridgeClient:
         return BridgeClient(
             bridge_file=self.tmp_path / "bridge.json",
@@ -70,7 +80,8 @@ class World:
         )
 
     def server(self, identity: dict[str, Any] = A, name: str = "a", budget_s: float = 3.0) -> Any:
-        return Server(build_server(self.client(identity, budget_s), self.journal(name)))
+        client = self.client(identity, budget_s)
+        return Server(build_server(client, self.journal(name), self.places(name)))
 
 
 class Server:
@@ -106,7 +117,7 @@ def world(tmp_path: Path) -> Iterator[World]:
         data_dir=tmp_path,
         package_dir=PLUGIN_PACKAGE,
         facts={"krita_version": "5.3.4", "qt_major": 5},
-        handlers={**documents.handlers(registry, port), "slow": slow},
+        handlers={**documents.handlers(registry, port, tmp_path), "slow": slow},
         wake=main.wake,
         on_main_thread=main.is_current,
         is_live_krita=lambda pid: False,
@@ -417,7 +428,7 @@ def test_operation_get_reports_a_read_still_running(
     client = world.client(budget_s=0.4)
     pending = client.call("slow")
     assert not isinstance(pending, Done | Failed)
-    got = Server(build_server(client, world.journal())).content(
+    got = Server(build_server(client, world.journal(), world.places())).content(
         "krita_operation_get", {"operation_id": pending.operation_id}
     )
     world.gate.set()
@@ -440,7 +451,7 @@ def test_cancel_reports_a_finished_operation_and_refuses_a_running_one(world: Wo
     assert not isinstance(running, Done | Failed)
     queued = client.call("document.list")
     assert not isinstance(queued, Done | Failed)
-    cancel_server = Server(build_server(client, world.journal()))
+    cancel_server = Server(build_server(client, world.journal(), world.places()))
     refused = cancel_server.content(
         "krita_operation_cancel", {"operation_id": running.operation_id, "request_id": "req-c2"}
     )
@@ -576,7 +587,7 @@ def test_a_receipt_that_breaks_its_tools_schema_is_an_internal_error(
     client = world.client()
     done = client.call("document.list")
     assert isinstance(done, Done)
-    got = Server(build_server(client, world.journal())).content(
+    got = Server(build_server(client, world.journal(), world.places())).content(
         "krita_operation_get", {"operation_id": done.operation_id}
     )
     assert got["error"]["code"] == "INTERNAL_ERROR"
@@ -706,3 +717,190 @@ def test_a_finished_call_is_not_remembered_by_the_client(world: World) -> None:
     again = client.operation(done.operation_id)
     assert isinstance(again, Done)
     assert client._sent == {}
+
+
+def _art(world: World) -> Path:
+    # A root of the world's own; the bridge and the servers read the same config.json.
+    art = world.tmp_path / "art"
+    (art / "accepted").mkdir(parents=True, exist_ok=True)
+    roots.save(world.tmp_path / "config.json", [str(art)])
+    return art
+
+
+def _open(world: World, request_id: str = "req-open", **changes: Any) -> dict[str, Any]:
+    art = _art(world)
+    source = art / "accepted" / "hero.kra"
+    source.write_bytes(b"accepted art")
+    return {
+        "source_path": str(source),
+        "source_sha256": hashlib.sha256(b"accepted art").hexdigest(),
+        "mode": "working_copy",
+        "working_dir": str(art / "work"),
+        "request_id": request_id,
+        **changes,
+    }
+
+
+def _baselines(world: World, name: str = "a") -> list[str]:
+    folder = world.tmp_path / name / "baselines"
+    return sorted(path.name for path in folder.iterdir()) if folder.exists() else []
+
+
+def test_open_inspect_and_close_keep_and_drop_the_baseline(world: World) -> None:
+    server = world.server()
+    opened = server.content("krita_document_open", _open(world))
+    assert opened["status"] == "completed"
+    data = opened["data"]
+    assert data["working_copy"] is True and data["mode"] == "working_copy"
+    assert set(data) == set(documents_tools.OPEN_DATA)
+    document_id = opened["document_id"]
+    # The composite is kept as RGBA, and its transfer file is gone.
+    assert _baselines(world) == [f"{data['baseline_id']}.png"]
+    with Image.open(world.tmp_path / "a" / "baselines" / f"{data['baseline_id']}.png") as image:
+        kept = np.asarray(image)
+    raw = np.frombuffer(bgra(8, 4), dtype=np.uint8).reshape(4, 8, 4)
+    assert (kept == raw[..., [2, 1, 0, 3]]).all()
+    assert list((world.tmp_path / "transfer").iterdir()) == []
+    seen = server.content("krita_document_inspect", {"document_id": document_id, "frame": 0})
+    assert seen["status"] == "completed" and seen["data"]["layers"] == data["layers"]
+    assert seen["data"]["baseline_id"] == data["baseline_id"]
+    guard = {"document_id": document_id, "request_id": "req-close"}
+    closed = server.content("krita_document_close", {"guard": guard, "dirty_policy": "refuse"})
+    assert closed["data"] == {"closed": True, "baseline_untouched": True}
+    assert _baselines(world) == []
+
+
+def test_a_retried_open_returns_its_receipt_and_copies_once(world: World) -> None:
+    first = world.server().content("krita_document_open", _open(world))
+    assert world.server().content("krita_document_open", _open(world)) == first
+    # Through another server, the bridge answers with the same operation.
+    assert world.server(B, "b").content("krita_document_open", _open(world)) == first
+    assert len(world.port.opened) == 1
+    assert len(os.listdir(world.tmp_path / "art" / "work")) == 1
+
+
+@pytest.mark.parametrize(
+    ("changes", "code"),
+    [
+        ({"source_path": "/elsewhere/hero.kra"}, "PATH_NOT_ALLOWED"),
+        ({"working_dir": "/elsewhere/work"}, "PATH_NOT_ALLOWED"),
+        ({"source_path": "/elsewhere/hero.psd"}, "UNSUPPORTED_CAPABILITY"),
+        ({"editable_layer_names": ["rim"]}, "INVALID_ARGUMENT"),
+        ({"editable_layer_names": ["rim", "rim"]}, "INVALID_ARGUMENT"),
+        ({"mode": "read_only"}, "INVALID_ARGUMENT"),
+        ({"working_dir": None}, "INVALID_ARGUMENT"),
+        ({"source_path": "relative/hero.kra"}, "INVALID_ARGUMENT"),
+    ],
+    ids=[
+        "source outside",
+        "working_dir outside",
+        "another format",
+        "names for a KRA",
+        "a name twice",
+        "read_only with a working_dir",
+        "no working_dir",
+        "a relative path",
+    ],
+)
+def test_the_server_refuses_an_open_before_anything_is_sent(
+    world: World, changes: dict[str, Any], code: str
+) -> None:
+    arguments = {
+        key: value for key, value in {**_open(world), **changes}.items() if value is not None
+    }
+    refused = world.server().content("krita_document_open", arguments)
+    assert refused["error"]["code"] == code
+    assert refused["operation_id"] is None
+    assert world.port.opened == [] and not (world.tmp_path / "a" / "journal").exists()
+
+
+def test_the_working_dir_is_never_the_sources_folder(world: World) -> None:
+    arguments = _open(world, working_dir=str(world.tmp_path / "art" / "accepted"))
+    refused = world.server().content("krita_document_open", arguments)
+    assert refused["error"]["code"] == "INVALID_ARGUMENT"
+    assert refused["error"]["details"] == {"field": "working_dir"}
+    assert refused["operation_id"] is None and world.port.opened == []
+
+
+def test_a_root_removed_after_the_send_never_refuses_the_call_that_ran(world: World) -> None:
+    arguments = _open(world)
+    op_args = {key: arguments.get(key) for key in documents_tools.OPEN_FIELDS}
+    ran = world.client().call("document.open", op_args, request_id="req-open")
+    assert isinstance(ran, Done)
+    # A server that sent it and died: its attempt is unsettled in the journal.
+    world.journal().dispatched(
+        client=None,
+        request_id="req-open",
+        operation_id="op-died",
+        tool="krita_document_open",
+        args_sha256=args_sha256("krita_document_open", arguments),
+        session_id=world.bridge.session_id,
+        args=arguments,
+    )
+    roots.save(world.tmp_path / "config.json", [])
+    retried = world.server().content("krita_document_open", arguments)
+    assert retried["status"] == "completed"
+    assert retried["data"]["baseline_id"] == ran.result["baseline_id"]
+    assert len(world.port.opened) == 1
+
+
+def test_operation_get_keeps_the_baseline_of_an_open_that_came_back_running(
+    world: World,
+) -> None:
+    world.gate.clear()
+    world.port.on_open.append(lambda: world.gate.wait(10))
+    running = world.server(budget_s=0.6).content("krita_document_open", _open(world))
+    assert running["status"] == "running" and _baselines(world) == []
+    world.gate.set()
+    got = world.server().content("krita_operation_get", {"operation_id": running["operation_id"]})
+    receipt = got["data"]["receipt"]
+    assert receipt["status"] == "completed" and got["data"]["tool"] == "krita_document_open"
+    assert _baselines(world) == [f"{receipt['data']['baseline_id']}.png"]
+
+
+def test_inspect_counts_the_selection_and_reads_frame_0_only(world: World) -> None:
+    server = world.server()
+    created = server.content("krita_document_create", _create())
+    key = next(iter(world.port.live))
+    pixels = bytes([0, 255, 128, 0, 255, 255])
+    world.port.live[key]["selection"] = ({"x": 4, "y": 2, "width": 3, "height": 2}, pixels)
+    arguments = {"document_id": created["document_id"], "frame": 0}
+    seen = server.content("krita_document_inspect", arguments)
+    assert seen["data"]["selection"] == {
+        "bounds_px": {"x": 4, "y": 2, "width": 3, "height": 2},
+        "selected_pixels": 4,
+        "coverage_px": (255 + 128 + 255 + 255) / 255,
+    }
+    assert list((world.tmp_path / "transfer").iterdir()) == []
+    later = server.content("krita_document_inspect", {**arguments, "frame": 1})
+    assert later["error"]["code"] == "UNSUPPORTED_CAPABILITY" and later["operation_id"] is None
+
+
+def test_a_selection_file_read_already_asks_for_another_inspect(world: World) -> None:
+    gone = {
+        "path": str(world.tmp_path / "transfer" / "gone.raw"),
+        "size_px": [1, 1],
+        "format": "A8",
+    }
+    (world.tmp_path / "transfer").mkdir(exist_ok=True)
+    result = {"selection": {"bounds_px": {"x": 0, "y": 0, "width": 1, "height": 1}, "pixels": gone}}
+    outcome = documents_tools.resolve_inspect(
+        world.places(), Done(result, "op-1", "document.inspect")
+    )
+    assert isinstance(outcome, Failed)
+    assert outcome.error["code"] == "INTERNAL_ERROR" and outcome.error["retryable"] is True
+    assert "inspect again" in outcome.error["message"]
+
+
+def test_server_info_reports_the_roots_the_plugin_enforces(world: World) -> None:
+    art = _art(world)
+    info = world.server().content("krita_server_info", {})
+    assert info["data"]["allowed_roots"] == [str(art)]
+
+
+def test_the_sweep_at_server_start_keeps_only_live_baselines(world: World) -> None:
+    opened = world.server().content("krita_document_open", _open(world))
+    orphan = world.tmp_path / "a" / "baselines" / "baseline-ffffffffffff.png"
+    orphan.write_bytes(b"from an ended Krita session")
+    assert baselines.sweep(world.client(), world.tmp_path / "a" / "baselines") == 1
+    assert _baselines(world) == [f"{opened['data']['baseline_id']}.png"]

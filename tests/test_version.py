@@ -1,4 +1,5 @@
 import json
+import os
 import queue
 import subprocess
 import sys
@@ -15,7 +16,7 @@ from krita_art_mcp.tools import BUILT_TOOLS
 
 CLI = str(Path(sys.executable).with_name("krita-art-mcp"))
 # The release this checkout is; bumped with the package version.
-EXPECTED_VERSION = "0.3.0"
+EXPECTED_VERSION = "0.4.0"
 
 
 def test_plugin_version_equals_package_version() -> None:
@@ -27,14 +28,16 @@ def test_cli_prints_its_version() -> None:
     assert result.stdout == f"krita-art-mcp {EXPECTED_VERSION}\n"
 
 
-def test_stdio_initialize_names_the_server_and_lists_the_built_tools() -> None:
+def test_stdio_initialize_names_the_server_and_lists_the_built_tools(tmp_path: Path) -> None:
     initialize = {
         "protocolVersion": "2025-06-18",
         "capabilities": {},
         "clientInfo": {"name": "version-test", "version": "0"},
     }
+    # Its own data dir, so the baseline sweep at start never reaches the owner's.
+    env = {**os.environ, "KRITA_ART_MCP_DATA_DIR": str(tmp_path)}
     server = subprocess.Popen(
-        [CLI, "serve"], stdin=subprocess.PIPE, stdout=subprocess.PIPE, text=True
+        [CLI, "serve"], stdin=subprocess.PIPE, stdout=subprocess.PIPE, text=True, env=env
     )
     assert server.stdin is not None and server.stdout is not None
     stdin, stdout = server.stdin, server.stdout

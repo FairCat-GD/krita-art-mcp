@@ -6,6 +6,46 @@ All notable changes to krita-art-mcp are documented here. The format follows
 
 ## [Unreleased]
 
+## [0.4.0] — 2026-10-24
+
+Agents can now open your accepted art safely: as a working copy in a folder you allow, with every
+existing layer protected, and look inside it.
+
+### Added
+
+- **`krita-art-mcp roots add`, `list` and `remove`.** You name the folders agents may use. An
+  agent can open no file, and make no working copy, outside them; a link or a `..` that leads out
+  of them is refused with `PATH_NOT_ALLOWED`. The server and the plugin each check.
+- **`krita_document_open`.** It opens a KRA, ORA or PNG in Krita's window.
+  - `working_copy` copies the file into the `working_dir` you give, as
+    `<UTC time>-<file name>`, and opens the copy; your file is never opened for writing. The
+    working folder must lie inside a root, never in the source's own folder.
+  - `read_only` opens the file itself, and every change to it is refused.
+  - The file must match the `source_sha256` given, and so must the copy, or the open is refused
+    with `SOURCE_HASH_MISMATCH`.
+  - Every layer that exists at open is protected. An agent resuming its own earlier layers names
+    them with `editable_layer_ids` (KRA, which keeps layer ids) or `editable_layer_names` (ORA and
+    PNG, which do not). A name shared by several layers is refused.
+  - Documents that are not RGBA / 8-bit are refused with `COLOR_PROFILE_MISMATCH`, and other
+    formats with `UNSUPPORTED_CAPABILITY`.
+  - The document as it opened is kept as a baseline for later previews, and removed when the
+    document closes.
+- **`krita_document_inspect`.** It reports a document's layer tree with every layer's type, order,
+  visibility, opacity, blend mode, locks, inherit-alpha, offset, bounds, colour space and
+  protection, plus the active layer, the selection's bounds and coverage, and the protection
+  settings. It reads frame 0 only, and never changes which document or layer you are looking at.
+
+### Changed
+
+- **`krita_server_info`** lists the allowed roots.
+- **`krita_document_close`** says whether the file a document came from is unchanged.
+- **`krita-art-mcp doctor`** checks six steps; the sixth needs at least one root that is still a
+  folder.
+- **The instructions for agents** now cover opening with a working copy and a working folder, and
+  why existing layers are protected.
+- **`krita-art-mcp probe`** now also opens fictional ORA, KRA and PNG files of its own, written
+  into its harness folder.
+
 ## [0.3.0] — 2026-10-24
 
 Agents can now make, list and close documents, and every change is safe to retry.

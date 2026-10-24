@@ -33,7 +33,7 @@ _MATRIX: dict[str, tuple[bool, str | None, str]] = {
     "color_spaces": (
         False,
         None,
-        "New documents are RGBA / U8 / sRGB only; other colour spaces are refused.",
+        "Documents are created RGBA / U8 / sRGB and opened RGBA / U8; others are refused.",
     ),
     "filters": (False, None, "Filters arrive in Phase 2."),
     "animation": (False, None, "Animation arrives in Phase 5."),

@@ -118,7 +118,10 @@ def test_a_call_runs_on_the_main_thread_and_carries_its_ids(live: Live) -> None:
         "op": "echo",
         "result": {"echo": {"colour": "red"}},
     }
-    assert live.call("server_info", "op-2")["result"] == live.bridge.health
+    assert live.call("server_info", "op-2")["result"] == {
+        **live.bridge.health,
+        "allowed_roots": [],
+    }
 
 
 def test_a_call_still_queued_after_wait_s_is_reported_then_found(live: Live) -> None:

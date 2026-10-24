@@ -19,6 +19,11 @@ def _parser() -> argparse.ArgumentParser:
         type=Path,
         help="Krita's resource folder (default: ~/Library/Application Support/Krita)",
     )
+    roots = commands.add_parser("roots", help="the folders agents may use")
+    actions = roots.add_subparsers(dest="action", metavar="action", required=True)
+    actions.add_parser("add", help="allow a folder").add_argument("directory")
+    actions.add_parser("list", help="list the allowed folders")
+    actions.add_parser("remove", help="stop allowing a folder").add_argument("directory")
     commands.add_parser("doctor", help="name the first failing setup step")
     commands.add_parser("probe", help="run the live harness against the running Krita")
     return parser
@@ -36,6 +41,10 @@ def main(argv: Sequence[str] | None = None) -> int:
         from krita_art_mcp import install, paths
 
         return install.run(args.krita_data_dir or paths.krita_data_dir(), paths.kritarc())
+    if args.command == "roots":
+        from krita_art_mcp import paths, roots
+
+        return roots.run(args.action, getattr(args, "directory", None), paths.config_file())
     if args.command == "doctor":
         from krita_art_mcp import doctor
 

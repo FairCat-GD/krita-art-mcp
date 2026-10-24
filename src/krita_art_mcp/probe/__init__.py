@@ -1,6 +1,7 @@
 import asyncio
 import contextlib
 import json
+import os
 import shutil
 import statistics
 import sys
@@ -15,6 +16,8 @@ from mcp import Client, StdioServerParameters
 from krita_art_mcp import __version__, paths, schemas, setup_checks
 from krita_art_mcp.bridge_client import BridgeClient, Done, Failed
 from krita_art_mcp.instructions import INSTRUCTIONS
+from krita_art_mcp.probe import opening
+from krita_art_mcp.probe.report import Report, close, code, tool
 from krita_art_mcp.tools import BUILT_TOOLS
 from krita_art_mcp.tools.documents import SRGB_PROFILE
 
@@ -24,34 +27,6 @@ MAX_INSTRUCTIONS = 4096
 CYCLES = 20
 # Every document the probe makes carries this name, so a killed run's leftovers can be found.
 PREFIX = "krita-art-mcp probe"
-
-
-class Report:
-    def __init__(self, out: TextIO) -> None:
-        self._out = out
-        self.passed = 0
-        self.failed = 0
-
-    def check(self, name: str, passed: bool, detail: str = "") -> bool:
-        if passed:
-            self.passed += 1
-        else:
-            self.failed += 1
-        self._line("PASS" if passed else "FAIL", name, detail)
-        return passed
-
-    def measured(self, name: str, detail: str) -> None:
-        self._line("MEASURED", name, detail)
-
-    def note(self, text: str) -> None:
-        print(text, file=self._out, flush=True)
-
-    def summary(self) -> int:
-        self.note(f"probe: {self.passed} PASS, {self.failed} FAIL")
-        return 1 if self.failed or not self.passed else 0
-
-    def _line(self, outcome: str, name: str, detail: str) -> None:
-        self.note(f"{outcome:<8} {name}" + (f": {detail}" if detail else ""))
 
 
 def run(
@@ -104,7 +79,7 @@ def _probe(report: Report, client: BridgeClient, serve: list[str], harness: Path
     asyncio.run(_over_stdio(report, _server(serve, harness, "server-a"), info))
     _runtime(report, client, info)
     if _no_unsaved_documents(report, client):
-        asyncio.run(_documents(report, serve, harness))
+        asyncio.run(_documents(report, client, serve, harness))
 
 
 async def _over_stdio(
@@ -206,17 +181,6 @@ def _no_unsaved_documents(report: Report, client: BridgeClient) -> bool:
     )
 
 
-async def _tool(mcp: Client, name: str, arguments: dict[str, Any]) -> dict[str, Any]:
-    result = await mcp.call_tool(name, arguments)
-    content: dict[str, Any] = result.structured_content or {}
-    return content
-
-
-def _code(content: dict[str, Any]) -> str | None:
-    error = content.get("error") or {}
-    return error.get("code")
-
-
 def _create_args(name: str, request_id: str, **changes: Any) -> dict[str, Any]:
     return {
         "name": f"{PREFIX} {name}",
@@ -231,7 +195,7 @@ def _create_args(name: str, request_id: str, **changes: Any) -> dict[str, Any]:
 
 
 async def _probe_documents(mcp: Client) -> list[dict[str, Any]]:
-    listed = await _tool(mcp, "krita_document_list", {})
+    listed = await tool(mcp, "krita_document_list", {})
     entries = (listed.get("data") or {}).get("documents", [])
     # Never one the owner opened: those are read_only, whatever their name.
     return [
@@ -241,38 +205,45 @@ async def _probe_documents(mcp: Client) -> list[dict[str, Any]]:
     ]
 
 
-async def _close(mcp: Client, document_id: str, policy: str = "discard") -> dict[str, Any]:
-    guard = {"document_id": document_id, "request_id": str(uuid.uuid4())}
-    return await _tool(mcp, "krita_document_close", {"guard": guard, "dirty_policy": policy})
-
-
-async def _sweep_documents(mcp: Client) -> int:
+async def _sweep_documents(mcp: Client, harness: Path) -> int:
+    # The probe's own: the documents it created, and any file it opened from its folder.
+    listed = await tool(mcp, "krita_document_list", {})
+    entries = (listed.get("data") or {}).get("documents", [])
+    folder = os.path.realpath(harness) + "/"
+    leftovers = [
+        entry
+        for entry in entries
+        if (entry["name"].startswith(PREFIX) and entry["mode"] != "read_only")
+        or (entry["mode"] != "new" and (entry["path"] or "").startswith(folder))
+    ]
     swept = 0
-    for entry in await _probe_documents(mcp):
-        closed = await _close(mcp, entry["document_id"])
+    for entry in leftovers:
+        closed = await close(mcp, entry["document_id"])
         swept += bool((closed.get("data") or {}).get("closed"))
     return swept
 
 
-async def _documents(report: Report, serve: list[str], harness: Path) -> None:
+async def _documents(report: Report, client: BridgeClient, serve: list[str], harness: Path) -> None:
     async with (
         Client(_server(serve, harness, "server-a")) as a,
         Client(_server(serve, harness, "server-b")) as b,
     ):
-        swept = await _sweep_documents(a)
+        swept = await _sweep_documents(a, harness) + await _sweep_documents(b, harness)
         if swept:
             report.note(f"Closed {swept} document(s) a killed probe run left open.")
         try:
             await _document_checks(report, a, b, harness)
             await _cycles(report, a)
+            await opening.run(report, a, b, client, harness)
         finally:
-            await _sweep_documents(a)
+            await _sweep_documents(a, harness)
+            await _sweep_documents(b, harness)
 
 
 async def _document_checks(report: Report, a: Client, b: Client, harness: Path) -> None:
     request_id = str(uuid.uuid4())
     arguments = _create_args("lease", request_id)
-    created = await _tool(a, "krita_document_create", arguments)
+    created = await tool(a, "krita_document_create", arguments)
     data = created.get("data") or {}
     if not report.check(
         "krita_document_create makes a new RGBA / U8 / sRGB document",
@@ -296,8 +267,8 @@ async def _document_checks(report: Report, a: Client, b: Client, harness: Path) 
         and first == second,
         f"{len(mine)} entries for {document_id}",
     )
-    again = await _tool(a, "krita_document_create", arguments)
-    from_b = await _tool(b, "krita_document_create", arguments)
+    again = await tool(a, "krita_document_create", arguments)
+    from_b = await tool(b, "krita_document_create", arguments)
     count = len(await _probe_documents(a))
     report.check(
         "a retried create returns the original receipt, through the journal and the bridge",
@@ -307,23 +278,23 @@ async def _document_checks(report: Report, a: Client, b: Client, harness: Path) 
     changed = _create_args("other", request_id)
     report.check(
         "the same request_id with other arguments conflicts, in the server and the bridge",
-        _code(await _tool(a, "krita_document_create", changed)) == "REQUEST_ID_CONFLICT"
-        and _code(await _tool(b, "krita_document_create", changed)) == "REQUEST_ID_CONFLICT",
+        code(await tool(a, "krita_document_create", changed)) == "REQUEST_ID_CONFLICT"
+        and code(await tool(b, "krita_document_create", changed)) == "REQUEST_ID_CONFLICT",
     )
-    refused = await _close(b, document_id)
+    refused = await close(b, document_id)
     b_sees = [entry["document_id"] for entry in await _probe_documents(b)]
     report.check(
         "a second serve process is refused the lease, and still reads",
-        _code(refused) == "DOCUMENT_IN_USE" and b_sees == [document_id],
-        str(_code(refused)),
+        code(refused) == "DOCUMENT_IN_USE" and b_sees == [document_id],
+        str(code(refused)),
     )
-    got = await _tool(a, "krita_operation_get", {"operation_id": created["operation_id"]})
+    got = await tool(a, "krita_operation_get", {"operation_id": created["operation_id"]})
     report.check(
         "krita_operation_get returns the create's receipt",
         (got.get("data") or {}).get("receipt") == created,
     )
     cancel = {"operation_id": created["operation_id"], "request_id": str(uuid.uuid4())}
-    cancelled = await _tool(a, "krita_operation_cancel", cancel)
+    cancelled = await tool(a, "krita_operation_cancel", cancel)
     report.check(
         "krita_operation_cancel reports a finished operation as completed",
         (cancelled.get("data") or {}).get("state") == "completed",
@@ -331,13 +302,13 @@ async def _document_checks(report: Report, a: Client, b: Client, harness: Path) 
     deeper = _create_args("deep", str(uuid.uuid4()), depth="U16")
     report.check(
         "a 16-bit document is UNSUPPORTED_CAPABILITY",
-        _code(await _tool(a, "krita_document_create", deeper)) == "UNSUPPORTED_CAPABILITY",
+        code(await tool(a, "krita_document_create", deeper)) == "UNSUPPORTED_CAPABILITY",
     )
     report.check(
         "closing an unknown id is DOCUMENT_NOT_FOUND",
-        _code(await _close(a, "doc-000000000000", "refuse")) == "DOCUMENT_NOT_FOUND",
+        code(await close(a, "doc-000000000000", "refuse")) == "DOCUMENT_NOT_FOUND",
     )
-    closed = await _close(a, document_id, "refuse")
+    closed = await close(a, document_id, "refuse")
     remaining = [entry["document_id"] for entry in await _probe_documents(a)]
     report.check(
         "krita_document_close closes a clean document",
@@ -363,19 +334,19 @@ async def _cycles(report: Report, a: Client) -> None:
     failures = []
     for cycle in range(CYCLES):
         started = time.perf_counter()
-        created = await _tool(
+        created = await tool(
             a, "krita_document_create", _create_args(f"cycle {cycle}", str(uuid.uuid4()))
         )
         closed = (
-            await _close(a, created["document_id"])
+            await close(a, created["document_id"])
             if created.get("status") == "completed"
             else created
         )
         durations.append(time.perf_counter() - started)
         if (closed.get("data") or {}).get("closed") is not True:
-            failures.append(f"cycle {cycle}: {_code(closed)}")
+            failures.append(f"cycle {cycle}: {code(closed)}")
             break
-    alive = await _tool(a, "krita_server_info", {})
+    alive = await tool(a, "krita_server_info", {})
     report.check(
         f"{CYCLES} create and close cycles, and Krita still answers",
         not failures and alive.get("status") == "completed",

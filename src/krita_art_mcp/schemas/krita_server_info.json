@@ -157,6 +157,13 @@
                   "wait_budget_seconds"
                 ],
                 "additionalProperties": false
+              },
+              "allowed_roots": {
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "pattern": "^/"
+                }
               }
             },
             "required": [
@@ -167,7 +174,8 @@
               "krita_version",
               "qt_major",
               "capabilities",
-              "limits"
+              "limits",
+              "allowed_roots"
             ],
             "additionalProperties": false
           },
@@ -369,6 +377,13 @@
                     "wait_budget_seconds"
                   ],
                   "additionalProperties": false
+                },
+                "allowed_roots": {
+                  "type": "array",
+                  "items": {
+                    "type": "string",
+                    "pattern": "^/"
+                  }
                 }
               },
               "required": [
@@ -379,7 +394,8 @@
                 "krita_version",
                 "qt_major",
                 "capabilities",
-                "limits"
+                "limits",
+                "allowed_roots"
               ],
               "additionalProperties": false
             },
@@ -519,7 +535,10 @@
           "stroke_points": 4096,
           "capture_pixels": 16777216,
           "wait_budget_seconds": 45
-        }
+        },
+        "allowed_roots": [
+          "/projects/demo"
+        ]
       },
       "error": null
     }

@@ -27,6 +27,16 @@ class Handle:
         self.dirty = False
         self.unsafe = False
         self.lease: dict[str, Any] | None = None
+        # Set by an open: the file Krita shows, the accepted file and its hash, the baseline.
+        self.path: str | None = None
+        self.source_path: str | None = None
+        self.source_sha256: str | None = None
+        self.baseline_id: str | None = None
+        # Ids of the layers agents may not change; an owner's document is protected whole.
+        self.protected: set[str] = set()
+        self.allowed_mask: dict[str, Any] | None = None
+        self.preserve_composite_alpha = False
+        self.preserve_canvas = False
 
 
 DocumentHandler = Callable[[Handle, dict[str, Any], Call], dict[str, Any]]
@@ -54,6 +64,21 @@ class Registry:
         handle.lease = dict(client)
         self._handles.append(handle)
         return handle
+
+    def discard(
+        self, document: Any, close: Callable[[Any], bool], mode: str, client: dict[str, Any]
+    ) -> str | None:
+        # Closes a document a failing job made. One Krita keeps open stays registered, owned and
+        # unsafe, so a discard close can still end it; its id is returned.
+        try:
+            closed = close(document)
+        except Exception:
+            closed = False
+        if closed and not any(open_one == document for open_one in self._port.documents()):
+            return None
+        handle = self.add(document, mode, client)
+        handle.unsafe = True
+        return handle.document_id
 
     def remove(self, handle: Handle) -> None:
         self._handles = [kept for kept in self._handles if kept is not handle]

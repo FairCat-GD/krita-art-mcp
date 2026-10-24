@@ -20,6 +20,7 @@ from mcp.types import CallToolResult
 from krita_art_mcp import schemas
 from krita_art_mcp.bridge_client import BridgeClient, Done, Failed, Pending
 from krita_art_mcp.journal import Journal
+from krita_art_mcp.paths import Places
 from krita_art_mcp.server import build_server
 from krita_art_mcp.setup_checks import Step
 
@@ -339,7 +340,8 @@ def test_a_bridge_that_stops_listening_mid_call_is_uncertain(tmp_path: Path) -> 
 
 def _call_tool(client: BridgeClient, name: str, data_dir: Path) -> CallToolResult:
     async def call() -> CallToolResult:
-        async with Client(build_server(client, Journal(data_dir / "journal"))) as mcp:
+        places = Places.under(data_dir, data_dir)
+        async with Client(build_server(client, Journal(data_dir / "journal"), places)) as mcp:
             return await mcp.call_tool(name, {})
 
     return asyncio.run(call())

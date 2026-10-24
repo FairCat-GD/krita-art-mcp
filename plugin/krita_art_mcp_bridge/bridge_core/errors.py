@@ -60,3 +60,9 @@ def no_arguments(args: dict[str, Any]) -> None:
     if args:
         details = {"unexpected": sorted(args)}
         raise BridgeError("INVALID_ARGUMENT", "This op takes no arguments.", False, details)
+
+
+def exact(args: dict[str, Any], fields: set[str]) -> None:
+    if set(args) != fields:
+        details = {"expected": sorted(fields), "given": sorted(args)}
+        raise BridgeError("INVALID_ARGUMENT", "The op's arguments are wrong.", False, details)

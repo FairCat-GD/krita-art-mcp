@@ -56,6 +56,9 @@ class Prior:
                 return attempt.tool, attempt.args_sha256
         return None
 
+    def unsettled(self) -> bool:
+        return any(attempt.outcome == UNKNOWN for attempt in self.attempts)
+
     def unknown_in(self, session_id: str) -> bool:
         return any(a.outcome == UNKNOWN and a.session_id == session_id for a in self.attempts)
 

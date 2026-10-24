@@ -1,0 +1,114 @@
+from pathlib import Path
+from typing import Any
+
+from . import paths, transfer
+from .errors import BridgeError, exact
+from .jobs import Call, Handler
+from .port import DocumentsPort
+from .registry import Handle, Registry
+
+INSPECT_FIELDS = {"document_id", "frame"}
+# Krita's node types in the contract's words; any other type passes through as Krita names it.
+TYPES = {
+    "paintlayer": "paint",
+    "grouplayer": "group",
+    "filelayer": "file",
+    "filterlayer": "filter",
+    "filllayer": "fill",
+    "clonelayer": "clone",
+    "vectorlayer": "vector",
+    "transparencymask": "transparency_mask",
+    "filtermask": "filter_mask",
+    "transformmask": "transform_mask",
+    "selectionmask": "selection_mask",
+    "colorizemask": "colorize_mask",
+}
+
+
+def check_frame(frame: Any) -> None:
+    if not isinstance(frame, int) or isinstance(frame, bool) or frame < 0:
+        raise BridgeError("INVALID_ARGUMENT", "frame is an integer of 0 or more.")
+    if frame != 0:
+        details = {"frame": frame, "supported": [0]}
+        message = "Phase 1 reads frame 0 only; animation arrives in Phase 5."
+        raise BridgeError("UNSUPPORTED_CAPABILITY", message, False, details)
+
+
+def layer_entries(tree: dict[str, Any], protected: set[str]) -> list[dict[str, Any]]:
+    return [
+        {
+            "id": node["id"],
+            "parent_id": node["parent_id"],
+            "name": node["name"],
+            "type": TYPES.get(node["type"], node["type"]),
+            "order": node["order"],
+            "visible": node["visible"],
+            "opacity": node["opacity"] / 255,
+            "blend_mode": node["blend_mode"],
+            "locked": node["locked"],
+            "alpha_locked": node["alpha_locked"],
+            "inherit_alpha": node["inherit_alpha"],
+            "offset_px": node["offset_px"],
+            "bounds_px": node["bounds_px"],
+            "color_model": node["color_model"],
+            "depth": node["depth"],
+            "profile_id": node["profile_id"],
+            "protected": node["id"] in protected,
+        }
+        for node in tree["nodes"]
+    ]
+
+
+def protected_ids(handle: Handle, tree: dict[str, Any]) -> set[str]:
+    # Agents may change nothing in a document the owner opened.
+    if not handle.owned:
+        return {node["id"] for node in tree["nodes"]}
+    return handle.protected
+
+
+def handlers(registry: Registry, port: DocumentsPort, data: Path) -> dict[str, Handler]:
+    def inspect(args: dict[str, Any], call: Call) -> dict[str, Any]:
+        # A read: no lease, and the owner's view and active node are left alone.
+        exact(args, INSPECT_FIELDS)
+        check_frame(args["frame"])
+        registry.refuse_at_job_start()
+        handle = registry.find(args["document_id"])
+        info = port.describe(handle.document)
+        tree = port.tree(handle.document)
+        return {
+            "document_id": handle.document_id,
+            "mode": handle.mode,
+            "path": info["path"],
+            "source_path": handle.source_path,
+            "baseline_id": handle.baseline_id,
+            "canvas_px": info["size_px"],
+            "frame": 0,
+            "color_model": info["color_model"],
+            "depth": info["depth"],
+            "profile_id": info["profile_id"],
+            "dirty": handle.dirty,
+            "unsafe": handle.unsafe,
+            "root_layer_id": tree["root_id"],
+            "active_layer_id": tree["active_id"],
+            "layers": layer_entries(tree, protected_ids(handle, tree)),
+            "selection": _selection(port, handle, data),
+            "protection": {
+                "allowed_change_mask": handle.allowed_mask,
+                "preserve_composite_alpha": handle.preserve_composite_alpha,
+                "preserve_canvas": handle.preserve_canvas,
+            },
+        }
+
+    return {"document.inspect": inspect}
+
+
+def _selection(port: DocumentsPort, handle: Handle, data: Path) -> dict[str, Any] | None:
+    found = port.selection(handle.document)
+    if found is None:
+        return None
+    bounds, pixels = found
+    width, height = bounds["width"], bounds["height"]
+    if width <= 0 or height <= 0:
+        return {"bounds_px": bounds, "pixels": None}
+    spec = transfer.write(paths.transfer_dir(data), pixels, width, height, "A8")
+    return {"bounds_px": bounds, "pixels": spec}

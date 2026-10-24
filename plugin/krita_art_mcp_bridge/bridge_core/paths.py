@@ -14,6 +14,18 @@ def log_dir(data: Path) -> Path:
     return data / "logs"
 
 
+def config_file(data: Path) -> Path:
+    return data / "config.json"
+
+
+def transfer_dir(data: Path) -> Path:
+    return data / "transfer"
+
+
+def harness_dir(data: Path) -> Path:
+    return data / "harness"
+
+
 def private_dir(path: Path) -> Path:
     # Created as a parent, the folder would get the default 0755; it holds the token's file.
     path.mkdir(mode=0o700, parents=True, exist_ok=True)

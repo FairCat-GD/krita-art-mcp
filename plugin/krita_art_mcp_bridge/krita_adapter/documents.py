@@ -1,6 +1,6 @@
 from typing import Any
 
-from krita import Krita
+from krita import InfoObject, Krita
 
 from ..bridge_core.errors import BridgeError
 from .qt import QApplication
@@ -43,6 +43,26 @@ class KritaDocuments:
             raise
         return document
 
+    def open(self, path: str) -> Any:
+        app = Krita.instance()
+        # Batch mode keeps Krita's import dialogs away during the open (K14).
+        batch = bool(app.batchmode())
+        app.setBatchmode(True)
+        try:
+            document = app.openDocument(path)
+        finally:
+            app.setBatchmode(batch)
+        if document is None:
+            raise BridgeError("IO_ERROR", "Krita could not open the file.", False, {"path": path})
+        try:
+            # The wrapper owns the document until a view takes it (K6).
+            app.windows()[0].addView(document)
+            document.waitForDone()
+        except BaseException:
+            self.close(document)
+            raise
+        return document
+
     def describe(self, document: Any) -> dict[str, Any]:
         path = str(document.fileName())
         return {
@@ -73,10 +93,106 @@ class KritaDocuments:
             )
         return _layer_id(root), children
 
+    def tree(self, document: Any) -> dict[str, Any]:
+        root = document.rootNode()
+        active = document.activeNode()
+        nodes: list[dict[str, Any]] = []
+        _walk(root, _layer_id(root), nodes)
+        return {
+            "root_id": _layer_id(root),
+            "active_id": None if active is None else _layer_id(active),
+            "nodes": nodes,
+        }
+
+    def prepare_read(self, document: Any) -> None:
+        # setActiveNode acts on the document in front, which an open's own view is (K46).
+        active = document.activeNode()
+        if active is not None and str(active.type()) == "selectionmask":
+            document.setActiveNode(_unmasked(document, active))
+            now = document.activeNode()
+            if now is None or str(now.type()) == "selectionmask":
+                message = "Krita kept a selection mask active, so its overlay would enter reads."
+                raise BridgeError("INTERNAL_ERROR", message)
+        document.waitForDone()
+
+    def composite(self, document: Any) -> bytes:
+        document.waitForDone()
+        return bytes(document.pixelData(0, 0, int(document.width()), int(document.height())))
+
+    def selection(self, document: Any) -> tuple[dict[str, int], bytes] | None:
+        selection = document.selection()
+        if selection is None:
+            return None
+        bounds = {
+            "x": int(selection.x()),
+            "y": int(selection.y()),
+            "width": int(selection.width()),
+            "height": int(selection.height()),
+        }
+        if bounds["width"] <= 0 or bounds["height"] <= 0:
+            return bounds, b""
+        data = selection.pixelData(bounds["x"], bounds["y"], bounds["width"], bounds["height"])
+        return bounds, bytes(data)
+
+    def export_kra(self, document: Any, target: str) -> bool:
+        # exportImage, never saveAs: the document keeps pointing at its own file (K39).
+        batch = bool(document.batchmode())
+        document.setBatchmode(True)
+        try:
+            exported = bool(document.exportImage(target, InfoObject()))
+        finally:
+            document.setBatchmode(batch)
+        document.waitForDone()
+        return exported
+
     def close(self, document: Any) -> bool:
         document.waitForDone()
         document.setModified(False)
         return bool(document.close())
+
+
+def _walk(parent: Any, parent_id: str, nodes: list[dict[str, Any]]) -> None:
+    for order, node in enumerate(parent.childNodes()):
+        node_id = _layer_id(node)
+        position, bounds = node.position(), node.bounds()
+        nodes.append(
+            {
+                "id": node_id,
+                "parent_id": parent_id,
+                "name": str(node.name()),
+                "type": str(node.type()),
+                "order": order,
+                "visible": bool(node.visible()),
+                "opacity": int(node.opacity()),
+                "blend_mode": str(node.blendingMode()),
+                "locked": bool(node.locked()),
+                "alpha_locked": bool(node.alphaLocked()),
+                "inherit_alpha": bool(node.inheritAlpha()),
+                "offset_px": [int(position.x()), int(position.y())],
+                "bounds_px": {
+                    "x": int(bounds.x()),
+                    "y": int(bounds.y()),
+                    "width": int(bounds.width()),
+                    "height": int(bounds.height()),
+                },
+                "color_model": str(node.colorModel()),
+                "depth": str(node.colorDepth()),
+                "profile_id": str(node.colorProfile()),
+            }
+        )
+        _walk(node, node_id, nodes)
+
+
+def _unmasked(document: Any, mask: Any) -> Any:
+    # A local mask's layer; for the global selection's mask, the top-most layer.
+    root = document.rootNode()
+    parent = mask.parentNode()
+    if parent is not None and _layer_id(parent) != _layer_id(root):
+        return parent
+    for node in reversed(root.childNodes()):
+        if not str(node.type()).endswith("mask"):
+            return node
+    raise BridgeError("INTERNAL_ERROR", "The document has no layer to make active.")
 
 
 def _layer_id(node: Any) -> str:

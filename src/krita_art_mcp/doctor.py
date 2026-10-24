@@ -5,7 +5,7 @@ from krita_art_mcp import setup_checks
 from krita_art_mcp.bridge_client import BridgeClient, Done, Failed
 from krita_art_mcp.setup_checks import Setup, Step
 
-STEPS = 5
+STEPS = 6
 REACHABLE = "the bridge is reachable"
 # doctor reports; it does not wait out a busy Krita.
 BUDGET_S = 5.0
@@ -54,6 +54,8 @@ def _steps(setup: Setup, client: BridgeClient) -> list[Step]:
     session = str(info.get("session_id"))[:12]
     steps.append(Step(REACHABLE, True, f"Krita {info.get('krita_version')}, {session}"))
     steps.append(setup_checks.plugin_current(info, setup.plugin_source))
+    if steps[-1].passed:
+        steps.append(setup_checks.roots_allowed(setup))
     return steps
 
 

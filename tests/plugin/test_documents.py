@@ -1,5 +1,6 @@
 import os
 import re
+from pathlib import Path
 from typing import Any
 
 import pytest
@@ -14,12 +15,13 @@ B: dict[str, Any] = {"pid": 202, "started_at": "Sat Oct 24 10:05:00 2026"}
 
 
 class World:
-    def __init__(self) -> None:
+    def __init__(self, data: Path) -> None:
+        self.data = data
         self.port = FakePort()
         self.alive: dict[int, bool] = {}
         self.asked: list[int] = []
         self.registry = Registry(self.port, self._holder_alive)
-        self.ops = documents.handlers(self.registry, self.port)
+        self.ops = documents.handlers(self.registry, self.port, data)
 
     def _holder_alive(self, client: dict[str, Any]) -> bool:
         self.asked.append(client["pid"])
@@ -57,8 +59,8 @@ def _code(world: World, call: Any, *args: Any, **kwargs: Any) -> str:
 
 
 @pytest.fixture
-def world() -> World:
-    return World()
+def world(tmp_path: Path) -> World:
+    return World(tmp_path)
 
 
 def test_a_created_document_is_new_clean_and_listed(world: World) -> None:
@@ -122,6 +124,7 @@ def test_close_ends_the_document_and_its_id(world: World) -> None:
         "document_id": created["document_id"],
         "closed": True,
         "baseline_untouched": None,
+        "baseline_id": None,
     }
     assert world.port.closed == [1]
     assert world.listed() == []

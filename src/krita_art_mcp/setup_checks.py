@@ -1,9 +1,10 @@
+import os
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
-from krita_art_mcp import paths, plugin_files, processes
+from krita_art_mcp import paths, plugin_files, processes, roots
 from krita_art_mcp.errors import PROTOCOL
 
 INSTALL = "Run `uv run krita-art-mcp install-plugin`, then restart Krita."
@@ -28,6 +29,7 @@ class Setup:
     krita_data_dir: Path = field(default_factory=paths.krita_data_dir)
     kritarc: Path = field(default_factory=paths.kritarc)
     krita_running: Callable[[], bool] = processes.krita_running
+    config_file: Path = field(default_factory=paths.config_file)
 
 
 def plugin_installed(setup: Setup) -> Step:
@@ -80,6 +82,23 @@ def plugin_current(health: dict[str, Any], plugin_source: Path) -> Step:
     current = protocol == PROTOCOL and running_hash == repo_hash
     detail = f"protocol {protocol}, running {running_hash[:12]}, repo {repo_hash[:12]}"
     return Step("the protocol and plugin hash match", current, detail, INSTALL)
+
+
+def roots_allowed(setup: Setup) -> Step:
+    # Counts only: doctor's output is pasted into notes, and roots name the owner's folders.
+    name = "at least one root is allowed"
+    try:
+        allowed = roots.load(setup.config_file)
+    except roots.ConfigError as problem:
+        return Step(name, False, str(problem), roots.ADD)
+    if not allowed:
+        return Step(name, False, "no roots, so agents can open nothing", roots.ADD)
+    missing = sum(not os.path.isdir(root) for root in allowed)
+    if missing:
+        detail = f"{missing} of {len(allowed)} roots are no longer folders"
+        fix = "Re-create them, or run `uv run krita-art-mcp roots remove <folder>`."
+        return Step(name, False, detail, fix)
+    return Step(name, True, f"{len(allowed)} root{'' if len(allowed) == 1 else 's'}")
 
 
 def bridge_missing() -> Step:

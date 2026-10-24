@@ -31,6 +31,7 @@ def _data(health: dict[str, Any]) -> dict[str, Any]:
         "qt_major": health["qt_major"],
         "capabilities": health["capabilities"],
         "limits": dict(LIMITS),
+        "allowed_roots": health["allowed_roots"],
     }
 
 

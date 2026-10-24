@@ -1,7 +1,10 @@
-from typing import Any, Protocol
+from pathlib import Path
+from typing import Any
 
-from .errors import BridgeError, no_arguments
+from . import files, inspection, opening
+from .errors import BridgeError, exact, no_arguments
 from .jobs import Call, Handler
+from .port import DocumentsPort
 from .registry import NEW, Handle, Registry, never
 
 # The only colour space Phase 1 creates; the server holds an equal copy.
@@ -12,24 +15,7 @@ CREATE_FIELDS = {"name", "size_px", "color_model", "depth", "profile_id", "backg
 CLOSE_FIELDS = {"document_id", "dirty_policy"}
 
 
-class DocumentsPort(Protocol):
-    def documents(self) -> list[Any]: ...
-
-    def refusal(self) -> BridgeError | None: ...
-
-    # Creates, gives the document a view at once, and waits; cleans up after its own failure.
-    def create(self, name: str, width: int, height: int) -> Any: ...
-
-    def describe(self, document: Any) -> dict[str, Any]: ...
-
-    # The root's id, then each child as {id, type, opacity, active, alpha_at_origin}.
-    def layers(self, document: Any) -> tuple[str, list[dict[str, Any]]]: ...
-
-    # Waits, clears the modified flag so Krita never asks to save, then closes.
-    def close(self, document: Any) -> bool: ...
-
-
-def handlers(registry: Registry, port: DocumentsPort) -> dict[str, Handler]:
+def handlers(registry: Registry, port: DocumentsPort, data: Path) -> dict[str, Handler]:
     def create(args: dict[str, Any], call: Call) -> dict[str, Any]:
         width, height = _create_args(args)
         registry.refuse_at_job_start()
@@ -38,8 +24,10 @@ def handlers(registry: Registry, port: DocumentsPort) -> dict[str, Handler]:
             info = port.describe(document)
             root_id, children = port.layers(document)
             _check_created(info, children, width, height)
-        except BaseException:
-            port.close(document)
+        except BaseException as raised:
+            kept = registry.discard(document, port.close, NEW, call.client)
+            if kept is not None and isinstance(raised, BridgeError):
+                raised.body["details"]["document_id"] = kept
             raise
         handle = registry.add(document, NEW, call.client)
         return {
@@ -55,22 +43,35 @@ def handlers(registry: Registry, port: DocumentsPort) -> dict[str, Handler]:
         no_arguments(args)
         return {"documents": [_entry(handle, port) for handle in registry.sync()]}
 
+    def baselines(args: dict[str, Any], call: Call) -> dict[str, Any]:
+        # The server keeps the baselines; it sweeps those whose document is gone.
+        no_arguments(args)
+        return {"baseline_ids": [h.baseline_id for h in registry.sync() if h.baseline_id]}
+
     def close(handle: Handle, args: dict[str, Any], call: Call) -> dict[str, Any]:
         if handle.dirty and args["dirty_policy"] == "refuse":
             message = "The document has changes since its last verified save."
             raise BridgeError("DOCUMENT_DIRTY", message, False, {"document_id": handle.document_id})
+        untouched = None
+        if handle.source_path is not None and handle.source_sha256 is not None:
+            untouched = files.unchanged(handle.source_path, handle.source_sha256)
         closed = port.close(handle.document)
         still_open = any(h is handle for h in registry.sync())
         if not closed or still_open:
             failure = {"document_id": handle.document_id, "close_returned": closed}
             raise BridgeError("INTERNAL_ERROR", "Krita did not close the document.", False, failure)
         registry.remove(handle)
-        return {"document_id": handle.document_id, "closed": True, "baseline_untouched": None}
+        return {
+            "document_id": handle.document_id,
+            "closed": True,
+            "baseline_untouched": untouched,
+            "baseline_id": handle.baseline_id,
+        }
 
     guarded_close = registry.guarded(close, dirties=never, writes=False, allow_unsafe=True)
 
     def close_document(args: dict[str, Any], call: Call) -> dict[str, Any]:
-        _exact(args, CLOSE_FIELDS)
+        exact(args, CLOSE_FIELDS)
         if args["dirty_policy"] not in ("refuse", "discard"):
             raise BridgeError("INVALID_ARGUMENT", "dirty_policy is refuse or discard.")
         return guarded_close(args, call)
@@ -78,19 +79,16 @@ def handlers(registry: Registry, port: DocumentsPort) -> dict[str, Handler]:
     return {
         "document.create": create,
         "document.list": list_documents,
+        "document.baselines": baselines,
         "document.close": close_document,
+        **opening.handlers(registry, port, data),
+        **inspection.handlers(registry, port, data),
     }
-
-
-def _exact(args: dict[str, Any], fields: set[str]) -> None:
-    if set(args) != fields:
-        details = {"expected": sorted(fields), "given": sorted(args)}
-        raise BridgeError("INVALID_ARGUMENT", "The op's arguments are wrong.", False, details)
 
 
 def _create_args(args: dict[str, Any]) -> tuple[int, int]:
     # The server checks these too; Krita aborts on a colour space it cannot find.
-    _exact(args, CREATE_FIELDS)
+    exact(args, CREATE_FIELDS)
     size = args["size_px"]
     if (
         not isinstance(args["name"], str)

@@ -1008,6 +1008,214 @@ cases*), Part 6 (*Entities*), Part 8 (*Bridge protocol*, *Plugin internals*, K6,
 - **The harness folder sits inside the real data directory** (decision 25). Sweep only
   `harness/`, and never touch the owner's files.
 
+**Done (2026-10-24, 0.4.0).**
+- **Decided with the owner at the start:**
+  - **KRA fixtures come from `harness.export_kra`.** Krita's own exporter writes them, from a
+    server-written ORA opened in the harness folder.
+  - **Open refuses documents that are not RGBA / U8** with `COLOR_PROFILE_MISMATCH`, cleaned up
+    in the same job. Any RGB profile is accepted.
+  - **Layer types use the contract's short names** (`paint`, `group`, `selection_mask`…), mapped
+    from Krita's; an unknown type passes through as Krita names it.
+  - **Inspect leaves the owner's view and active node alone.** It reads no composite pixels, so
+    K46 runs where the composite is read: open's baseline now, captures and saves later.
+- **A design review in plan mode found one blocker and fourteen smaller holes;** the plan folded
+  in their fixes:
+  - the blocker: tests would have read the owner's `config.json` and `transfer/`;
+  - cleanup from the moment the copy exists, and an unclosable document kept as an owned,
+    unsafe handle;
+  - a baseline written before its transfer file goes;
+  - a plugin-sent `baseline_id` checked before it names a file;
+  - inspect's second poll answered, not raised;
+  - K46 confirmed by re-reading the active node;
+  - binary-alpha fixtures for exact composites;
+  - escapes that can reach nothing;
+  - roots never re-checked for a call still unsettled;
+  - `O_EXCL` instead of `os.link`;
+  - the realpath's extension;
+  - the source hashed before a close;
+  - 3.10 and source-scan traps;
+  - the orphan sweep off the startup path.
+- **The plugin.**
+  - **`bridge_core/roots.py`** reads `config.json` on every check. The roots are the config's,
+    realpathed, plus the harness folder.
+  - **`bridge_core/transfer.py`** writes `BGRA8` and `A8` files at 0600 in a 0700 `transfer/`,
+    sweeps it at bridge start (after the single-instance check), and reads a server mask once,
+    checked against its SHA-256.
+  - **`bridge_core/opening.py`** is `document.open`, in this order:
+    1. the argument rules and the roots;
+    2. the copy, or the read-only hash;
+    3. `port.open`;
+    4. the colour space;
+    5. K46;
+    6. the tree;
+    7. the editable lists;
+    8. the composite;
+    9. the baseline id;
+    10. registering it, last.
+  - **`bridge_core/files.py`** copies under `O_EXCL` while hashing, then re-reads the copy.
+  - **`bridge_core/inspection.py`** is `document.inspect` and the layer entry shared with open.
+  - **`bridge_core/harness.py`** is `harness.export_kra` and its folder gate. It takes no lease.
+  - **`bridge_core/port.py`** holds the port protocol.
+  - **`Registry.discard`** closes a document a failing job made, or keeps it owned and unsafe.
+    Create uses it too.
+  - **`Handle`** gains `path`, `source_path`, `source_sha256`, `baseline_id`, `protected`,
+    `allowed_mask`, `preserve_composite_alpha` and `preserve_canvas`.
+  - **`document.close`** returns `baseline_id`, and `baseline_untouched` from a re-hash.
+    `document.baselines` lists the live ids. `server_info` reads `allowed_roots` on every call.
+  - **The adapter** gains `open` (batch mode, `addView`), `tree`, `prepare_read` (K46),
+    `composite`, `selection` and `export_kra` (`exportImage`).
+- **The server.**
+  - **`paths.Places`** holds the config, transfer, harness and baselines folders.
+    `build_server(client, journal, places)` requires it.
+  - **`roots.py`** has the config, the check and the CLI.
+  - **`transfer.py`** has `take` (`O_NOFOLLOW`, folder and size checks, BGRA to RGBA),
+    `discard` and `put_mask`.
+  - **`baselines.py`** has `adopt` (PNG through `mkstemp` and `os.replace`, then the transfer
+    file goes), `remove` and `sweep`.
+  - **`tools/documents.py`** has open, inspect, and the `resolve_*` steps that turn transfer files
+    into data before a receipt. `RESOLVERS` runs them for `krita_operation_get`.
+  - **`journaled`** gains `precheck`.
+  - **`serve()`** sweeps orphaned baselines on a daemon thread.
+  - **`doctor`** gains step 6.
+- **The schemas:** `krita_document_open`, `krita_document_inspect` and `krita_server_info`
+  (`allowed_roots`), each amended by a one-off script, not committed. 8 tools are registered.
+- **The probe.**
+  - Report helpers move to `probe/report.py`.
+  - The file checks are in `probe/opening.py`.
+  - The ORA and PNG writer is `probe/fixtures.py`.
+  - The sweep also closes leftover documents whose path lies in the harness folder, through both
+    servers.
+- **Amendments:**
+  - **Fields beyond PDD Part 4.**
+    - Open and inspect carry `mode`, `path`, `source_path`, the colour space,
+      `active_layer_id` and `baseline_id`; inspect carries `unsafe` too.
+    - A flat list with `parent_id` and `order` stands in for "children".
+
+    Settled in the plan.
+  - **The editable lists are tied to the format.** Ids are for KRA only, names for ORA and PNG
+    only. A name matching several layers is `INVALID_ARGUMENT`, stricter than decision 27. A
+    `read_only` open refuses `working_dir` and both lists, by schema conditionals. Settled in
+    the plan.
+  - **A missing `working_dir` is made,** after the root check. Settled in the plan.
+  - **`allowed_roots` leaves out the harness folder,** so agents never work where the probe
+    sweeps. The plugin reports it from the same `config.json`, so the receipt stays a function of
+    the outcome. The leaving-out was settled in the plan; the plugin reporting it was found while
+    building.
+  - **The roots step is doctor's step 6,** after the bridge, so the `KRITA_NOT_RUNNING` hint is
+    unchanged. Settled in the plan.
+  - **`journaled` gains `precheck`;** create shares the owned-unsafe fallback. Settled in the
+    plan (review).
+  - **Transfer files are resolved before the receipt.** `resolve_*` adopt, read or remove them, so
+    receipts stay pure functions of the outcome. Found while building.
+  - **`allowed_change_mask` is null-only** until Session 7 defines its summary. Settled in the
+    plan.
+  - **Protocol 1 gains four ops,** `document.open`, `document.inspect`, `document.baselines` and
+    `harness.export_kra`, plus `allowed_roots` in `server_info`'s result. All additive. Found
+    while building.
+  - **A baseline whose transfer file another server took is a one-line warning.** The probe's
+    retry through server-b, with its own data folder, showed a traceback. Found by the live probe.
+- **Measured** (Krita 5.3.4 on macOS, Apple Silicon, 64 × 48 fixtures):
+  - **Krita's ORA loader sets the layer offset.** A layer at x=8, y=12 reports `offset_px`
+    `[8, 12]`, and `Node.bounds()` gives its exact bounds, `{8, 12, 20, 16}`.
+  - **What the ORA attributes become:** `edit-locked` is `locked`, `svg:src-atop` is
+    inherit-alpha, `svg:multiply` is `multiply`, and opacity 0.5 lands within 1/255.
+  - **A PNG opens as one layer named "Background".**
+  - **A fresh open is not marked modified** (0 of 1 unsaved), so no flag is cleared.
+  - **A fresh document has no selection** (`None`).
+  - **Baselines are byte-exact:** the PNG's equals its pixels, the ORA's the fixture composite,
+    and the KRA's (exported from that ORA) the ORA's.
+  - **Layer ids:** a KRA keeps them across two opens, and an ORA's are new at every open.
+  - **No harness file appears in kritarc's recent files.**
+  - **Open and create times.** `read_only` opens took 129–190 ms. The create and close cycle
+    took 142–152 ms. Two consecutive runs of the build before the last measured a mean of 690
+    and 704 ms per cycle, and the second 685–739 ms per open, while the runs before and after
+    them measured 142–190 ms. The cause is not known, and it did not recur.
+  - **H4 idle:** p95 5.4 ms.
+  - **After every probe run,** `transfer/` and `harness/` were empty, no document was left open,
+    and `plugin.log` held no error.
+- **Checked by hand:**
+  - **Two self-restarts under decision 21.** The first had 3 open documents, 0 unsaved; the
+    second 0 and 0. Both used `install-plugin`, `osascript` quit and `open -a krita`.
+  - **`doctor` after the restart:** steps 1–5 PASS, and step 6 FAILs with "no roots". The owner
+    has added none, and a session never runs `roots`.
+- **Falsified:**
+  - **The method.** Each check was broken in the product code by a script, failed at its own
+    test, and was restored by copying the file back and comparing bytes.
+  - **The unit tests, 100 checks.**
+    - Roots on both sides:
+      - realpath, the harness folder, NUL bytes and `/`;
+      - the config's privacy, versions and agreement;
+      - `roots add`, and a broken config never overwritten.
+    - Transfer:
+      - the swap and the A8 read;
+      - the size, folder, `O_NOFOLLOW`, directory and format refusals;
+      - the sweep;
+      - the mask's name, its deletion, and its hash, folder and size checks.
+    - Baselines:
+      - adopt's order and the kept file;
+      - the id check;
+      - the sweep's listing order, Krita closed, and a bridge that cannot say;
+      - the warning.
+    - Open:
+      - the copy's name, `O_EXCL`, the made folder and the source's folder;
+      - both hashes;
+      - the plugin's root and realpath-format checks;
+      - the editable lists and their refusals;
+      - every cleanup path, and the unsafe fallback (create's too);
+      - the job-start refusal before the copy;
+      - `baseline_untouched` and `document.baselines`.
+    - Inspect:
+      - protection for created, owner and opened documents;
+      - no K46 and no lease;
+      - the type map, frame 0 and the selection file;
+      - the job-start refusal.
+    - Harness:
+      - no lease;
+      - both folder gates and the owner's documents;
+      - no overwrite, and `BUSY`.
+    - The bridge:
+      - the start sweep, after the single-instance check;
+      - `allowed_roots`.
+    - The server tools:
+      - adoption and removal;
+      - the request id;
+      - the precheck and its unsettled skip;
+      - the server's own refusals;
+      - `RESOLVERS`;
+      - inspect's counts, discard, frame and retryable gone file;
+      - the start sweep.
+    - doctor step 6, the fixture writer, and the shared layer shape.
+  - **The probe, live, 13 of its 22 new checks,** each by a break in the server code:
+    - `allowed_roots`;
+    - the six round trips;
+    - the three byte-exact baselines;
+    - both id checks;
+    - the editable lists;
+    - the hash mismatch;
+    - the server's escapes;
+    - the retry;
+    - frame 1;
+    - the untouched fixtures;
+    - kritarc, through a fake kritarc in the driver.
+
+    The other three are plugin-side (the export, its refusals, the bypassed symlink). They are
+    falsified in the unit tests and were not reinstalled to break them live.
+  - **Tests strengthened while falsifying:**
+    - the source-hash test names which file differed, because the copy's re-read had masked it;
+    - `is_symlink` went, and `O_NOFOLLOW` is the one guard;
+    - `_open` registers last, and a failing `new_id` makes the transfer cleanup reachable;
+    - the server's refusals (`working_dir` beside the source, frame 1, the probe's escapes) must
+      carry no `operation_id`, because the plugin's own refusal had masked them.
+
+    The order "editable lists before the composite" is not checked: cleanup makes it invisible,
+    so it is efficiency only.
+- **Numbers:**
+  - `verify`: 6 stages, all PASS;
+  - 243 server tests passed, 0 skipped (+74);
+  - 194 plugin-core tests passed, 0 skipped (+55);
+  - `probe`: 45 PASS, 0 FAIL, 9 MEASURED (+22, +5);
+  - 8 registered tools; 19 schema files.
+
 ---
 
 ## 5: Reading pixels

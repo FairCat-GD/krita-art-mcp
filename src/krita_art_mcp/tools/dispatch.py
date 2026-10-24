@@ -11,6 +11,7 @@ from krita_art_mcp import envelope, journal
 from krita_art_mcp.bridge_client import BeforeSend, BridgeClient, Done, Failed, Outcome, Pending
 from krita_art_mcp.errors import error_body
 from krita_art_mcp.journal import Journal, JournalError
+from krita_art_mcp.paths import Places
 
 log = logging.getLogger(__name__)
 
@@ -21,6 +22,7 @@ Receipt = Callable[[Outcome], CallToolResult]
 class ToolCall:
     bridge: BridgeClient
     journal: Journal
+    places: Places
     # The MCP client's own name, from its initialize request, for the journal.
     client_name: str | None = None
 
@@ -69,6 +71,7 @@ def journaled(
     request_id: str,
     send: Callable[[BeforeSend], Outcome],
     receipt: Receipt,
+    precheck: Callable[[], CallToolResult | None] | None = None,
 ) -> CallToolResult:
     # Invariant 9: journaled before it is sent; a retry returns the receipt, and a call that
     # reached a Krita session which has since ended is never sent again.
@@ -84,6 +87,12 @@ def journaled(
             return envelope.failure("REQUEST_ID_CONFLICT", details=details)
         if prior.receipt is not None:
             return restored(prior.receipt)
+    # A check whose answer can change between attempts, such as the roots, is skipped while an
+    # attempt is unsettled: the bridge answers that one before its handler runs again.
+    if precheck is not None and (prior is None or not prior.unsettled()):
+        refused = precheck()
+        if refused is not None:
+            return refused
     sent: dict[str, str] = {}
 
     def before_send(session_id: str, operation_id: str) -> Failed | None:

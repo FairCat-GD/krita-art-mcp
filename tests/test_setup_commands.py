@@ -1,11 +1,12 @@
 import io
+import json
 import shutil
 from pathlib import Path
 from typing import Any
 
 import pytest
 
-from krita_art_mcp import doctor, install, paths, plugin_files, probe
+from krita_art_mcp import doctor, install, paths, plugin_files, probe, roots
 from krita_art_mcp.bridge_client import BeforeSend, BridgeClient, Done, Failed, Outcome
 from krita_art_mcp.errors import error_body
 from krita_art_mcp.setup_checks import Setup
@@ -103,18 +104,25 @@ def _healthy(plugin_hash: str) -> Done:
     return Done({"protocol": 1, "plugin_hash": plugin_hash, "krita_version": "5.3.4"}, None)
 
 
-def _setup(tmp_path: Path, *, installed: bool, enabled: bool, running: bool) -> Setup:
+def _setup(
+    tmp_path: Path, *, installed: bool, enabled: bool, running: bool, rooted: bool = True
+) -> Setup:
     krita = tmp_path / "Krita"
     (krita / "pykrita").mkdir(parents=True)
     if installed:
         plugin_files.install(REPO_PLUGIN, krita)
     kritarc = tmp_path / "kritarc"
     kritarc.write_text(ENABLED if enabled else "[python]\nenable_krita_art_mcp_bridge=false\n")
+    config = tmp_path / "data" / "config.json"
+    if rooted:
+        (tmp_path / "art").mkdir()
+        roots.save(config, [str(tmp_path / "art")])
     return Setup(
         plugin_source=REPO_PLUGIN,
         krita_data_dir=krita,
         kritarc=kritarc,
         krita_running=lambda: running,
+        config_file=config,
     )
 
 
@@ -156,7 +164,7 @@ def test_doctor_names_the_first_failing_step(
     assert lines[failing_step].startswith("   Fix: ")
     if failing_step == 5:
         assert "install-plugin" in lines[failing_step]
-    assert lines[failing_step + 1] == f"doctor: stopped at step {failing_step} of 5."
+    assert lines[failing_step + 1] == f"doctor: stopped at step {failing_step} of 6."
     # The restart check is reported whichever step failed.
     assert lines[-1] == "Krita has 2 open document(s), 1 unsaved."
 
@@ -175,7 +183,7 @@ def test_doctor_says_nothing_of_documents_when_krita_is_closed(tmp_path: Path) -
     out = io.StringIO()
     setup = _setup(tmp_path, installed=True, enabled=True, running=False)
     assert doctor.run(setup, _Client(UNREACHABLE, UNREACHABLE), out) == 1
-    assert out.getvalue().splitlines()[-1] == "doctor: stopped at step 3 of 5."
+    assert out.getvalue().splitlines()[-1] == "doctor: stopped at step 3 of 6."
 
 
 def test_doctor_passes_and_reports_unsaved_documents(tmp_path: Path) -> None:
@@ -183,8 +191,34 @@ def test_doctor_passes_and_reports_unsaved_documents(tmp_path: Path) -> None:
     setup = _setup(tmp_path, installed=True, enabled=True, running=True)
     assert doctor.run(setup, _Client(_healthy(REPO_HASH)), out) == 0
     text = out.getvalue()
-    assert "doctor: all 5 steps pass." in text
+    assert "doctor: all 6 steps pass." in text
+    assert "6. at least one root is allowed: PASS (1 root)" in text
     assert "Krita has 2 open document(s), 1 unsaved." in text
+
+
+@pytest.mark.parametrize(
+    ("config", "detail"),
+    [
+        (None, "no roots, so agents can open nothing"),
+        ({"v": 1, "roots": ["/nonexistent-root-for-a-test"]}, "1 of 1 roots are no longer folders"),
+        ({"v": 2, "roots": []}, "config.json is version 2"),
+    ],
+    ids=["no roots", "a root gone", "a newer config"],
+)
+def test_doctor_step_6_needs_a_root_that_is_still_a_folder(
+    tmp_path: Path, config: dict[str, Any] | None, detail: str
+) -> None:
+    setup = _setup(tmp_path, installed=True, enabled=True, running=True, rooted=False)
+    if config is not None:
+        setup.config_file.parent.mkdir(parents=True)
+        setup.config_file.write_text(json.dumps(config))
+    out = io.StringIO()
+    assert doctor.run(setup, _Client(_healthy(REPO_HASH)), out) == 1
+    lines = out.getvalue().splitlines()
+    assert lines[5].startswith("6. at least one root is allowed: FAIL (") and detail in lines[5]
+    assert lines[6].startswith("   Fix: ") and lines[7] == "doctor: stopped at step 6 of 6."
+    # Counts only: a root names one of the owner's folders.
+    assert "nonexistent-root" not in out.getvalue()
 
 
 def test_the_probe_stops_at_a_stale_plugin_and_sweeps_its_folder(tmp_path: Path) -> None:

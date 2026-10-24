@@ -1,113 +1,101 @@
-Read docs/spec/SPEC.md (§1 decisions 9, 20, 25–27; §4; §5 invariants 2, 3, 13), docs/spec/PDD.md
-(Part 4 *Conventions*: coordinates, IDs; `krita_document_open`, `krita_document_inspect`; Part 6
-*Files*, *Formats*; Part 8 *Pixel transfer*, *Security & privacy*, K12, K14, K39, K46), CLAUDE.md,
-then this file. Then do Session 4 of docs/spec/SESSIONS.md: opening files. Session 4 has five
-parts:
-- **roots:** `krita-art-mcp roots add|list|remove`, `config.json` with its version, `realpath`
-  on both sides (`PATH_NOT_ALLOWED`), and `doctor`'s "no roots" step;
-- **the transfer path:** raw `pixelData` files in `transfer/`, BGRA to RGBA in the server, masks
-  the other way with their SHA-256, Pillow and NumPy added;
-- **`harness.*`:** the namespace, its folder gate, and the server-side ORA fixture writer;
-- **`krita_document_open`:** working copies and read-only opens, KRA / ORA / PNG, protection by
-  default, and the `as_opened` baseline;
-- **`krita_document_inspect`**, frame 0 only.
+Read docs/spec/SPEC.md (§1 decisions 5, 10; §5 invariant 8), docs/spec/PDD.md (Part 4
+`krita_resource_list`, `krita_capture`, `krita_sample`; Part 12 *Colour-maths fixtures*; Part 8
+K12, K17, K21, K36, C2, C4, C5), CLAUDE.md, then this file. Then do Session 5 of
+docs/spec/SESSIONS.md: reading pixels. Session 5 has four parts:
+- **`krita_capture`:** composite, layer and selection targets; native at `scale: 1`, otherwise
+  composited on a background and resampled in Pillow; `max_px` 1600 by default, 4096 at most;
+  MCP image content with `_meta: {"codex/imageDetail": "original"}`, plus the path;
+- **`krita_sample`:** points and discs, RGBA, hex, L\*a\*b\* and L\*C\*h, composite and layer
+  labelled;
+- **`krita_resource_list`:** brush presets with their fingerprint, the blend-mode whitelist,
+  profiles and palettes;
+- **the `source` shape,** amended in all 19 schemas.
 
-Release 0.4.0.
+Release 0.5.0.
 
 ## State you need that is not in the specs
 
-- **Round 1 is the Phase 1 build.** Sessions 0 to 3 are done; 4 to 15 remain, and 6, 10 and 13
+- **Round 1 is the Phase 1 build.** Sessions 0 to 4 are done; 5 to 15 remain, and 6, 10 and 13
   are architecture reviews.
 - **The push status.** `origin` is the private GitHub repository `FairCat-GD/krita-art-mcp`.
   `origin/main` holds everything through `review: a malformed journal line no longer blocks
-  calls, and 9 smaller`, so `origin/main..HEAD` starts empty. List `origin/main..HEAD` before any push.
-- **What Session 3 left that Session 4 builds on:**
-  - **The plugin's registry** (`bridge_core/registry.py`).
-    - A `Handle` has `document_id`, `document` (the strong reference), `owned`, `mode`, `dirty`,
-      `unsafe` and `lease`. Session 4 adds the source path and hash, the baseline id, and the
-      protection fields.
-    - `Registry.add(document, mode, client)` registers a document the bridge made and gives the
-      lease to the caller. Open will use it with `working_copy` or `read_only`.
-    - `sync()` matches wrappers with `==` (libkis wrappers are unhashable) and prunes documents
-      that are gone. It gives the owner's documents `read_only` handles with `owned=False`.
-    - `guarded(handler, dirties=, writes=, allow_unsafe=)` wraps every document mutation. Its
-      order:
-      1. the job-start refusal (modal dialog, not exactly one window; both retryable);
-      2. the lookup (`DOCUMENT_NOT_FOUND`);
-      3. `DOCUMENT_READ_ONLY` (not owned, or `writes` on a `read_only` mode);
-      4. `DOCUMENT_UNSAFE`;
-      5. the lease (`DOCUMENT_IN_USE`);
-      6. the handler;
-      7. `dirty` when `dirties(args)`.
-
-      A close is `writes=False`, so an agent can close its own read-only opens.
-  - **The plugin's document ops** (`bridge_core/documents.py`, behind a port that
-    `krita_adapter/documents.py` implements): `document.create`, `document.list` and
-    `document.close`. New ops join `documents.handlers()` or a sibling, and the extension
-    merges them into the bridge's handlers.
-  - **Jobs** (`bridge_core/jobs.py`): a handler is `(args, call)`, and `call.client` is the
-    lease identity.
-    - A `request_id` names one operation for the Krita session.
-    - A retryable `BridgeError` means "changed nothing" and releases the id, so raise a
-      retryable error only before an op changes anything.
-  - **The server's journaled path** (`tools/dispatch.py`). `journaled(call, tool, arguments,
-    request_id, send, receipt)` is how `krita_document_open` must dispatch.
-    - **Op args must be a pure function of the tool's arguments,** or a genuine retry hashes
-      differently and conflicts. Session 7's mask transfer files must be named by their
-      SHA-256.
-    - **A receipt depends only on the op's outcome** (`from_outcome`), and `RECEIPTS` in
-      `tools/operations.py` maps each op to its tool, so `krita_operation_get` can rebuild it.
-      Add open's and inspect's ops there.
-  - **The journal** (`journal.py`): `<server data dir>/journal/YYYY-MM-DD.jsonl`. It indexes 7
-    UTC days. The server data dir is `paths.server_data_dir()`, which honours
-    `KRITA_ART_MCP_DATA_DIR`; the baselines and captures go there too.
-  - **`krita_document_close`** returns `baseline_untouched: null` without a source. Session 4
-    fills it, and removes the `as_opened` baseline on close.
-  - **`mode`** is `new` (create), `working_copy` or `read_only`.
-  - **`build_server(client, journal)` needs both.** Tests always pass a `Journal` in a temporary
-    folder, so none can write the owner's journal.
-  - **Create** gives its view to `windows()[0]` and makes "Layer 1" the active node. Open should
-    do the same.
-  - **The test fakes** live in `tests/fixtures/fake_krita.py` (`FakePort`, `FakeDocument`,
-    `MainThread`). They are on pytest's `pythonpath` and mypy's `mypy_path`, and are 3.10-valid
-    for the plugin run.
-  - **The probe** gives each `serve` its own `KRITA_ART_MCP_DATA_DIR` under `harness/`
-    (`server-a`, `server-b`).
-    - Its document checks run only after the gate "no Krita document has unsaved changes".
-    - It sweeps documents named `krita-art-mcp probe…` that the bridge made, at start and end.
+  calls, and 9 smaller`. Session 4's commits wait for the next approved push. List
+  `origin/main..HEAD` before any push.
+- **What Session 4 left that Session 5 builds on:**
+  - **The transfer path.**
+    - The plugin's `transfer.write(dir, data, width, height, fmt)` writes `BGRA8` or `A8` into
+      `transfer/` and returns `{path, size_px, format}`.
+    - The server's `transfer.take(directory, spec)` returns an RGBA (or one-channel) NumPy array.
+      It never deletes the file: the caller calls `transfer.discard` once what it made is on
+      disk.
+    - Masks to the plugin: `transfer.put_mask` and `bridge_core.transfer.take_mask`. No tool
+      sends one yet.
+  - **Resolvers.** A bridge result that names a transfer file is resolved before its receipt.
+    - `tools/documents.py` has `resolve_open`, `resolve_inspect` and `resolve_close`, and
+      `RESOLVERS` in `tools/operations.py` runs them for `krita_operation_get`.
+    - A capture's resolver joins them, so receipts stay pure functions of the outcome.
+    - A resolver must never raise: open's logs, and inspect's returns a retryable failure.
+  - **`Places`** (`paths.Places`, `call.places`) holds `config_file`, `transfer_dir`,
+    `harness_dir` and `baselines_dir`. `build_server(client, journal, places)` requires it.
+    Captures go to `<server data dir>/captures/YYYY-MM-DD/`, so Session 5 adds `captures_dir`
+    there.
+  - **The port** (`bridge_core/port.py`).
+    - It has `tree`, `prepare_read` (K46), `composite` (the whole canvas) and `selection`.
+    - Capture and sample need reads of a rect, and of one layer's own paint device by id; add
+      them beside `composite`.
+    - `inspection.check_frame(frame)` is the frame rule to reuse for `source.frame`.
+  - **K46 acts only on the document in front.** `Document.setActiveNode` does nothing for a
+    document whose view is not active, and `prepare_read` raises if the mask stays active.
+    - Opens are safe: their own view is in front.
+    - A capture of another document is not. Whether capture calls `Window.showView`, switching
+      the owner's tab, is an open decision for Session 5's plan.
+  - **The handle** carries `path`, `source_path`, `source_sha256`, `baseline_id` and `protected`.
+    For an owner's document every layer is protected (`inspection.protected_ids`).
+  - **The layer entry** is one shape in open and inspect, held equal by a schema test. Types are
+    the contract's short names (`inspection.TYPES`).
+  - **The fixtures** (`probe/fixtures.py`).
+    - `write_ora`, `write_png` and `composite` give exact expected pixels: visible content is
+      opaque or empty, and R ≠ B everywhere.
+    - "probe hidden" is a hidden layer at opacity 0.5. Its own paint device is opaque, which
+      Session 5's "a layer capture excludes the layer's opacity" (K12) can use.
+    - `harness.export_kra {document_id, target_path}` makes a KRA from a harness document.
+  - **The probe's file checks** live in `probe/opening.py`, and its report helpers in
+    `probe/report.py`. Its sweep closes probe-named created documents and any document whose path
+    lies in the harness folder, through both servers.
+  - **Baselines** are `<server data dir>/baselines/<baseline_id>.png`. Ids are `baseline-` plus
+    12 hex characters, and a plugin-sent id is checked against that shape before it names a
+    file.
 - **What the spec said that turned out wrong or harder:**
-  - **`Krita.createDocument` makes an opaque white "Background" paint layer,** whatever
-    "transparent" means elsewhere: the default pixel is opaque white and the layer opacity 255.
-    Create swaps it for a fresh paint layer "Layer 1" through `Node.setChildNodes`, which pushes
-    no undo step (`addChildNode` and `Node.remove` do). Session 7's undo floor needs no special
-    case for created documents.
-  - **`Krita.createDocument` asserts that the colour space exists** (`Q_ASSERT(cs)`), so a
-    wrong profile name could abort Krita. The plugin re-checks the colour space before any
-    Krita call.
-  - **`ps -o lstart` depends on the locale and time zone,** which differ between a shell and
-    Krita launched from the Dock. Both sides run `ps` with `LC_ALL=C TZ=UTC`.
-  - **The owner works in Krita while sessions run.** Twice, while the owner was working, a modal
-    dialog was open (which one was not seen), and the probe correctly refused with
-    `KRITA_MODAL_DIALOG`. It passed once the dialog had closed. A probe FAIL of that kind means
-    "wait", not a bug.
+  - **Two-sided checks mask each other in tests.** The server and the plugin both refuse escapes,
+    frames and bad working dirs, so a test of the server's refusal also asserts
+    `operation_id is None`: the plugin's refusal comes back through the bridge with one.
+  - **Krita's ORA loader sets each layer's offset** (`Node.position()`), and `Node.bounds()` is
+    the exact bounds.
+  - **A PNG opens as one layer named "Background".**
+  - **A fresh open is not marked modified,** and a fresh document's selection is `None`.
 - **Decisions written down nowhere else** (deliberate, for ARCHITECTURE):
-  - **Retry layers.** The bridge dedups within a Krita session. The journal answers a receipt
-    from any session, and refuses an `unknown` attempt from another session as uncertain.
-  - **Outcomes.** `receipt` and `no_effect` settle every deduplicated attempt in their session;
-    `not_sent` and `conflict` settle only their own.
-  - **Polls.** A poll treats a 404 as "not registered yet" until the bridge has answered once,
-    because operations are kept for the whole session.
-  - **Document ids** are `doc-` plus 12 random hex characters, never reused across Krita
-    restarts.
-  - **Probe journals.** The harness's servers write their journals under `harness/`, never the
-    owner's data dir.
+  - **Working copies** are `<working_dir>/<YYYYMMDDTHHMMSS.mmmZ>-<basename(realpath)>`, minted
+    in the job, made under `O_EXCL`, and removed on any later failure.
+  - **Transfer names.** The plugin's files are `<32 hex>.raw`; the server's masks are
+    `mask-<sha256>.a8`.
+  - **`allowed_roots`** comes from the plugin's own read of `config.json`, without the harness
+    folder.
+  - **`journaled(..., precheck=)`** runs a check that can change between attempts, such as the
+    roots, only while no attempt of that `request_id` is unsettled.
+  - **A document a failing job cannot close** stays registered, owned and unsafe, so `discard`
+    can end it; the error's `details.document_id` names it.
 - **Baseline** (the next session moves these only by what it adds):
   - `verify`: 6 stages, all PASS;
-  - 169 server tests passed, 0 skipped;
-  - 139 plugin-core tests passed, 0 skipped;
-  - `probe`: 23 PASS, 0 FAIL, 4 MEASURED;
-  - 6 registered tools.
-- **Not done:** the owner's own look at N-03 in Activity Monitor (in `docs/BACKLOG.md`).
+  - 243 server tests passed, 0 skipped;
+  - 194 plugin-core tests passed, 0 skipped;
+  - `probe`: 45 PASS, 0 FAIL, 9 MEASURED;
+  - 8 registered tools.
+- **Not done:**
+  - **The owner's roots.** `doctor` step 6 FAILs with "no roots" until the owner runs `roots add`.
+    No session runs it, and the probe needs no roots.
+  - **The owner's own look at N-03** in Activity Monitor (in `docs/BACKLOG.md`).
+  - **The `[0.4.0]` CHANGELOG link reference** goes in with the review commit, once the feat
+    commit has its sha.
 
 ## Watch for
 
@@ -124,7 +112,7 @@ Release 0.4.0.
   - **The owner's Krita is live, with their documents open.** No session touches them, and none
     restarts Krita while a document has unsaved changes.
   - **Nothing private in any file or commit message** (`CLAUDE.md`, *This repository is public*).
-    Never record the names of the owner's open documents.
+    Never record the names of the owner's open documents, or their roots.
 - **The plugin's import root.**
   - Tests see `bridge_core` as a top-level package through `plugin/krita_art_mcp_bridge` on
     `pythonpath`. Keep `bridge_core`'s own imports relative, and never import the
@@ -148,6 +136,10 @@ Release 0.4.0.
   - Modules removed by Python 3.12 or 3.13 are refused.
 - **No `tests/conftest.py`.** The 3.10 run loads every conftest from the rootdir down, and its
   environment holds only pytest. Shared fakes go in `tests/fixtures/`, 3.10-valid.
+- **No test may reach the owner's folders.**
+  - Every `build_server` gets a temporary `Journal` and `Places`.
+  - The stdio `serve` test sets `KRITA_ART_MCP_DATA_DIR`, because `serve()` sweeps baselines
+    at start.
 - **A stdio test waits for each reply, and closes stdin in a `finally`.**
   - The server can exit at end of input before answering queued requests.
   - With the subprocess's own context manager, a failed assertion hung the run for 10 minutes.
@@ -171,16 +163,20 @@ Release 0.4.0.
   bridge.
 - **A test that needs a live bridge** builds a real `Bridge` with `fake_krita.MainThread`, as
   `tests/test_document_tools.py` does with the real registry and a `FakePort`.
-- **Session 4's own traps** are in its block:
-  - ORA and PNG store no layer ids, so match them by name and order;
-  - the projection's `pixelData` is BGRA;
-  - the harness folder sits inside the real data directory, so sweep only `harness/`.
-- **Also for Session 4:**
-  - **Open with batch mode and `addView` at once** (K6, K14), as create does.
-  - **On any failure after `openDocument`,** clear the modified flag and close the document in
-    the same job, or it lingers as an owner `read_only` document the probe never sweeps.
-  - **`Document.close()` on a modified document may ask to save.** The port's `close()` clears
-    the modified flag first; keep every close going through it.
+- **Session 5's own traps** are in its block:
+  - the SDK's `Image` takes no `_meta`, so build `ImageContent` (C1);
+  - Claude Code downscales images and caps output at 25,000 tokens (C4), so paths go with every
+    image;
+  - never resample an image that was already resampled.
+- **Also for Session 5:**
+  - **The probe's output shows one expected warning,** "the baseline … was not kept". It comes
+    from server-b, which dedups an open whose transfer file server-a already took.
+  - **Falsifying live checks without the whole probe.** A scratch driver that runs only the new
+    probe module against real servers (as `probe.opening.run` is called from `_documents`) saves
+    the 500-call H4 run on every break.
+  - **Never rename with a blanket `sed`.** `s/_tool(/tool(/` also turned `call_tool` into
+    `calltool`.
+  - **Fixed clocks collide working-copy names** in tests: give each open its own `working_dir`.
 - **Comments state the present, briefly.** No session ids, no "used to", no review stories, no
   paragraphs.
 - **Every push needs its own approval.** List `origin/main..HEAD` first, because parallel

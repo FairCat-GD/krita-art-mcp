@@ -13,6 +13,7 @@ from mcp.types import CallToolResult, ToolAnnotations
 from krita_art_mcp import envelope, schemas
 from krita_art_mcp.bridge_client import BridgeClient
 from krita_art_mcp.journal import Journal
+from krita_art_mcp.paths import Places
 from krita_art_mcp.tools import documents, observe, operations
 from krita_art_mcp.tools.dispatch import ToolCall
 
@@ -30,7 +31,9 @@ Run = Callable[[dict[str, Any], str | None], CallToolResult]
 TOOLS: dict[str, ToolFunction] = {
     "krita_server_info": observe.server_info,
     "krita_document_list": documents.document_list,
+    "krita_document_open": documents.document_open,
     "krita_document_create": documents.document_create,
+    "krita_document_inspect": documents.document_inspect,
     "krita_document_close": documents.document_close,
     "krita_operation_get": operations.operation_get,
     "krita_operation_cancel": operations.operation_cancel,
@@ -53,9 +56,9 @@ class ExactArguments(FuncMetadata):
         return {"arguments": arguments_to_validate}
 
 
-def build_all(bridge: BridgeClient, journal: Journal) -> list[Tool]:
+def build_all(bridge: BridgeClient, journal: Journal, places: Places) -> list[Tool]:
     return [
-        build(name, functools.partial(_bound, tool, bridge, journal))
+        build(name, functools.partial(_bound, tool, bridge, journal, places))
         for name, tool in TOOLS.items()
     ]
 
@@ -64,10 +67,11 @@ def _bound(
     tool: ToolFunction,
     bridge: BridgeClient,
     journal: Journal,
+    places: Places,
     arguments: dict[str, Any],
     client_name: str | None,
 ) -> CallToolResult:
-    return tool(ToolCall(bridge, journal, client_name), arguments)
+    return tool(ToolCall(bridge, journal, places, client_name), arguments)
 
 
 def build(name: str, run: Run) -> Tool:

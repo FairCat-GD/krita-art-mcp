@@ -7,7 +7,7 @@ from collections.abc import Callable, Mapping
 from pathlib import Path
 from typing import Any
 
-from . import PLUGIN_VERSION, PROTOCOL, bridge_file, capabilities, paths
+from . import PLUGIN_VERSION, PROTOCOL, bridge_file, capabilities, paths, roots, transfer
 from . import log as bridge_log
 from .errors import no_arguments
 from .jobs import Call, Handler, Jobs
@@ -52,7 +52,8 @@ class Bridge:
     def _server_info(self, args: dict[str, Any], call: Call) -> dict[str, Any]:
         # A job, not a cached read, so the answer proves Krita's main thread is free.
         no_arguments(args)
-        return dict(self.health)
+        # Read on every call, so a root added while Krita runs shows at once.
+        return {**self.health, "allowed_roots": roots.load(paths.config_file(self._data_dir))}
 
     def drain(self) -> None:
         self.jobs.drain()
@@ -63,6 +64,7 @@ class Bridge:
         if other is not None:
             self._log.warning("Krita %d already runs the bridge, so this one stays off", other)
             return False
+        transfer.sweep(paths.transfer_dir(self._data_dir))
         httpd = BridgeHTTPServer(self._token, self.session_id, self.jobs, self.health, self._log)
         serving = threading.Event()
 

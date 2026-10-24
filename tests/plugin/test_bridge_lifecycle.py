@@ -204,3 +204,29 @@ def test_the_log_rotates_at_5_mb(tmp_path: Path) -> None:
     assert isinstance(handler, logging.handlers.RotatingFileHandler)
     assert (handler.maxBytes, handler.backupCount) == (5 * 1024 * 1024, 1)
     assert Path(handler.baseFilename) == tmp_path / "logs" / "plugin.log"
+
+
+def test_start_sweeps_the_transfer_files_an_ended_session_left(tmp_path: Path) -> None:
+    data_dir = tmp_path / "data"
+    leftover = data_dir / "transfer" / "0123.raw"
+    leftover.parent.mkdir(parents=True)
+    leftover.write_bytes(b"pixels nobody will read")
+    bridge = _bridge(data_dir)
+    assert bridge.start()
+    try:
+        assert list((data_dir / "transfer").iterdir()) == []
+    finally:
+        bridge.stop()
+
+
+def test_a_second_instance_leaves_the_live_bridge_transfer_files_alone(tmp_path: Path) -> None:
+    (tmp_path / "bridge.json").write_text(json.dumps({"pid": 4242, "session_id": "other"}))
+    in_flight = tmp_path / "transfer" / "0123.raw"
+    in_flight.parent.mkdir()
+    in_flight.write_bytes(b"pixels a server is reading")
+    bridge = _bridge(tmp_path, is_live=True)
+    try:
+        assert not bridge.start()
+        assert in_flight.exists()
+    finally:
+        bridge.stop()

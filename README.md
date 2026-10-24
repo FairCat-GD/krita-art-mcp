@@ -6,10 +6,13 @@ size, and undo or keep it. It is for painted (non-pixel) 2D game art.
 
 ## Status
 
-Phase 1 is being built. Version 0.3.0 connects the server to a running Krita through the plugin
+Phase 1 is being built. Version 0.4.0 connects the server to a running Krita through the plugin
 and offers these tools:
 
-- `krita_server_info`: Krita's version and what this build can do;
+- `krita_server_info`: Krita's version, what this build can do, and the folders agents may use;
+- `krita_document_open`: a KRA, ORA or PNG as a working copy or read-only, with every existing
+  layer protected;
+- `krita_document_inspect`: a document's layer tree, protection and selection;
 - `krita_document_create`, `krita_document_list` and `krita_document_close`: new transparent
   RGBA / 8-bit / sRGB canvases, every open document, and closing an agent's own documents;
 - `krita_operation_get` and `krita_operation_cancel`: following a long call to its receipt, and
@@ -37,7 +40,15 @@ The painting tools arrive in the coming releases; `CHANGELOG.md` lists what each
 3. In *Configure Krita › Python Plugin Manager* (in the application menu on macOS), enable
    *Krita Art MCP Bridge*.
 4. Quit Krita and start it again.
-5. Check the setup. `doctor` names the first step that fails, and how to fix it:
+5. Allow the folders agents may use, one command each. An agent can name no file outside them,
+   and its working copies go into a folder inside them:
+
+   ```bash
+   uv run krita-art-mcp roots add /path/to/your/art
+   ```
+
+   `roots list` shows them, and `roots remove <folder>` takes one away.
+6. Check the setup. `doctor` names the first step that fails, and how to fix it:
 
    ```bash
    uv run krita-art-mcp doctor
@@ -96,7 +107,8 @@ uv run krita-art-mcp serve
 
 `uv run krita-art-mcp probe` is the live harness. It checks the running plugin against this
 repository, then drives a real `serve` over stdio against your running Krita. It works only in
-`~/Library/Application Support/krita-art-mcp/harness/`. Its document checks run only when none
+`~/Library/Application Support/krita-art-mcp/harness/`, where it writes its own fictional ORA,
+KRA and PNG files, and it never changes your roots. Its document checks run only when none
 of your Krita documents has unsaved changes, and close only the documents the probe made.
 
 ## Documentation
