@@ -6,7 +6,7 @@ size, and undo or keep it. It is for painted (non-pixel) 2D game art.
 
 ## Status
 
-Phase 1 is being built. Version 0.6.0 connects the server to a running Krita through the plugin
+Phase 1 is being built. Version 0.7.0 connects the server to a running Krita through the plugin
 and offers these tools:
 
 - `krita_server_info`: Krita's version, what this build can do, and the folders agents may use;
@@ -20,11 +20,18 @@ and offers these tools:
   palettes;
 - `krita_document_create`, `krita_document_list` and `krita_document_close`: new transparent
   RGBA / 8-bit / sRGB canvases, every open document, and closing an agent's own documents;
+- `krita_layer_create`: an empty paint or group layer of the agent's own, placed exactly;
+- `krita_selection_set`: a selection from a rect, ellipse, polygon, mask PNG or a layer's alpha,
+  grown, shrunk, feathered, inverted and combined, with its mask's PNG;
+- `krita_protection_set`: tightening protection: more protected layers, a canvas mask outside
+  which nothing may change, and the alpha and canvas flags;
+- `krita_history_step`: undoing and redoing the steps the agent made, never past the last
+  protection change;
 - `krita_operation_get` and `krita_operation_cancel`: following a long call to its receipt, and
   cancelling one still queued.
 
 Every change is journaled before it is sent and is safe to retry with the same `request_id`.
-The painting tools arrive in the coming releases; `CHANGELOG.md` lists what each one adds.
+Painting itself arrives in the coming releases; `CHANGELOG.md` lists what each one adds.
 
 ## Requirements
 

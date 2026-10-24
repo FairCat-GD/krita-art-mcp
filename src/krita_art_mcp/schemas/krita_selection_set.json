@@ -1,6 +1,6 @@
 {
   "name": "krita_selection_set",
-  "description": "Create or combine an explicit document-space selection.",
+  "description": "Set the selection from a shape (rect, ellipse, polygon, raster PNG, a layer's alpha, all or none), grown, shrunk, feathered and inverted in that order, then combined; one undo step.",
   "inputSchema": {
     "type": "object",
     "properties": {
@@ -43,10 +43,53 @@
                 "type": "object",
                 "properties": {
                   "x": {
-                    "type": "integer"
+                    "type": "integer",
+                    "minimum": 0
                   },
                   "y": {
-                    "type": "integer"
+                    "type": "integer",
+                    "minimum": 0
+                  },
+                  "width": {
+                    "type": "integer",
+                    "minimum": 1
+                  },
+                  "height": {
+                    "type": "integer",
+                    "minimum": 1
+                  }
+                },
+                "required": [
+                  "x",
+                  "y",
+                  "width",
+                  "height"
+                ],
+                "additionalProperties": false
+              }
+            },
+            "required": [
+              "type",
+              "rect"
+            ],
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "properties": {
+              "type": {
+                "const": "ellipse"
+              },
+              "rect": {
+                "type": "object",
+                "properties": {
+                  "x": {
+                    "type": "integer",
+                    "minimum": 0
+                  },
+                  "y": {
+                    "type": "integer",
+                    "minimum": 0
                   },
                   "width": {
                     "type": "integer",
@@ -122,10 +165,12 @@
                 "type": "array",
                 "prefixItems": [
                   {
-                    "type": "integer"
+                    "type": "integer",
+                    "minimum": 0
                   },
                   {
-                    "type": "integer"
+                    "type": "integer",
+                    "minimum": 0
                   }
                 ],
                 "items": false,
@@ -140,15 +185,67 @@
               "origin_px"
             ],
             "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "properties": {
+              "type": {
+                "const": "layer_alpha"
+              },
+              "layer_id": {
+                "type": "string",
+                "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+              }
+            },
+            "required": [
+              "type",
+              "layer_id"
+            ],
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "properties": {
+              "type": {
+                "const": "all"
+              }
+            },
+            "required": [
+              "type"
+            ],
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "properties": {
+              "type": {
+                "const": "none"
+              }
+            },
+            "required": [
+              "type"
+            ],
+            "additionalProperties": false
           }
         ]
       },
       "feather_px": {
-        "type": "number",
-        "minimum": 0
+        "type": "integer",
+        "minimum": 0,
+        "maximum": 256
       },
       "invert": {
         "type": "boolean"
+      },
+      "grow_px": {
+        "type": "integer",
+        "minimum": 0,
+        "maximum": 256
+      },
+      "shrink_px": {
+        "type": "integer",
+        "minimum": 0,
+        "maximum": 256
       }
     },
     "required": [
@@ -207,65 +304,110 @@
             "type": "object",
             "properties": {
               "selection_id": {
-                "type": "string"
+                "anyOf": [
+                  {
+                    "type": "string",
+                    "pattern": "^sel-[0-9a-f]{16}$"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
               },
               "mask": {
-                "type": "object",
-                "properties": {
-                  "uri": {
-                    "type": "string"
+                "anyOf": [
+                  {
+                    "type": "object",
+                    "properties": {
+                      "uri": {
+                        "type": "string",
+                        "minLength": 2,
+                        "pattern": "^/"
+                      },
+                      "path": {
+                        "type": "string",
+                        "minLength": 2,
+                        "pattern": "^/"
+                      },
+                      "mime_type": {
+                        "const": "image/png"
+                      },
+                      "sha256": {
+                        "type": "string",
+                        "pattern": "^[0-9a-f]{64}$"
+                      },
+                      "size_bytes": {
+                        "type": "integer",
+                        "minimum": 1
+                      },
+                      "retention_days": {
+                        "type": "integer",
+                        "minimum": 1
+                      }
+                    },
+                    "required": [
+                      "uri",
+                      "path",
+                      "mime_type",
+                      "sha256",
+                      "size_bytes",
+                      "retention_days"
+                    ],
+                    "additionalProperties": false
                   },
-                  "mime_type": {
-                    "type": "string"
-                  },
-                  "sha256": {
-                    "type": "string"
-                  },
-                  "size_bytes": {
-                    "type": "integer"
+                  {
+                    "type": "null"
                   }
-                },
-                "required": [
-                  "uri",
-                  "mime_type",
-                  "sha256",
-                  "size_bytes"
-                ],
-                "additionalProperties": false
+                ]
               },
               "bounds_px": {
-                "type": "object",
-                "properties": {
-                  "x": {
-                    "type": "integer"
+                "anyOf": [
+                  {
+                    "type": "object",
+                    "properties": {
+                      "x": {
+                        "type": "integer"
+                      },
+                      "y": {
+                        "type": "integer"
+                      },
+                      "width": {
+                        "type": "integer",
+                        "minimum": 0
+                      },
+                      "height": {
+                        "type": "integer",
+                        "minimum": 0
+                      }
+                    },
+                    "required": [
+                      "x",
+                      "y",
+                      "width",
+                      "height"
+                    ],
+                    "additionalProperties": false
                   },
-                  "y": {
-                    "type": "integer"
-                  },
-                  "width": {
-                    "type": "integer"
-                  },
-                  "height": {
-                    "type": "integer"
+                  {
+                    "type": "null"
                   }
-                },
-                "required": [
-                  "x",
-                  "y",
-                  "width",
-                  "height"
-                ],
-                "additionalProperties": false
+                ]
               },
               "selected_pixels": {
-                "type": "integer"
+                "type": "integer",
+                "minimum": 0
+              },
+              "undo_steps": {
+                "type": "integer",
+                "minimum": 0
               }
             },
             "required": [
               "selection_id",
               "mask",
               "bounds_px",
-              "selected_pixels"
+              "selected_pixels",
+              "undo_steps"
             ],
             "additionalProperties": false
           },
@@ -364,65 +506,110 @@
               "type": "object",
               "properties": {
                 "selection_id": {
-                  "type": "string"
+                  "anyOf": [
+                    {
+                      "type": "string",
+                      "pattern": "^sel-[0-9a-f]{16}$"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
                 },
                 "mask": {
-                  "type": "object",
-                  "properties": {
-                    "uri": {
-                      "type": "string"
+                  "anyOf": [
+                    {
+                      "type": "object",
+                      "properties": {
+                        "uri": {
+                          "type": "string",
+                          "minLength": 2,
+                          "pattern": "^/"
+                        },
+                        "path": {
+                          "type": "string",
+                          "minLength": 2,
+                          "pattern": "^/"
+                        },
+                        "mime_type": {
+                          "const": "image/png"
+                        },
+                        "sha256": {
+                          "type": "string",
+                          "pattern": "^[0-9a-f]{64}$"
+                        },
+                        "size_bytes": {
+                          "type": "integer",
+                          "minimum": 1
+                        },
+                        "retention_days": {
+                          "type": "integer",
+                          "minimum": 1
+                        }
+                      },
+                      "required": [
+                        "uri",
+                        "path",
+                        "mime_type",
+                        "sha256",
+                        "size_bytes",
+                        "retention_days"
+                      ],
+                      "additionalProperties": false
                     },
-                    "mime_type": {
-                      "type": "string"
-                    },
-                    "sha256": {
-                      "type": "string"
-                    },
-                    "size_bytes": {
-                      "type": "integer"
+                    {
+                      "type": "null"
                     }
-                  },
-                  "required": [
-                    "uri",
-                    "mime_type",
-                    "sha256",
-                    "size_bytes"
-                  ],
-                  "additionalProperties": false
+                  ]
                 },
                 "bounds_px": {
-                  "type": "object",
-                  "properties": {
-                    "x": {
-                      "type": "integer"
+                  "anyOf": [
+                    {
+                      "type": "object",
+                      "properties": {
+                        "x": {
+                          "type": "integer"
+                        },
+                        "y": {
+                          "type": "integer"
+                        },
+                        "width": {
+                          "type": "integer",
+                          "minimum": 0
+                        },
+                        "height": {
+                          "type": "integer",
+                          "minimum": 0
+                        }
+                      },
+                      "required": [
+                        "x",
+                        "y",
+                        "width",
+                        "height"
+                      ],
+                      "additionalProperties": false
                     },
-                    "y": {
-                      "type": "integer"
-                    },
-                    "width": {
-                      "type": "integer"
-                    },
-                    "height": {
-                      "type": "integer"
+                    {
+                      "type": "null"
                     }
-                  },
-                  "required": [
-                    "x",
-                    "y",
-                    "width",
-                    "height"
-                  ],
-                  "additionalProperties": false
+                  ]
                 },
                 "selected_pixels": {
-                  "type": "integer"
+                  "type": "integer",
+                  "minimum": 0
+                },
+                "undo_steps": {
+                  "type": "integer",
+                  "minimum": 0
                 }
               },
               "required": [
                 "selection_id",
                 "mask",
                 "bounds_px",
-                "selected_pixels"
+                "selected_pixels",
+                "undo_steps"
               ],
               "additionalProperties": false
             },
@@ -517,12 +704,14 @@
       "revision": null,
       "operation_id": null,
       "data": {
-        "selection_id": "selection-1",
+        "selection_id": "sel-0123456789abcdef",
         "mask": {
-          "uri": "krita-artifact://example/selection.png",
+          "uri": "/captures/2026-10-24/op-0123456789abcdef0123456789abcdef.png",
+          "path": "/captures/2026-10-24/op-0123456789abcdef0123456789abcdef.png",
           "mime_type": "image/png",
           "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
-          "size_bytes": 4096
+          "size_bytes": 96,
+          "retention_days": 7
         },
         "bounds_px": {
           "x": 16,
@@ -530,7 +719,8 @@
           "width": 32,
           "height": 32
         },
-        "selected_pixels": 1024
+        "selected_pixels": 1024,
+        "undo_steps": 1
       },
       "error": null
     }

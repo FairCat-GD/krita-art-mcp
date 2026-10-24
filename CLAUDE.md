@@ -75,7 +75,9 @@ The why for each is in `docs/spec/SPEC.md` §5.
 
 1. **No raw pixel writes, and no tool runs code.** No tool, harness operation or fixture writes
    raw pixels into a layer. *Enforced by* the plugin source scan, which bans `setPixelData`,
-   `Filter.apply`, `saveAs`, `exec` and `eval`.
+   `Filter.apply`, `saveAs`, `exec` and `eval`. Its one exception is
+   `krita_adapter.selections._from_mask`, which loads a mask into a `Selection()` it builds (K11)
+   and writes no layer; an AST test holds that site and its receiver.
 2. **Accepted sources are never opened for writing, and no save overwrites a file.** *Enforced
    by* working copies with hash checks, and `FILE_EXISTS`.
 3. **Every path an agent names resolves (realpath) inside an allowed root,** checked on both the
@@ -134,7 +136,8 @@ The why for each is in `docs/spec/SPEC.md` §5.
   5.15.11. The code still targets 3.10, so other Krita builds can load it, and `verify` tests
   `bridge_core` on 3.10.
 - **Imports.** PyQt goes through the shim (`try: PyQt6 … except ImportError: PyQt5 …`). Avoid Qt
-  enums. Use `Krita.getAppDataLocation()`, not `QStandardPaths`.
+  enums; the one the plugin needs, `EXCLUDE_USER_INPUT`, is resolved in the shim. Use
+  `Krita.getAppDataLocation()`, not `QStandardPaths`.
 - **The main thread.** The `krita` bindings never release the GIL, so the HTTP thread is silent
   during any long libkis call. The server owns the wait budget.
 - **Restarts.** A changed plugin loads only after a Krita restart: run `install-plugin`, then
@@ -193,8 +196,8 @@ touches the owner's documents or `config.json`.
 
 ## Do not
 
-- Write raw pixels, call `setPixelData`, `Filter.apply` or `saveAs`, or add anything that runs
-  code.
+- Write raw pixels, call `setPixelData` (outside `_from_mask`), `Filter.apply` or `saveAs`, or add
+  anything that runs code.
 - Call libkis off Krita's main thread or outside a job, or read after a mutation without
   `waitForDone()`.
 - Touch the owner's documents, files, `kritarc` or `config.json` from a test or harness, or

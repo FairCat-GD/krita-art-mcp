@@ -12,7 +12,9 @@ from .paths import private_dir
 
 # Bytes per pixel of each layout a transfer file holds.
 FORMATS = {"BGRA8": 4, "A8": 1}
-MASK_NAME = re.compile(r"^mask-([0-9a-f]{64})\.a8$")
+# A mask from the server: the hash of its request_id, so no two requests share a file, then its
+# own SHA-256.
+MASK_NAME = re.compile(r"^mask-([0-9a-f]{16})-([0-9a-f]{64})\.a8$")
 STALE_S = 3600.0
 
 
@@ -73,8 +75,12 @@ def remove(spec: dict[str, Any] | None) -> None:
         Path(spec["path"]).unlink(missing_ok=True)
 
 
-def take_mask(directory: Path, spec: Any, now: float | None = None) -> bytes:
-    # A mask from the server, named by its SHA-256; read once, checked, then deleted.
+def request_key(request_id: str) -> str:
+    return hashlib.sha256(request_id.encode("utf-8")).hexdigest()[:16]
+
+
+def take_mask(directory: Path, spec: Any, request_id: str, now: float | None = None) -> bytes:
+    # A mask the server wrote for this request; read once, checked, then deleted.
     if (
         not isinstance(spec, dict)
         or set(spec) != {"path", "size_px", "format", "sha256"}
@@ -85,8 +91,13 @@ def take_mask(directory: Path, spec: Any, now: float | None = None) -> bytes:
         raise BridgeError("INVALID_ARGUMENT", "The mask's transfer description is malformed.")
     real = os.path.realpath(spec["path"])
     name = MASK_NAME.match(os.path.basename(real))
-    if os.path.dirname(real) != os.path.realpath(directory) or name is None:
-        raise BridgeError("INVALID_ARGUMENT", "A mask must be a transfer file the server wrote.")
+    if (
+        os.path.dirname(real) != os.path.realpath(directory)
+        or name is None
+        or name.group(1) != request_key(request_id)
+    ):
+        message = "A mask must be a transfer file the server wrote for this request."
+        raise BridgeError("INVALID_ARGUMENT", message)
     width, height = spec["size_px"]
     try:
         fd = os.open(real, os.O_RDONLY | os.O_NOFOLLOW)
@@ -103,7 +114,7 @@ def take_mask(directory: Path, spec: Any, now: float | None = None) -> bytes:
         data = stream.read()
     os.unlink(real)
     _expire(directory, time.time() if now is None else now)
-    if hashlib.sha256(data).hexdigest() != spec["sha256"] or name.group(1) != spec["sha256"]:
+    if hashlib.sha256(data).hexdigest() != spec["sha256"] or name.group(2) != spec["sha256"]:
         details = {"sha256": spec["sha256"]}
         raise BridgeError(
             "RESOURCE_HASH_MISMATCH", "The mask differs from its SHA-256.", False, details

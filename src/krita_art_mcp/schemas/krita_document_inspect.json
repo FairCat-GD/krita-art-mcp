@@ -330,7 +330,56 @@
                 "type": "object",
                 "properties": {
                   "allowed_change_mask": {
-                    "type": "null"
+                    "anyOf": [
+                      {
+                        "type": "object",
+                        "properties": {
+                          "sha256": {
+                            "type": "string",
+                            "pattern": "^[0-9a-f]{64}$"
+                          },
+                          "bounds_px": {
+                            "type": "object",
+                            "properties": {
+                              "x": {
+                                "type": "integer"
+                              },
+                              "y": {
+                                "type": "integer"
+                              },
+                              "width": {
+                                "type": "integer",
+                                "minimum": 0
+                              },
+                              "height": {
+                                "type": "integer",
+                                "minimum": 0
+                              }
+                            },
+                            "required": [
+                              "x",
+                              "y",
+                              "width",
+                              "height"
+                            ],
+                            "additionalProperties": false
+                          },
+                          "allowed_pixels": {
+                            "type": "integer",
+                            "minimum": 0
+                          }
+                        },
+                        "required": [
+                          "sha256",
+                          "bounds_px",
+                          "allowed_pixels"
+                        ],
+                        "additionalProperties": false
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
                   },
                   "preserve_composite_alpha": {
                     "type": "boolean"
@@ -343,6 +392,24 @@
                   "allowed_change_mask",
                   "preserve_composite_alpha",
                   "preserve_canvas"
+                ],
+                "additionalProperties": false
+              },
+              "history": {
+                "type": "object",
+                "properties": {
+                  "undo_available": {
+                    "type": "integer",
+                    "minimum": 0
+                  },
+                  "redo_available": {
+                    "type": "integer",
+                    "minimum": 0
+                  }
+                },
+                "required": [
+                  "undo_available",
+                  "redo_available"
                 ],
                 "additionalProperties": false
               }
@@ -363,7 +430,8 @@
               "active_layer_id",
               "layers",
               "selection",
-              "protection"
+              "protection",
+              "history"
             ],
             "additionalProperties": false
           },
@@ -726,7 +794,56 @@
                   "type": "object",
                   "properties": {
                     "allowed_change_mask": {
-                      "type": "null"
+                      "anyOf": [
+                        {
+                          "type": "object",
+                          "properties": {
+                            "sha256": {
+                              "type": "string",
+                              "pattern": "^[0-9a-f]{64}$"
+                            },
+                            "bounds_px": {
+                              "type": "object",
+                              "properties": {
+                                "x": {
+                                  "type": "integer"
+                                },
+                                "y": {
+                                  "type": "integer"
+                                },
+                                "width": {
+                                  "type": "integer",
+                                  "minimum": 0
+                                },
+                                "height": {
+                                  "type": "integer",
+                                  "minimum": 0
+                                }
+                              },
+                              "required": [
+                                "x",
+                                "y",
+                                "width",
+                                "height"
+                              ],
+                              "additionalProperties": false
+                            },
+                            "allowed_pixels": {
+                              "type": "integer",
+                              "minimum": 0
+                            }
+                          },
+                          "required": [
+                            "sha256",
+                            "bounds_px",
+                            "allowed_pixels"
+                          ],
+                          "additionalProperties": false
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
                     },
                     "preserve_composite_alpha": {
                       "type": "boolean"
@@ -739,6 +856,24 @@
                     "allowed_change_mask",
                     "preserve_composite_alpha",
                     "preserve_canvas"
+                  ],
+                  "additionalProperties": false
+                },
+                "history": {
+                  "type": "object",
+                  "properties": {
+                    "undo_available": {
+                      "type": "integer",
+                      "minimum": 0
+                    },
+                    "redo_available": {
+                      "type": "integer",
+                      "minimum": 0
+                    }
+                  },
+                  "required": [
+                    "undo_available",
+                    "redo_available"
                   ],
                   "additionalProperties": false
                 }
@@ -759,7 +894,8 @@
                 "active_layer_id",
                 "layers",
                 "selection",
-                "protection"
+                "protection",
+                "history"
               ],
               "additionalProperties": false
             },
@@ -890,6 +1026,10 @@
           "allowed_change_mask": null,
           "preserve_composite_alpha": false,
           "preserve_canvas": false
+        },
+        "history": {
+          "undo_available": 0,
+          "redo_available": 0
         }
       },
       "error": null

@@ -29,7 +29,12 @@ _MATRIX: dict[str, tuple[bool, str | None, str]] = {
         None,
         "A running Krita call cannot be interrupted; only queued operations can be cancelled.",
     ),
-    "selection.enforced": (False, None, "Selections are not built in this release."),
+    "selection.enforced": (
+        False,
+        None,
+        "krita_selection_set sets the selection; strokes that keep to it arrive with native "
+        "brush strokes.",
+    ),
     "color_spaces": (
         False,
         None,

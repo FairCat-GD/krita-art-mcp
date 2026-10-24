@@ -88,25 +88,55 @@ def test_the_bridge_sweeps_leftover_transfer_files_and_keeps_the_folder_private(
     assert stat.S_IMODE(places.transfer_dir.stat().st_mode) == 0o700
 
 
-def test_a_mask_goes_to_the_plugin_named_by_its_hash_and_is_read_once(places: Places) -> None:
+def test_a_mask_goes_to_the_plugin_named_by_its_request_and_hash_and_is_read_once(
+    places: Places,
+) -> None:
     mask = np.array([[0, 255, 255], [0, 0, 255]], dtype=np.uint8)
-    spec = transfer.put_mask(places.transfer_dir, mask)
-    assert Path(spec["path"]).name == f"mask-{spec['sha256']}.a8"
-    assert transfer.put_mask(places.transfer_dir, mask) == spec
+    spec = transfer.put_mask(places.transfer_dir, mask, "req-1")
+    key = transfer.request_key("req-1")
+    assert key == plugin_transfer.request_key("req-1") and len(key) == 16
+    assert Path(spec["path"]).name == f"mask-{key}-{spec['sha256']}.a8"
+    assert transfer.put_mask(places.transfer_dir, mask, "req-1") == spec
     assert spec["size_px"] == [3, 2]
-    assert plugin_transfer.take_mask(places.transfer_dir, spec) == mask.tobytes()
+    assert plugin_transfer.take_mask(places.transfer_dir, spec, "req-1") == mask.tobytes()
     assert not Path(spec["path"]).exists()
+
+
+def test_two_requests_with_one_mask_never_share_its_file(places: Places) -> None:
+    mask = np.array([[0, 255]], dtype=np.uint8)
+    first = transfer.put_mask(places.transfer_dir, mask, "req-1")
+    second = transfer.put_mask(places.transfer_dir, mask, "req-2")
+    assert first["path"] != second["path"]
+    plugin_transfer.take_mask(places.transfer_dir, first, "req-1")
+    assert plugin_transfer.take_mask(places.transfer_dir, second, "req-2") == mask.tobytes()
+
+
+def test_the_plugin_refuses_another_requests_mask(places: Places) -> None:
+    spec = transfer.put_mask(places.transfer_dir, np.zeros((1, 2), dtype=np.uint8), "req-1")
+    with pytest.raises(BridgeError) as refused:
+        plugin_transfer.take_mask(places.transfer_dir, spec, "req-2")
+    assert refused.value.body["code"] == "INVALID_ARGUMENT"
+    assert Path(spec["path"]).exists()
+
+
+def test_a_requests_masks_are_discarded_and_no_others(places: Places) -> None:
+    mask = np.array([[0, 255]], dtype=np.uint8)
+    mine = transfer.put_mask(places.transfer_dir, mask, "req-1")
+    other = transfer.put_mask(places.transfer_dir, mask, "req-2")
+    transfer.discard_masks(places.transfer_dir, "req-1")
+    transfer.discard_masks(places.transfer_dir, "req-3")
+    assert not Path(mine["path"]).exists() and Path(other["path"]).exists()
 
 
 def test_a_mask_sent_again_is_made_fresh_or_written_again(places: Places) -> None:
     # The bridge expires masks nobody took, so one sent again must not look abandoned.
     mask = np.array([[0, 255]], dtype=np.uint8)
-    path = Path(transfer.put_mask(places.transfer_dir, mask)["path"])
+    path = Path(transfer.put_mask(places.transfer_dir, mask, "req-1")["path"])
     os.utime(path, (0, 0))
-    transfer.put_mask(places.transfer_dir, mask)
+    transfer.put_mask(places.transfer_dir, mask, "req-1")
     assert path.stat().st_mtime > time.time() - 60
     path.unlink()
-    transfer.put_mask(places.transfer_dir, mask)
+    transfer.put_mask(places.transfer_dir, mask, "req-1")
     assert path.read_bytes() == mask.tobytes()
 
 
@@ -114,7 +144,7 @@ def test_a_mask_sent_again_is_made_fresh_or_written_again(places: Places) -> Non
 def test_the_plugin_refuses_a_mask_that_is_not_what_the_server_sent(
     places: Places, tmp_path: Path, break_it: str
 ) -> None:
-    spec = transfer.put_mask(places.transfer_dir, np.zeros((2, 2), dtype=np.uint8))
+    spec = transfer.put_mask(places.transfer_dir, np.zeros((2, 2), dtype=np.uint8), "req-1")
     code = "INVALID_ARGUMENT"
     if break_it == "hash":
         Path(spec["path"]).write_bytes(b"\1\0\0\0")
@@ -126,7 +156,7 @@ def test_the_plugin_refuses_a_mask_that_is_not_what_the_server_sent(
     else:
         spec["size_px"] = [4, 2]
     with pytest.raises(BridgeError) as refused:
-        plugin_transfer.take_mask(places.transfer_dir, spec)
+        plugin_transfer.take_mask(places.transfer_dir, spec, "req-1")
     assert refused.value.body["code"] == code
 
 

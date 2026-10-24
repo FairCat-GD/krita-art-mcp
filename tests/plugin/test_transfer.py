@@ -26,17 +26,21 @@ def test_a_buffer_of_the_wrong_size_is_never_written(tmp_path: Path) -> None:
     assert list(tmp_path.iterdir()) == []
 
 
+REQUEST = "req-1"
+KEY = hashlib.sha256(REQUEST.encode()).hexdigest()[:16]
+
+
 def _mask(directory: Path, data: bytes, width: int, height: int) -> dict[str, object]:
     directory.mkdir(parents=True, exist_ok=True)
     digest = hashlib.sha256(data).hexdigest()
-    path = directory / f"mask-{digest}.a8"
+    path = directory / f"mask-{KEY}-{digest}.a8"
     path.write_bytes(data)
     return {"path": str(path), "size_px": [width, height], "format": "A8", "sha256": digest}
 
 
 def test_a_mask_is_read_checked_and_deleted(tmp_path: Path) -> None:
     spec = _mask(tmp_path, bytes([0, 255, 255, 0]), 2, 2)
-    assert transfer.take_mask(tmp_path, spec) == bytes([0, 255, 255, 0])
+    assert transfer.take_mask(tmp_path, spec, REQUEST) == bytes([0, 255, 255, 0])
     assert list(tmp_path.iterdir()) == []
 
 
@@ -44,14 +48,14 @@ def test_a_mask_whose_bytes_changed_is_a_hash_mismatch(tmp_path: Path) -> None:
     spec = _mask(tmp_path, bytes([0, 255, 255, 0]), 2, 2)
     Path(str(spec["path"])).write_bytes(bytes([255, 255, 255, 0]))
     with pytest.raises(BridgeError) as refused:
-        transfer.take_mask(tmp_path, spec)
+        transfer.take_mask(tmp_path, spec, REQUEST)
     assert refused.value.body["code"] == "RESOURCE_HASH_MISMATCH"
 
 
 def test_a_mask_outside_the_transfer_folder_is_refused(tmp_path: Path) -> None:
     spec = _mask(tmp_path / "elsewhere", bytes([0, 255]), 2, 1)
     with pytest.raises(BridgeError) as refused:
-        transfer.take_mask(tmp_path / "transfer", spec)
+        transfer.take_mask(tmp_path / "transfer", spec, REQUEST)
     assert refused.value.body["code"] == "INVALID_ARGUMENT"
     assert Path(str(spec["path"])).exists()
 
@@ -96,13 +100,14 @@ def test_a_file_or_mask_nobody_took_for_an_hour_goes_at_the_next_write(tmp_path:
 def test_taking_a_mask_expires_what_nobody_took(tmp_path: Path) -> None:
     stale = _aged(Path(str(_mask(tmp_path, b"\0", 1, 1)["path"])), transfer.STALE_S + 1)
     spec = _mask(tmp_path, b"\0\1", 2, 1)
-    assert transfer.take_mask(tmp_path, spec, now=NOW) == b"\0\1"
+    assert transfer.take_mask(tmp_path, spec, REQUEST, now=NOW) == b"\0\1"
     assert list(tmp_path.iterdir()) == []
     assert not stale.exists()
 
 
 def test_a_mask_that_is_gone_is_retryable(tmp_path: Path) -> None:
-    spec = {"path": str(tmp_path / f"mask-{'0' * 64}.a8"), "size_px": [1, 1], "format": "A8"}
+    path = tmp_path / f"mask-{KEY}-{'0' * 64}.a8"
+    spec = {"path": str(path), "size_px": [1, 1], "format": "A8"}
     with pytest.raises(BridgeError) as refused:
-        transfer.take_mask(tmp_path, {**spec, "sha256": "0" * 64})
+        transfer.take_mask(tmp_path, {**spec, "sha256": "0" * 64}, REQUEST)
     assert (refused.value.body["code"], refused.value.body["retryable"]) == ("IO_ERROR", True)

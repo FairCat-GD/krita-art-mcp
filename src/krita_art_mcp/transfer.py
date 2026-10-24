@@ -48,19 +48,26 @@ def discard(directory: Path, spec: Any) -> None:
     path.unlink(missing_ok=True)
 
 
-def put_mask(directory: Path, mask: Pixels) -> dict[str, Any]:
-    # Named by its SHA-256, so the op that sends it is a pure function of the tool's arguments.
+def request_key(request_id: str) -> str:
+    # The plugin holds an equal function (`bridge_core.transfer.request_key`).
+    return hashlib.sha256(request_id.encode("utf-8")).hexdigest()[:16]
+
+
+def put_mask(directory: Path, mask: Pixels, request_id: str) -> dict[str, Any]:
+    # Named by its request and its SHA-256: a retry sends the same op, and no two requests share
+    # a file the plugin deletes when it takes it.
     if mask.ndim != 2 or mask.dtype != np.uint8:
         raise TransferError("a mask is a 2-D array of 8-bit values")
     data = np.ascontiguousarray(mask).tobytes()
     digest = hashlib.sha256(data).hexdigest()
     private_dir(directory)
-    path = directory / f"mask-{digest}.a8"
+    name = f"mask-{request_key(request_id)}-{digest}"
+    path = directory / f"{name}.a8"
     try:
         # A mask already there is made fresh, so the bridge's expiry leaves it to this call.
         os.utime(path)
     except FileNotFoundError:
-        temp = directory / f".mask-{digest}.{os.getpid()}.tmp"
+        temp = directory / f".{name}.{os.getpid()}.tmp"
         fd = os.open(temp, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
         try:
             with os.fdopen(fd, "wb") as stream:
@@ -71,6 +78,12 @@ def put_mask(directory: Path, mask: Pixels) -> dict[str, Any]:
             raise
     height, width = mask.shape
     return {"path": str(path), "size_px": [width, height], "format": "A8", "sha256": digest}
+
+
+def discard_masks(directory: Path, request_id: str) -> None:
+    # After a final outcome, no op of this request will take its mask any more.
+    for path in directory.glob(f"mask-{request_key(request_id)}-*.a8"):
+        path.unlink(missing_ok=True)
 
 
 def _checked(directory: Path, spec: Any) -> tuple[Path, int, int, int]:

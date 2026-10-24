@@ -7,7 +7,7 @@ from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
-from . import files, paths, roots, transfer
+from . import files, nodes, paths, roots, transfer
 from .errors import BridgeError, exact
 from .inspection import check_shown_frame, layer_entries
 from .jobs import Call, Handler
@@ -105,7 +105,7 @@ def handlers(
             raise BridgeError("COLOR_PROFILE_MISMATCH", message, False, details)
         # The baseline must be frame 0, as every read is.
         check_shown_frame(info)
-        port.prepare_read(document)
+        nodes.unmask(port, document)
         tree = port.tree(document)
         editable = _editable(
             tree["nodes"], args["editable_layer_ids"], args["editable_layer_names"]

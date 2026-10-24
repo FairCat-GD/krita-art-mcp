@@ -1,11 +1,12 @@
+import time
 from pathlib import Path
 from typing import Any
 
-from . import files, inspection, opening, pixels
+from . import files, history, inspection, layers, opening, pixels, protection, selections
 from .errors import BridgeError, exact, no_arguments
 from .jobs import Call, Handler
 from .port import DocumentsPort
-from .registry import NEW, Handle, Registry, never
+from .registry import NEW, Handle, Registry
 
 # The only colour space Phase 1 creates; the server holds an equal copy.
 COLOR_MODEL = "RGBA"
@@ -13,6 +14,8 @@ DEPTH = "U8"
 SRGB_PROFILE = "sRGB-elle-V2-srgbtrc.icc"
 CREATE_FIELDS = {"name", "size_px", "color_model", "depth", "profile_id", "background"}
 CLOSE_FIELDS = {"document_id", "dirty_policy"}
+# Measured on Krita 5.3.4: a close 0.5 s after a selection change never crashed, one at once did.
+SETTLE_S = 0.5
 
 
 def handlers(registry: Registry, port: DocumentsPort, data: Path) -> dict[str, Handler]:
@@ -55,7 +58,7 @@ def handlers(registry: Registry, port: DocumentsPort, data: Path) -> dict[str, H
         untouched = None
         if handle.source_path is not None and handle.source_sha256 is not None:
             untouched = files.unchanged(handle.source_path, handle.source_sha256)
-        closed = port.close(handle.document)
+        closed = port.close(handle.document, settle_s(handle))
         still_open = any(h is handle for h in registry.sync())
         if not closed or still_open:
             failure = {"document_id": handle.document_id, "close_returned": closed}
@@ -68,7 +71,7 @@ def handlers(registry: Registry, port: DocumentsPort, data: Path) -> dict[str, H
             "baseline_id": handle.baseline_id,
         }
 
-    guarded_close = registry.guarded(close, dirties=never, writes=False, allow_unsafe=True)
+    guarded_close = registry.guarded(close, writes=False, allow_unsafe=True)
 
     def close_document(args: dict[str, Any], call: Call) -> dict[str, Any]:
         exact(args, CLOSE_FIELDS)
@@ -84,7 +87,20 @@ def handlers(registry: Registry, port: DocumentsPort, data: Path) -> dict[str, H
         **opening.handlers(registry, port, data),
         **inspection.handlers(registry, port, data),
         **pixels.handlers(registry, port, data),
+        **layers.handlers(registry, port),
+        **selections.handlers(registry, port, data),
+        **protection.handlers(registry, port, data),
+        **history.handlers(registry, port, data),
     }
+
+
+def settle_s(handle: Handle, now: float | None = None) -> float:
+    # A node a bridge op changed within this long is still due an update in Krita's layer
+    # docker, which crashes Krita if the document closes first.
+    if handle.changed_at is None:
+        return 0.0
+    elapsed = (time.monotonic() if now is None else now) - handle.changed_at
+    return max(0.0, SETTLE_S - elapsed)
 
 
 def _create_args(args: dict[str, Any]) -> tuple[int, int]:

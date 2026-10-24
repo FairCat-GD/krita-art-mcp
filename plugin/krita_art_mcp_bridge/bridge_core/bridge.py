@@ -99,6 +99,8 @@ class Bridge:
                 "plugin_hash": self.health["plugin_hash"],
                 "krita_version": self.health.get("krita_version"),
                 "qt_major": self.health.get("qt_major"),
+                # Calls may carry `ephemeral`; a server sends it only to a bridge that says so.
+                "ephemeral_reads": True,
             },
         )
 

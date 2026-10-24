@@ -10,6 +10,12 @@ from typing import Any
 
 from .errors import BridgeError, error
 
+# A read's request_id was minted by its server and is never retried, so its operation is kept only
+# for late polls: this long after its final reply was sent, or after it finished unsent.
+READ_KEEP_S = 600.0
+READ_UNSENT_S = 3600.0
+PRUNE_EVERY_S = 60.0
+
 
 class Call:
     # What a handler knows about the call beside its arguments.
@@ -42,15 +48,19 @@ class Operation:
         op: str,
         args: dict[str, Any],
         client: dict[str, Any],
+        ephemeral: bool = False,
     ) -> None:
         self.operation_id = operation_id
         self.request_id = request_id
         self.op = op
         self.args = args
         self.client = client
+        self.ephemeral = ephemeral
         self.state = QUEUED
         self.result: dict[str, Any] | None = None
         self.error: dict[str, Any] | None = None
+        self.finished_at: float | None = None
+        self.delivered_at: float | None = None
 
     def fail(self, body: dict[str, Any]) -> None:
         self.state = FAILED
@@ -81,6 +91,7 @@ class Jobs:
         wake: Callable[[], None],
         on_main_thread: Callable[[], bool],
         log: logging.Logger,
+        clock: Callable[[], float] = time.monotonic,
     ) -> None:
         self._handlers = handlers
         self._wake = wake
@@ -96,6 +107,8 @@ class Jobs:
         self._bound: dict[str, str] = {}
         self._accepting = True
         self._job_active = False
+        self._clock = clock
+        self._pruned_at = clock()
 
     @property
     def accepting(self) -> bool:
@@ -109,11 +122,13 @@ class Jobs:
         op: str,
         args: dict[str, Any],
         client: dict[str, Any],
+        ephemeral: bool = False,
     ) -> Operation | None:
         digest = args_sha256(op, args)
         with self._lock:
             if not self._accepting:
                 return None
+            self._prune()
             known = self._operations.get(operation_id)
             if known is not None:
                 if known.request_id == request_id:
@@ -124,7 +139,7 @@ class Jobs:
                 return refused
             bound = self._bound.get(request_id)
             if bound is not None and bound != digest:
-                conflict = Operation(operation_id, request_id, op, {}, client)
+                conflict = Operation(operation_id, request_id, op, {}, client, ephemeral)
                 message = "That request_id was used with different arguments."
                 details = {"request_id": request_id}
                 conflict.fail(error("REQUEST_ID_CONFLICT", message, False, details))
@@ -134,7 +149,7 @@ class Jobs:
             if existing is not None:
                 self._operations[operation_id] = existing
                 return existing
-            operation = Operation(operation_id, request_id, op, args, client)
+            operation = Operation(operation_id, request_id, op, args, client, ephemeral)
             self._operations[operation_id] = operation
             self._requests[request_id] = operation
             self._bound[request_id] = digest
@@ -198,6 +213,7 @@ class Jobs:
                     operation.state = DONE
                     operation.result = result
                     operation.args = {}
+                    operation.finished_at = self._clock()
                 else:
                     self._finish_failed(operation, failure)
                 self._lock.notify_all()
@@ -215,9 +231,44 @@ class Jobs:
             message = "The op failed with an error the bridge could not send; see plugin.log."
             failure = error("INTERNAL_ERROR", message, False, {"op": operation.op})
         operation.fail(failure)
+        operation.finished_at = self._clock()
         # Retryable means the op changed nothing, so a retry under the same id runs again.
         if failure["retryable"] and self._requests.get(operation.request_id) is operation:
             del self._requests[operation.request_id]
+
+    def delivered(self, operation_id: str) -> None:
+        # Called once a final reply has been written, so a read lost on the way is still found.
+        with self._lock:
+            operation = self._operations.get(operation_id)
+            if (
+                operation is not None
+                and operation.state in (DONE, FAILED)
+                and operation.delivered_at is None
+            ):
+                operation.delivered_at = self._clock()
+
+    def _prune(self) -> None:
+        # Under the lock. Agents' request ids stay for the session (invariant 9); reads do not.
+        now = self._clock()
+        if now - self._pruned_at < PRUNE_EVERY_S:
+            return
+        self._pruned_at = now
+
+        def gone(operation: Operation) -> bool:
+            if not operation.ephemeral or operation.finished_at is None:
+                return False
+            if operation.delivered_at is not None:
+                return now - operation.delivered_at >= READ_KEEP_S
+            return now - operation.finished_at >= READ_UNSENT_S
+
+        dropped = [key for key, operation in self._operations.items() if gone(operation)]
+        released = {self._operations[key].request_id for key in dropped}
+        for key in dropped:
+            del self._operations[key]
+        for request_id in released:
+            if self._requests.get(request_id) is not None and gone(self._requests[request_id]):
+                del self._requests[request_id]
+            self._bound.pop(request_id, None)
 
     def wait(self, operation_id: str, wait_s: float) -> dict[str, Any] | None:
         with self._lock:

@@ -2,7 +2,7 @@ import math
 from pathlib import Path
 from typing import Any
 
-from . import paths, transfer
+from . import nodes, paths, transfer
 from .errors import BridgeError, exact
 from .inspection import TYPES, check_frame, check_shown_frame
 from .jobs import Call, Handler
@@ -103,30 +103,23 @@ def handlers(registry: Registry, port: DocumentsPort, data: Path) -> dict[str, H
         rects: list[dict[str, int]],
     ) -> tuple[list[Any], str]:
         if target == "layer":
-            node = _paint_layer(port.tree(handle.document), layer_id)
+            node = paint_layer(port.tree(handle.document), layer_id)
             return port.layer_rects(handle.document, layer_id, rects), node["profile_id"]
         if (info["color_model"], info["depth"]) != READ_SPACE:
             details = {key: info[key] for key in ("color_model", "depth", "profile_id")}
             message = "Phase 1 reads RGBA / U8 documents only."
             raise BridgeError("COLOR_PROFILE_MISMATCH", message, False, details)
-        if not port.mask_active(handle.document):
-            return port.composite_rects(handle.document, rects), info["profile_id"]
-        # K46: a selection mask's overlay would enter the read. Making a layer active works only
-        # in front, and an owner's document is never changed, not even its active node.
-        if not handle.owned:
+        # K46: a selection mask's overlay would enter the read, and an owner's document is never
+        # changed, not even its active node.
+        if not handle.owned and port.mask_active(handle.document):
             details = {"document_id": handle.document_id, "reason": "selection_mask_active"}
             message = (
                 "A selection mask is active in this document, and its overlay would enter the "
                 "read; ask the owner to select a layer."
             )
             raise BridgeError("DOCUMENT_READ_ONLY", message, False, details)
-        previous = port.bring_forward(handle.document)
-        try:
-            port.prepare_read(handle.document)
+        with nodes.unmasked_view(port, handle.document):
             buffers = port.composite_rects(handle.document, rects)
-        finally:
-            if previous is not None:
-                port.restore_view(previous)
         return buffers, info["profile_id"]
 
     return {"capture.read": capture, "sample.read": sample}
@@ -167,7 +160,7 @@ def _inside(rect: dict[str, int], size: list[int]) -> None:
         )
 
 
-def _paint_layer(tree: dict[str, Any], layer_id: str) -> dict[str, Any]:
+def paint_layer(tree: dict[str, Any], layer_id: str) -> dict[str, Any]:
     node: dict[str, Any] | None = next((n for n in tree["nodes"] if n["id"] == layer_id), None)
     if node is None:
         raise BridgeError("LAYER_NOT_FOUND", "No layer has that id.", False, {"layer_id": layer_id})

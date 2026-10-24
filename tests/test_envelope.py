@@ -6,9 +6,12 @@ import bridge_core
 import pytest
 from bridge_core import documents as bridge_documents
 from bridge_core import errors as bridge_errors
+from bridge_core import history as bridge_history
 from bridge_core import pixels as bridge_pixels
 from bridge_core import processes as bridge_processes
+from bridge_core import protection as bridge_protection
 from bridge_core import resources as bridge_resources
+from bridge_core import selections as bridge_selections
 from bridge_core.jobs import Jobs
 from bridge_core.source_hash import source_hash as plugin_source_hash
 from jsonschema import Draft202012Validator
@@ -64,6 +67,13 @@ def test_the_plugins_bounds_are_the_schemas_limits() -> None:
     assert sample["radius"]["maximum"] == bridge_pixels.MAX_RADIUS
     listing = schemas.load("krita_resource_list")["inputSchema"]["properties"]
     assert listing["limit"]["maximum"] == bridge_resources.MAX_LIMIT
+    selection = schemas.load("krita_selection_set")["inputSchema"]["properties"]
+    for field in ("grow_px", "shrink_px", "feather_px"):
+        assert selection[field]["maximum"] == bridge_selections.MAX_MODIFIER_PX
+    history = schemas.load("krita_history_step")["inputSchema"]["properties"]
+    assert history["steps"]["maximum"] == bridge_history.MAX_STEPS
+    protection = schemas.load("krita_protection_set")["inputSchema"]["properties"]
+    assert protection["protected_layer_ids"]["maxItems"] == bridge_protection.MAX_PROTECTED
 
 
 def test_a_cancelled_call_is_retryable_alike_on_both_sides() -> None:

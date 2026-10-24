@@ -1,9 +1,11 @@
 import secrets
+import time
 from collections.abc import Callable
 from typing import Any, Protocol
 
 from .errors import BridgeError
 from .jobs import Call, Handler
+from .ledger import Ledger
 
 NEW = "new"
 WORKING_COPY = "working_copy"
@@ -34,9 +36,22 @@ class Handle:
         self.baseline_id: str | None = None
         # Ids of the layers agents may not change; an owner's document is protected whole.
         self.protected: set[str] = set()
-        self.allowed_mask: dict[str, Any] | None = None
+        # One byte per canvas pixel, 255 where changes are allowed; None allows the whole canvas.
+        self.allowed_mask: bytes | None = None
+        self.allowed_summary: dict[str, Any] | None = None
         self.preserve_composite_alpha = False
         self.preserve_canvas = False
+        self.ledger = Ledger()
+        # When a bridge op last changed the document, by the monotonic clock.
+        self.changed_at: float | None = None
+
+    def before_change(self) -> bool:
+        # Called before a handler's first libkis mutation, so an exception after it leaves the
+        # document dirty (PDD Part 4: a bridge mutation since the last verified save).
+        was = self.dirty
+        self.dirty = True
+        self.changed_at = time.monotonic()
+        return was
 
 
 DocumentHandler = Callable[[Handle, dict[str, Any], Call], dict[str, Any]]
@@ -113,11 +128,11 @@ class Registry:
         self,
         handler: DocumentHandler,
         *,
-        dirties: Callable[[dict[str, Any]], bool],
         writes: bool = True,
         allow_unsafe: bool = False,
     ) -> Handler:
-        # Every mutation of a document passes the same checks, in the same order.
+        # Every mutation of a document passes the same checks, in the same order; the handler
+        # itself marks the document dirty, just before it changes anything.
         def run(args: dict[str, Any], call: Call) -> dict[str, Any]:
             self.refuse_at_job_start()
             handle = self.find(args["document_id"])
@@ -130,10 +145,7 @@ class Registry:
                 message = "A rollback on this document failed; reopen it."
                 raise BridgeError("DOCUMENT_UNSAFE", message, False, details)
             self._lease(handle, call.client)
-            result = handler(handle, args, call)
-            if dirties(args):
-                handle.dirty = True
-            return result
+            return handler(handle, args, call)
 
         return run
 
@@ -144,7 +156,3 @@ class Registry:
             message = "Another server process holds this document's writer lease."
             raise BridgeError("DOCUMENT_IN_USE", message, False, details)
         handle.lease = dict(client)
-
-
-def never(args: dict[str, Any]) -> bool:
-    return False

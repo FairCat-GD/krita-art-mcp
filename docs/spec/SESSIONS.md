@@ -1852,6 +1852,218 @@ Part 8 (*Bridge protocol*, K41, K48).
 - **A local selection mask on a layer wins** over the global selection (K10).
 - **Too many undos can remove the agent's own layer** (K22).
 
+**Done (2026-10-24, 0.7.0).**
+- **Decided with the owner at the start:**
+  - **F23 (the block's Ask): the allowed mask lives in memory** on the plugin's handle, one byte
+    per canvas pixel (0 or 255), with its summary; PDD Part 6's "mask path and hash" is "mask bytes
+    and hash".
+  - **Mask transfer files are one per request:** `mask-<16 hex of SHA-256(request_id)>-<sha256>.a8`.
+    The plugin takes a mask straight after its argument checks, before any other refusal; the
+    server removes the request's masks after any final outcome (in the call, in
+    `krita_operation_get` and in `krita_operation_cancel`), never while it is pending.
+  - **`protected_layer_ids` is the whole set:** it must keep every protected layer that still
+    exists (`INVALID_ARGUMENT` naming those it would unprotect); unknown ids are
+    `LAYER_NOT_FOUND`.
+  - **Shapes off the canvas are refused, never clipped,** with `canvas_px`; the server refuses a
+    box over `capture_source_pixels` before it rasterises.
+  - **The owner let the session restart Krita** while it had no documents open, and, after the
+    crash below, chose to reproduce and fix it.
+- **A design check in plan mode** (one independent read of the code paths) found: a rollback that
+  could undo the owner's document (K7); undo labels read before Krita updated them; labels that do
+  not identify a step ("Add Layer" for every node added); the ledger missing a rollback's K43
+  rule; F2 marking a reply delivered before it was written; the plugin not checking a PNG's path;
+  rasterising unbounded before the plugin could refuse; masks left behind on Pending paths;
+  nullable fields the schemas lacked; the F1 rule's binding gaps; a fake that kept the active mask
+  outside the tree; and Krita's undo limit. The plan folded in a fix for each.
+- **The plugin core.**
+  - **`ledger`:** `Step{op, operation_id, label, before, after, region}` and `Ledger{steps,
+    applied, floor, redo, bottom}`; `push` truncates the redo tail (K43), `rolled_back` pops a
+    rollback's step and offers no redo, `seal` stops history below a step the bridge cannot name
+    (protection changes, harness ops that push, a mutation that raised), and `bottom` follows
+    Krita's `undoStackLimit`. A step's fingerprint is the sorted node ids without the root's
+    selection masks, and the SHA-256 of the selection's canvas-clipped bounds and bytes.
+  - **`history`:** `move` undoes or redoes one step with the document's view in front (K7):
+    posted events flushed, the top label naming the step and the fingerprint matching, then the
+    opposite label and fingerprint after; an unconfirmed move is reversed once, otherwise the
+    document is unsafe. `history.step` refuses more than `undo_available`/`redo_available`; a step
+    the bridge did not make refuses before any change and seals; one after k steps stops with
+    `verified: false`; an undo Krita did not take is put back and retryable. `LABELS`:
+    `layer.create` "Add Layer", `selection.set` and `selection.clear` "" (measured).
+  - **`layers`:** `layer.create` under the root or a group (a protected group too), directly above
+    a sibling or on top when `above_id` is null, as `addChildNode` places it; verified by diffing
+    `tree()` (one new id, where asked; the parent and every protected node unchanged but for
+    order), and rolled back through `move` on a violation (`LOCKED_TARGET`, `INTERNAL_ERROR`, or
+    `ROLLBACK_FAILED` and unsafe).
+  - **`selections`:** `selection.set`; a pure `recipe()` fixes the order: shape, grow, shrink,
+    feather, invert, combine, commit. `subtract`/`intersect` with no selection are refused; `none`
+    with no selection pushes nothing but dirties (decision 27). The receipt's `selection_id`
+    (`sel-` + the fingerprint's hash) and `selected_pixels` come from the plugin.
+  - **`protection`:** `protection.set` places the mask in a canvas-sized buffer, checks it binary,
+    tightens only by `int.from_bytes` (`new & ~cur`), keeps flags on, requires a PNG mask to be the
+    canvas's size, seals the ledger, and reports the summary (sha256, bounds, allowed pixels).
+  - **`masks`:** the mask argument shared by both ops: its check, take, plugin-side roots check of
+    a PNG's realpath (invariant 3), box, canvas bounds and placement.
+  - **`nodes` (F4):** `unmasked(tree)` picks the node for K46; `unmasked_view` brings the
+    document forward, activates it, confirms and restores; open, capture/sample and the harness
+    export use it.
+  - **`registry` (F25):** `Handle.before_change()` dirties the handle (and stamps `changed_at`)
+    before a handler's first libkis mutation; `guarded` lost `dirties`.
+  - **`jobs`/`server` (F2):** a call may carry `ephemeral`; the server marks a read delivered once
+    its final reply is written; a prune at most once a minute drops ephemeral ops 10 minutes after
+    delivery, or 1 hour after finishing undelivered, with every alias, request and binding.
+    `bridge.json` says `ephemeral_reads: true`, and a server sends the field only to such a bridge.
+  - **`documents`:** a close waits out `SETTLE_S` (0.5 s) since the document last changed, letting
+    Krita's own timers run with user input held back (see Measured).
+  - **`harness`:** `harness.activate`, `harness.undo_labels` (with the raw action texts) and
+    `harness.label_timing`; `harness.select_mask` seals the ledger.
+  - **Inspect** reports the allowed mask's summary and `history {undo_available, redo_available}`;
+    `selection.enforced`'s note names `krita_selection_set`.
+- **The adapter:** `create_layer`, `activate`, `undo`/`redo` (the actions, then wait and flush),
+  `undo_labels` (flush, then the action texts; a disabled action is None, an unnamed step ""),
+  `undo_actions`, `undo_limit` (`Krita.readSetting("", "undoStackLimit", "30")`, 0 unlimited),
+  `label_timing`, `selection_bounds`, and `close(document, settle_s)`. `selections.commit` runs the
+  recipe; `_from_mask` is the plugin's one `setPixelData` site, on a `Selection()` it builds (F1).
+  The shim gains `QCoreApplication`, `QEventLoop` and `EXCLUDE_USER_INPUT`, the one enum, resolved
+  per PyQt version there.
+- **The server.**
+  - **`masks`:** NumPy sampling at 4 × 4 sub-pixel centres in bands of 64 rows; antialiased values
+    `(k·255 + 8) // 16`; binary allowed masks at k ≥ 8; polygons even-odd with edges half-open in
+    y; PNGs inside a root, by SHA-256, mode L only (0/255 for allowed masks).
+  - **`tools/changes`:** the four tools, journaled on `guard.request_id`, with mask preparation
+    inside `send`; `transparency_mask` is `UNSUPPORTED_CAPABILITY` before Krita; the selection's
+    mask PNG is found before it is made, and is null when another server took the pixels first (a
+    retry it shared), as the open's baseline already is.
+  - **`transfer`:** `request_key`, `put_mask(directory, mask, request_id)`, `discard_masks`.
+  - **Schemas** (then `amend_schemas.py`): as the plan, with `coverage_px` left to inspect; the
+    input `allOf` of `history_step` removed by hand.
+  - **Instructions (F5):** 2,620 characters (−153), with this session's rules added.
+- **The probe (`probe/changes.py`):** read-only refusals; layer_create placement, the protected
+  group, the composite and dirty; selection shapes, combines and the invert, exact; the ledger's
+  counts over layers and selections; the retried selection_set; K46 with a selection mask active;
+  protection's floor and tighten-only refusals; the label timing; five closes straight after a
+  selection change.
+- **Amendments:**
+  - **The four decisions above** are the owner's, at plan time.
+  - **The probe's "protected-group refusal" checks the allowance:** Phase 1's layer_create adds an
+    empty, normal layer and cannot change a group's appearance; unit tests hold the
+    `LOCKED_TARGET` path. Amended at plan time, with the owner.
+  - **NumPy sampling replaces Pillow drawing at 4×:** the same supersampling, with a fill rule that
+    is defined and testable. Amended at plan time, with the owner.
+  - **Steps are confirmed by fingerprint as well as label, and labels are read after a flush with
+    the view in front,** because labels do not identify a step and session 2 found them stale.
+    Design check, amended at plan time, with the owner.
+  - **`feather_px` is an integer (Krita's `feather` takes an int); `grow_px`/`shrink_px` added;
+    `subtract`/`intersect` with no selection refused; receipts carry `undo_steps`; Phase 3 fields
+    removed; inspect gains the mask summary and `history`.** Amended at plan time, with the owner.
+  - **`above_id: null` means on top, not at the bottom:** the first live run showed
+    `addChildNode(node, None)` puts the node on top, and the verification rolled the plan's
+    "bottom" back as misplaced. The session's own finding.
+  - **`coverage_px` left the selection receipt; `selection_id` and `selected_pixels` come from the
+    plugin,** so a second server that shares a retry gets the receipt without the pixels the first
+    server took. The session's own finding.
+  - **`ephemeral` is advertised in `bridge.json`:** the new server could not count Krita's
+    documents through the old plugin, which refused the field, so `doctor`'s restart gate failed.
+    The session's own finding.
+  - **A close settles for 0.5 s after a change** (below). The owner chose to reproduce and fix it.
+- **Measured** (Krita 5.3.4.1 on macOS, Apple Silicon):
+  - **A crash, reproduced and fixed.** Krita crashed in `KisNodeModel::processUpdateQueue` (a null
+    pointer, from a `KisSignalCompressor` timer) when a document closed straight after a selection
+    change: first after a debug script, then at the first iteration of a loop of open, select,
+    close (and of select alone); layer creation alone survived 10 loops, and a 0.5 s pause before
+    the close, or clearing the selection first, survived. With the settle, 20 select-then-close and
+    10 layer-select-undo-close loops survived.
+  - **Undo labels:** "Add Layer" after `addChildNode`; `setSelection` pushes an unnamed step
+    ("Undo ", enabled), for a selection and for None alike; Krita keeps Redo enabled as "Redo "
+    with nothing to redo.
+  - **Label timing:** straight after a push in the same job the label was stale in 1 of 7 reads in
+    the first run and 0 of 7 in each later one; after the flush, current in 7 of 7 every time.
+  - **`setActiveNode` on the global selection's own mask** leaves the previous layer active, so the
+    global branch of K46 cannot be made from a script; Krita lists that mask as a root child named
+    "Selection Mask".
+  - **`addChildNode` makes the new layer active.**
+  - **Grow, shrink and feather by 3 of a 20 × 16 rect:** {17, 11, 26, 22} 568 px; {23, 17, 14, 10}
+    140 px; {17, 11, 26, 22} 572 px.
+  - **An export answered `BUSY` once:** Krita's autosave held the harness document during
+    `harness.export_kra`, which the bridge reports as retryable and the probe, which never retries,
+    as a FAIL; the next run passed. It had not been seen before.
+  - **`probe` on the 0.7.0 build:** 66 PASS, 0 FAIL, 21 MEASURED in 18.4 s; H4 p50 5.5 ms, p95
+    6.6 ms, max 38.0 ms; create and close mean 149 ms, max 158 ms; opens 153–159 ms; a native
+    capture 51 ms; the raw preset digest changes from run to run (`016cfd6fd3f93c11` here), the
+    canonical one held (`d31399fb15465c79`); `transfer/` and `harness/` empty after every run,
+    `plugin.log` with no warning or error.
+- **Checked by hand:** `doctor` before and after each of the session's Krita restarts: 0
+  documents open, 0 unsaved, steps 1–5 PASS on the new plugin, step 6 FAIL "no roots".
+- **Falsified:**
+  - **The method.** A scratchpad driver broke one product line at a time (the scan itself, for the
+    scan's own tests), ran only the guarding test (on 3.10 for the plugin core), counted only a
+    pytest exit of 1 as a failure, copied the file back and compared it byte for byte; the tree's
+    diff hash matched before and after.
+  - **110 breaks, each failing at its own test:**
+    - the ledger's truncation, rollback, floor, limit, undo arithmetic and fingerprint filter;
+    - F4's three branches and its error, the open's and the export's unmasking;
+    - layer_create's parent and sibling rules, placement, protected properties, dirty restore,
+      rollback pop, unsafe mark and seal;
+    - the read-only refusal and masks taken before it;
+    - the recipe's order, the readback, combine without a selection, the canvas bound, another
+      request's mask, the plugin's roots check, `none`, its modifiers, layer_alpha and the
+      modifier bound;
+    - `loosened`, the summary, the seal, each tighten-only rule, unknown ids, the binary check, the
+      PNG's size and inspect's history;
+    - history's limits, label and state checks, the stop part-way, the retryable reversal, the
+      view in front, the step bound and the region's union and hash;
+    - the harness ops' front rule and seals, F25, the settle and its use;
+    - F2's keep, unsent expiry, unfinished reads, aliases, bindings, the once-a-minute prune, the
+      written-reply mark, the final-reply gate, the field's type, its advertisement and the
+      client's gate;
+    - F1's rule, binding, module and import checks, and the product's site renamed or rebound;
+    - the request-keyed names and discard;
+    - the rasteriser's sample offset, parity, bands, ellipse, limits, binary rule and rounding, and
+      every PNG refusal;
+    - the four tools' receipts, refusals, mask settling, pending rule, origins and step names;
+    - the three new bounds against the schemas.
+  - **Seven breaks first passed,** each showing a weak test or a redundant line:
+    - `rolled_back`'s `redo = 0` and the scan's "exactly one call" gate could never matter (a push
+      leaves no redo; only one call is ever exempt), so both lines went;
+    - the read-only test used only an owner's document, the summary test no row with two allowed
+      pixels, the step-bound test refusals the availability check also made, and the delivery test
+      no read marked before it finished; each test was strengthened;
+    - the HTTP test could not see the server's final-reply gate behind the jobs' own; it now
+      watches the calls the server makes.
+    All seven then failed.
+  - **Live.**
+    - **Four server breaks failed one check each:** `above_id` dropped (layer_create), the
+      raster's origin (selection shapes), subtract sent as intersect (combines) and a step's tool
+      name (the ledger's counts).
+    - **Six plugin breaks failed their checks:** layer_create allowed on a read_only document, the
+      K46 unmasking skipped, a dropped protected id accepted, the bridge's dedup off (the retried
+      selection_set, beside the older retry checks), and the close's settle off, which crashed
+      Krita at the close-at-once check, as found.
+    - **The seal's break first passed,** because the K46 check's harness op had sealed history
+      already and no redo was on offer; protection now runs before K46 with an undo first, and the
+      break then failed the protection check alone.
+    - **A first server round misfired:** dropping the selection's `request_id` broke every mask's
+      key, so the retry check was falsified on the plugin side instead.
+  - **Not falsified:** the label-timing check. Without the flush, stale reads were 1 and 0 of 7,
+    so its break would rarely fail.
+- **Known debt:**
+  - **Selection steps are confirmed by state alone:** their Undo label is empty, and Krita keeps
+    Redo enabled as "Redo " with nothing to redo. A named step on top (the owner's stroke) still
+    stops history.
+  - **Labels are English** (in `docs/BACKLOG.md`).
+  - **The global-mask branch of K46 is held by unit tests only** (in `docs/BACKLOG.md`).
+  - **The close's settle** delays a close by up to 0.5 s after the document last changed; Krita's
+    crash itself is upstream's (in `docs/BACKLOG.md`).
+  - **History's region, capture and hash** are unit-tested only until strokes record regions
+    (session 9).
+  - **A server that shares a retry with another gets the selection's receipt without its mask
+    PNG,** as the open's baseline already is.
+- **Numbers:**
+  - `verify`: 6 stages, all PASS;
+  - 409 server tests passed, 0 skipped (+39);
+  - 356 plugin-core tests passed, 0 skipped (+85);
+  - `probe`: 66 PASS, 0 FAIL, 21 MEASURED (+11 PASS, +7 MEASURED), 18.4 s;
+  - 15 registered tools (+4); 19 schema files; instructions 2,620 characters (−153).
+
 ---
 
 ## 8: The verification core, and layer_update

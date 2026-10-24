@@ -4,6 +4,7 @@ import time
 from typing import Any
 
 import pytest
+from bridge_core import jobs as jobs_module
 from bridge_core.errors import BridgeError
 from bridge_core.jobs import Call, Handler, Jobs, drain_in_slot
 
@@ -440,3 +441,104 @@ def test_a_handler_sees_the_calls_client() -> None:
     jobs.submit("op-1", "req-1", "record", {}, CLIENT)
     jobs.drain()
     assert seen == [{"client": CLIENT, "request_id": "req-1"}]
+
+
+class _Clock:
+    def __init__(self) -> None:
+        self.now = 1000.0
+
+    def __call__(self) -> float:
+        return self.now
+
+
+def _timed() -> tuple[Jobs, _Clock]:
+    clock = _Clock()
+
+    def record(args: dict[str, Any], call: Call) -> dict[str, Any]:
+        return {"ran": args["id"]}
+
+    log = logging.getLogger("test_jobs")
+    return Jobs({"record": record}, lambda: None, lambda: True, log, clock), clock
+
+
+def _sent(jobs: Jobs, operation_id: str, request_id: str, ephemeral: bool, key: str = "") -> None:
+    args = {"id": key or request_id}
+    assert jobs.submit(operation_id, request_id, "record", args, CLIENT, ephemeral)
+
+
+def test_a_read_is_forgotten_a_while_after_its_reply_was_sent() -> None:
+    jobs, clock = _timed()
+    _sent(jobs, "op-read", "req-minted", True)
+    _sent(jobs, "op-agent", "req-agent", False)
+    jobs.drain()
+    # A retry's own operation_id is an alias of the original.
+    _sent(jobs, "op-agent-retry", "req-agent", False)
+    jobs.delivered("op-read")
+    jobs.delivered("op-agent")
+    clock.now += jobs_module.READ_KEEP_S - 1
+    _sent(jobs, "op-tick", "req-tick", True)
+    assert jobs.wait("op-read", 0) is not None
+    clock.now += jobs_module.PRUNE_EVERY_S
+    _sent(jobs, "op-tick-2", "req-tick-2", True)
+    assert jobs.wait("op-read", 0) is None
+    # An agent's request_id is kept for the session (invariant 9), under every alias.
+    assert jobs.wait("op-agent", 0) is not None and jobs.wait("op-agent-retry", 0) is not None
+    assert jobs.submit("op-again", "req-agent", "record", {"id": "req-agent"}, CLIENT) is not None
+    assert jobs.wait("op-again", 0) == jobs.wait("op-agent", 0)
+
+
+def test_a_read_nobody_was_sent_is_forgotten_after_an_hour() -> None:
+    jobs, clock = _timed()
+    _sent(jobs, "op-read", "req-minted", True)
+    jobs.drain()
+    clock.now += jobs_module.READ_KEEP_S + jobs_module.PRUNE_EVERY_S
+    _sent(jobs, "op-tick", "req-tick", True)
+    assert jobs.wait("op-read", 0) is not None
+    clock.now += jobs_module.READ_UNSENT_S
+    _sent(jobs, "op-tick-2", "req-tick-2", True)
+    assert jobs.wait("op-read", 0) is None
+
+
+def test_a_read_still_running_or_queued_is_never_forgotten() -> None:
+    jobs, clock = _timed()
+    _sent(jobs, "op-queued", "req-minted", True)
+    # A reply still queued was not the final one, so it marks nothing.
+    jobs.delivered("op-queued")
+    clock.now += jobs_module.READ_UNSENT_S * 2
+    _sent(jobs, "op-tick", "req-tick", True)
+    assert jobs.wait("op-queued", 0) is not None
+    jobs.drain()
+    clock.now += jobs_module.READ_KEEP_S + jobs_module.PRUNE_EVERY_S
+    _sent(jobs, "op-tick-2", "req-tick-2", True)
+    assert jobs.wait("op-queued", 0) is not None
+
+
+def test_a_forgotten_read_drops_its_request_id_and_every_alias() -> None:
+    jobs, clock = _timed()
+    _sent(jobs, "op-read", "req-minted", True)
+    jobs.drain()
+    _sent(jobs, "op-read-again", "req-minted", True)
+    jobs.delivered("op-read")
+    clock.now += jobs_module.READ_KEEP_S + 1
+    _sent(jobs, "op-tick", "req-tick", True)
+    assert jobs.wait("op-read", 0) is None and jobs.wait("op-read-again", 0) is None
+    assert jobs.wait("op-tick", 0) is not None
+    # Gone from the dedup maps too, so the id would run afresh.
+    fresh = jobs.submit("op-new", "req-minted", "record", {"id": "other"}, CLIENT, True)
+    assert fresh is not None and fresh.state == "queued"
+
+
+def test_pruning_runs_at_most_once_a_minute() -> None:
+    jobs, clock = _timed()
+    _sent(jobs, "op-read", "req-minted", True)
+    jobs.drain()
+    jobs.delivered("op-read")
+    clock.now += jobs_module.READ_KEEP_S - 1
+    _sent(jobs, "op-tick", "req-tick", True)
+    clock.now += 2
+    _sent(jobs, "op-tick-2", "req-tick-2", True)
+    # Past its keep, but the last prune was two seconds ago.
+    assert jobs.wait("op-read", 0) is not None
+    clock.now += jobs_module.PRUNE_EVERY_S
+    _sent(jobs, "op-tick-3", "req-tick-3", True)
+    assert jobs.wait("op-read", 0) is None

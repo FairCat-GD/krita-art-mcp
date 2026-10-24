@@ -210,12 +210,12 @@ def test_operation_get_finishes_a_capture_that_came_back_running(world: World) -
 
 def test_an_owners_document_with_an_active_mask_is_refused_untouched(world: World) -> None:
     key = world.port.open_by_hand("their painting")
-    world.port.live[key]["active_mask"] = True
+    world.port.mask(key)
     [owners] = world.server().content("krita_document_list", {})["data"]["documents"]
     refused = world.server().content("krita_capture", _capture(owners["document_id"]))
     assert refused["error"]["code"] == "DOCUMENT_READ_ONLY"
     assert refused["error"]["details"]["reason"] == "selection_mask_active"
-    assert world.port.calls == [] and world.port.live[key]["active_mask"] is True
+    assert world.port.calls == [] and world.port.is_masked(key)
 
 
 def test_samples_report_the_stored_values_and_their_colour(world: World) -> None:

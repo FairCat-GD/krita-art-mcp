@@ -9,7 +9,7 @@ from krita_art_mcp import envelope, schemas
 from krita_art_mcp.bridge_client import BeforeSend, Done, Failed, Outcome
 from krita_art_mcp.journal import JournalError
 from krita_art_mcp.paths import Places
-from krita_art_mcp.tools import documents, observe, pixels
+from krita_art_mcp.tools import changes, documents, observe, pixels
 from krita_art_mcp.tools.dispatch import Receipt, ToolCall, journaled, record
 
 Resolver = Callable[[Places, Outcome], Outcome]
@@ -38,6 +38,12 @@ RECEIPTS: dict[str, Known] = {
     "resource.list": Known("krita_resource_list", observe.resource_receipt),
     "capture.read": Known("krita_capture", pixels.capture_receipt, pixels.resolve_capture),
     "sample.read": Known("krita_sample", pixels.sample_receipt, pixels.resolve_sample),
+    "layer.create": Known("krita_layer_create", changes.layer_receipt),
+    "selection.set": Known(
+        "krita_selection_set", changes.selection_receipt, changes.resolve_selection
+    ),
+    "protection.set": Known("krita_protection_set", changes.protection_receipt),
+    "history.step": Known("krita_history_step", changes.history_receipt, changes.resolve_history),
 }
 
 
@@ -56,6 +62,8 @@ def operation_get(call: ToolCall, arguments: dict[str, Any]) -> CallToolResult:
         details = {"operation_id": operation_id, "op": outcome.op}
         message = "That operation belongs to no tool."
         return envelope.failure("INVALID_ARGUMENT", message, details=details)
+    if isinstance(outcome, Done | Failed):
+        changes.settle_masks(call.places, outcome.request_id)
     if known is not None and known.resolve is not None:
         outcome = known.resolve(call.places, outcome)
     tool = None if known is None else known.tool
@@ -136,7 +144,12 @@ def operation_cancel(call: ToolCall, arguments: dict[str, Any]) -> CallToolResul
     operation_id = arguments["operation_id"]
 
     def send(before_send: BeforeSend) -> Outcome:
-        return call.bridge.cancel(operation_id, before_send=before_send)
+        outcome = call.bridge.cancel(operation_id, before_send=before_send)
+        # A cancelled or finished operation takes no mask any more.
+        if isinstance(outcome, Done) and outcome.result.get("status") in ("done", "error"):
+            request_id = outcome.result.get("request_id")
+            changes.settle_masks(call.places, request_id if isinstance(request_id, str) else None)
+        return outcome
 
     return journaled(
         call, "krita_operation_cancel", arguments, arguments["request_id"], send, cancel_receipt

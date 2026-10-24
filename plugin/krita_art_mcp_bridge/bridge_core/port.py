@@ -29,15 +29,12 @@ class DocumentsPort(Protocol):
     # reports it (type as Node.type(), opacity 0-255, offset_px, bounds_px).
     def tree(self, document: Any) -> dict[str, Any]: ...
 
-    # K46: no selection mask stays the active node, so its overlay never enters a read or save.
-    def prepare_read(self, document: Any) -> None: ...
-
     # The projection over the whole canvas, B, G, R, A for integer RGBA (K12), as a bytes-like
     # buffer.
     def composite(self, document: Any) -> Any: ...
 
-    # The global selection's bounds {x, y, width, height} and a buffer of one byte per pixel.
-    def selection(self, document: Any) -> tuple[dict[str, int], Any] | None: ...
+    # The global selection's bounds {x, y, width, height} as Krita reports them, or None.
+    def selection_bounds(self, document: Any) -> dict[str, int] | None: ...
 
     # The projection over each rect {x, y, width, height}, as composite() reads it.
     def composite_rects(self, document: Any, rects: list[dict[str, int]]) -> list[Any]: ...
@@ -54,8 +51,8 @@ class DocumentsPort(Protocol):
     # Whether a selection mask is the active node, whose overlay would enter a composite (K46).
     def mask_active(self, document: Any) -> bool: ...
 
-    # Makes the document's view the active one, so prepare_read can act on it. Returns the view
-    # it replaced, or None when nothing needs putting back.
+    # Makes the document's view the active one, so setActiveNode and undo act on it. Returns the
+    # view it replaced, or None when nothing needs putting back.
     def bring_forward(self, document: Any) -> Any: ...
 
     # Puts back a view bring_forward replaced; logs a failure and never raises.
@@ -64,6 +61,39 @@ class DocumentsPort(Protocol):
     # The document in the active view, or None.
     def front(self) -> Any: ...
 
+    # Makes a node the active one, in the document in front only, and waits.
+    def activate(self, document: Any, node_id: str) -> None: ...
+
+    # Adds an empty paint or group layer (kind as Node.type()) under parent_id, directly above
+    # above_id or on top, in one undo step; waits, and returns its id.
+    def create_layer(
+        self, document: Any, parent_id: str, above_id: str | None, kind: str, name: str
+    ) -> str: ...
+
+    # Builds a selection by the recipe's steps, in order, and commits it with setSelection (one
+    # undo step); a recipe of ("clear",) commits None. Waits.
+    def set_selection(self, document: Any, recipe: list[tuple[Any, ...]]) -> None: ...
+
+    # Trigger Krita's Undo or Redo action on the document in front, wait, and let posted events
+    # through, so the action's text names the new top step.
+    def undo(self, document: Any) -> None: ...
+
+    def redo(self, document: Any) -> None: ...
+
+    # The labels the Undo and Redo actions show for the document in front, after posted events
+    # are through; None for an action with no step.
+    def undo_labels(self, document: Any) -> tuple[str | None, str | None]: ...
+
+    # Harness only: the Undo and Redo actions' own text and enabled state, {undo, redo}.
+    def undo_actions(self, document: Any) -> dict[str, Any]: ...
+
+    # How many steps Krita keeps in a document's undo stack.
+    def undo_limit(self) -> int: ...
+
+    # Harness only: adds an empty layer per trial and reads the Undo label straight after the
+    # wait, then after posted events are through.
+    def label_timing(self, document: Any, trials: int) -> list[list[str | None]]: ...
+
     # Harness only: adds a local selection mask over rect to a layer and makes it the active
     # node; whether the composite over rect changed with it.
     def add_active_mask(self, document: Any, layer_id: str, rect: dict[str, int]) -> bool: ...
@@ -71,8 +101,9 @@ class DocumentsPort(Protocol):
     # Writes the document as KRA with Krita's own exporter; False while autosave holds it (K45).
     def export_kra(self, document: Any, target: str) -> bool: ...
 
-    # Waits, clears the modified flag so Krita never asks to save, then closes.
-    def close(self, document: Any) -> bool: ...
+    # Waits, lets Krita's own timers run for settle_s with user input held back, clears the
+    # modified flag so Krita never asks to save, then closes.
+    def close(self, document: Any, settle_s: float = 0.0) -> bool: ...
 
 
 class ResourcesPort(Protocol):

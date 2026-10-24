@@ -104,13 +104,13 @@ def resolve_capture(places: Places, outcome: Outcome) -> Outcome:
     except Exception:
         log.exception("the capture %s was not made into an image", outcome.operation_id)
         # No retry can use the pixels, so they go now rather than at the plugin's expiry.
-        _discard(places, outcome.result.get("pixels"))
-        return _failed(outcome, error_body("INTERNAL_ERROR", "The capture could not be made."))
+        discard(places, outcome.result.get("pixels"))
+        return failed(outcome, error_body("INTERNAL_ERROR", "The capture could not be made."))
 
 
 def _capture_files(places: Places, outcome: Done) -> Outcome:
     result = outcome.result
-    operation_id = _operation_id(outcome)
+    operation_id = operation_id_of(outcome)
     how = _render(result["render"])
     rect = result["rect"]
     size = imaging.output_size(rect["width"], rect["height"], how.scale, how.max_px)
@@ -129,7 +129,7 @@ def _capture_files(places: Places, outcome: Done) -> Outcome:
         shown, shown_size, preview = full, size, False
     else:
         message = "The capture's preview is missing; capture again."
-        return _failed(outcome, error_body("INTERNAL_ERROR", message, retryable=True))
+        return failed(outcome, error_body("INTERNAL_ERROR", message, retryable=True))
     path = str(found)
     native = (rect["width"], rect["height"])
     data = {
@@ -169,16 +169,16 @@ def _make_capture(
 ) -> tuple[Path, bytes] | Failed:
     # The PNG's path and bytes, so a fresh capture is not read back from disk.
     result = outcome.result
-    operation_id = _operation_id(outcome)
+    operation_id = operation_id_of(outcome)
     spec = result["pixels"]
     if how.greyscale and result["profile_id"] not in colour.SRGB_PROFILES:
-        _discard(places, spec)
+        discard(places, spec)
         details = {
             "profile_id": result["profile_id"],
             "srgb_profiles": sorted(colour.SRGB_PROFILES),
         }
         message = "Greyscale is CIE L*, which needs sRGB bytes; this profile is not sRGB."
-        return _failed(outcome, error_body("COLOR_PROFILE_MISMATCH", message, details=details))
+        return failed(outcome, error_body("COLOR_PROFILE_MISMATCH", message, details=details))
     try:
         pixels = transfer.take(places.transfer_dir, spec)
     except transfer.TransferError:
@@ -187,7 +187,7 @@ def _make_capture(
         if again is not None:
             return again, again.read_bytes()
         message = "The capture's pixels were already taken; capture again."
-        return _failed(outcome, error_body("INTERNAL_ERROR", message, retryable=True))
+        return failed(outcome, error_body("INTERNAL_ERROR", message, retryable=True))
     image, _ = imaging.render(pixels, size, how)
     full = imaging.encode(image)
     folder = imaging.folder_for(places.captures_dir, today())
@@ -200,8 +200,8 @@ def _make_capture(
         imaging.write(target, full)
     except OSError as problem:
         message = f"The capture could not be written: {problem}"
-        return _failed(outcome, error_body("IO_ERROR", message, retryable=True))
-    _discard(places, spec)
+        return failed(outcome, error_body("IO_ERROR", message, retryable=True))
+    discard(places, spec)
     imaging.sweep(places.captures_dir, today())
     return target, full
 
@@ -258,12 +258,12 @@ def resolve_sample(places: Places, outcome: Outcome) -> Outcome:
         return _sample_files(places, outcome)
     except Exception:
         log.exception("the sample %s was not computed", outcome.operation_id)
-        _discard(places, outcome.result.get("pixels"))
-        return _failed(outcome, error_body("INTERNAL_ERROR", "The samples could not be computed."))
+        discard(places, outcome.result.get("pixels"))
+        return failed(outcome, error_body("INTERNAL_ERROR", "The samples could not be computed."))
 
 
 def _sample_files(places: Places, outcome: Done) -> Outcome:
-    operation_id = _operation_id(outcome)
+    operation_id = operation_id_of(outcome)
     found = imaging.find(places.captures_dir, operation_id, ".json")
     if found is None:
         made = _make_samples(places, outcome)
@@ -276,7 +276,7 @@ def _sample_files(places: Places, outcome: Done) -> Outcome:
 
 def _make_samples(places: Places, outcome: Done) -> Path | Failed:
     result = outcome.result
-    operation_id = _operation_id(outcome)
+    operation_id = operation_id_of(outcome)
     spec = result["pixels"]
     try:
         pixels = transfer.take(places.transfer_dir, spec)
@@ -285,7 +285,7 @@ def _make_samples(places: Places, outcome: Done) -> Path | Failed:
         if again is not None:
             return again
         message = "The samples' pixels were already taken; sample again."
-        return _failed(outcome, error_body("INTERNAL_ERROR", message, retryable=True))
+        return failed(outcome, error_body("INTERNAL_ERROR", message, retryable=True))
     # Every point's square, one after another in a single row.
     row = pixels.reshape(-1, 4)
     srgb = result["profile_id"] in colour.SRGB_PROFILES
@@ -311,8 +311,8 @@ def _make_samples(places: Places, outcome: Done) -> Path | Failed:
         imaging.write(target, json.dumps(data, separators=(",", ":")).encode("utf-8"))
     except OSError as problem:
         message = f"The samples could not be written: {problem}"
-        return _failed(outcome, error_body("IO_ERROR", message, retryable=True))
-    _discard(places, spec)
+        return failed(outcome, error_body("IO_ERROR", message, retryable=True))
+    discard(places, spec)
     imaging.sweep(places.captures_dir, today())
     return target
 
@@ -337,7 +337,7 @@ def _target(result: dict[str, Any]) -> str:
     )
 
 
-def _operation_id(outcome: Done) -> str:
+def operation_id_of(outcome: Done) -> str:
     # It names files, so only the shape the server mints is accepted.
     operation_id = outcome.operation_id or ""
     if not imaging.OPERATION_ID.match(operation_id):
@@ -361,14 +361,14 @@ def _render(echo: Any) -> Render:
     )
 
 
-def _discard(places: Places, spec: Any) -> None:
+def discard(places: Places, spec: Any) -> None:
     try:
         transfer.discard(places.transfer_dir, spec)
     except (transfer.TransferError, OSError):
         log.exception("a transfer file was not removed")
 
 
-def _failed(outcome: Done, error: dict[str, Any]) -> Failed:
+def failed(outcome: Done, error: dict[str, Any]) -> Failed:
     return Failed(
         error,
         outcome.operation_id,

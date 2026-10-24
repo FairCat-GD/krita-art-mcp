@@ -55,6 +55,11 @@ runs; after it closes, read it from git history at round 1's release commit.
 - **Reading a frame other than the one on screen** (0.5.0). Reads refuse a document whose current
   frame is not 0, and never move the owner's timeline. `Node.pixelDataAtTime` (K32) could read a
   layer at any frame without moving it; Phase 5 decides.
+- **Undo labels in other languages** (0.7.0). `krita_history_step` confirms each step by the label
+  Krita's Undo action gives it, as measured in English ("Add Layer", and an unnamed step for a
+  selection change). In another language every layer step reads as a step the bridge did not
+  make, and history refuses it. Labels could be read from Krita's own translation, or measured at
+  bridge start on a throwaway document.
 - **Composite reads in two Krita states** (0.5.0). "Isolate active layer" mode changes the
   composite a read sees, and a document with two views reports the first view's active node. Both
   are untested.
@@ -71,6 +76,11 @@ these are the parts only a person can see.
 - **Whether a capture's K46 switch visibly moves the tab** (0.5.0). The probe confirms that
   Krita makes the document's view active and puts the previous one back; whether the tab bar shows
   it is for a person to see.
+- **K46 with the global selection's own mask active** (0.7.0). A script cannot make the root's
+  selection mask the active node (`setActiveNode` leaves the layer active), so the probe checks a
+  local mask only, and the choice of the top-most layer for the global mask is held by unit tests.
+  With *Show Global Selection Mask* on in the Layers docker, select that mask by hand, then capture
+  the document: the capture should match, and the top-most layer become active.
 - **N-03 in Activity Monitor** (0.2.0). With the plugin loaded and Krita idle, Krita's CPU should
   stay under 1%. `top` measured 0.0% in six samples 5 s apart. Look at Krita's row in Activity
   Monitor for a minute while it is idle.
@@ -83,6 +93,11 @@ these are the parts only a person can see.
 - **Publishing the repository.** When the owner decides, with the description "MCP server that
   lets AI agents paint in Krita" and the topics `krita`, `mcp`, `model-context-protocol`,
   `krita-plugin` and `game-art`.
+
+- **Report Krita's layer-docker crash upstream.** On 5.3.4.1, closing a document within about
+  half a second of a selection change crashes Krita in `KisNodeModel::processUpdateQueue`, a null
+  pointer from the docker's update timer. The plugin works around it (a close lets Krita's own
+  timers run first, 0.7.0); a person closing a document by hand that fast could still hit it.
 
 ## Decided against
 

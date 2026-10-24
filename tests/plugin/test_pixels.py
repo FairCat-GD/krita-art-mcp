@@ -178,7 +178,7 @@ def test_layer_reads_refuse_unknown_ids_groups_and_other_depths(world: World) ->
 def _behind(world: World) -> tuple[str, int, int]:
     # The first document has its selection mask active; the second one is in front.
     document_id, key = world.created()
-    world.port.live[key]["active_mask"] = True
+    world.port.mask(key)
     _, other = world.created()
     return document_id, key, other
 
@@ -196,22 +196,22 @@ def test_k46_brings_an_agents_document_forward_reads_then_puts_the_view_back(
 
     world.port.restore_view = watched  # type: ignore[method-assign]
     found = world.capture(document_id)
-    assert world.port.calls == ["forward", "prepare", "read", "restore"]
-    assert world.port.front_key == other and world.port.live[key]["active_mask"] is False
+    assert world.port.calls == ["forward", "activate", "read", "restore"]
+    assert world.port.front_key == other and not world.port.is_masked(key)
     # The transfer file is written only after the view is back.
     assert seen == [[]] and Path(found["pixels"]["path"]).exists()
 
 
 def test_k46_in_front_needs_no_switch(world: World) -> None:
     document_id, key = world.created()
-    world.port.live[key]["active_mask"] = True
+    world.port.mask(key)
     world.sample(document_id)
-    assert world.port.calls == ["forward", "prepare", "read"]
+    assert world.port.calls == ["forward", "activate", "read"]
 
 
 def test_k46_on_an_owners_document_refuses_and_changes_nothing(world: World) -> None:
     key = world.port.open_by_hand("their painting")
-    world.port.live[key]["active_mask"] = True
+    world.port.mask(key)
     [owners] = world.run("document.list", {})["documents"]
     body = world.refused("capture", owners["document_id"])
     assert body["code"] == "DOCUMENT_READ_ONLY"
@@ -219,7 +219,7 @@ def test_k46_on_an_owners_document_refuses_and_changes_nothing(world: World) -> 
         "document_id": owners["document_id"],
         "reason": "selection_mask_active",
     }
-    assert world.port.calls == [] and world.port.live[key]["active_mask"] is True
+    assert world.port.calls == [] and world.port.is_masked(key)
 
 
 def test_k46_puts_the_view_back_when_the_read_fails(world: World) -> None:

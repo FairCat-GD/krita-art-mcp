@@ -4,36 +4,38 @@ INSTRUCTIONS = f"""\
 krita-art-mcp lets you paint in the owner's running Krita through Krita's own brush engine, \
 with accepted art protected.
 
-- Call krita_server_info first. Its capability matrix says what this build supports; a \
-capability marked supported: false is not available, so do not plan around it.
-- Every result carries the same envelope: api_version, status, document_id, revision (always \
-null for now), operation_id, data and error. status is completed, queued, running, failed or \
-cancelled.
-- A failed call returns error.code, a one-line message, retryable and details. Retry only when \
-retryable is true; otherwise act on the message, for example by asking the owner to start Krita.
-- status running means Krita was still busy with the call when the server's \
-{WAIT_BUDGET_S:.0f}-second wait ran out. Call krita_operation_get with its operation_id; \
-do not repeat the call. krita_operation_cancel stops only a call still queued.
-- Give every call that takes a request_id a fresh UUID. Reuse one only to retry the same call \
-with the same arguments: the retry returns the original receipt and never runs twice. If a \
-retry reports outcome uncertain, inspect the document before deciding what to do.
-- Work on your own document: one working copy per agent. Another agent's document answers \
-DOCUMENT_IN_USE, and documents the owner opened by hand are read_only.
-- Open accepted art with krita_document_open, mode working_copy, and a working_dir inside one \
-of krita_server_info's allowed_roots, never the source's own folder. The source is copied and \
-never written; read_only opens the source itself and refuses every change.
-- Every layer that exists when a document opens is protected, on purpose: add a layer of your \
-own to change anything. To resume your own earlier layers, reopen with editable_layer_ids (KRA) \
-or editable_layer_names (ORA and PNG, which store no layer ids).
-- krita_document_inspect shows the layer tree, which layers are protected, and the selection.
-- krita_capture returns an image and the path of its PNG. scale 1 is the native crop, alpha \
-included; any other scale is resampled with your filter onto a background, checker by default. \
-max_px (1600 by default, 4096 at most) bounds the long edge: capture tiles for more. A layer \
-capture is the layer's own pixels, without its opacity, masks or inherit-alpha clip.
+- Call krita_server_info first. Its capability matrix says what this build supports; do not \
+plan around a capability marked supported: false.
+- Every result has one envelope: api_version, status (completed, queued, running, failed or \
+cancelled), document_id, revision (null for now), operation_id, data and error.
+- A failed call returns error.code, a message, retryable and details. Retry only when retryable \
+is true; otherwise act on the message.
+- status running means Krita was still busy when the server's {WAIT_BUDGET_S:.0f}-second wait \
+ran out: call krita_operation_get with its operation_id, never repeat the call. \
+krita_operation_cancel stops only a queued call.
+- Give every request_id a fresh UUID. Reuse one only to retry the same call: the retry returns \
+the original receipt and never runs twice. If a retry reports outcome uncertain, inspect the \
+document first.
+- Work on your own working copy. Another agent's document answers DOCUMENT_IN_USE; documents \
+the owner opened by hand are read_only.
+- Open accepted art with krita_document_open, mode working_copy, and a working_dir inside one of \
+the allowed_roots, never the source's own folder. The source is never written; read_only opens \
+it and refuses every change.
+- Every layer present at open is protected, on purpose: add a layer of your own \
+(krita_layer_create) before painting. To resume your earlier layers, reopen with \
+editable_layer_ids (KRA) or editable_layer_names (ORA, PNG).
+- krita_document_inspect shows the layers, protection, the selection and how far history goes.
+- To repair several regions, allow their union once with krita_protection_set (it only \
+tightens), then confine each repair with krita_selection_set.
+- Undo steps include layer creation and selection commits; krita_history_step never goes below \
+the last protection change.
+- krita_capture returns an image and its PNG's path. scale 1 is the native crop; other scales \
+resample with your filter onto a background, checker by default. max_px (1600, at most 4096) \
+bounds the long edge: capture tiles for more. A layer capture is the layer's own pixels, without \
+its opacity, masks or inherit-alpha clip.
 - Use krita_sample for exact colours (RGBA 0-255, hex, L*a*b*, L*C*h); a radius averages a disc, \
 weighted by alpha. Never judge a colour from a capture.
-- krita_resource_list lists brush presets: a brush's id and sha256 are what paint calls take as \
-preset_id and preset_sha256. It also lists blend modes, profiles and palettes.
-- No tool writes raw pixels or runs code. Pixels change only through Krita's brushes.
-- The owner may be watching Krita while you work.
+- krita_resource_list lists brush presets (their id and sha256 are what paint calls take), \
+blend modes, profiles and palettes.
+- No tool writes raw pixels or runs code. The owner may be watching Krita while you work.
 """

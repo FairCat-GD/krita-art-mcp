@@ -4,6 +4,7 @@ from typing import Any
 from . import paths, transfer
 from .errors import BridgeError, exact
 from .jobs import Call, Handler
+from .ledger import selection_state
 from .port import DocumentsPort
 from .registry import Handle, Registry
 
@@ -100,19 +101,25 @@ def handlers(registry: Registry, port: DocumentsPort, data: Path) -> dict[str, H
             "root_layer_id": tree["root_id"],
             "active_layer_id": tree["active_id"],
             "layers": layer_entries(tree, protected_ids(handle, tree)),
-            "selection": _selection(port, handle, data),
+            "selection": _selection(port, handle, info["size_px"], data),
             "protection": {
-                "allowed_change_mask": handle.allowed_mask,
+                "allowed_change_mask": handle.allowed_summary,
                 "preserve_composite_alpha": handle.preserve_composite_alpha,
                 "preserve_canvas": handle.preserve_canvas,
+            },
+            "history": {
+                "undo_available": handle.ledger.undo_available(),
+                "redo_available": handle.ledger.redo,
             },
         }
 
     return {"document.inspect": inspect}
 
 
-def _selection(port: DocumentsPort, handle: Handle, data: Path) -> dict[str, Any] | None:
-    found = port.selection(handle.document)
+def _selection(
+    port: DocumentsPort, handle: Handle, size: list[int], data: Path
+) -> dict[str, Any] | None:
+    found = selection_state(port, handle.document, size)
     if found is None:
         return None
     bounds, pixels = found

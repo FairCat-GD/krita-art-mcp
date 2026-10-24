@@ -523,7 +523,7 @@
           "selection.enforced": {
             "supported": false,
             "since": null,
-            "notes": "Selections are not built in this release."
+            "notes": "krita_selection_set sets the selection; strokes that keep to it arrive with native brush strokes."
           },
           "color_spaces": {
             "supported": false,

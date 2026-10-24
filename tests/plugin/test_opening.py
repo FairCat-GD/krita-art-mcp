@@ -88,7 +88,6 @@ def test_a_working_copy_is_a_timestamped_copy_beside_no_source(world: World) -> 
     # The as_opened composite waits in transfer/ for the server, as B, G, R, A.
     assert Path(opened["baseline"]["path"]).read_bytes() == bgra(8, 4)
     assert opened["baseline"]["format"] == "BGRA8"
-    assert world.port.prepared == [1]
 
 
 def test_a_read_only_open_opens_the_source_itself_and_copies_nothing(world: World) -> None:

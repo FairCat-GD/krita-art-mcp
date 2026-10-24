@@ -272,3 +272,53 @@ def test_a_stopping_bridge_answers_503(live: Live) -> None:
     status, reply = live.request("GET", "/v1/health")
     assert status == 503
     assert reply["error"]["code"] == "KRITA_NOT_RUNNING"
+
+
+def test_a_read_is_marked_sent_once_its_final_reply_is_written(live: Live) -> None:
+    body = {
+        "op": "echo",
+        "args": {},
+        "request_id": "req-minted",
+        "operation_id": "op-read",
+        "client": {"pid": 1, "started_at": "test"},
+        "wait_s": 5,
+        "ephemeral": True,
+    }
+    status, reply = live.request("POST", "/v1/call", body)
+    assert (status, reply["status"]) == (200, "done")
+    operation = live.bridge.jobs._operations["op-read"]
+    assert operation.ephemeral and operation.delivered_at is not None
+
+
+def test_a_reply_still_running_is_not_marked_sent(
+    live: Live, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    body = {
+        "op": "hold",
+        "args": {},
+        "request_id": "req-minted",
+        "operation_id": "op-held",
+        "client": {"pid": 1, "started_at": "test"},
+        "wait_s": 0,
+        "ephemeral": True,
+    }
+    marked: list[str] = []
+    monkeypatch.setattr(live.bridge.jobs, "delivered", marked.append)
+    _, reply = live.request("POST", "/v1/call", body)
+    assert reply["status"] in ("queued", "running")
+    assert marked == []
+
+
+@pytest.mark.parametrize("value", ["yes", 1, None])
+def test_ephemeral_must_be_a_boolean(live: Live, value: Any) -> None:
+    body = {
+        "op": "echo",
+        "args": {},
+        "request_id": "req-1",
+        "operation_id": "op-1",
+        "client": {"pid": 1, "started_at": "test"},
+        "wait_s": 1,
+        "ephemeral": value,
+    }
+    status, reply = live.request("POST", "/v1/call", body)
+    assert status == 400 and "ephemeral" in reply["error"]["message"]

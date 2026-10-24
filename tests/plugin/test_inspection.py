@@ -98,10 +98,10 @@ def test_an_opened_document_reports_its_protection_and_baseline(world: World) ->
 
 def test_inspect_is_a_read_that_leaves_the_view_alone(world: World) -> None:
     opened = world.opened()
-    prepared = list(world.port.prepared)
+    calls = list(world.port.calls)
     # Another server process reads freely; only writers need the lease.
     assert world.inspect(opened["document_id"], client=B)["mode"] == "working_copy"
-    assert world.port.prepared == prepared
+    assert world.port.calls == calls
 
 
 def test_krita_types_are_reported_in_the_contracts_words() -> None:

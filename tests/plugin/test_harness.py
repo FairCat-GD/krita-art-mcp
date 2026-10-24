@@ -34,8 +34,8 @@ class World:
     def run(self, op: str, args: dict[str, Any], client: dict[str, Any] = A) -> dict[str, Any]:
         return self.ops[op](args, Call("op-x", "req-x", client))
 
-    def open(self, folder: Path) -> str:
-        source = folder / "fixture.ora"
+    def open(self, folder: Path, name: str = "fixture.ora") -> str:
+        source = folder / name
         source.write_bytes(b"ora")
         args = {
             "source_path": str(source),
@@ -71,7 +71,17 @@ def test_a_harness_document_is_exported_as_a_kra_by_another_process(world: World
         "target_path": str(target),
         "sha256": hashlib.sha256(target.read_bytes()).hexdigest(),
     }
-    assert world.port.prepared[-1] == 1
+    assert world.port.calls == []
+
+
+def test_an_export_makes_a_layer_active_in_place_of_a_selection_mask(world: World) -> None:
+    # K46: exportImage saves the live image, overlay and all, from the document in front.
+    document_id = world.open(world.harness)
+    world.port.mask(1)
+    world.open(world.harness, "other.ora")
+    world.export(document_id, world.harness / "fixture.kra")
+    assert not world.port.is_masked(1)
+    assert world.port.calls == ["forward", "activate", "restore"] and world.port.front_key == 2
 
 
 def test_the_folder_gate_refuses_anything_outside_the_harness(world: World) -> None:
@@ -121,7 +131,7 @@ def test_select_mask_makes_an_active_mask_and_says_whether_its_overlay_shows(
 ) -> None:
     document_id = world.open(world.harness)
     assert _mask(world, document_id) == {"document_id": document_id, "overlay_seen": True}
-    assert world.port.live[1]["active_mask"] is True
+    assert world.port.is_masked(1)
     world.port.overlay = False
     assert _mask(world, document_id)["overlay_seen"] is False
 
@@ -136,7 +146,7 @@ def test_select_mask_takes_only_a_harness_document_in_front(world: World) -> Non
     with pytest.raises(BridgeError) as refused:
         _mask(world, inside)
     assert refused.value.body["code"] == "INVALID_ARGUMENT"
-    assert world.port.live[1].get("active_mask") is not True
+    assert not world.port.is_masked(1)
 
 
 def test_front_document_names_only_a_harness_document(world: World) -> None:

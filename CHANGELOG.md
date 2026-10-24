@@ -6,6 +6,58 @@ All notable changes to krita-art-mcp are documented here. The format follows
 
 ## [Unreleased]
 
+## [0.7.0] — 2026-10-24
+
+Agents can now prepare a change: add a layer of their own, select where to work, tighten what is
+protected, and undo or redo their own steps.
+
+### Added
+
+- **`krita_layer_create`.** It adds an empty paint or group layer under the root or a group:
+  directly above a sibling, or on top when `above_id` is null. The new layer is the agent's to
+  change, and Krita makes it the active one. A protected group may take a new layer. The call is
+  one undo step.
+- **`krita_selection_set`.** It sets the selection from a rect, an ellipse, a polygon, an 8-bit
+  greyscale PNG inside an allowed root (checked by its SHA-256), a layer's alpha, everything, or
+  nothing.
+  - Rects, ellipses and polygons are antialiased at 4 × 4 samples per pixel.
+  - The shape is grown, shrunk, feathered and inverted in that order, then combined with the
+    current selection: replace, add, subtract or intersect.
+  - A shape that leaves the canvas is refused, never clipped.
+  - The receipt gives the selection's id, bounds, selected pixels and a PNG of its mask. The call
+    is one undo step.
+- **`krita_protection_set`.** It tightens protection and never loosens it.
+  - It sets the whole set of protected layers, which must keep every layer protected now.
+  - It sets the canvas mask outside which nothing may change, as a 0/255 PNG of the canvas's
+    size, a rect or a polygon.
+  - It turns on keeping the composite's alpha and the canvas size.
+  - Undo never goes below the last protection change.
+- **`krita_history_step`.** It undoes or redoes up to 50 of the steps the bridge made: layer
+  creations and selection changes.
+  - Each step is checked before and after, by Krita's Undo label and by the document's layers and
+    selection. A step the bridge did not make, such as an edit by hand, stops history there.
+  - Redo goes only as far as history undid.
+- **`krita_document_inspect`** reports the allowed mask's bounds and size, and how many steps can
+  be undone and redone.
+
+### Changed
+
+- **The server instructions** say to add a layer before painting, to allow several regions' union
+  once and select each, and how far undo goes; the rest is shorter.
+- **The bridge forgets a read ten minutes after answering it**, instead of keeping every read for
+  as long as Krita runs. Calls that carry an agent's `request_id` are still kept for the whole
+  Krita session.
+- **A mask the server hands Krita** belongs to one request, so two calls with the same mask never
+  share its file, and no call leaves its mask behind.
+- **A document is marked as changed as soon as a change begins,** so a call that fails part-way
+  still counts as a change when the document is closed with `refuse`.
+
+### Fixed
+
+- **Krita no longer crashes when a document closes straight after a selection change.** Krita's
+  layer docker updated the changed node from a timer and crashed if the document had closed by
+  then; a close now lets that update run first.
+
 ## [0.6.0] — 2026-10-24
 
 Fixes from the architecture review after the first seven tools: lost calls end, cancelled calls

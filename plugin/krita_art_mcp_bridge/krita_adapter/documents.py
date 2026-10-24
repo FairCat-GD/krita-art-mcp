@@ -1,14 +1,17 @@
 import logging
+import time
 from typing import Any
 
 from krita import InfoObject, Krita, Selection
 
 from ..bridge_core import log
 from ..bridge_core.errors import BridgeError
-from .qt import QApplication
+from . import selections
+from .qt import EXCLUDE_USER_INPUT, QApplication, QCoreApplication
 
 INITIAL_LAYER = "Layer 1"
 PROBE_MASK = "krita-art-mcp probe mask"
+UNLIMITED = 1_000_000_000
 
 
 class KritaDocuments:
@@ -110,36 +113,21 @@ class KritaDocuments:
             "nodes": nodes,
         }
 
-    def prepare_read(self, document: Any) -> None:
-        # setActiveNode acts on the document in front, which an open's own view is (K46).
-        active = document.activeNode()
-        if active is not None and str(active.type()) == "selectionmask":
-            document.setActiveNode(_unmasked(document, active))
-            now = document.activeNode()
-            if now is None or str(now.type()) == "selectionmask":
-                message = "Krita kept a selection mask active, so its overlay would enter reads."
-                raise BridgeError("INTERNAL_ERROR", message)
-        document.waitForDone()
-
     def composite(self, document: Any) -> Any:
         document.waitForDone()
         return _buffer(document.pixelData(0, 0, int(document.width()), int(document.height())))
 
-    def selection(self, document: Any) -> tuple[dict[str, int], Any] | None:
+    def selection_bounds(self, document: Any) -> dict[str, int] | None:
         document.waitForDone()
         selection = document.selection()
         if selection is None:
             return None
-        bounds = {
+        return {
             "x": int(selection.x()),
             "y": int(selection.y()),
             "width": int(selection.width()),
             "height": int(selection.height()),
         }
-        if bounds["width"] <= 0 or bounds["height"] <= 0:
-            return bounds, b""
-        data = selection.pixelData(bounds["x"], bounds["y"], bounds["width"], bounds["height"])
-        return bounds, _buffer(data)
 
     def composite_rects(self, document: Any, rects: list[dict[str, int]]) -> list[Any]:
         document.waitForDone()
@@ -193,6 +181,63 @@ class KritaDocuments:
         view = windows[0].activeView() if windows else None
         return None if view is None else view.document()
 
+    def activate(self, document: Any, node_id: str) -> None:
+        document.setActiveNode(_node(document, node_id))
+        document.waitForDone()
+
+    def create_layer(
+        self, document: Any, parent_id: str, above_id: str | None, kind: str, name: str
+    ) -> str:
+        root = document.rootNode()
+        parent = root if _layer_id(root) == parent_id else _node(document, parent_id)
+        above = None if above_id is None else _node(document, above_id)
+        node = document.createNode(name, kind)
+        if node is None:
+            raise BridgeError("INTERNAL_ERROR", "Krita did not make the layer.")
+        # addChildNode is one undo step (K22).
+        if not parent.addChildNode(node, above):
+            raise BridgeError("INTERNAL_ERROR", "Krita did not add the layer.")
+        document.waitForDone()
+        return _layer_id(node)
+
+    def set_selection(self, document: Any, recipe: list[tuple[Any, ...]]) -> None:
+        selections.commit(document, recipe, _node)
+
+    def undo(self, document: Any) -> None:
+        _trigger("edit_undo", document)
+
+    def redo(self, document: Any) -> None:
+        _trigger("edit_redo", document)
+
+    def undo_labels(self, document: Any) -> tuple[str | None, str | None]:
+        _flush()
+        return _label("edit_undo", "Undo"), _label("edit_redo", "Redo")
+
+    def undo_actions(self, document: Any) -> dict[str, Any]:
+        _flush()
+        return {"undo": _raw("edit_undo"), "redo": _raw("edit_redo")}
+
+    def undo_limit(self) -> int:
+        # Krita's own setting; 0 keeps every step.
+        text = str(Krita.instance().readSetting("", "undoStackLimit", "30"))
+        try:
+            limit = int(text)
+        except ValueError:
+            return 30
+        return limit if limit > 0 else UNLIMITED
+
+    def label_timing(self, document: Any, trials: int) -> list[list[str | None]]:
+        root = document.rootNode()
+        reads = []
+        for trial in range(trials):
+            node = document.createNode(f"krita-art-mcp probe timing {trial}", "paintlayer")
+            root.addChildNode(node, None)
+            document.waitForDone()
+            straight = _label("edit_undo", "Undo")
+            _flush()
+            reads.append([straight, _label("edit_undo", "Undo")])
+        return reads
+
     def add_active_mask(self, document: Any, layer_id: str, rect: dict[str, int]) -> bool:
         layer = _node(document, layer_id)
         document.waitForDone()
@@ -219,8 +264,9 @@ class KritaDocuments:
         document.waitForDone()
         return exported
 
-    def close(self, document: Any) -> bool:
+    def close(self, document: Any, settle_s: float = 0.0) -> bool:
         document.waitForDone()
+        _settle(settle_s)
         document.setModified(False)
         return bool(document.close())
 
@@ -283,16 +329,48 @@ def _node(document: Any, layer_id: str) -> Any:
     raise BridgeError("LAYER_NOT_FOUND", "No layer has that id.", False, {"layer_id": layer_id})
 
 
-def _unmasked(document: Any, mask: Any) -> Any:
-    # A local mask's layer; for the global selection's mask, the top-most layer.
-    root = document.rootNode()
-    parent = mask.parentNode()
-    if parent is not None and _layer_id(parent) != _layer_id(root):
-        return parent
-    for node in reversed(root.childNodes()):
-        if not str(node.type()).endswith("mask"):
-            return node
-    raise BridgeError("INTERNAL_ERROR", "The document has no layer to make active.")
+def _settle(seconds: float) -> None:
+    # Krita's layer docker sends a changed node's update from a timer a moment later, and
+    # crashes if the document has closed by then; its timers run here, user input does not.
+    deadline = time.monotonic() + seconds
+    while time.monotonic() < deadline:
+        QCoreApplication.processEvents(EXCLUDE_USER_INPUT, 20)
+        time.sleep(0.01)
+
+
+def _flush() -> None:
+    # Krita adds some undo commands through posted events; this lets them, and the action texts
+    # they update, through before anything reads a label or undoes. Input events stay queued.
+    QCoreApplication.sendPostedEvents()
+
+
+def _trigger(name: str, document: Any) -> None:
+    # Undo and redo act on the document in the active view (K7); the core brought it forward.
+    action = Krita.instance().action(name)
+    if action is None:
+        raise BridgeError("INTERNAL_ERROR", f"Krita has no {name} action.")
+    action.trigger()
+    document.waitForDone()
+    _flush()
+
+
+def _label(name: str, prefix: str) -> str | None:
+    # The action's text is "Undo <label>"; a disabled action names no step, and an unnamed
+    # step reads "".
+    action = Krita.instance().action(name)
+    if action is None or not action.isEnabled():
+        return None
+    text = str(action.text())
+    if text.startswith(prefix):
+        text = text[len(prefix) :]
+    return text.strip()
+
+
+def _raw(name: str) -> dict[str, Any]:
+    action = Krita.instance().action(name)
+    if action is None:
+        return {"text": None, "enabled": None}
+    return {"text": str(action.text()), "enabled": bool(action.isEnabled())}
 
 
 def _layer_id(node: Any) -> str:

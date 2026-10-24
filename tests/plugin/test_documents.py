@@ -170,12 +170,17 @@ def test_a_restarted_server_with_the_same_pid_is_another_process(world: World) -
 
 
 def _guarded(world: World, **options: Any) -> Handler:
+    # A mutation as every handler makes one: refusals first, then dirty, then Krita.
     def paint(handle: Handle, args: dict[str, Any], call: Call) -> dict[str, Any]:
-        if args.get("fail"):
+        if args.get("refuse"):
             raise BridgeError("LOCKED_TARGET", "Protected.")
+        if args.get("active_only"):
+            return {"painted": None}
+        handle.before_change()
+        if args.get("raise_after"):
+            raise RuntimeError("libkis failed after the change")
         return {"painted": handle.document_id}
 
-    options.setdefault("dirties", lambda args: not args.get("active_only"))
     return world.registry.guarded(paint, **options)
 
 
@@ -189,14 +194,26 @@ def test_a_successful_mutation_dirties_and_close_then_refuses(world: World) -> N
     assert world.port.closed == [1]
 
 
-def test_a_failed_mutation_or_one_that_does_not_dirty_leaves_it_clean(world: World) -> None:
+def test_a_refusal_before_the_mutation_or_a_call_that_changes_nothing_leaves_it_clean(
+    world: World,
+) -> None:
     created = world.create()
     paint = _guarded(world)
     call = Call("op", "req", A)
     with pytest.raises(BridgeError):
-        paint({"document_id": created["document_id"], "fail": True}, call)
+        paint({"document_id": created["document_id"], "refuse": True}, call)
     paint({"document_id": created["document_id"], "active_only": True}, call)
     assert world.listed()[0]["dirty"] is False
+
+
+def test_a_mutation_that_raises_after_its_change_leaves_it_dirty(world: World) -> None:
+    created = world.create()
+    with pytest.raises(RuntimeError):
+        _guarded(world)(
+            {"document_id": created["document_id"], "raise_after": True}, Call("op", "req", A)
+        )
+    assert world.listed()[0]["dirty"] is True
+    assert _code(world, world.close, created["document_id"], "refuse") == "DOCUMENT_DIRTY"
 
 
 def test_an_unsafe_document_refuses_mutations_but_still_closes(world: World) -> None:

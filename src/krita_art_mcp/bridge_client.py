@@ -62,6 +62,8 @@ class _Bridge:
     port: int
     token: str
     session_id: str
+    # Whether the bridge takes a call's `ephemeral` field; an older plugin refuses it.
+    ephemeral_reads: bool = False
 
 
 class _Malformed(Exception):
@@ -124,7 +126,7 @@ class BridgeClient:
         if client is None:
             message = "The server could not read its own start time, which the lease needs."
             return Failed(error_body("INTERNAL_ERROR", message, retryable=True))
-        call: dict[str, Any] | None = {
+        body: dict[str, Any] = {
             "op": op,
             "args": args or {},
             "request_id": request_id or f"req-{uuid.uuid4().hex}",
@@ -132,6 +134,10 @@ class BridgeClient:
             "client": client,
             "wait_s": 0.0,
         }
+        if request_id is None and bridge.ephemeral_reads:
+            # Nobody retries an id minted here, so the bridge may forget the call once answered.
+            body["ephemeral"] = True
+        call: dict[str, Any] | None = body
         if len(json.dumps(call).encode("utf-8")) > MAX_BODY:
             return Failed(error_body("INVALID_ARGUMENT", "The call is over 64 MB."))
         refused = before_send(bridge.session_id, operation_id) if before_send else None
@@ -262,7 +268,7 @@ class BridgeClient:
         port, token, session_id = info.get("port"), info.get("token"), info.get("session_id")
         if not (isinstance(port, int) and isinstance(token, str) and isinstance(session_id, str)):
             return Failed(error_body("INTERNAL_ERROR", "bridge.json is malformed; restart Krita."))
-        return _Bridge(port, token, session_id)
+        return _Bridge(port, token, session_id, info.get("ephemeral_reads") is True)
 
     def _request(
         self, bridge: _Bridge, method: str, path: str, body: Any, timeout: float
