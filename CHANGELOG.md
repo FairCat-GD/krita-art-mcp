@@ -46,6 +46,19 @@ existing layer protected, and look inside it.
 - **`krita-art-mcp probe`** now also opens fictional ORA, KRA and PNG files of its own, written
   into its harness folder.
 
+### Fixed
+
+- **A file Krita opened but could not show is never stranded.** If giving it its view fails and
+  Krita will not close it, it stays the agent's, marked unsafe, so a `discard` close ends it.
+- **A source that cannot be read no longer leaks a file handle inside Krita.**
+- **A full disk while pixels are handed to the server is `IO_ERROR`,** not an unexpected error.
+- **The baseline is kept quickly,** so opening a large file no longer risks the client's timeout
+  after the server's 45-second wait.
+- **Pixels handed over but never collected are removed after an hour,** instead of waiting for
+  Krita to restart.
+- **`doctor`'s fix for a broken `config.json`** now says to fix or delete it, not to run
+  `roots add`, which refuses to touch it.
+
 ## [0.3.0] — 2026-10-24
 
 Agents can now make, list and close documents, and every change is safe to retry.
@@ -129,6 +142,7 @@ The first release is the scaffold that the Phase 1 tools are built on.
   reports its version to the client; it offers no tools yet.
 - **`krita-art-mcp --version`.** It prints the installed version.
 
+[0.4.0]: https://github.com/FairCat-GD/krita-art-mcp/commit/c081c59ff54e38b9a8799fa0a78955146745174c
 [0.3.0]: https://github.com/FairCat-GD/krita-art-mcp/commit/ef279d377f4aa515edb0ef36a69d60654f9744d1
 [0.2.0]: https://github.com/FairCat-GD/krita-art-mcp/commit/6e9237f4f728f237ec855f84855f2c6eba2d077d
 [0.1.0]: https://github.com/FairCat-GD/krita-art-mcp/commit/6588c86b268e321401b27af53842d58c759f6b13

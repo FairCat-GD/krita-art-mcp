@@ -21,7 +21,6 @@ from bridge_core.registry import Registry
 from fake_krita import FakePort, MainThread, bgra
 from mcp import Client
 from mcp.types import CallToolResult
-from PIL import Image
 
 from krita_art_mcp import baselines, journal, paths, roots
 from krita_art_mcp.bridge_client import BridgeClient, Done, Failed
@@ -582,7 +581,9 @@ def test_a_receipt_that_breaks_its_tools_schema_is_an_internal_error(
 ) -> None:
     from krita_art_mcp import envelope
 
-    broken = ("krita_document_list", lambda outcome: envelope.completed({"wrong": 1}, "x"))
+    broken = operations.Known(
+        "krita_document_list", lambda outcome: envelope.completed({"wrong": 1}, "x")
+    )
     monkeypatch.setitem(operations.RECEIPTS, "document.list", broken)
     client = world.client()
     done = client.call("document.list")
@@ -755,9 +756,9 @@ def test_open_inspect_and_close_keep_and_drop_the_baseline(world: World) -> None
     assert set(data) == set(documents_tools.OPEN_DATA)
     document_id = opened["document_id"]
     # The composite is kept as RGBA, and its transfer file is gone.
-    assert _baselines(world) == [f"{data['baseline_id']}.png"]
-    with Image.open(world.tmp_path / "a" / "baselines" / f"{data['baseline_id']}.png") as image:
-        kept = np.asarray(image)
+    assert _baselines(world) == [f"{data['baseline_id']}.npy"]
+    kept = baselines.load(world.tmp_path / "a" / "baselines", data["baseline_id"])
+    assert kept is not None
     raw = np.frombuffer(bgra(8, 4), dtype=np.uint8).reshape(4, 8, 4)
     assert (kept == raw[..., [2, 1, 0, 3]]).all()
     assert list((world.tmp_path / "transfer").iterdir()) == []
@@ -855,7 +856,7 @@ def test_operation_get_keeps_the_baseline_of_an_open_that_came_back_running(
     got = world.server().content("krita_operation_get", {"operation_id": running["operation_id"]})
     receipt = got["data"]["receipt"]
     assert receipt["status"] == "completed" and got["data"]["tool"] == "krita_document_open"
-    assert _baselines(world) == [f"{receipt['data']['baseline_id']}.png"]
+    assert _baselines(world) == [f"{receipt['data']['baseline_id']}.npy"]
 
 
 def test_inspect_counts_the_selection_and_reads_frame_0_only(world: World) -> None:
@@ -900,7 +901,7 @@ def test_server_info_reports_the_roots_the_plugin_enforces(world: World) -> None
 
 def test_the_sweep_at_server_start_keeps_only_live_baselines(world: World) -> None:
     opened = world.server().content("krita_document_open", _open(world))
-    orphan = world.tmp_path / "a" / "baselines" / "baseline-ffffffffffff.png"
+    orphan = world.tmp_path / "a" / "baselines" / "baseline-ffffffffffff.npy"
     orphan.write_bytes(b"from an ended Krita session")
     assert baselines.sweep(world.client(), world.tmp_path / "a" / "baselines") == 1
-    assert _baselines(world) == [f"{opened['data']['baseline_id']}.png"]
+    assert _baselines(world) == [f"{opened['data']['baseline_id']}.npy"]

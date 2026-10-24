@@ -1215,6 +1215,37 @@ cases*), Part 6 (*Entities*), Part 8 (*Bridge protocol*, *Plugin internals*, K6,
   - 194 plugin-core tests passed, 0 skipped (+55);
   - `probe`: 45 PASS, 0 FAIL, 9 MEASURED (+22, +5);
   - 8 registered tools; 19 schema files.
+- **Review (`/code-review high`), 9 findings, all fixed at the owner's request.**
+  - **A document Krita opened but could not show is never stranded.** The adapter's `open` now
+    stops at `openDocument`, and a new port step, `show` (`addView`, `waitForDone`), runs under
+    the core's cleanup. A failed close there keeps the document owned and unsafe, as every other
+    failure does.
+  - **A source that cannot be read leaks no descriptor.** The copy wraps its `O_EXCL` descriptor
+    before it opens the source.
+  - **A full disk is `IO_ERROR`.** `transfer.write` maps an `OSError` from the folder, the open or
+    the write.
+  - **Baselines are `.npy` arrays,** not PNGs. Writing one runs at disk speed inside the call's
+    time, where a PNG encode of an 8k master could have pushed a reply past the client's
+    timeout. `baselines.load` maps one, so previews can crop it cheaply.
+  - **Transfer files no server read for an hour are removed at the next write** (`STALE_S`, the
+    plugin's own `.raw` files only, never a server's mask).
+  - **The composite and the selection cross as buffers.** The adapter hands over a `memoryview`
+    of Krita's `QByteArray` (with `bytes` as the fallback), so a large read is never held twice.
+    Which branch Krita's PyQt takes was not measured; the byte-exact baselines hold either way.
+  - **`doctor`'s fix for a broken config** says to fix or delete it.
+  - **A test holds the format tables equal** on both sides: the transfer layouts and the open
+    extensions.
+  - **`RECEIPTS` holds each op's resolver,** `Known(tool, receipt, resolve)`, so an op cannot be
+    given a receipt without its resolver.
+  - **Falsified:** the show step outside the cleanup, the descriptor order, a buffer refused, a
+    folder error escaping, no expiry, masks expiring, a wrong `.npy`, the old fix line, drifting
+    formats, and a missing resolver. Each failed at its own test, and passed once restored.
+  - **Numbers after the review:**
+    - `verify`: 6 stages, all PASS;
+    - 244 server tests passed, 0 skipped (+1);
+    - 200 plugin-core tests passed, 0 skipped (+6);
+    - `probe`: 45 PASS, 0 FAIL, 9 MEASURED, on the reinstalled plugin after a self-restart (0
+      unsaved documents); `transfer/` and `harness/` empty afterwards.
 
 ---
 

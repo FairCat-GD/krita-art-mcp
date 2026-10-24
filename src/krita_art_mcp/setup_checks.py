@@ -90,7 +90,8 @@ def roots_allowed(setup: Setup) -> Step:
     try:
         allowed = roots.load(setup.config_file)
     except roots.ConfigError as problem:
-        return Step(name, False, str(problem), roots.ADD)
+        fix = f"Fix {setup.config_file.name} by hand, or delete it and add the roots again."
+        return Step(name, False, str(problem), fix)
     if not allowed:
         return Step(name, False, "no roots, so agents can open nothing", roots.ADD)
     missing = sum(not os.path.isdir(root) for root in allowed)

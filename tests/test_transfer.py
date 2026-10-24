@@ -9,7 +9,6 @@ import pytest
 from bridge_core import transfer as plugin_transfer
 from bridge_core.errors import BridgeError
 from fake_krita import bgra
-from PIL import Image
 
 from krita_art_mcp import baselines, transfer
 from krita_art_mcp.bridge_client import BridgeClient, Done, Failed, Outcome
@@ -118,19 +117,19 @@ def test_the_plugin_refuses_a_mask_that_is_not_what_the_server_sent(
     assert refused.value.body["code"] == code
 
 
-def test_a_baseline_is_kept_as_a_png_before_its_transfer_file_goes(places: Places) -> None:
+def test_a_baseline_is_kept_as_rgba_before_its_transfer_file_goes(places: Places) -> None:
     spec = _written(places)
     baselines.adopt(places, "baseline-0123456789ab", spec)
-    png = places.baselines_dir / "baseline-0123456789ab.png"
-    with Image.open(png) as image:
-        assert image.mode == "RGBA"
-        assert (np.asarray(image) == transfer_rgba(3, 2)).all()
-    assert stat.S_IMODE(png.stat().st_mode) == 0o600
+    kept = places.baselines_dir / "baseline-0123456789ab.npy"
+    pixels = baselines.load(places.baselines_dir, "baseline-0123456789ab")
+    assert pixels is not None and pixels.dtype == np.uint8
+    assert (pixels == transfer_rgba(3, 2)).all()
+    assert stat.S_IMODE(kept.stat().st_mode) == 0o600
     assert not Path(spec["path"]).exists()
-    assert [entry.name for entry in places.baselines_dir.iterdir()] == [png.name]
+    assert [entry.name for entry in places.baselines_dir.iterdir()] == [kept.name]
     # A second adoption of the same outcome changes nothing.
     baselines.adopt(places, "baseline-0123456789ab", spec)
-    assert png.exists()
+    assert kept.exists()
 
 
 def transfer_rgba(width: int, height: int) -> Any:
@@ -179,15 +178,15 @@ class _Baselines(BridgeClient):
 
 def _baseline(places: Places, baseline_id: str) -> Path:
     places.baselines_dir.mkdir(parents=True, exist_ok=True)
-    path = places.baselines_dir / f"{baseline_id}.png"
-    path.write_bytes(b"png")
+    path = places.baselines_dir / f"{baseline_id}.npy"
+    path.write_bytes(b"npy")
     return path
 
 
 def test_the_sweep_removes_baselines_whose_document_is_gone(places: Places) -> None:
     live = _baseline(places, "baseline-aaaaaaaaaaaa")
     orphan = _baseline(places, "baseline-bbbbbbbbbbbb")
-    other = places.baselines_dir / "notes.txt"
+    other = places.baselines_dir / "baseline-dddddddddddd.png"
     other.write_text("not a baseline")
 
     def written_meanwhile() -> None:
@@ -197,7 +196,7 @@ def test_the_sweep_removes_baselines_whose_document_is_gone(places: Places) -> N
     assert baselines.sweep(client, places.baselines_dir) == 1
     assert live.exists() and other.exists() and not orphan.exists()
     # Listed before the bridge answered, so a baseline written meanwhile is never taken.
-    assert (places.baselines_dir / "baseline-cccccccccccc.png").exists()
+    assert (places.baselines_dir / "baseline-cccccccccccc.npy").exists()
 
 
 def test_with_krita_closed_every_baseline_is_an_orphan(places: Places) -> None:
@@ -224,3 +223,12 @@ def test_a_transfer_file_another_server_took_is_a_warning_not_a_traceback(
     [record] = caplog.records
     assert record.levelno == logging.WARNING and record.exc_info is None
     assert not places.baselines_dir.exists()
+
+
+def test_the_formats_both_sides_know_agree() -> None:
+    from bridge_core import opening
+
+    from krita_art_mcp.tools import documents
+
+    assert transfer.FORMATS == plugin_transfer.FORMATS
+    assert documents.FORMATS == opening.FORMATS

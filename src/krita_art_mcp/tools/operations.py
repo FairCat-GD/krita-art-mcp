@@ -1,4 +1,5 @@
 from collections.abc import Callable
+from dataclasses import dataclass
 from typing import Any
 
 from jsonschema import Draft202012Validator
@@ -11,20 +12,29 @@ from krita_art_mcp.paths import Places
 from krita_art_mcp.tools import documents, observe
 from krita_art_mcp.tools.dispatch import Receipt, ToolCall, journaled, record
 
+Resolver = Callable[[Places, Outcome], Outcome]
+
+
+@dataclass(frozen=True)
+class Known:
+    tool: str
+    receipt: Receipt
+    # For an op whose result names files the server keeps, reads or removes before the receipt.
+    resolve: Resolver | None = None
+
+
 # Each bridge op an agent can be handed an operation_id for, with its tool's receipt.
-RECEIPTS: dict[str, tuple[str, Receipt]] = {
-    "server_info": ("krita_server_info", observe.server_info_receipt),
-    "document.list": ("krita_document_list", documents.list_receipt),
-    "document.create": ("krita_document_create", documents.create_receipt),
-    "document.open": ("krita_document_open", documents.open_receipt),
-    "document.inspect": ("krita_document_inspect", documents.inspect_receipt),
-    "document.close": ("krita_document_close", documents.close_receipt),
-}
-# The ops whose results name files the server must keep, read or remove before the receipt.
-RESOLVERS: dict[str, Callable[[Places, Outcome], Outcome]] = {
-    "document.open": documents.resolve_open,
-    "document.inspect": documents.resolve_inspect,
-    "document.close": documents.resolve_close,
+RECEIPTS: dict[str, Known] = {
+    "server_info": Known("krita_server_info", observe.server_info_receipt),
+    "document.list": Known("krita_document_list", documents.list_receipt),
+    "document.create": Known("krita_document_create", documents.create_receipt),
+    "document.open": Known("krita_document_open", documents.open_receipt, documents.resolve_open),
+    "document.inspect": Known(
+        "krita_document_inspect", documents.inspect_receipt, documents.resolve_inspect
+    ),
+    "document.close": Known(
+        "krita_document_close", documents.close_receipt, documents.resolve_close
+    ),
 }
 
 
@@ -43,10 +53,9 @@ def operation_get(call: ToolCall, arguments: dict[str, Any]) -> CallToolResult:
         details = {"operation_id": operation_id, "op": outcome.op}
         message = "That operation belongs to no tool."
         return envelope.failure("INVALID_ARGUMENT", message, details=details)
-    resolve = RESOLVERS.get(outcome.op or "")
-    if resolve is not None:
-        outcome = resolve(call.places, outcome)
-    tool = None if known is None else known[0]
+    if known is not None and known.resolve is not None:
+        outcome = known.resolve(call.places, outcome)
+    tool = None if known is None else known.tool
     data: dict[str, Any] = {
         "operation_id": outcome.operation_id or operation_id,
         "tool": tool,
@@ -57,10 +66,10 @@ def operation_get(call: ToolCall, arguments: dict[str, Any]) -> CallToolResult:
     if known is None or not isinstance(outcome, Done | Failed):
         text = f"Operation {data['operation_id']} is still {data['state']}."
         return envelope.completed(data, text, operation_id=data["operation_id"])
-    receipt = known[1](outcome)
-    mismatch = next(iter(_validator(known[0]).iter_errors(receipt.structured_content)), None)
+    receipt = known.receipt(outcome)
+    mismatch = next(iter(_validator(known.tool).iter_errors(receipt.structured_content)), None)
     if mismatch is not None:
-        reason = f"the receipt does not match {known[0]}'s output schema: {mismatch.message}"
+        reason = f"the receipt does not match {known.tool}'s output schema: {mismatch.message}"
         return envelope.failure("INTERNAL_ERROR", details={"reason": reason})
     data["receipt"] = receipt.structured_content
     _finish_journaled(call, outcome, receipt)

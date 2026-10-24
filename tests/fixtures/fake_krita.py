@@ -115,6 +115,9 @@ class FakePort:
         self.opened.append(path)
         return FakeDocument(key)
 
+    def show(self, document: Any) -> None:
+        self._maybe_fail("show")
+
     def describe(self, document: Any) -> dict[str, Any]:
         info = self.live[document.key]
         model, depth, profile = info.get("space", self.space)

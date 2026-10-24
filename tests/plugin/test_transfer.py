@@ -1,4 +1,5 @@
 import hashlib
+import os
 import stat
 from pathlib import Path
 
@@ -53,3 +54,31 @@ def test_a_mask_outside_the_transfer_folder_is_refused(tmp_path: Path) -> None:
         transfer.take_mask(tmp_path / "transfer", spec)
     assert refused.value.body["code"] == "INVALID_ARGUMENT"
     assert Path(str(spec["path"])).exists()
+
+
+def test_a_buffer_is_written_without_a_copy_of_its_own(tmp_path: Path) -> None:
+    source = bytearray(b"\1\2\3\4")
+    spec = transfer.write(tmp_path, memoryview(source), 1, 1, "BGRA8")
+    assert Path(spec["path"]).read_bytes() == b"\1\2\3\4"
+
+
+def test_a_transfer_folder_that_cannot_be_written_is_an_io_error(tmp_path: Path) -> None:
+    blocked = tmp_path / "transfer"
+    blocked.write_text("a file where the folder should be")
+    with pytest.raises(BridgeError) as refused:
+        transfer.write(blocked, b"\0" * 4, 1, 1, "BGRA8")
+    assert refused.value.body["code"] == "IO_ERROR"
+
+
+def test_a_file_no_server_read_for_an_hour_goes_at_the_next_write(tmp_path: Path) -> None:
+    old = transfer.write(tmp_path, b"\0" * 4, 1, 1, "BGRA8", now=1_000_000.0)
+    recent = transfer.write(tmp_path, b"\0" * 4, 1, 1, "BGRA8", now=1_000_000.0)
+    os.utime(old["path"], (1_000_000.0 - transfer.STALE_S - 1,) * 2)
+    os.utime(recent["path"], (1_000_000.0 - 60,) * 2)
+    mask = tmp_path / ("mask-" + "0" * 64 + ".a8")
+    mask.write_bytes(b"\0")
+    os.utime(mask, (0, 0))
+    transfer.write(tmp_path, b"\0" * 4, 1, 1, "BGRA8", now=1_000_000.0)
+    assert not Path(old["path"]).exists()
+    # Only the plugin's own files expire; a server's mask waits for the op that reads it.
+    assert Path(recent["path"]).exists() and mask.exists()

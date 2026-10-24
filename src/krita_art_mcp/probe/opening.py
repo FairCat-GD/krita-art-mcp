@@ -9,9 +9,8 @@ from typing import Any
 
 import numpy as np
 from mcp import Client
-from PIL import Image
 
-from krita_art_mcp import paths, roots
+from krita_art_mcp import baselines, paths, roots
 from krita_art_mcp.bridge_client import BridgeClient, Done, Failed
 from krita_art_mcp.probe import fixtures
 from krita_art_mcp.probe.report import Report, close, code, tool
@@ -163,12 +162,10 @@ async def _round_trip(
     problems += _tree_problems(data["layers"], tree)
     if not all(layer["protected"] for layer in data["layers"]):
         problems.append("a layer is unprotected")
-    baseline_file = harness / "server-a" / "baselines" / f"{data['baseline_id']}.png"
-    baseline = None
-    if baseline_file.exists():
-        with Image.open(baseline_file) as image:
-            baseline = np.asarray(image.convert("RGBA"))
-    else:
+    folder = harness / "server-a" / "baselines"
+    kept = baselines.load(folder, data["baseline_id"])
+    baseline = None if kept is None else np.array(kept)
+    if baseline is None:
         problems.append("no baseline file while open")
     inspected = await tool(a, "krita_document_inspect", {"document_id": document_id, "frame": 0})
     seen = inspected.get("data") or {}
@@ -177,7 +174,7 @@ async def _round_trip(
     closed = (await close(a, document_id, "refuse")).get("data") or {}
     if closed != {"closed": True, "baseline_untouched": True}:
         problems.append(f"close answered {closed}")
-    if baseline_file.exists():
+    if baselines.load(folder, data["baseline_id"]) is not None:
         problems.append("the baseline outlived its document")
     detail = "; ".join(problems) or f"{len(data['layers'])} layers in {seconds * 1000:.0f} ms"
     report.check(name, not problems, detail)

@@ -208,6 +208,11 @@ def test_doctor_passes_and_reports_unsaved_documents(tmp_path: Path) -> None:
 def test_doctor_step_6_needs_a_root_that_is_still_a_folder(
     tmp_path: Path, config: dict[str, Any] | None, detail: str
 ) -> None:
+    fixes = {
+        "no roots": "roots add",
+        "1 of 1 roots": "roots remove",
+        "config.json is version 2": "delete it and add the roots again",
+    }
     setup = _setup(tmp_path, installed=True, enabled=True, running=True, rooted=False)
     if config is not None:
         setup.config_file.parent.mkdir(parents=True)
@@ -217,6 +222,8 @@ def test_doctor_step_6_needs_a_root_that_is_still_a_folder(
     lines = out.getvalue().splitlines()
     assert lines[5].startswith("6. at least one root is allowed: FAIL (") and detail in lines[5]
     assert lines[6].startswith("   Fix: ") and lines[7] == "doctor: stopped at step 6 of 6."
+    # roots add refuses a broken config, so the fix for one is never to run it.
+    assert next(fix for key, fix in fixes.items() if key in detail) in lines[6]
     # Counts only: a root names one of the owner's folders.
     assert "nonexistent-root" not in out.getvalue()
 

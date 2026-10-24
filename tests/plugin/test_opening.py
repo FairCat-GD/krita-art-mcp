@@ -133,6 +133,18 @@ def test_a_source_that_differs_from_its_hash_leaves_no_copy(world: World) -> Non
     ) == ("SOURCE_HASH_MISMATCH")
 
 
+def test_a_source_that_cannot_be_read_leaks_no_descriptor(world: World) -> None:
+    path, sha = world.source()
+    os.chmod(path, 0)
+    before = len(os.listdir("/dev/fd"))
+    try:
+        assert world.code(source_path=path, source_sha256=sha) == "IO_ERROR"
+    finally:
+        os.chmod(path, 0o644)
+    assert len(os.listdir("/dev/fd")) == before
+    assert os.listdir(world.work) == []
+
+
 def test_a_copy_that_reads_back_differently_is_removed(
     world: World, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -240,7 +252,7 @@ def test_the_editable_lists_and_the_mode_are_exact(
     assert world.transfer_files() == []
 
 
-@pytest.mark.parametrize("step", ["open", "tree", "composite", "colour space"])
+@pytest.mark.parametrize("step", ["open", "show", "tree", "composite", "colour space"])
 def test_a_failure_after_the_copy_undoes_everything_in_the_same_job(
     world: World, step: str
 ) -> None:
@@ -269,9 +281,10 @@ def test_a_failure_once_the_composite_is_out_removes_its_transfer_file(world: Wo
     assert world.registry.sync() == [] and world.port.closed == [1]
 
 
-def test_a_document_krita_will_not_close_stays_owned_and_unsafe(world: World) -> None:
+@pytest.mark.parametrize("step", ["show", "composite"])
+def test_a_document_krita_will_not_close_stays_owned_and_unsafe(world: World, step: str) -> None:
     world.port.close_works = False
-    world.port.fail["composite"] = BridgeError("IO_ERROR", "composite failed")
+    world.port.fail[step] = BridgeError("IO_ERROR", f"{step} failed")
     with pytest.raises(BridgeError) as refused:
         world.open()
     kept = refused.value.body["details"]["document_id"]

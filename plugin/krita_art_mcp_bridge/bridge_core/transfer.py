@@ -3,6 +3,7 @@ import os
 import re
 import secrets
 import stat
+import time
 from pathlib import Path
 from typing import Any
 
@@ -12,6 +13,7 @@ from .paths import private_dir
 # Bytes per pixel of each layout a transfer file holds.
 FORMATS = {"BGRA8": 4, "A8": 1}
 MASK_NAME = re.compile(r"^mask-([0-9a-f]{64})\.a8$")
+STALE_S = 3600.0
 
 
 def sweep(directory: Path) -> None:
@@ -22,23 +24,46 @@ def sweep(directory: Path) -> None:
             os.unlink(entry.path)
 
 
-def write(directory: Path, data: bytes, width: int, height: int, fmt: str) -> dict[str, Any]:
+def write(
+    directory: Path, data: Any, width: int, height: int, fmt: str, now: float | None = None
+) -> dict[str, Any]:
+    # data is any bytes-like buffer, so Krita's own array is written without a second copy.
+    view = memoryview(data)
     expected = width * height * FORMATS[fmt]
-    if len(data) != expected:
-        details = {"bytes": len(data), "expected": expected}
+    if view.nbytes != expected:
+        details = {"bytes": view.nbytes, "expected": expected}
         raise BridgeError(
             "INTERNAL_ERROR", "Krita returned a buffer of the wrong size.", False, details
         )
-    private_dir(directory)
     path = directory / f"{secrets.token_hex(16)}.raw"
-    fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+    try:
+        private_dir(directory)
+        _expire(directory, time.time() if now is None else now)
+        fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+    except OSError as problem:
+        raise BridgeError("IO_ERROR", f"The transfer file cannot be made: {problem}") from problem
     try:
         with os.fdopen(fd, "wb") as stream:
-            stream.write(data)
-    except BaseException:
+            stream.write(view)
+    except BaseException as problem:
         path.unlink(missing_ok=True)
+        if isinstance(problem, OSError):
+            message = f"The transfer file cannot be written: {problem}"
+            raise BridgeError("IO_ERROR", message) from problem
         raise
     return {"path": str(path), "size_px": [width, height], "format": fmt}
+
+
+def _expire(directory: Path, now: float) -> None:
+    # A file of the plugin's that no server read for this long was abandoned: its server died,
+    # or nobody followed the call that made it.
+    for entry in os.scandir(directory):
+        try:
+            stale = entry.stat(follow_symlinks=False).st_mtime < now - STALE_S
+            if entry.name.endswith(".raw") and entry.is_file(follow_symlinks=False) and stale:
+                os.unlink(entry.path)
+        except FileNotFoundError:
+            pass
 
 
 def remove(spec: dict[str, Any] | None) -> None:

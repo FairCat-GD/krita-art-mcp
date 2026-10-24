@@ -18,9 +18,8 @@ Release 0.5.0.
 - **Round 1 is the Phase 1 build.** Sessions 0 to 4 are done; 5 to 15 remain, and 6, 10 and 13
   are architecture reviews.
 - **The push status.** `origin` is the private GitHub repository `FairCat-GD/krita-art-mcp`.
-  `origin/main` holds everything through `review: a malformed journal line no longer blocks
-  calls, and 9 smaller`. Session 4's commits wait for the next approved push. List
-  `origin/main..HEAD` before any push.
+  `origin/main` holds everything through `review: a failed open never strands a document, and
+  8 smaller`, so `origin/main..HEAD` starts empty. List `origin/main..HEAD` before any push.
 - **What Session 4 left that Session 5 builds on:**
   - **The transfer path.**
     - The plugin's `transfer.write(dir, data, width, height, fmt)` writes `BGRA8` or `A8` into
@@ -28,19 +27,25 @@ Release 0.5.0.
     - The server's `transfer.take(directory, spec)` returns an RGBA (or one-channel) NumPy array.
       It never deletes the file: the caller calls `transfer.discard` once what it made is on
       disk.
+    - The plugin's `transfer.write` takes any bytes-like buffer; the adapter hands it a
+      `memoryview` of Krita's `QByteArray`. A `.raw` file no server read for an hour
+      (`STALE_S`) goes at the next write. An `OSError` is `IO_ERROR`.
     - Masks to the plugin: `transfer.put_mask` and `bridge_core.transfer.take_mask`. No tool
       sends one yet.
   - **Resolvers.** A bridge result that names a transfer file is resolved before its receipt.
-    - `tools/documents.py` has `resolve_open`, `resolve_inspect` and `resolve_close`, and
-      `RESOLVERS` in `tools/operations.py` runs them for `krita_operation_get`.
-    - A capture's resolver joins them, so receipts stay pure functions of the outcome.
+    - `tools/documents.py` has `resolve_open`, `resolve_inspect` and `resolve_close`.
+      `RECEIPTS` in `tools/operations.py` holds `Known(tool, receipt, resolve)` per op, and
+      `krita_operation_get` runs the resolver.
+    - A capture's entry carries its resolver, so receipts stay pure functions of the outcome.
     - A resolver must never raise: open's logs, and inspect's returns a retryable failure.
   - **`Places`** (`paths.Places`, `call.places`) holds `config_file`, `transfer_dir`,
     `harness_dir` and `baselines_dir`. `build_server(client, journal, places)` requires it.
     Captures go to `<server data dir>/captures/YYYY-MM-DD/`, so Session 5 adds `captures_dir`
     there.
   - **The port** (`bridge_core/port.py`).
-    - It has `tree`, `prepare_read` (K46), `composite` (the whole canvas) and `selection`.
+    - It has `open` (to `openDocument` only), `show` (`addView`, `waitForDone`), `tree`,
+      `prepare_read` (K46), `composite` (the whole canvas) and `selection`. Everything after
+      `open` runs under the core's cleanup.
     - Capture and sample need reads of a rect, and of one layer's own paint device by id; add
       them beside `composite`.
     - `inspection.check_frame(frame)` is the frame rule to reuse for `source.frame`.
@@ -62,9 +67,9 @@ Release 0.5.0.
   - **The probe's file checks** live in `probe/opening.py`, and its report helpers in
     `probe/report.py`. Its sweep closes probe-named created documents and any document whose path
     lies in the harness folder, through both servers.
-  - **Baselines** are `<server data dir>/baselines/<baseline_id>.png`. Ids are `baseline-` plus
-    12 hex characters, and a plugin-sent id is checked against that shape before it names a
-    file.
+  - **Baselines** are `<server data dir>/baselines/<baseline_id>.npy`, RGBA arrays that
+    `baselines.load` memory-maps. Ids are `baseline-` plus 12 hex characters, and a plugin-sent
+    id is checked against that shape before it names a file.
 - **What the spec said that turned out wrong or harder:**
   - **Two-sided checks mask each other in tests.** The server and the plugin both refuse escapes,
     frames and bad working dirs, so a test of the server's refusal also asserts
@@ -86,16 +91,14 @@ Release 0.5.0.
     can end it; the error's `details.document_id` names it.
 - **Baseline** (the next session moves these only by what it adds):
   - `verify`: 6 stages, all PASS;
-  - 243 server tests passed, 0 skipped;
-  - 194 plugin-core tests passed, 0 skipped;
+  - 244 server tests passed, 0 skipped;
+  - 200 plugin-core tests passed, 0 skipped;
   - `probe`: 45 PASS, 0 FAIL, 9 MEASURED;
   - 8 registered tools.
 - **Not done:**
   - **The owner's roots.** `doctor` step 6 FAILs with "no roots" until the owner runs `roots add`.
     No session runs it, and the probe needs no roots.
   - **The owner's own look at N-03** in Activity Monitor (in `docs/BACKLOG.md`).
-  - **The `[0.4.0]` CHANGELOG link reference** goes in with the review commit, once the feat
-    commit has its sha.
 
 ## Watch for
 

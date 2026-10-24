@@ -54,14 +54,12 @@ class KritaDocuments:
             app.setBatchmode(batch)
         if document is None:
             raise BridgeError("IO_ERROR", "Krita could not open the file.", False, {"path": path})
-        try:
-            # The wrapper owns the document until a view takes it (K6).
-            app.windows()[0].addView(document)
-            document.waitForDone()
-        except BaseException:
-            self.close(document)
-            raise
         return document
+
+    def show(self, document: Any) -> None:
+        # The wrapper owns the document until a view takes it (K6).
+        Krita.instance().windows()[0].addView(document)
+        document.waitForDone()
 
     def describe(self, document: Any) -> dict[str, Any]:
         path = str(document.fileName())
@@ -115,11 +113,11 @@ class KritaDocuments:
                 raise BridgeError("INTERNAL_ERROR", message)
         document.waitForDone()
 
-    def composite(self, document: Any) -> bytes:
+    def composite(self, document: Any) -> Any:
         document.waitForDone()
-        return bytes(document.pixelData(0, 0, int(document.width()), int(document.height())))
+        return _buffer(document.pixelData(0, 0, int(document.width()), int(document.height())))
 
-    def selection(self, document: Any) -> tuple[dict[str, int], bytes] | None:
+    def selection(self, document: Any) -> tuple[dict[str, int], Any] | None:
         selection = document.selection()
         if selection is None:
             return None
@@ -132,7 +130,7 @@ class KritaDocuments:
         if bounds["width"] <= 0 or bounds["height"] <= 0:
             return bounds, b""
         data = selection.pixelData(bounds["x"], bounds["y"], bounds["width"], bounds["height"])
-        return bounds, bytes(data)
+        return bounds, _buffer(data)
 
     def export_kra(self, document: Any, target: str) -> bool:
         # exportImage, never saveAs: the document keeps pointing at its own file (K39).
@@ -149,6 +147,14 @@ class KritaDocuments:
         document.waitForDone()
         document.setModified(False)
         return bool(document.close())
+
+
+def _buffer(data: Any) -> Any:
+    # A view of Krita's QByteArray, so a large read is never held twice; bytes where it has none.
+    try:
+        return memoryview(data)
+    except TypeError:
+        return bytes(data)
 
 
 def _walk(parent: Any, parent_id: str, nodes: list[dict[str, Any]]) -> None:

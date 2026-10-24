@@ -43,7 +43,8 @@ def working_copy(source: str, folder: str, expected: str, now: datetime.datetime
         raise BridgeError("IO_ERROR", f"The working copy cannot be made: {problem}") from problem
     try:
         digest = hashlib.sha256()
-        with open(source, "rb") as reading, os.fdopen(fd, "wb") as writing:
+        # The descriptor is wrapped first, so a source that will not open never leaks it.
+        with os.fdopen(fd, "wb") as writing, open(source, "rb") as reading:
             for chunk in iter(lambda: reading.read(CHUNK), b""):
                 digest.update(chunk)
                 writing.write(chunk)

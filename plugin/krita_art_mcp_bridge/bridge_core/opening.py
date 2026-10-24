@@ -97,6 +97,7 @@ def handlers(
         made: _Made, path: str, source: str, args: dict[str, Any], call: Call
     ) -> dict[str, Any]:
         document = made.document = port.open(path)
+        port.show(document)
         info = port.describe(document)
         if (info["color_model"], info["depth"]) != OPEN_SPACE:
             details = {key: info[key] for key in ("color_model", "depth", "profile_id")}
