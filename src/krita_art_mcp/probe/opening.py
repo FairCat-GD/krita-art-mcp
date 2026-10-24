@@ -13,7 +13,7 @@ from mcp import Client
 from krita_art_mcp import baselines, paths, roots
 from krita_art_mcp.bridge_client import BridgeClient, Done, Failed
 from krita_art_mcp.probe import fixtures
-from krita_art_mcp.probe.report import Report, close, code, tool
+from krita_art_mcp.probe.report import Report, close, code, differs, tool
 
 COPY_NAME = re.compile(r"^\d{8}T\d{6}\.\d{3}Z-probe\.(ora|kra|png)$")
 # Never writable, so an escape that slipped through could still write nothing there.
@@ -203,16 +203,6 @@ def _tree_problems(layers: list[dict[str, Any]], tree: list[dict[str, Any]]) -> 
     return problems
 
 
-def _differs(found: np.ndarray | None, expected: np.ndarray | None) -> str:
-    if found is None or expected is None:
-        return "no baseline to compare"
-    if found.shape != expected.shape:
-        return f"shape {found.shape}, not {expected.shape}"
-    different = int(np.any(found != expected, axis=-1).sum())
-    worst = int(np.abs(found.astype(int) - expected.astype(int)).max())
-    return "" if different == 0 else f"{different} pixels differ, by up to {worst}"
-
-
 def _baselines(
     report: Report, opened: dict[tuple[str, str], Opened], composite: np.ndarray
 ) -> None:
@@ -229,7 +219,7 @@ def _baselines(
         ),
         ("the KRA's baseline is the ORA's, byte for byte", baseline("KRA"), baseline("ORA")),
     ):
-        problem = _differs(found, expected)
+        problem = differs(found, expected)
         report.check(name, not problem, problem)
 
 

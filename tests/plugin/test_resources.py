@@ -78,6 +78,7 @@ def test_pages_follow_the_cursor_to_the_end() -> None:
         ("brush", None, 101),
         ("brush", None, True),
         ("pattern", None, 2),
+        (["brush"], None, 2),
     ],
 )
 def test_a_cursor_or_limit_the_op_never_issued_is_refused(

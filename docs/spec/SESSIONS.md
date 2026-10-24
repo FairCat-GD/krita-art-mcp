@@ -1418,6 +1418,35 @@ C2, C4, C5).
   - 246 plugin-core tests passed, 0 skipped (+46);
   - `probe`: 55 PASS, 0 FAIL, 15 MEASURED (+10, +6);
   - 11 registered tools; 19 schema files.
+- **Review (`/code-review high`), 10 findings, all fixed at the owner's request.**
+  - **A capture or sample whose resolve fails without a retry discards its transfer file,** up to
+    256 MB, instead of leaving it to the one-hour expiry. This was the known debt above.
+  - **The frame rule refuses only an animated document away from frame 0.** A still document
+    whose timeline was scrubbed shows the same picture at every frame, and now reads. `describe`
+    reports `animated`, walking the nodes only when the current time is not 0.
+  - **Open's baseline obeys the same frame rule** (`inspection.check_shown_frame`), so an as-opened
+    baseline is never another frame. It runs before the composite, inside open's cleanup.
+  - **A non-finite `scale` is `INVALID_ARGUMENT`,** where NaN reached `math.floor` and became
+    `INTERNAL_ERROR`.
+  - **`captures/` is made 0700 itself;** `mkdir`'s mode reached only the day folder.
+  - **One folder that only looks like a date no longer stops the 7-day sweep.**
+  - **`resource.list` refuses a `kind` that is not text** with `INVALID_ARGUMENT`, not a
+    `TypeError`.
+  - **A fresh capture's PNG is not read back from disk;** the maker returns its bytes.
+  - **The probe's fixture comparison is one function,** `report.differs`.
+  - **One rule names the filter applied,** `imaging.filter_for`, used by `render` and the
+    receipt.
+  - **Falsified:** both discards, no read-back, the finite scale, the private folder, the sweep,
+    the animated-only rule and the rule itself, open's frame check, and the text `kind`. Each failed
+    at its own test and passed once restored.
+  - **Measured on the reinstalled plugin** (Krita was started, having been quit, with nothing
+    open): the raw preset digest changed a third time (`54921366fb2a3653`) and the canonical one
+    held (`d31399fb15465c79`); the three leftover transfer files were swept at bridge start.
+  - **Numbers after the review:**
+    - `verify`: 6 stages, all PASS;
+    - 334 server tests passed, 0 skipped (+4);
+    - 249 plugin-core tests passed, 0 skipped (+3);
+    - `probe`: 55 PASS, 0 FAIL, 15 MEASURED; `transfer/` and `harness/` empty afterwards.
 
 ---
 

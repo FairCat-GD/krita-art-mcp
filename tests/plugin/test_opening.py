@@ -252,7 +252,9 @@ def test_the_editable_lists_and_the_mode_are_exact(
     assert world.transfer_files() == []
 
 
-@pytest.mark.parametrize("step", ["open", "show", "tree", "composite", "colour space"])
+@pytest.mark.parametrize(
+    "step", ["open", "show", "tree", "composite", "colour space", "another frame"]
+)
 def test_a_failure_after_the_copy_undoes_everything_in_the_same_job(
     world: World, step: str
 ) -> None:
@@ -261,6 +263,13 @@ def test_a_failure_after_the_copy_undoes_everything_in_the_same_job(
             "space": ("GRAYA", "U8", "Gray-D50-elle-V2-srgbtrc.icc")
         }
         code = "COLOR_PROFILE_MISMATCH"
+    elif step == "another frame":
+        # The baseline is frame 0, as every read is.
+        world.port.files[str(world.work / f"{COPY}hero.kra")] = {
+            "current_time": 5,
+            "animated": True,
+        }
+        code = "UNSUPPORTED_CAPABILITY"
     else:
         world.port.fail[step] = BridgeError("IO_ERROR", f"{step} failed")
         code = "IO_ERROR"

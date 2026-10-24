@@ -103,6 +103,8 @@ def resolve_capture(places: Places, outcome: Outcome) -> Outcome:
         return _capture_files(places, outcome)
     except Exception:
         log.exception("the capture %s was not made into an image", outcome.operation_id)
+        # No retry can use the pixels, so they go now rather than at the plugin's expiry.
+        _discard(places, outcome.result.get("pixels"))
         return _failed(outcome, error_body("INTERNAL_ERROR", "The capture could not be made."))
 
 
@@ -117,8 +119,9 @@ def _capture_files(places: Places, outcome: Done) -> Outcome:
         made = _make_capture(places, outcome, how, rect, size)
         if isinstance(made, Failed):
             return made
-        found = made
-    full = found.read_bytes()
+        found, full = made
+    else:
+        full = found.read_bytes()
     small = found.parent / f"{operation_id}.preview.png"
     if small.is_file():
         shown, shown_size, preview = small.read_bytes(), imaging.size_of(small), True
@@ -128,6 +131,7 @@ def _capture_files(places: Places, outcome: Done) -> Outcome:
         message = "The capture's preview is missing; capture again."
         return _failed(outcome, error_body("INTERNAL_ERROR", message, retryable=True))
     path = str(found)
+    native = (rect["width"], rect["height"])
     data = {
         "image": {
             "uri": path,
@@ -141,7 +145,7 @@ def _capture_files(places: Places, outcome: Done) -> Outcome:
             "preview": preview,
             "output_size_px": list(shown_size),
             "source_to_image": imaging.transform(rect, shown_size),
-            "filter": imaging.effective(rect, shown_size, how),
+            "filter": imaging.filter_for(native, shown_size, how),
         },
         "target": result["target"],
         "layer_id": result["layer_id"],
@@ -149,7 +153,7 @@ def _capture_files(places: Places, outcome: Done) -> Outcome:
         "output_size_px": list(size),
         "scale": how.scale,
         "source_to_image": imaging.transform(rect, size),
-        "filter": imaging.effective(rect, size, how),
+        "filter": imaging.filter_for(native, size, how),
         "background": how.background,
         "greyscale": how.greyscale,
         "profile_id": result["profile_id"],
@@ -162,7 +166,8 @@ def _capture_files(places: Places, outcome: Done) -> Outcome:
 
 def _make_capture(
     places: Places, outcome: Done, how: Render, rect: dict[str, int], size: tuple[int, int]
-) -> Path | Failed:
+) -> tuple[Path, bytes] | Failed:
+    # The PNG's path and bytes, so a fresh capture is not read back from disk.
     result = outcome.result
     operation_id = _operation_id(outcome)
     spec = result["pixels"]
@@ -180,7 +185,7 @@ def _make_capture(
         # Another server sharing this data folder may have just made it.
         again = imaging.find(places.captures_dir, operation_id, ".png")
         if again is not None:
-            return again
+            return again, again.read_bytes()
         message = "The capture's pixels were already taken; capture again."
         return _failed(outcome, error_body("INTERNAL_ERROR", message, retryable=True))
     image, _ = imaging.render(pixels, size, how)
@@ -198,7 +203,7 @@ def _make_capture(
         return _failed(outcome, error_body("IO_ERROR", message, retryable=True))
     _discard(places, spec)
     imaging.sweep(places.captures_dir, today())
-    return target
+    return target, full
 
 
 def capture_receipt(outcome: Outcome) -> CallToolResult:
@@ -253,6 +258,7 @@ def resolve_sample(places: Places, outcome: Outcome) -> Outcome:
         return _sample_files(places, outcome)
     except Exception:
         log.exception("the sample %s was not computed", outcome.operation_id)
+        _discard(places, outcome.result.get("pixels"))
         return _failed(outcome, error_body("INTERNAL_ERROR", "The samples could not be computed."))
 
 

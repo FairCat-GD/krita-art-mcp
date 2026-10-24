@@ -27,6 +27,8 @@ list the brushes, blend modes, profiles and palettes Krita has.
   - An image too large to send whole is shown as a preview of at most 1600 px, made from the
     native pixels; the full image is at its path.
   - Captures are kept 7 days.
+  - A document whose animation is showing a frame other than the first is refused, and its
+    timeline is never moved; a still document reads wherever its timeline stands.
   - A capture never shows a selection mask's red overlay. For an agent's own document, its view is
     brought forward for the read and yours is put back. One of your own documents in that state
     is never changed: the read is refused until you select a layer.

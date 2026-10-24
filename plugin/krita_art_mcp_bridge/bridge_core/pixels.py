@@ -4,7 +4,7 @@ from typing import Any
 
 from . import paths, transfer
 from .errors import BridgeError, exact
-from .inspection import TYPES, check_frame
+from .inspection import TYPES, check_frame, check_shown_frame
 from .jobs import Call, Handler
 from .port import DocumentsPort
 from .registry import Handle, Registry
@@ -37,7 +37,7 @@ def handlers(registry: Registry, port: DocumentsPort, data: Path) -> dict[str, H
         registry.refuse_at_job_start()
         handle = registry.find(args["document_id"])
         info = port.describe(handle.document)
-        _at_frame_0(info)
+        check_shown_frame(info)
         _inside(rect, info["size_px"])
         width, height = rect["width"], rect["height"]
         if target == "selection":
@@ -71,7 +71,7 @@ def handlers(registry: Registry, port: DocumentsPort, data: Path) -> dict[str, H
         registry.refuse_at_job_start()
         handle = registry.find(args["document_id"])
         info = port.describe(handle.document)
-        _at_frame_0(info)
+        check_shown_frame(info)
         width, height = info["size_px"]
         outside = [point for point in points if point[0] >= width or point[1] >= height]
         if outside:
@@ -157,14 +157,6 @@ def _target(args: dict[str, Any], targets: tuple[str, ...]) -> str:
     if (target == "layer") != (isinstance(layer_id, str) and bool(layer_id)):
         raise BridgeError("INVALID_ARGUMENT", "layer_id names a layer for target layer only.")
     return str(target)
-
-
-def _at_frame_0(info: dict[str, Any]) -> None:
-    # Krita reads the frame on screen; the owner's timeline is never moved to read another.
-    if info["current_time"] != 0:
-        details = {"current_time": info["current_time"], "supported": [0]}
-        message = "The document is showing another frame; Phase 1 reads frame 0 only."
-        raise BridgeError("UNSUPPORTED_CAPABILITY", message, False, details)
 
 
 def _inside(rect: dict[str, int], size: list[int]) -> None:

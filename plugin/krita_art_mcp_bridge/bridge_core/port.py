@@ -18,7 +18,8 @@ class DocumentsPort(Protocol):
     # Gives an opened document its view at once (K6), and waits.
     def show(self, document: Any) -> None: ...
 
-    # {name, path, size_px, color_model, depth, profile_id, current_time}.
+    # {name, path, size_px, color_model, depth, profile_id, current_time, animated}; animated
+    # says whether any node has keyframes, and is reported only when current_time is not 0.
     def describe(self, document: Any) -> dict[str, Any]: ...
 
     # The root's id, then each child as {id, type, opacity, active, alpha_at_origin}.

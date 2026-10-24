@@ -34,6 +34,15 @@ def check_frame(frame: Any) -> None:
         raise BridgeError("UNSUPPORTED_CAPABILITY", message, False, details)
 
 
+def check_shown_frame(info: dict[str, Any]) -> None:
+    # Krita reads the frame on screen, and the owner's timeline is never moved. Only an animated
+    # document shows other pixels away from frame 0.
+    if info["animated"] and info["current_time"] != 0:
+        details = {"current_time": info["current_time"], "supported": [0]}
+        message = "The document is showing another frame; Phase 1 reads frame 0 only."
+        raise BridgeError("UNSUPPORTED_CAPABILITY", message, False, details)
+
+
 def layer_entries(tree: dict[str, Any], protected: set[str]) -> list[dict[str, Any]]:
     return [
         {

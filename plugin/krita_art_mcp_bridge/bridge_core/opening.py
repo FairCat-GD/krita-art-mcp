@@ -9,7 +9,7 @@ from typing import Any
 
 from . import files, paths, roots, transfer
 from .errors import BridgeError, exact
-from .inspection import layer_entries
+from .inspection import check_shown_frame, layer_entries
 from .jobs import Call, Handler
 from .port import DocumentsPort
 from .registry import READ_ONLY, WORKING_COPY, Registry
@@ -103,6 +103,8 @@ def handlers(
             details = {key: info[key] for key in ("color_model", "depth", "profile_id")}
             message = "Phase 1 opens RGBA / U8 documents only."
             raise BridgeError("COLOR_PROFILE_MISMATCH", message, False, details)
+        # The baseline must be frame 0, as every read is.
+        check_shown_frame(info)
         port.prepare_read(document)
         tree = port.tree(document)
         editable = _editable(

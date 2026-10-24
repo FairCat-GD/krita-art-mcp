@@ -66,6 +66,7 @@ class KritaDocuments:
 
     def describe(self, document: Any) -> dict[str, Any]:
         path = str(document.fileName())
+        current = int(document.currentTime())
         return {
             "name": str(document.name()),
             "path": path or None,
@@ -73,7 +74,9 @@ class KritaDocuments:
             "color_model": str(document.colorModel()),
             "depth": str(document.colorDepth()),
             "profile_id": str(document.colorProfile()),
-            "current_time": int(document.currentTime()),
+            "current_time": current,
+            # Only walked when it can matter: at frame 0 every document shows frame 0.
+            "animated": current != 0 and _animated(document.rootNode()),
         }
 
     def layers(self, document: Any) -> tuple[str, list[dict[str, Any]]]:
@@ -258,6 +261,10 @@ def _walk(parent: Any, parent_id: str, nodes: list[dict[str, Any]]) -> None:
             }
         )
         _walk(node, node_id, nodes)
+
+
+def _animated(parent: Any) -> bool:
+    return any(bool(node.animated()) or _animated(node) for node in parent.childNodes())
 
 
 def _xywh(rect: dict[str, int]) -> tuple[int, int, int, int]:

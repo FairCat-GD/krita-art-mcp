@@ -15,7 +15,7 @@ from PIL import Image
 from krita_art_mcp.bridge_client import BridgeClient, Done
 from krita_art_mcp.probe import fixtures
 from krita_art_mcp.probe.opening import open_args
-from krita_art_mcp.probe.report import Report, call, close, code, tool
+from krita_art_mcp.probe.report import Report, call, close, code, differs, tool
 
 WIDTH, HEIGHT = fixtures.WIDTH, fixtures.HEIGHT
 FULL = {"x": 0, "y": 0, "width": WIDTH, "height": HEIGHT}
@@ -62,13 +62,6 @@ def _sample(document_id: str, points: list[list[int]], **changes: Any) -> dict[s
 def _decoded(data: bytes) -> np.ndarray:
     with Image.open(io.BytesIO(data)) as image:
         return np.asarray(image)
-
-
-def _differs(found: np.ndarray, expected: np.ndarray) -> str:
-    if found.shape != expected.shape:
-        return f"shape {found.shape}, not {expected.shape}"
-    different = int(np.any(found != expected, axis=-1).sum())
-    return "" if different == 0 else f"{different} pixels differ"
 
 
 def _file(content: dict[str, Any]) -> np.ndarray | None:
@@ -122,7 +115,7 @@ async def _captures(
     if found is None:
         problems.append(f"{code(content)}: {(content.get('error') or {}).get('message')}")
     else:
-        problems += [f"file: {_differs(found, composite)}"] if _differs(found, composite) else []
+        problems += [f"file: {differs(found, composite)}"] if differs(found, composite) else []
         problems += _image_problems(result, composite, content)
     report.check(
         "a native capture's file and inline image equal the fixture, with the image _meta",
@@ -138,9 +131,9 @@ async def _captures(
     report.check(
         "a native sub-rect equals the fixture's crop, mapped by [1, 0, -x, 0, 1, -y]",
         found is not None
-        and not _differs(found, crop)
+        and not differs(found, crop)
         and data.get("source_to_image") == [1, 0, -8, 0, 1, -10],
-        "" if found is None else _differs(found, crop),
+        "" if found is None else differs(found, crop),
     )
     hidden = await tool(
         a, "krita_capture", _capture(document_id, target="layer", layer_id=layers["probe hidden"])
@@ -161,8 +154,8 @@ async def _captures(
         own is not None
         and found is not None
         and found_clip is not None
-        and not _differs(found, own)
-        and not _differs(found_clip, expected_clip),
+        and not differs(found, own)
+        and not differs(found_clip, expected_clip),
         f"hidden {code(hidden)}, clip {code(clipped)}",
     )
     scaled = await tool(a, "krita_capture", _capture(document_id, scale=0.5, filter="bilinear"))
@@ -188,8 +181,8 @@ def _image_problems(
     if images[0].meta != {"codex/imageDetail": "original"}:
         problems.append(f"_meta {images[0].meta}")
     shown = _decoded(base64.b64decode(images[0].data))
-    if _differs(shown, composite):
-        problems.append(f"inline: {_differs(shown, composite)}")
+    if differs(shown, composite):
+        problems.append(f"inline: {differs(shown, composite)}")
     text = result.content[0]
     if not isinstance(text, TextContent) or content["data"]["image"]["path"] not in text.text:
         problems.append("no path in the text")
@@ -394,9 +387,9 @@ async def _k46(
         in_front = client.call("harness.front_document")
         still = in_front.result.get("document_id") if isinstance(in_front, Done) else None
         problems = []
-        if found is None or _differs(found, composite):
+        if found is None or differs(found, composite):
             problems.append(
-                f"capture: {code(captured) if found is None else _differs(found, composite)}"
+                f"capture: {code(captured) if found is None else differs(found, composite)}"
             )
         if active != base:
             problems.append("the mask's layer is not active")

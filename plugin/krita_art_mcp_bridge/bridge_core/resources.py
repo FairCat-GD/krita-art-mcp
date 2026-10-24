@@ -62,7 +62,7 @@ def handlers(port: ResourcesPort) -> dict[str, Handler]:
     def list_resources(args: dict[str, Any], call: Call) -> dict[str, Any]:
         exact(args, LIST_FIELDS)
         kind, cursor, limit = args["kind"], args["cursor"], args["limit"]
-        if kind not in listers:
+        if not isinstance(kind, str) or kind not in listers:
             raise BridgeError("INVALID_ARGUMENT", f"kind is one of {', '.join(listers)}.")
         if not isinstance(limit, int) or isinstance(limit, bool) or not 1 <= limit <= MAX_LIMIT:
             raise BridgeError("INVALID_ARGUMENT", f"limit is 1 to {MAX_LIMIT}.")

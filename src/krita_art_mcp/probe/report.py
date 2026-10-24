@@ -1,6 +1,7 @@
 import uuid
 from typing import Any, TextIO
 
+import numpy as np
 from mcp import Client
 from mcp.types import CallToolResult
 
@@ -52,3 +53,13 @@ def code(content: dict[str, Any]) -> str | None:
 async def close(mcp: Client, document_id: str, policy: str = "discard") -> dict[str, Any]:
     guard = {"document_id": document_id, "request_id": str(uuid.uuid4())}
     return await tool(mcp, "krita_document_close", {"guard": guard, "dirty_policy": policy})
+
+
+def differs(found: np.ndarray | None, expected: np.ndarray | None) -> str:
+    if found is None or expected is None:
+        return "nothing to compare"
+    if found.shape != expected.shape:
+        return f"shape {found.shape}, not {expected.shape}"
+    different = int(np.any(found != expected, axis=-1).sum())
+    worst = int(np.abs(found.astype(int) - expected.astype(int)).max())
+    return "" if different == 0 else f"{different} pixels differ, by up to {worst}"

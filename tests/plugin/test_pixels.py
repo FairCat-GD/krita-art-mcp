@@ -126,12 +126,19 @@ def test_the_read_limit_covers_a_whole_8k_master(world: World) -> None:
     assert world.port.calls == []
 
 
-def test_a_document_showing_another_frame_is_never_read(world: World) -> None:
+def test_an_animated_document_showing_another_frame_is_never_read(world: World) -> None:
     document_id, key = world.created()
-    world.port.live[key]["current_time"] = 12
+    world.port.live[key].update(current_time=12, animated=True)
     body = world.refused("capture", document_id)
     assert body["code"] == "UNSUPPORTED_CAPABILITY" and body["details"]["current_time"] == 12
     assert world.port.calls == []
+
+
+def test_a_still_document_reads_wherever_its_timeline_stands(world: World) -> None:
+    # Without keyframes every frame is the same picture.
+    document_id, key = world.created()
+    world.port.live[key].update(current_time=12, animated=False)
+    assert world.capture(document_id)["pixels"]["size_px"] == [5, 3]
 
 
 def test_a_composite_of_a_document_that_is_not_8_bit_rgba_is_refused(world: World) -> None:

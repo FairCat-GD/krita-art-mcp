@@ -11,9 +11,8 @@ picks which findings become scope: an amendment to a later block, or an inserted
 - **Round 1 is the Phase 1 build.** Sessions 0 to 5 are done; 6 to 15 remain, and 6, 10 and 13
   are architecture reviews.
 - **The push status.** `origin` is the private GitHub repository `FairCat-GD/krita-art-mcp`.
-  `origin/main` holds everything through `review: a failed open never strands a document, and
-  8 smaller`. Session 5's commits are local until the owner approves a push. List
-  `origin/main..HEAD` before any push.
+  `origin/main` holds everything through `review: failed resolves discard their pixels, and 9
+  smaller`, so `origin/main..HEAD` starts empty. List `origin/main..HEAD` before any push.
 - **What exists after Session 5** (the done-notes of sessions 1–5 hold the detail):
   - **11 tools:** server_info, document list/open/create/inspect/close, operation get/cancel,
     resource_list, capture, sample.
@@ -30,8 +29,6 @@ picks which findings become scope: an amendment to a later block, or an inserted
   - **Resolvers.** `resolve_open`, `resolve_inspect`, `resolve_capture`, `resolve_sample` and
     `resolve_close` each turn a bridge outcome into a receipt's data, with three different
     idempotence stories (baseline id, retryable re-read, files named by operation id).
-  - **Transfer files after a failed resolve.** A resolver that fails without a retry leaves its
-    transfer file to the plugin's one-hour expiry (`STALE_S`).
   - **K46 on reads.** The guard is kept, but with marching ants an active selection mask changed
     no composite byte, so the probe measures the overlay rather than checking it. The switch
     itself (`View.setVisible`, then putting the previous view back) is checked live.
@@ -41,8 +38,8 @@ picks which findings become scope: an amendment to a later block, or an inserted
     3.10-valid.
 - **Baseline** (the review records these as found):
   - `verify`: 6 stages, all PASS;
-  - 330 server tests passed, 0 skipped;
-  - 246 plugin-core tests passed, 0 skipped;
+  - 334 server tests passed, 0 skipped;
+  - 249 plugin-core tests passed, 0 skipped;
   - `probe`: 55 PASS, 0 FAIL, 15 MEASURED;
   - 11 registered tools.
 - **Not done:**

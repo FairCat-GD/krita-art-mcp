@@ -122,6 +122,8 @@ class FakePort:
             tree={"root_id": root, "active_id": nodes[-1]["id"], "nodes": nodes},
             selection=spec.get("selection"),
             active_mask=spec.get("active_mask", False),
+            current_time=spec.get("current_time", 0),
+            animated=spec.get("animated", False),
         )
         self.opened.append(path)
         return FakeDocument(key)
@@ -140,6 +142,7 @@ class FakePort:
             "depth": depth,
             "profile_id": profile,
             "current_time": info.get("current_time", 0),
+            "animated": info.get("animated", False),
         }
 
     def tree(self, document: Any) -> dict[str, Any]:

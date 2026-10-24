@@ -1,6 +1,7 @@
 import datetime
 import io
 import logging
+import math
 import os
 import re
 import shutil
@@ -52,6 +53,8 @@ class Render:
 
 def output_size(width: int, height: int, scale: float, max_px: int) -> tuple[int, int]:
     # Compared before converting, so no scale can overflow; nothing is clamped.
+    if not math.isfinite(scale):
+        raise GeometryError("scale is a finite number.")
     if max(width, height) * scale + 0.5 >= max_px + 1:
         message = (
             f"The image would be over max_px ({max_px} px) on its long edge; lower the scale, "
@@ -78,10 +81,9 @@ def render(pixels: Pixels, size: tuple[int, int], how: Render) -> tuple[Image.Im
     image = Image.fromarray(
         np.ascontiguousarray(pixels[..., 0] if pixels.shape[2] == 1 else pixels)
     )
-    applied = None
-    if image.size != size:
-        image = image.resize(size, FILTERS[how.filter])
-        applied = how.filter
+    applied = filter_for(image.size, size, how)
+    if applied is not None:
+        image = image.resize(size, FILTERS[applied])
     backed = how.background not in (None, "transparent")
     if backed:
         image = Image.alpha_composite(_background(how.background, size), image)
@@ -153,8 +155,12 @@ def folder_for(captures: Path, today: datetime.date) -> Path:
 
 
 def write(target: Path, data: bytes) -> None:
-    # Whole or not at all, private, and never over another file's name mid-write.
-    target.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
+    # Whole or not at all, private, and never over another file's name mid-write. mkdir gives
+    # its mode to the last folder only, so captures/ and its day folder are made one by one.
+    captures = target.parent.parent
+    captures.parent.mkdir(parents=True, exist_ok=True)
+    for folder in (captures, target.parent):
+        folder.mkdir(mode=0o700, exist_ok=True)
     fd, temp = tempfile.mkstemp(dir=target.parent, prefix=".", suffix=".tmp")
     try:
         with os.fdopen(fd, "wb") as stream:
@@ -169,11 +175,17 @@ def sweep(captures: Path, today: datetime.date) -> None:
     # Captures are kept 7 days; this never fails the capture that triggers it.
     oldest = today - datetime.timedelta(days=RETENTION_DAYS)
     try:
-        for folder in captures.iterdir():
+        folders = list(captures.iterdir())
+    except OSError:
+        log.exception("old captures were not swept")
+        return
+    for folder in folders:
+        # One folder that only looks like a date never keeps the others.
+        try:
             if DAY.match(folder.name) and datetime.date.fromisoformat(folder.name) < oldest:
                 shutil.rmtree(folder, ignore_errors=True)
-    except (OSError, ValueError):
-        log.exception("old captures were not swept")
+        except ValueError:
+            log.warning("%s is not a date; it was left alone", folder.name)
 
 
 def size_of(path: Path) -> tuple[int, int]:
@@ -182,6 +194,6 @@ def size_of(path: Path) -> tuple[int, int]:
     return width, height
 
 
-def effective(rect: dict[str, int], size: tuple[int, int], how: Render) -> str | None:
-    # The filter render() applies for this size: none when no resampling happens.
-    return None if size == (rect["width"], rect["height"]) else how.filter
+def filter_for(native: tuple[int, int], size: tuple[int, int], how: Render) -> str | None:
+    # The filter render() applies, and receipts report: none when the size does not change.
+    return None if size == native else how.filter

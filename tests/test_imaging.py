@@ -45,7 +45,14 @@ def test_output_sides_round_half_up() -> None:
 
 @pytest.mark.parametrize(
     ("width", "height", "scale", "max_px"),
-    [(1, 1, 0.4, 1600), (2000, 10, 1, 1600), (10, 10, 1e308, 4096), (4097, 1, 1, 4096)],
+    [
+        (1, 1, 0.4, 1600),
+        (2000, 10, 1, 1600),
+        (10, 10, 1e308, 4096),
+        (4097, 1, 1, 4096),
+        (10, 10, float("nan"), 1600),
+        (10, 10, float("inf"), 1600),
+    ],
 )
 def test_sizes_under_1_px_or_over_max_px_are_refused_never_clamped(
     width: int, height: int, scale: float, max_px: int
@@ -129,11 +136,10 @@ def test_a_selection_is_an_8_bit_grey_image() -> None:
 
 
 def test_the_same_size_off_scale_1_applies_no_filter() -> None:
-    rect = {"x": 0, "y": 0, "width": 3, "height": 3}
     how = Render(1.1, "lanczos", "checker", False, 1600)
     size = imaging.output_size(3, 3, 1.1, 1600)
     _, applied = imaging.render(_rgba(3, 3), size, how)
-    assert size == (3, 3) and applied is None and imaging.effective(rect, size, how) is None
+    assert size == (3, 3) and applied is None and imaging.filter_for((3, 3), size, how) is None
 
 
 def test_a_preview_is_rendered_from_the_crop_and_halved_until_it_fits(
@@ -164,15 +170,18 @@ def test_files_are_private_and_written_whole(tmp_path: Path) -> None:
     assert target.read_bytes() == b"png"
     assert stat.S_IMODE(target.stat().st_mode) == 0o600
     assert stat.S_IMODE(target.parent.stat().st_mode) == 0o700
+    # mkdir's mode reaches only the last folder; captures/ itself is private too.
+    assert stat.S_IMODE(target.parent.parent.stat().st_mode) == 0o700
     assert os.listdir(target.parent) == [target.name]
 
 
 def test_captures_older_than_7_days_are_swept(tmp_path: Path) -> None:
     captures = tmp_path / "captures"
-    for day in ("2026-10-16", "2026-10-17", "2026-10-24", "notes"):
+    # 2026-02-30 looks like a date and is not; it must not stop the sweep.
+    for day in ("2026-02-30", "2026-10-16", "2026-10-17", "2026-10-24", "notes"):
         (captures / day).mkdir(parents=True)
     imaging.sweep(captures, datetime.date(2026, 10, 24))
-    assert sorted(os.listdir(captures)) == ["2026-10-17", "2026-10-24", "notes"]
+    assert sorted(os.listdir(captures)) == ["2026-02-30", "2026-10-17", "2026-10-24", "notes"]
     imaging.sweep(tmp_path / "missing", datetime.date(2026, 10, 24))
 
 
@@ -212,6 +221,17 @@ def _render(**changes: Any) -> dict[str, Any]:
         "max_px": 1600,
         **changes,
     }
+
+
+def test_a_fresh_capture_is_not_read_back_from_disk(
+    places: Places, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    def no_reads(self: Path) -> bytes:
+        raise AssertionError(f"{self} was read back")
+
+    monkeypatch.setattr(Path, "read_bytes", no_reads)
+    resolved = pixel_tools.resolve_capture(places, _outcome(places, _rgba(3, 4), _render()))
+    assert isinstance(resolved, Done)
 
 
 def test_the_resolver_writes_the_png_then_removes_the_transfer_file(places: Places) -> None:
@@ -329,6 +349,8 @@ def test_a_malformed_outcome_is_an_internal_error_never_a_raise(
     broken = Done({**outcome.result, **changes}, OP, "capture.read")
     failed = pixel_tools.resolve_capture(places, broken)
     assert isinstance(failed, Failed) and failed.error["code"] == "INTERNAL_ERROR"
+    # No retry can use the pixels, so they go now, not at the plugin's one-hour expiry.
+    assert not Path(outcome.result["pixels"]["path"]).exists()
 
 
 def test_an_operation_id_of_another_shape_names_no_file(places: Places) -> None:
@@ -337,3 +359,21 @@ def test_an_operation_id_of_another_shape_names_no_file(places: Places) -> None:
     failed = pixel_tools.resolve_capture(places, strange)
     assert isinstance(failed, Failed)
     assert not places.captures_dir.exists()
+
+
+def test_a_sample_that_cannot_be_computed_discards_its_pixels(places: Places) -> None:
+    spec = plugin_transfer.write(places.transfer_dir, bytes(4 * 4), 4, 1, "BGRA8")
+    result = {
+        "document_id": "doc-1",
+        "target": "composite",
+        "layer_id": None,
+        "profile_id": "sRGB-elle-V2-srgbtrc.icc",
+        "points": [[0, 0]],
+        "radius": 0,
+        # One pixel's square, but four pixels in the file.
+        "squares": [{"x": 0, "y": 0, "width": 1, "height": 1}],
+        "pixels": spec,
+    }
+    failed = pixel_tools.resolve_sample(places, Done(result, OP, "sample.read"))
+    assert isinstance(failed, Failed) and failed.error["code"] == "INTERNAL_ERROR"
+    assert not Path(spec["path"]).exists()
