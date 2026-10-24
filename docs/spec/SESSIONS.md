@@ -2253,6 +2253,31 @@ It takes no version: nothing a user of the server sees changes, so later version
   - 364 plugin-core tests passed, 0 skipped (+0);
   - `probe`: not run, as nothing Krita-facing changed (66 PASS, 0 FAIL, 21 MEASURED at 7's
     review).
+- **Review (`/code-review high`), 8 findings, all fixed at the owner's request.**
+  - **No test held `main` passing the draft to the scan;** a dropped argument would have let a
+    co-author trailer through `verify --message`. A test now runs `main` on a temporary
+    repository with a trailer in the draft.
+  - **A byte-order mark** stuck to the list's first word and failed it as "not one word"; the
+    list is read as `utf-8-sig`.
+  - **Comment lines** in the list failed the stage; a line starting with `#` is skipped again,
+    as the old hash file allowed.
+  - **Stage names after `--message`** were refused; `verify.py` parses them intermixed.
+  - **The credit pattern crossed line breaks,** so "generated with" at a line's end met a tool
+    name on the next line; it now stays within one line.
+  - **Other credit phrasings passed:** "written", "created", "authored" and "produced" count as
+    well as "generated", with "via" beside "with", "by" and "using", and up to three words
+    before the tool ("with the help of").
+  - **An empty list still tokenised every line;** the scan now returns at once.
+  - **The missing-list error printed the home path,** which a done-note could copy; a path under
+    the home folder prints with `~`.
+  - **Falsified:** 8 breaks, each failing its own test: `main` without the draft, plain
+    `utf-8`, comments as words, the path without `~`, `parse_args`, a credit across lines, no
+    words before the tool, "generated" as the only verb. The empty-list return is an
+    efficiency change with no check of its own.
+  - **Numbers after the review:**
+    - `verify`: 6 stages, all PASS;
+    - 424 server tests passed, 0 skipped (+4);
+    - 364 plugin-core tests passed, 0 skipped.
 
 ---
 

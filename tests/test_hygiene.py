@@ -60,6 +60,20 @@ def test_an_empty_list_passes(terms: Terms) -> None:
     assert terms("", "  ") == frozenset()
 
 
+def test_a_byte_order_mark_and_comment_lines_are_not_terms(tmp_path: Path) -> None:
+    path = tmp_path / "terms.txt"
+    path.write_text(f"\ufeff{PROBE}\n# a note on this list\n{CYRILLIC}\n", encoding="utf-8")
+    assert hygiene.load_terms(path) == frozenset({PROBE, CYRILLIC})
+
+
+def test_a_path_under_home_is_shown_with_a_tilde() -> None:
+    absent = Path.home() / ".config" / "hygiene-absent-zqx" / "terms.txt"
+    with pytest.raises(hygiene.TermsError) as error:
+        hygiene.load_terms(absent)
+    assert str(error.value).startswith("no term list at ~/.config/hygiene-absent-zqx/terms.txt;")
+    assert str(Path.home()) not in str(error.value)
+
+
 def test_a_line_that_is_not_one_word_fails_without_printing_it(tmp_path: Path) -> None:
     path = tmp_path / "terms.txt"
     path.write_text(f"{PROBE}\n{PROBE}-{PROBE}\n", encoding="utf-8")
@@ -130,11 +144,24 @@ def test_attribution_and_terms_in_commit_messages_are_reported(
 
 
 def test_a_generated_line_counts_only_when_it_names_an_ai_tool() -> None:
-    plain = "fix: one\n\nThe tables are " + "gener" + "ated with the codegen script."
-    assert hygiene.scan_draft(plain, frozenset()) == []
-    assert hygiene.scan_draft(f"fix: one\n\n{GENERATED}", frozenset()) == [
-        "commit message draft, line 3: generated-with line"
+    plain = [
+        "The tables are " + "gener" + "ated with the codegen script.",
+        "Tables re" + "gener" + "ated with\n- AI-free fixtures.",
+        "Files " + "gener" + "ated with\n- Codex notes.",
+        "The config writ" + "ten by doctor now works with Codex.",
     ]
+    for body in plain:
+        assert hygiene.scan_draft(f"fix: one\n\n{body}", frozenset()) == []
+    credits = [
+        GENERATED,
+        "Writ" + "ten by Codex.",
+        "Gener" + "ated with the help of Claude.",
+        "Creat" + "ed using an AI.",
+    ]
+    for body in credits:
+        assert hygiene.scan_draft(f"fix: one\n\n{body}", frozenset()) == [
+            "commit message draft, line 3: generated-with line"
+        ]
 
 
 def test_a_term_or_a_trailer_in_the_draft_fails(tmp_path: Path, terms: Terms) -> None:
@@ -147,6 +174,22 @@ def test_a_term_or_a_trailer_in_the_draft_fails(tmp_path: Path, terms: Terms) ->
         "commit message draft, line 3: co-author trailer"
     ]
     assert hygiene.check(tmp_path, listed, "fix: one\n\nA plain body.") == []
+
+
+def test_main_checks_the_draft(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    repo, listed = tmp_path / "repo", tmp_path / "terms.txt"
+    repo.mkdir()
+    listed.write_text("")
+    _git(repo, "init", "-q", "-b", "main")
+    monkeypatch.setattr(hygiene, "ROOT", repo)
+    draft = tmp_path / "COMMIT_DRAFT"
+    draft.write_text(f"fix: one\n\n{TRAILER}\n")
+    assert hygiene.main(["--terms", str(listed), "--message", str(draft)]) == 1
+    assert "commit message draft, line 3: co-author trailer" in capsys.readouterr().out
+    draft.write_text("fix: one\n\nA plain body.\n")
+    assert hygiene.main(["--terms", str(listed), "--message", str(draft)]) == 0
 
 
 def test_an_unreadable_draft_fails(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:

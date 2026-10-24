@@ -10,8 +10,8 @@ layer_update, with review 6's amendments to its block. Release 0.8.0.
   releasing 0.8.0 to 0.13.0. 7a, inserted at the owner's request, moved the hygiene stage and the
   workflow to the updated kit and cut no version.
 - **The push status.** `origin` is the private GitHub repository `FairCat-GD/krita-art-mcp`.
-  `origin/main` holds everything through session 6a's review commit (`524775d`); session 7's two
-  commits (`d188986` and its review commit) and session 7a's commits are local. List
+  `origin/main` holds everything through session 7a's review commit ("review: a test holds main
+  checking the draft, and 7 smaller"), pushed with the owner's approval; nothing is local. List
   `origin/main..HEAD` before any push.
 - **What 7 built that 8 stands on** (block 7's done-note has the detail):
   - **The ledger** (`bridge_core/ledger.py`): `Step{op, operation_id, label, before, after,
@@ -57,7 +57,7 @@ layer_update, with review 6's amendments to its block. Release 0.8.0.
     document in front waits.
 - **Baseline** (session 8 moves it only by what it adds):
   - `verify`: 6 stages, all PASS;
-  - 420 server tests passed, 0 skipped;
+  - 424 server tests passed, 0 skipped;
   - 364 plugin-core tests passed, 0 skipped;
   - `probe`: 66 PASS, 0 FAIL, 21 MEASURED, about 38 s;
   - 15 registered tools; 19 schema files; instructions 2,620 characters (F5: session 8 adds at most

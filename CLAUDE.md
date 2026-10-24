@@ -169,8 +169,8 @@ message follows these rules:
 The owner's own name, email and handle are public: they are on every commit's author line and on
 GitHub. The hygiene stage of `verify` checks every file, path and commit message, the drafted one
 included, against the term list in `~/.config/hygiene/terms.txt`, outside the repository (one
-word per line; a missing file fails, an empty one passes), and every commit message for AI
-attribution. A hit names the file and line, or the commit and message line, never the term.
+word per line, `#` for a comment; a missing file fails, an empty one passes), and every commit
+message for AI attribution. A hit names the file and line, or the commit and message line, never the term.
 
 ## Commands
 

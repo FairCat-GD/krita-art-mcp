@@ -91,7 +91,8 @@ def main(argv: list[str]) -> int:
     parser = argparse.ArgumentParser(description="The gate: six named stages, then a summary.")
     parser.add_argument("stages", nargs="*", metavar="stage")
     parser.add_argument("--message", type=Path, help="the drafted commit message, for hygiene")
-    args = parser.parse_args(argv)
+    # Stage names may come before or after --message.
+    args = parser.parse_intermixed_args(argv)
     unknown = [name for name in args.stages if name not in STAGES]
     if unknown:
         print(f"verify: unknown stage(s) {', '.join(unknown)}; stages: {', '.join(STAGES)}")

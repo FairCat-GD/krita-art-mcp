@@ -73,3 +73,11 @@ def test_a_draft_without_the_hygiene_stage_is_refused(
     calls = _record_calls(monkeypatch)
     assert verify.main(["tests", "--message", str(tmp_path / "COMMIT_DRAFT")]) == 2
     assert calls == []
+
+
+def test_stage_names_may_follow_the_draft(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    calls = _record_calls(monkeypatch)
+    draft = tmp_path / "COMMIT_DRAFT"
+    assert verify.main(["format", "--message", str(draft), "hygiene"]) == 0
+    assert calls[-1] == [verify.PYTHON, "scripts/hygiene.py", "--message", str(draft.resolve())]
+    assert len(calls) == 2

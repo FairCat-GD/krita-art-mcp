@@ -116,8 +116,9 @@ uv run krita-art-mcp serve
 - `tests`: the server tests on Python 3.12;
 - `plugin-tests`: the plugin-core tests on Python 3.10, with pytest as the only package;
 - `hygiene`: keeps private words and AI attribution out of files and commit messages. It reads
-  the words from `~/.config/hygiene/terms.txt`, one per line, outside the repository; it fails
-  when that file is missing, and an empty file is valid.
+  the words from `~/.config/hygiene/terms.txt`, one per line (a line starting with `#` is a
+  comment), outside the repository; it fails when that file is missing, and an empty file is
+  valid.
 
 `uv run scripts/verify.py <stage>…` runs only the stages named. `--message <file>` gives
 `hygiene` a drafted commit message to check before the commit is made.

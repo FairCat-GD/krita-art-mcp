@@ -30,14 +30,15 @@ _RUN = re.compile(f"(?:[^\\W_]|[{_mark_ranges()}])+")
 # Camel-case words and digit groups inside a run, so a term joined to another word is still seen.
 _SUBTOKEN = re.compile(r"[A-Z]+(?=[A-Z][a-z])|[A-Z]?[a-z]+|[A-Z]+|[0-9]+")
 _GITLINK = "160000"
-# A "generated" line counts only when it names an AI tool, so a codegen script's note passes.
+# A credit line counts only when it names an AI tool, so a codegen script's note passes.
 _TOOLS = r"(?:claude|chatgpt|gpt|openai|codex|copilot|gemini|cursor|ai)\b"
+_VERBS = r"\b(?:generated|written|created|authored|produced)"
+# Within one line: the tool may follow up to three words, as in "with the help of".
+_CREDIT = r"[ \t]+(?:with|by|using|via)[ \t]+(?:[^\w\n]*\w+[ \t]+){0,3}?[^\w\n]*"
 # Assembled from pieces so that this file never holds what it bans.
 _ATTRIBUTION = {
     "co-author trailer": re.compile(r"^[ \t]*co" + "-author" + r"ed-by[ \t]*:", re.I | re.M),
-    "generated-with line": re.compile(
-        r"gener" + r"ated\s+(?:with|by|using)\s+\W*(?:an?\s+)?" + _TOOLS, re.I
-    ),
+    "generated-with line": re.compile(_VERBS + _CREDIT + _TOOLS, re.I),
     "AI session link": re.compile(
         r"https?://(?:[a-z0-9-]+\.)*(?:clau" + r"de\.ai|chat" + r"gpt\.com)/", re.I
     ),
@@ -48,25 +49,34 @@ class TermsError(Exception):
     pass
 
 
+def _shown(path: Path) -> str:
+    # Output may be pasted into a done-note, which never holds a home-directory path.
+    try:
+        return f"~/{path.relative_to(Path.home())}"
+    except ValueError:
+        return str(path)
+
+
 def _fold(text: str) -> str:
     return unicodedata.normalize("NFC", unicodedata.normalize("NFC", text).lower())
 
 
 def load_terms(path: Path) -> frozenset[str]:
     try:
-        text = path.read_text(encoding="utf-8")
+        # An editor's byte-order mark would otherwise stick to the first word.
+        text = path.read_text(encoding="utf-8-sig")
     except FileNotFoundError:
         raise TermsError(
-            f"no term list at {path}; create it, empty if nothing is private"
+            f"no term list at {_shown(path)}; create it, empty if nothing is private"
         ) from None
     terms = set()
     for number, line in enumerate(text.splitlines(), 1):
         word = _fold(line.strip())
-        if not word:
+        if not word or word.startswith("#"):
             continue
         # A line that is not one token could never match, so it fails instead of passing silently.
         if not _RUN.fullmatch(word):
-            raise TermsError(f"{path}:{number}: not one word")
+            raise TermsError(f"{_shown(path)}:{number}: not one word")
         terms.add(word)
     return frozenset(terms)
 
@@ -86,6 +96,8 @@ def _tokens(line: str) -> set[str]:
 
 
 def _term_lines(text: str, terms: frozenset[str]) -> Iterator[int]:
+    if not terms:
+        return
     for number, line in enumerate(text.splitlines(), 1):
         if not terms.isdisjoint(_tokens(line)):
             yield number
