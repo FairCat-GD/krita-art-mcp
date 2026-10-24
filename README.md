@@ -115,9 +115,12 @@ uv run krita-art-mcp serve
 - `types`: mypy, strict for the server and run as Python 3.10 for the plugin;
 - `tests`: the server tests on Python 3.12;
 - `plugin-tests`: the plugin-core tests on Python 3.10, with pytest as the only package;
-- `hygiene`: keeps private details and attribution out of files and commit messages.
+- `hygiene`: keeps private words and AI attribution out of files and commit messages. It reads
+  the words from `~/.config/hygiene/terms.txt`, one per line, outside the repository; it fails
+  when that file is missing, and an empty file is valid.
 
-`uv run scripts/verify.py <stage>…` runs only the stages named.
+`uv run scripts/verify.py <stage>…` runs only the stages named. `--message <file>` gives
+`hygiene` a drafted commit message to check before the commit is made.
 
 `uv run krita-art-mcp probe` is the live harness. It checks the running plugin against this
 repository, then drives a real `serve` over stdio against your running Krita. It works only in

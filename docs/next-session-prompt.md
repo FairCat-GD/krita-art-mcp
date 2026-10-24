@@ -6,11 +6,13 @@ layer_update, with review 6's amendments to its block. Release 0.8.0.
 
 ## State you need that is not in the specs
 
-- **Round 1 is the Phase 1 build.** Sessions 0 to 7 and 6a are done; 8 to 15 remain, releasing
-  0.8.0 to 0.13.0.
+- **Round 1 is the Phase 1 build.** Sessions 0 to 7, 6a and 7a are done; 8 to 15 remain,
+  releasing 0.8.0 to 0.13.0. 7a, inserted at the owner's request, moved the hygiene stage and the
+  workflow to the updated kit and cut no version.
 - **The push status.** `origin` is the private GitHub repository `FairCat-GD/krita-art-mcp`.
   `origin/main` holds everything through session 6a's review commit (`524775d`); session 7's two
-  commits (`d188986` and its review commit) are local. List `origin/main..HEAD` before any push.
+  commits (`d188986` and its review commit) and session 7a's commits are local. List
+  `origin/main..HEAD` before any push.
 - **What 7 built that 8 stands on** (block 7's done-note has the detail):
   - **The ledger** (`bridge_core/ledger.py`): `Step{op, operation_id, label, before, after,
     region}`, `Ledger.push(step, limit)`, `rolled_back()`, `seal()`, `undo_available()`, and
@@ -55,7 +57,7 @@ layer_update, with review 6's amendments to its block. Release 0.8.0.
     document in front waits.
 - **Baseline** (session 8 moves it only by what it adds):
   - `verify`: 6 stages, all PASS;
-  - 410 server tests passed, 0 skipped;
+  - 420 server tests passed, 0 skipped;
   - 364 plugin-core tests passed, 0 skipped;
   - `probe`: 66 PASS, 0 FAIL, 21 MEASURED, about 38 s;
   - 15 registered tools; 19 schema files; instructions 2,620 characters (F5: session 8 adds at most
@@ -75,7 +77,9 @@ layer_update, with review 6's amendments to its block. Release 0.8.0.
     `/usr/bin/python3` is 3.9.6, never use it for the project.
   - **The owner's Krita is live.** No session touches their documents. Restart Krita only when
     `doctor` reports 0 unsaved documents, and ask the owner first; another agent may be working.
-  - **Nothing private in any file or commit message** (`CLAUDE.md`).
+  - **Nothing private in any file or commit message.** Last before each commit: draft the
+    message into `"$(git rev-parse --git-dir)/COMMIT_DRAFT"`, run `verify` with it
+    (`--message`), commit with `git commit -F`, delete the draft.
 - **layer_update changes nodes, and a close straight after a node change crashed Krita.** Every
   handler that changes a node calls `before_change()` (a harness op, `touched()`), so the close's
   settle covers a document behind too. Watch for any other path that removes a document's view

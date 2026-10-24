@@ -13,9 +13,9 @@ session inherits stale context.
   every `REVIEW-*.md`. Git history keeps them, and anything left open moves to `docs/BACKLOG.md`.
 
 **Before starting**, confirm the tree is clean and that `docs/next-session-prompt.md` names the
-session you are about to do. **Read order:** the `SPEC.md` sections and `PDD.md` parts the block
-names, any `REVIEW-*.md` it names, `CLAUDE.md`, then the prompt. **Then plan, in plan mode,** and
-ask the block's *Ask at the start* questions before any edit.
+session you are about to do. **Read** in the workflow's order (the cycle, step 2), starting with
+what your block's **Read** line names. **Then plan, in plan mode,** and ask the block's *Ask at
+the start* questions before any edit.
 
 **Every session ends the same way:**
 1. `uv run scripts/verify.py` green, plus the harnesses the block names.
@@ -23,7 +23,9 @@ ask the block's *Ask at the start* questions before any edit.
 3. A `CHANGELOG.md` entry for anything user-visible, and the version bumped as the table says.
 4. The docs the block names kept true. Until session 15 writes `ARCHITECTURE.md`, the done-note
    carries what it will need: the deliberate decisions and the counts.
-5. A done-note appended to the block, then the prompt rewritten, then a local commit.
+5. A done-note appended to the block, then the prompt rewritten, then
+   `uv run scripts/verify.py --message <draft>` run with the drafted commit message, then a local
+   commit (amended by 7a, after the workflow kit).
 6. The owner's `/code-review high`, then a review-fixes commit.
 7. The next prompt printed as the chat's last message.
 
@@ -39,6 +41,7 @@ Never push without being asked.
 | 6 | Architecture review: observe | 2 | — |
 | 6a | Review fixes: observe (inserted by review 6) | 2 | **0.6.0** |
 | 7 | Preparing a change: `layer_create`, `selection_set`, `protection_set`, the undo ledger, `history_step` | 5, 26, 27 | **0.7.0** |
+| 7a | Hygiene and the workflow kit (inserted at the owner's request) | 14, 16 | — |
 | 8 | The verification core, and `layer_update` | 20, 27 | **0.8.0** |
 | 9 | `paint_stroke`, verified per stroke; N-01/N-09 benchmarks | 6, 20 | **0.9.0** |
 | 10 | Architecture review: paint safely | 2 | — |
@@ -50,7 +53,8 @@ Never push without being asked.
 
 A review session (6, 10, 13) changes no product code and cuts no version. A session it inserts
 takes the next version, and every later version shifts by one; the handoff says so. Review 6
-inserted 6a on 2026-10-24, so sessions 7–15 moved from 0.6.0–0.12.0 to 0.7.0–0.13.0.
+inserted 6a on 2026-10-24, so sessions 7–15 moved from 0.6.0–0.12.0 to 0.7.0–0.13.0. The owner
+inserted 7a on 2026-10-24 with no version, so no version moved.
 
 ---
 
@@ -2095,6 +2099,160 @@ Part 8 (*Bridge protocol*, K41, K48).
     - 410 server tests passed, 0 skipped (+1);
     - 364 plugin-core tests passed, 0 skipped (+8);
     - `probe`: 66 PASS, 0 FAIL, 21 MEASURED, 38.1 s.
+
+---
+
+## 7a: Hygiene and the workflow kit
+
+Inserted at the owner's request on 2026-10-24: "bring this repository's hygiene and workflow up
+to the updated workflow kit, and walk the owner through what belongs on the private-term list".
+It takes no version: nothing a user of the server sees changes, so later versions do not shift.
+
+**Read:** `SPEC.md` §1 (decisions 13, 14, 16), §5 (invariant 14); `scripts/hygiene.py`,
+`scripts/verify.py` and `tests/test_hygiene.py`; the workflow kit's `DEVELOPMENT-WORKFLOW.md`
+(*Nothing private in the repository*) and `KICKOFF.md` (*The hygiene stage's design*).
+
+- **The hygiene stage, moved to the kit's design:**
+  - the terms come from `~/.config/hygiene/terms.txt`, outside the repository, one word per
+    line; a missing file fails the stage and an empty one passes; tests point the stage at
+    fictional terms and never read the owner's file; `scripts/hygiene_terms.txt` is deleted,
+    because a hash of a short word is reversed by hashing a dictionary of names;
+  - tokens are runs of letters and digits in any script, plus the camel-case words and digit
+    groups inside them; terms and tokens are normalised to NFC and lowercased;
+  - the attribution patterns name the AI tools, so a codegen script's note passes; co-author
+    trailers and AI session links still fail;
+  - a hit names the file and line, or the commit and message line, never the term;
+  - one run, the last act before each commit, message included: `verify.py --message <file>`.
+- **The workflow.** The kit's `DEVELOPMENT-WORKFLOW.md` is copied into `docs/`, keeping this
+  repository's *In this repository* paragraph. The done-note lists what changes for sessions
+  8–15.
+- **The docs.** `CLAUDE.md` (the public section, gaining "Unsure whether something is public?
+  Ask the owner before writing it; a word they call private goes on the term list", the
+  Commands table and the Git notes), README's hygiene line, and the handoff's standing trap.
+  Decision 14 and invariant 14 change only by the owner's dated amendment.
+- **The term list,** walked through with the owner in small batches, each question with a
+  recommended answer. A word is added only with the owner's yes, after a check against the tree
+  and history; no done-note, handoff or commit message names a term, only counts.
+- **History.** The hashes stay in history after the file is deleted. Rewriting it needs a force
+  push and is the owner's decision; if deferred, it goes to `docs/BACKLOG.md` as a step before
+  the repository is made public.
+- **Ask at the start of 7a:** its version (proposed: none); the amendment to decision 14 and
+  invariant 14; what the old list held; history.
+- **Amended at plan time, with the owner:** the workflow kit changed after the session started,
+  and the block follows it.
+  - Its build design for the stage moved to `KICKOFF.md`; the workflow keeps the rules.
+  - `verify` with the drafted message is the last act before each commit, after the done-note
+    and the handoff, so those are checked too.
+  - The draft is `"$(git rev-parse --git-dir)/COMMIT_DRAFT"` (`.git/COMMIT_DRAFT` breaks in a
+    worktree), written fresh for every commit and deleted after it.
+  - At push time, the last commit's message (`git log -1 --format=%B`) goes into the draft
+    before `verify` runs, then the push note is amended in.
+  - This file's header follows the kit: the read order is the workflow's, and step 5 runs
+    `verify` with the drafted message before the commit.
+
+**Gates:**
+- `uv run scripts/verify.py --message <draft>` green, as the last act before the commit.
+- Each new check falsified once: a missing terms file fails and an empty one passes; a Cyrillic
+  term is found, and so is the same term in NFD; `myTermNotes` and `term2026` are found; a term
+  or a co-author trailer in the drafted message fails; a codegen script's note passes.
+- No probe: nothing Krita-facing changes.
+
+**Watch for:**
+- **Unsure whether something is public? Ask the owner before writing it.**
+- **Never print a term:** not in output, notes, the handoff or commit messages.
+- **`~/.config/hygiene/terms.txt` is outside the repository:** ask before each write to it.
+- **The handoff keeps opening Session 8** and carries forward everything it says; only the
+  hygiene trap and the push status change.
+
+**Done (2026-10-24, no version).**
+- **Decided with the owner at the start:**
+  - **No version.** Nothing a user of the server sees changes, so there is no CHANGELOG entry,
+    and sessions 8–15 keep 0.8.0–0.13.0.
+  - **The owner's own identifiers stay off the list.** Five of the old list's seven hashes were
+    the owner's name forms, home-folder name and email handle, all public on every commit's
+    author line and on GitHub. Decision 14, invariant 14 and §6 carry the owner's dated
+    amendments.
+  - **The other two hashes are dropped unidentified:** the owner does not remember them.
+  - **The term list holds 0 words.** The owner does not count the first game's name as
+    sensitive, and named no persona, no other people, and no projects or clients. The list
+    already existed, empty, and this session wrote nothing to it.
+  - **History is deferred** to a step before publishing, in `docs/BACKLOG.md`.
+  - **The kit changed mid-session;** its changes became the plan-time amendments above.
+- **Built:**
+  - **`scripts/hygiene.py`**
+    - **The list.** It reads `--terms`, defaulting to `~/.config/hygiene/terms.txt`. A missing
+      file fails with its path; an empty one passes. A line that is not one word fails with its
+      line number, never its text, since it could never match.
+    - **Tokens.** Each line is NFC-normalised and split into runs of letters, digits and
+      combining marks. The camel-case words and digit groups inside each run come from a
+      per-letter case map, so camel case splits in any script. Terms and tokens are folded
+      alike (NFC, lowercase, NFC).
+    - **Attribution.** A "generated" line counts only when "with", "by" or "using" is followed
+      by Claude, ChatGPT, GPT, OpenAI, Codex, Copilot, Gemini, Cursor or AI. Co-author trailers
+      and AI session links are unchanged.
+    - **Hits** read `path:N: private term`, `path: private term in the path`,
+      `path (staged):N: private term`, `commit <sha>, message line N: <kind>` and
+      `commit message draft, line N: <kind>`, with one problem per line and no hash.
+    - **The draft.** `--message` is checked like a commit message; an unreadable draft fails.
+  - **`scripts/verify.py`** parses `[stage …] [--message FILE]`. The draft's absolute path goes
+    to the hygiene command, and `--message` without the hygiene stage exits 2.
+  - **`scripts/hygiene_terms.txt`** is deleted.
+- **Docs:**
+  - `docs/DEVELOPMENT-WORKFLOW.md` is the kit's file verbatim, with the *In this repository*
+    paragraph kept.
+  - `CLAUDE.md`: the read order, step 9 and rule 1, the public section with the ask rule and
+    the owner's data, the Commands table, and the Git note on drafting.
+  - README's hygiene line; this file's header (read order and step 5) and table.
+  - `SPEC.md`'s three amendments; `docs/BACKLOG.md`'s history step; the handoff.
+- **What changes for sessions 8–15:**
+  - **The commit order.** The done-note and the handoff come first. Then the message is written
+    fresh into `"$(git rev-parse --git-dir)/COMMIT_DRAFT"`, `uv run scripts/verify.py --message`
+    runs with it, the commit is made with `git commit -F`, and the draft is deleted.
+    - The review commit goes the same way.
+    - A push note first puts `git log -1 --format=%B` into the draft, then runs `verify`, then
+      amends.
+    - No hygiene run after a commit.
+  - **The term list** lives in `~/.config/hygiene/terms.txt`; `verify` fails without it.
+  - **Unsure whether something is public?** Ask the owner before writing it; a word they call
+    private goes on the list, with their yes.
+  - **Done-notes and handoffs never name the owner's own data** (documents, folders, presets,
+    roots).
+  - **The read order.** The block's Read line, `CLAUDE.md`, `ARCHITECTURE.md`'s overview,
+    invariants and baseline once it exists, then from `SESSIONS.md` only the header, the block
+    and the previous done-note, then the prompt. The Read line is a floor.
+  - **Session 15.** It is the round's release. Its review commit follows the close and carries
+    the Review section in its message and the handoff, since the close has deleted this file.
+    Its `ARCHITECTURE.md` is written to be read by section, with each decision in its
+    subsystem's section.
+  - **Tags** only where the table marks a milestone; round 1's marks none.
+  - **Already done here:** a Read line in every block, `6a`/`7a` ids, architecture reviews with
+    their own subject, and session 15 cutting 0.13.0.
+- **Deliberate decisions:**
+  - **No test can read the owner's list.** An autouse fixture points `TERMS_FILE` at a missing
+    temp file, and the tests' lists are written outside every repository they scan.
+  - **Combining marks join a run.** `[^\W_]+` splits a word in a script with vowel signs. The
+    class is built from Unicode's M categories as 310 ranges at import (0.05 s); as single
+    characters it made the stage three times slower.
+  - **A list line that is not one word fails** instead of being skipped.
+  - **`--message` without hygiene is refused,** so a draft never goes unchecked silently.
+- **Falsified:** 19 breaks, each failing its own test. In the list: a missing file passing, an
+  empty file failing, a line that is not one word accepted. In tokens: ASCII-only runs
+  (Cyrillic), no NFC in the fold (NFD), runs without marks, no camel split, camel split on ASCII
+  only. In messages: the draft left out of `check`, terms left out of messages, a broken trailer
+  pattern, the old untargeted "generated" pattern, a tool list that matches nothing. In output:
+  a hit printing its line. The default: a default other than `TERMS_FILE`, `TERMS_FILE` inside
+  the repository, an unreadable draft passing. In `verify.py`: `--message` dropped, and allowed
+  without hygiene.
+- **By hand:** `scripts/hygiene.py --terms <missing>` exits 1 naming the path. Against the
+  owner's empty list the stage passes in 0.6 s, against 0.3 s before.
+- **Known debt:** a tool missing from the nine names passes a "generated" line. What the stage
+  cannot see is in `SPEC.md` §6.
+- **Numbers:**
+  - `verify`: 6 stages, all PASS (hygiene 0.6 s);
+  - 420 server tests passed, 0 skipped (+10);
+  - 364 plugin-core tests passed, 0 skipped (+0);
+  - `probe`: not run, as nothing Krita-facing changed (66 PASS, 0 FAIL, 21 MEASURED at 7's
+    review).
 
 ---
 

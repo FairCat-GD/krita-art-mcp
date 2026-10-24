@@ -93,6 +93,12 @@ these are the parts only a person can see.
 - **Publishing the repository.** When the owner decides, with the description "MCP server that
   lets AI agents paint in Krita" and the topics `krita`, `mcp`, `model-context-protocol`,
   `krita-plugin` and `game-art`.
+  - **First, decide whether to rewrite history** (deferred by the owner in session 7a). SHA-256
+    hashes of seven words the hygiene stage once checked are in every commit from the root
+    (`98db9f5`) until session 7a deleted them. Five are the owner's own public identifiers; two
+    were never identified. A hash of a short word can be reversed by guessing, so the question
+    is whether those two can be. A rewrite needs a force push, and changes every commit's sha,
+    including those the CHANGELOG links and the reviews cite.
 
 - **Report Krita's layer-docker crash upstream.** On 5.3.4.1, closing a document within about
   half a second of a selection change crashes Krita in `KisNodeModel::processUpdateQueue`, a null

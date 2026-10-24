@@ -27,7 +27,7 @@ Every session runs the cycle in `docs/DEVELOPMENT-WORKFLOW.md`:
 6. the changelog;
 7. a done-note in its `SESSIONS.md` block;
 8. the handoff prompt for the next session;
-9. a local commit;
+9. a local commit, with `verify` run on its drafted message as the last act before it;
 10. the owner's `/code-review high`, then a review-fixes commit;
 11. the next session's prompt, printed as the last message.
 
@@ -44,15 +44,19 @@ history keeps them), and anything still open moves to `docs/BACKLOG.md`.
 **State lives in `docs/next-session-prompt.md`**, rewritten by every session as its last act.
 
 **Read order:**
-1. the spec file(s) the session block names;
+1. what the session block's **Read** line names;
 2. this file;
-3. `docs/ARCHITECTURE.md`, once it exists;
-4. the prompt.
+3. `docs/ARCHITECTURE.md`'s overview, invariants and baseline, once it exists;
+4. from `SESSIONS.md`, its header, the session's block and the previous block's done-note;
+5. the prompt.
+
+The Read line is a floor: read further where the code leads.
 
 **Rules:**
 
 1. `uv run scripts/verify.py` (format check, lint, typecheck, tests, plugin tests on 3.10,
-   hygiene) must be green before you commit.
+   hygiene) must be green before you commit. The last run before each commit takes the drafted
+   message (see *Git*).
    - Run the live harness (`uv run krita-art-mcp probe`) whenever your change could affect what
      it covers.
    - Expected results are in the done-notes until `docs/ARCHITECTURE.md`'s baseline table exists.
@@ -152,20 +156,28 @@ message follows these rules:
 - **No personal names, game names or agent personas.** Write "the owner", "the first game" and
   "the Codex agent".
 - **No home-directory paths.** Write `~`.
-- **No AI attribution:** no co-author trailers, no "generated with" lines, no session links, no
-  AI credited as author, co-author or addressee. Naming the tools is fine: Claude Code and Codex
-  as the MCP clients the server supports, this file, and the workflow's review command.
+- **No AI attribution:** no co-author trailers, no lines saying a tool generated the work, no AI
+  session links, no AI credited as author, co-author or addressee. Naming the tools is fine:
+  Claude Code and Codex as the MCP clients the server supports, this file, and the workflow's
+  review command.
 - **Fixtures are fictional.**
+- **Done-notes and handoffs never name the owner's own data:** their documents, folders, presets
+  or roots. Record what was measured, not whose it was.
+- **Unsure whether something is public? Ask the owner before writing it;** a word they call
+  private goes on the term list.
 
-The hygiene stage of `verify` checks tracked files against hashed private terms, and commit
-messages against attribution trailers.
+The owner's own name, email and handle are public: they are on every commit's author line and on
+GitHub. The hygiene stage of `verify` checks every file, path and commit message, the drafted one
+included, against the term list in `~/.config/hygiene/terms.txt`, outside the repository (one
+word per line; a missing file fails, an empty one passes), and every commit message for AI
+attribution. A hit names the file and line, or the commit and message line, never the term.
 
 ## Commands
 
 | Command | Does |
 |---|---|
-| `uv run scripts/verify.py` | The gate, in six stages: `format`, `lint`, `types`, `tests` (3.12), `plugin-tests` (3.10, pytest only) and `hygiene`. It then prints a summary and exits 1 if any stage failed. |
-| `uv run scripts/verify.py <stage>…` | Runs only the named stages, for example `hygiene` after a commit to check its message. |
+| `uv run scripts/verify.py [--message <draft>]` | The gate, in six stages: `format`, `lint`, `types`, `tests` (3.12), `plugin-tests` (3.10, pytest only) and `hygiene`. It then prints a summary and exits 1 if any stage failed. `--message` gives `hygiene` the drafted commit message to check too. |
+| `uv run scripts/verify.py <stage>…` | Runs only the named stages; `--message` needs `hygiene` among them. |
 | `uv run scripts/amend_schemas.py [--check]` | Writes the shapes the tool schemas share (the envelope, `guard`, `source`, the completed rule's copy of `data`, inspect's `layers`) and formats the files. A tool session edits its schema's input, `data` and example, then runs it. `--check` changes nothing; a test holds the files to it. |
 | `uv run krita-art-mcp --version` | Prints the package version. |
 | `uv run krita-art-mcp serve` | Runs the MCP server `krita-art` over stdio; the clients start it this way. |
@@ -188,6 +200,13 @@ touches the owner's documents or `config.json`.
   - Before any push, list `git log origin/main..HEAD`; parallel sessions may share this checkout.
   - `origin` is the private GitHub repository; it stays private until the owner publishes it.
 - Stage explicit paths, never `git add -A`. Never undo with `git checkout <path>`.
+- **Last before each commit,** after the done-note and the handoff: write the message fresh into
+  `"$(git rev-parse --git-dir)/COMMIT_DRAFT"`, run `uv run scripts/verify.py --message` with it,
+  commit with `git commit -F` from it, then delete it. The message is checked before it exists
+  in history.
+  - The review commit goes the same way. A push note first puts the last commit's message
+    (`git log -1 --format=%B`) into the draft, then runs `verify` with it, then amends.
+  - A message never quotes an attribution form, even to describe the rule; describe it in words.
 - **Subjects.** Typed (`feat:`, `fix:`, `refactor:`, `docs:`, `review:`), in plain words, at most
   72 characters, ending `(x.y.z)` when the commit cuts a version.
 - **Bodies.** Short, wrapped at 72: what changed and why.

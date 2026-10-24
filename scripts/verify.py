@@ -1,8 +1,10 @@
 """The gate: six named stages, each failing on its own, then a summary.
 
-Usage: uv run scripts/verify.py [stage ...]
+Usage: uv run scripts/verify.py [stage ...] [--message DRAFT]
 """
 
+import argparse
+import functools
 import os
 import shutil
 import subprocess
@@ -15,6 +17,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 PYTHON = sys.executable
 PLUGIN_PACKAGES = ["-p", "krita_art_mcp_bridge"]
+Stage = Callable[[], list[list[str]]]
 
 
 class SetupError(Exception):
@@ -43,7 +46,12 @@ def _plugin_tests() -> list[list[str]]:
     return [[_uv(), *isolated, "python", "-m", "pytest", "tests/plugin", "-p", "no:cacheprovider"]]
 
 
-STAGES: dict[str, Callable[[], list[list[str]]]] = {
+def _hygiene(message: Path | None = None) -> list[list[str]]:
+    draft = [] if message is None else ["--message", str(message)]
+    return [[PYTHON, "scripts/hygiene.py", *draft]]
+
+
+STAGES: dict[str, Stage] = {
     "format": lambda: [[PYTHON, "-m", "ruff", "format", "--check", "."]],
     "lint": lambda: [[PYTHON, "-m", "ruff", "check", "."]],
     "types": lambda: [
@@ -54,7 +62,7 @@ STAGES: dict[str, Callable[[], list[list[str]]]] = {
     ],
     "tests": lambda: [[PYTHON, "-m", "pytest", "tests", "--ignore=tests/plugin"]],
     "plugin-tests": _plugin_tests,
-    "hygiene": lambda: [[PYTHON, "scripts/hygiene.py"]],
+    "hygiene": _hygiene,
 }
 
 
@@ -66,11 +74,11 @@ def _call(command: list[str]) -> bool:
         return False
 
 
-def _run(name: str) -> tuple[bool, float]:
+def _run(name: str, stages: dict[str, Stage]) -> tuple[bool, float]:
     print(f"\n== {name} ==", flush=True)
     start = time.monotonic()
     try:
-        commands = STAGES[name]()
+        commands = stages[name]()
     except SetupError as error:
         print(f"verify: {name} cannot start: {error}")
         return False, time.monotonic() - start
@@ -80,11 +88,23 @@ def _run(name: str) -> tuple[bool, float]:
 
 
 def main(argv: list[str]) -> int:
-    unknown = [name for name in argv if name not in STAGES]
+    parser = argparse.ArgumentParser(description="The gate: six named stages, then a summary.")
+    parser.add_argument("stages", nargs="*", metavar="stage")
+    parser.add_argument("--message", type=Path, help="the drafted commit message, for hygiene")
+    args = parser.parse_args(argv)
+    unknown = [name for name in args.stages if name not in STAGES]
     if unknown:
         print(f"verify: unknown stage(s) {', '.join(unknown)}; stages: {', '.join(STAGES)}")
         return 2
-    results = {name: _run(name) for name in argv or STAGES}
+    names = args.stages or list(STAGES)
+    # A draft given to a run without hygiene would go unchecked.
+    if args.message is not None and "hygiene" not in names:
+        print("verify: --message is checked by the hygiene stage; name it too")
+        return 2
+    stages = dict(STAGES)
+    if args.message is not None:
+        stages["hygiene"] = functools.partial(_hygiene, args.message.resolve())
+    results = {name: _run(name, stages) for name in names}
     print("\n== summary ==")
     for name, (passed, seconds) in results.items():
         print(f"{name:<13} {'PASS' if passed else 'FAIL'}  {seconds:6.1f}s")

@@ -70,6 +70,12 @@ the decision as an **Amended <date> by the owner** note.
     author, co-author or addressee). Naming the tools themselves is fine: Claude Code and Codex
     as supported MCP clients, `CLAUDE.md`, and the workflow's mention of the review command. The
     hygiene stage of `verify` enforces the names and the trailers.
+    **Amended 2026-10-24 by the owner, in session 7a:** the owner's own name, email and handle
+    are public, on every commit's author line and on GitHub, so they are not private terms;
+    files still write "the owner". The private terms live outside the repository, in
+    `~/.config/hygiene/terms.txt`, one word per line; the repository holds neither them nor
+    their hashes. The stage runs as the last act before each commit, the drafted message
+    included, and its attribution patterns name the AI tools.
 15. **Licence: GPL-3.0-or-later** for the whole repository (`LICENSE`, session 1). Code borrowed
     from MIT or CC0 projects keeps its attribution.
 16. **Commits** use the owner's global git identity. Subjects are typed and plain, at most 72
@@ -276,6 +282,10 @@ Each is a rule, not a preference. *Enforced by* names what fails when it breaks.
 14. **Nothing private enters the repository** (decision 14). *Why:* the history will be public.
     *Enforced by* the hygiene stage: hashed private terms against every tracked text file, and
     attribution trailers against every commit message.
+    **Amended 2026-10-24 by the owner, in session 7a:** *Enforced by* the hygiene stage, run with
+    the drafted commit message. It checks the owner's term list (missing fails, empty passes)
+    against the paths and contents of tracked, untracked and staged text files and against every
+    commit message, the draft included, and checks the messages for AI attribution.
 
 ## 6. Verification strategy
 
@@ -293,6 +303,10 @@ stage but hygiene.
 | Benchmarks | Inside `probe` from sessions 9 and 11 | N-01, N-09, N-02 against their budgets, failing over them | Machines other than the owner's |
 | Architecture reviews | Sessions 6, 10, 13 | Code against this file | Runtime behaviour |
 | By hand | Recorded in done-notes | The plugin-enable flow, H2's sheet, H3 in Codex, N-03 | Anything not written down; unchecked items go to the backlog |
+
+**Amended 2026-10-24 by the owner, in session 7a:** hygiene cannot see images and other
+binaries, their metadata included; a term joined to another word inside one lowercase run; or
+attribution in files, which is checked in messages only.
 
 **Falsification.** Each check a session adds is falsified once: break what it guards, watch it
 fail at its own step, restore by editing or copying the file back. Existing checks are not
