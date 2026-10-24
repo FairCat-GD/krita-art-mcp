@@ -2,6 +2,7 @@ import logging
 import threading
 from collections.abc import Callable
 
+from ..bridge_core.jobs import drain_in_slot
 from .qt import QObject, pyqtSignal, pyqtSlot
 
 
@@ -18,11 +19,7 @@ class Waker(QObject):
 
     @pyqtSlot()
     def _run(self) -> None:
-        # An exception escaping a PyQt5 slot aborts Krita, so none may leave this one.
-        try:
-            self._drain()
-        except Exception:
-            self._log.exception("the job queue failed")
+        drain_in_slot(self._drain, self._log)
 
     def emit(self) -> None:
         try:

@@ -17,6 +17,11 @@ WAIT_BUDGET_S = 45.0
 POLL_S = 2.0
 SOCKET_SLACK_S = 3.0
 HEALTH_TIMEOUT_S = 5.0
+# A POST stuck behind a long Krita call registers a moment after the bridge answers again, so
+# only a 404 answered promptly for this long means the call never arrived.
+REGISTER_GRACE_S = 2.0
+# A reply this slow came while Krita held the GIL, when nothing could register.
+SLOW_REPLY_S = 0.5
 MAX_BODY = 64 * 1024 * 1024
 
 
@@ -70,6 +75,7 @@ class BridgeClient:
         bridge_file: Path | None = None,
         budget_s: float = WAIT_BUDGET_S,
         poll_s: float = POLL_S,
+        grace_s: float = REGISTER_GRACE_S,
         is_live_krita: Callable[[int], bool] = processes.is_live_krita,
         explain: Callable[[], setup_checks.Step] | None = None,
         identity: dict[str, Any] | None = None,
@@ -77,6 +83,7 @@ class BridgeClient:
         self._bridge_file = bridge_file or paths.bridge_file()
         self._budget_s = budget_s
         self._poll_s = poll_s
+        self._grace_s = grace_s
         self._is_live_krita = is_live_krita
         self._explain = explain or _explain_not_running
         self._identity = identity
@@ -182,6 +189,8 @@ class BridgeClient:
         # The bridge keeps every operation for its Krita session, so a 404 before the bridge has
         # answered means the call is not registered yet, not that it was lost.
         answered = False
+        # When the bridge began answering 404 promptly; silence or a slow reply restarts it.
+        unknown_since: float | None = None
         op = None if call is None else call["op"]
         while True:
             wait_s = max(0.0, min(self._poll_s, deadline - time.monotonic()))
@@ -191,6 +200,7 @@ class BridgeClient:
             else:
                 method, path = "GET", f"/v1/operations/{operation_id}?wait_s={wait_s:.3f}"
             timeout = max(0.05, min(wait_s + SOCKET_SLACK_S, deadline - time.monotonic()))
+            sent_at = time.monotonic()
             try:
                 status, reply = self._request(bridge, method, path, call, timeout)
             except ConnectionRefusedError:
@@ -198,10 +208,11 @@ class BridgeClient:
                     return self._refused()
                 return _uncertain(operation_id, "the bridge stopped accepting connections")
             except TimeoutError:
-                pass  # A silent bridge: Krita is inside a call that holds the GIL.
+                unknown_since = None  # A silent bridge: Krita is inside a call that holds the GIL.
             except _Malformed:
                 return _uncertain(operation_id, "the bridge sent a malformed reply")
             except OSError:
+                unknown_since = None
                 time.sleep(min(0.05, max(0.0, deadline - time.monotonic())))
             else:
                 if reply.get("session_id") != bridge.session_id:
@@ -210,6 +221,12 @@ class BridgeClient:
                     return _unknown_operation(operation_id)
                 if call is None and status == 404 and not answered:
                     # A call whose POST timed out may not be registered yet.
+                    now = time.monotonic()
+                    if unknown_since is None or now - sent_at > SLOW_REPLY_S:
+                        unknown_since = now
+                    elif now - unknown_since >= self._grace_s:
+                        self._sent.pop(operation_id, None)
+                        return _unregistered(operation_id)
                     time.sleep(min(0.05, max(0.0, deadline - time.monotonic())))
                 elif call is None and status == 404:
                     return _uncertain(operation_id, "the bridge no longer knows the call")
@@ -328,6 +345,16 @@ def _uncertain(operation_id: str, reason: str) -> Failed:
     message = f"Krita stopped answering mid-call ({reason}); whether the call ran is unknown."
     details = {"outcome": "uncertain", "operation_id": operation_id}
     return Failed(error_body("INTERNAL_ERROR", message, retryable=False, details=details))
+
+
+def _unregistered(operation_id: str) -> Failed:
+    # The journal keeps the attempt unsettled, so a retry is sent only to this Krita session.
+    message = (
+        "Krita's bridge has no record of this call: it most likely never arrived and did not run, "
+        "but it may still arrive. Retry it, with the same request_id if it has one."
+    )
+    details = {"outcome": "unregistered", "operation_id": operation_id}
+    return Failed(error_body("INTERNAL_ERROR", message, retryable=True, details=details))
 
 
 def _text(value: Any) -> str | None:

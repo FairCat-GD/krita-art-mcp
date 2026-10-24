@@ -163,12 +163,13 @@ messages against attribution trailers.
 |---|---|
 | `uv run scripts/verify.py` | The gate, in six stages: `format`, `lint`, `types`, `tests` (3.12), `plugin-tests` (3.10, pytest only) and `hygiene`. It then prints a summary and exits 1 if any stage failed. |
 | `uv run scripts/verify.py <stage>…` | Runs only the named stages, for example `hygiene` after a commit to check its message. |
+| `uv run scripts/amend_schemas.py [--check]` | Writes the shapes the tool schemas share (the envelope, `guard`, `source`, the completed rule's copy of `data`, inspect's `layers`) and formats the files. A tool session edits its schema's input, `data` and example, then runs it. `--check` changes nothing; a test holds the files to it. |
 | `uv run krita-art-mcp --version` | Prints the package version. |
 | `uv run krita-art-mcp serve` | Runs the MCP server `krita-art` over stdio; the clients start it this way. |
 | `uv run krita-art-mcp install-plugin [--krita-data-dir DIR]` | Copies the plugin into Krita's `pykrita/` (default `~/Library/Application Support/Krita`) and prints the steps left. It never edits `kritarc`. |
-| `uv run krita-art-mcp roots add <dir>` / `list` / `remove <dir>` | Edits `config.json`: the folders an agent may name. Only the owner runs it; no session or harness does. |
+| `uv run krita-art-mcp roots add <dir>` / `list` / `remove <dir>` | Edits `config.json`: the folders an agent may name. `add` refuses `/`, the home folder, and any folder equal to, holding or inside a data folder. Only the owner runs it; no session or harness does. |
 | `uv run krita-art-mcp doctor` | Checks the setup in six ordered steps and names the first one that fails, with its fix; the sixth needs a root. Then it prints Krita's open and unsaved document counts, which the restart rule reads. |
-| `uv run krita-art-mcp probe` | The live harness: plugin hash first, then health, `krita_server_info` over stdio, H4 idle, the runtime probes, then its own documents and fixture files. Prints PASS, FAIL or MEASURED per check, and exits 1 on any FAIL. |
+| `uv run krita-art-mcp probe` | The live harness: plugin hash first, then health, `krita_server_info` over stdio, H4 idle, the runtime facts, then its own documents and fixture files, then a leftover check before its final sweeps. Prints PASS, FAIL or MEASURED per check, then the counts and the wall time; exits 1 on any FAIL. |
 
 **What only the live harness can see.** The unit tests never touch Krita. `uv run krita-art-mcp
 probe` drives a real `serve` over stdio against the owner's running Krita 5.3.x. It needs the

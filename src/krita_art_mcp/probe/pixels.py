@@ -16,22 +16,10 @@ from krita_art_mcp.bridge_client import BridgeClient, Done
 from krita_art_mcp.probe import fixtures
 from krita_art_mcp.probe.opening import open_args
 from krita_art_mcp.probe.report import Report, call, close, code, differs, tool
+from krita_art_mcp.tools.observe import BLEND_MODES
 
 WIDTH, HEIGHT = fixtures.WIDTH, fixtures.HEIGHT
 FULL = {"x": 0, "y": 0, "width": WIDTH, "height": HEIGHT}
-# The paint calls' blend modes (K21), as the plugin lists them.
-BLEND_MODES = {
-    "normal",
-    "multiply",
-    "screen",
-    "overlay",
-    "soft_light_svg",
-    "darken",
-    "lighten",
-    "color",
-    "luminize",
-    "behind",
-}
 SRGB = "sRGB-elle-V2-srgbtrc.icc"
 UNKNOWN_LAYER = "00000000-0000-4000-8000-000000000000"
 SHAPE_LAB = (75.12, -19.96, 28.26)
@@ -316,7 +304,7 @@ async def _resources(report: Report, a: Client, client: BridgeClient) -> None:
     profiles = {entry["id"] for entry in lists["profile"].get("resources", [])}
     report.check(
         "the blend modes are the whitelist; the sRGB profile and a palette are listed",
-        modes == BLEND_MODES and SRGB in profiles and lists["palette"].get("total", 0) > 0,
+        modes == set(BLEND_MODES) and SRGB in profiles and lists["palette"].get("total", 0) > 0,
         f"{len(modes)} modes, {len(profiles)} profiles, {lists['palette'].get('total')} palettes",
     )
     ids = {entry["id"] for entry in first or []}

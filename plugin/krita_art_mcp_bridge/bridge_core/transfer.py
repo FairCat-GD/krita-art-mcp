@@ -55,12 +55,14 @@ def write(
 
 
 def _expire(directory: Path, now: float) -> None:
-    # A file of the plugin's that no server read for this long was abandoned: its server died,
-    # or nobody followed the call that made it.
+    # A file no server read, or a mask no op took, for this long was abandoned: its server died,
+    # nobody followed the call, or the call was refused before it was sent. A server refreshes
+    # a mask it sends again, so no call loses its mask to this.
     for entry in os.scandir(directory):
         try:
+            ours = entry.name.endswith(".raw") or MASK_NAME.match(entry.name) is not None
             stale = entry.stat(follow_symlinks=False).st_mtime < now - STALE_S
-            if entry.name.endswith(".raw") and entry.is_file(follow_symlinks=False) and stale:
+            if ours and entry.is_file(follow_symlinks=False) and stale:
                 os.unlink(entry.path)
         except FileNotFoundError:
             pass
@@ -71,7 +73,7 @@ def remove(spec: dict[str, Any] | None) -> None:
         Path(spec["path"]).unlink(missing_ok=True)
 
 
-def take_mask(directory: Path, spec: Any) -> bytes:
+def take_mask(directory: Path, spec: Any, now: float | None = None) -> bytes:
     # A mask from the server, named by its SHA-256; read once, checked, then deleted.
     if (
         not isinstance(spec, dict)
@@ -88,6 +90,9 @@ def take_mask(directory: Path, spec: Any) -> bytes:
     width, height = spec["size_px"]
     try:
         fd = os.open(real, os.O_RDONLY | os.O_NOFOLLOW)
+    except FileNotFoundError as problem:
+        # Another call took it, or it expired; a retry sends it again, and nothing has changed.
+        raise BridgeError("IO_ERROR", "The mask is gone; retry the call.", True) from problem
     except OSError as problem:
         raise BridgeError("IO_ERROR", f"The mask cannot be read: {problem}") from problem
     info = os.fstat(fd)
@@ -97,6 +102,7 @@ def take_mask(directory: Path, spec: Any) -> bytes:
     with os.fdopen(fd, "rb") as stream:
         data = stream.read()
     os.unlink(real)
+    _expire(directory, time.time() if now is None else now)
     if hashlib.sha256(data).hexdigest() != spec["sha256"] or name.group(1) != spec["sha256"]:
         details = {"sha256": spec["sha256"]}
         raise BridgeError(

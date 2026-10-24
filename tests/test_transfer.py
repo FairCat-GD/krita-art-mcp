@@ -1,6 +1,7 @@
 import logging
 import os
 import stat
+import time
 from pathlib import Path
 from typing import Any
 
@@ -95,6 +96,18 @@ def test_a_mask_goes_to_the_plugin_named_by_its_hash_and_is_read_once(places: Pl
     assert spec["size_px"] == [3, 2]
     assert plugin_transfer.take_mask(places.transfer_dir, spec) == mask.tobytes()
     assert not Path(spec["path"]).exists()
+
+
+def test_a_mask_sent_again_is_made_fresh_or_written_again(places: Places) -> None:
+    # The bridge expires masks nobody took, so one sent again must not look abandoned.
+    mask = np.array([[0, 255]], dtype=np.uint8)
+    path = Path(transfer.put_mask(places.transfer_dir, mask)["path"])
+    os.utime(path, (0, 0))
+    transfer.put_mask(places.transfer_dir, mask)
+    assert path.stat().st_mtime > time.time() - 60
+    path.unlink()
+    transfer.put_mask(places.transfer_dir, mask)
+    assert path.read_bytes() == mask.tobytes()
 
 
 @pytest.mark.parametrize("break_it", ["hash", "folder", "size"])

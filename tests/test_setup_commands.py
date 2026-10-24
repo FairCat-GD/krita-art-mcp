@@ -1,14 +1,18 @@
+import asyncio
 import io
 import json
+import re
 import shutil
+import stat
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 import pytest
 
 from krita_art_mcp import doctor, install, paths, plugin_files, probe, roots
 from krita_art_mcp.bridge_client import BeforeSend, BridgeClient, Done, Failed, Outcome
 from krita_art_mcp.errors import error_body
+from krita_art_mcp.probe.report import Report
 from krita_art_mcp.setup_checks import Setup
 
 REPO_PLUGIN = paths.plugin_source()
@@ -247,8 +251,10 @@ def test_the_probe_stops_at_a_stale_plugin_and_sweeps_its_folder(tmp_path: Path)
     assert seen_at_start == [[]]
     lines = out.getvalue().splitlines()
     assert lines[0].startswith("FAIL     the running plugin is the repo's")
-    assert lines[-1] == "probe: 0 PASS, 1 FAIL"
+    assert re.fullmatch(r"probe: 0 PASS, 1 FAIL, 0 MEASURED in \d+\.\d s", lines[-1])
     assert list(harness.iterdir()) == []
+    # Its folder sits in the private data folder and is private itself.
+    assert stat.S_IMODE(harness.stat().st_mode) == 0o700
 
 
 def test_the_probe_fails_when_the_bridge_does_not_answer(tmp_path: Path) -> None:
@@ -256,3 +262,34 @@ def test_the_probe_fails_when_the_bridge_does_not_answer(tmp_path: Path) -> None
     status = probe.run(out, _Client(UNREACHABLE), tmp_path / "harness", ["/nonexistent"])
     assert status == 1
     assert out.getvalue().startswith("FAIL     the bridge answers its health check: no bridge")
+
+
+@pytest.mark.parametrize(
+    ("documents", "files", "passed"),
+    [([], [], True), (["krita-art-mcp probe left open"], [], False), ([], ["0123.raw"], False)],
+    ids=["clean", "a document left open", "a transfer file left"],
+)
+def test_the_probe_checks_its_leftovers_before_it_sweeps(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    documents: list[str],
+    files: list[str],
+    passed: bool,
+) -> None:
+    harness, transfer = tmp_path / "harness", tmp_path / "transfer"
+    transfer.mkdir()
+    for name in files:
+        (transfer / name).write_bytes(b"")
+    entries = [{"name": name, "mode": "new", "path": None} for name in documents]
+    entries.append({"name": "the owner's own", "mode": "read_only", "path": "/art/hero.kra"})
+
+    async def listed(mcp: Any, name: str, arguments: dict[str, Any]) -> dict[str, Any]:
+        assert name == "krita_document_list"
+        return {"data": {"documents": entries}}
+
+    monkeypatch.setattr(probe, "tool", listed)
+    out = io.StringIO()
+    report = Report(out)
+    asyncio.run(probe._no_leftovers(report, cast(Any, None), harness))
+    assert (report.passed, report.failed) == (int(passed), int(not passed))
+    assert f"{len(documents)} document(s) open, {len(files)} transfer file(s)" in out.getvalue()

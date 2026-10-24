@@ -16,7 +16,7 @@ CODES: dict[str, tuple[bool, str]] = {
     "MULTIPLE_WINDOWS": (True, "Close Krita's extra windows, then retry."),
     "BUSY": (True, "Krita is busy; retry shortly."),
     "TIMEOUT": (False, "The operation exceeded its hard limit."),
-    "CANCELLED": (False, "The operation was cancelled before it ran."),
+    "CANCELLED": (True, "The operation was cancelled before it ran."),
     "REQUEST_ID_CONFLICT": (False, "That request_id was used with different arguments."),
     "DOCUMENT_NOT_FOUND": (False, "No open document has that id."),
     "LAYER_NOT_FOUND": (False, "The document has no layer with that id."),

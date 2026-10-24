@@ -15,6 +15,20 @@ LIMITS = {
     "wait_budget_seconds": int(WAIT_BUDGET_S),
 }
 RESOURCE_DATA = ("kind", "total", "resources", "next_cursor")
+# The blend modes paint calls accept, as Krita's composite-op ids (K21); the plugin holds an equal
+# list (`bridge_core.resources.BLEND_MODES`), with their names.
+BLEND_MODES = (
+    "normal",
+    "multiply",
+    "screen",
+    "overlay",
+    "soft_light_svg",
+    "darken",
+    "lighten",
+    "color",
+    "luminize",
+    "behind",
+)
 
 
 def server_info(call: ToolCall, arguments: dict[str, Any]) -> CallToolResult:

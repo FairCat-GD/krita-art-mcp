@@ -1,6 +1,7 @@
 import json
 import os
 import sys
+from collections.abc import Sequence
 from pathlib import Path
 from typing import TextIO
 
@@ -73,7 +74,28 @@ def inside(real: str, roots: list[str]) -> bool:
     return any(real == root or real.startswith(root.rstrip("/") + "/") for root in roots)
 
 
-def run(action: str, directory: str | None, config: Path, out: TextIO = sys.stdout) -> int:
+def refusal(real: str, home: str, data_dirs: Sequence[str]) -> str | None:
+    # Each folder is a realpath, as every path an agent names is (invariant 3).
+    if real == "/":
+        return "/ would let agents reach every file on this Mac."
+    if real == home:
+        return f"{real} is your home folder, which would let agents reach all your files."
+    for data in data_dirs:
+        if inside(real, [data]):
+            return f"{real} is krita-art-mcp's data folder or inside it, where its own files live."
+        if inside(data, [real]):
+            return f"{real} holds krita-art-mcp's data folder ({data}), where its own files live."
+    return None
+
+
+def run(
+    action: str,
+    directory: str | None,
+    config: Path,
+    out: TextIO = sys.stdout,
+    home: Path | None = None,
+    data_dirs: Sequence[Path] = (),
+) -> int:
     try:
         roots = load(config)
         if action == "list":
@@ -87,6 +109,12 @@ def run(action: str, directory: str | None, config: Path, out: TextIO = sys.stdo
         if action == "add":
             if not os.path.isdir(real):
                 print(f"{directory} is not a folder.", file=out)
+                return 1
+            # The folder config.json lives in is a data folder, wherever it is.
+            data = [os.path.realpath(folder) for folder in (config.parent, *data_dirs)]
+            refused = refusal(real, os.path.realpath(home or Path.home()), data)
+            if refused is not None:
+                print(f"Refused: {refused} Allow the folder that holds the art.", file=out)
                 return 1
             if real in roots:
                 print(f"{real} is already allowed.", file=out)

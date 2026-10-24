@@ -145,6 +145,37 @@ def test_roots_add_list_and_remove(tree: Path) -> None:
     assert _roots("remove", str(tree / "art"), config) == (1, f"{tree / 'art'} is not a root.\n")
 
 
+@pytest.mark.parametrize(
+    ("folder", "reason"),
+    [
+        ("/", "every file"),
+        ("home", "your home folder"),
+        ("home/data", "data folder or inside it"),
+        ("home/data/harness", "data folder or inside it"),
+        ("home/data-link", "data folder or inside it"),
+        ("server", "data folder or inside it"),
+        ("", "holds krita-art-mcp's data folder"),
+    ],
+    ids=["slash", "home", "the data folder", "inside it", "a link to it", "the server's", "above"],
+)
+def test_roots_add_refuses_a_folder_that_reaches_too_far(
+    tmp_path: Path, folder: str, reason: str
+) -> None:
+    home, server = tmp_path / "home", tmp_path / "server"
+    data = home / "data"
+    for made in (data / "harness", server, home / "art"):
+        made.mkdir(parents=True)
+    (home / "data-link").symlink_to(data)
+    config = data / "config.json"
+    out = io.StringIO()
+    target = folder if folder == "/" else str(tmp_path / folder)
+    assert roots.run("add", target, config, out, home=home, data_dirs=[server]) == 1
+    assert out.getvalue().startswith("Refused: ") and reason in out.getvalue()
+    assert roots.load(config) == []
+    art = str(home / "art")
+    assert roots.run("add", art, config, io.StringIO(), home=home, data_dirs=[server]) == 0
+
+
 def test_roots_add_needs_a_folder_and_never_overwrites_a_broken_config(tree: Path) -> None:
     config = tree / "data" / "config.json"
     hero = str(tree / "art" / "accepted" / "hero.kra")

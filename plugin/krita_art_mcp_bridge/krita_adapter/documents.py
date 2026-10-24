@@ -80,6 +80,7 @@ class KritaDocuments:
         }
 
     def layers(self, document: Any) -> tuple[str, list[dict[str, Any]]]:
+        document.waitForDone()
         root = document.rootNode()
         active = document.activeNode()
         active_id = None if active is None else _layer_id(active)
@@ -125,6 +126,7 @@ class KritaDocuments:
         return _buffer(document.pixelData(0, 0, int(document.width()), int(document.height())))
 
     def selection(self, document: Any) -> tuple[dict[str, int], Any] | None:
+        document.waitForDone()
         selection = document.selection()
         if selection is None:
             return None

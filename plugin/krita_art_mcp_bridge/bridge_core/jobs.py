@@ -153,6 +153,7 @@ class Jobs:
             if self._job_active:
                 return
             self._job_active = True
+        operation: Operation | None = None
         try:
             while True:
                 with self._lock:
@@ -164,6 +165,12 @@ class Jobs:
                 self._run(operation)
         finally:
             with self._lock:
+                # An interrupt between taking a job and running it must not strand it running.
+                if operation is not None and operation.state == RUNNING:
+                    self._finish_failed(
+                        operation, error("INTERNAL_ERROR", "The op did not finish.")
+                    )
+                    self._lock.notify_all()
                 self._job_active = False
 
     def _run(self, operation: Operation) -> None:
@@ -171,11 +178,12 @@ class Jobs:
         failure: dict[str, Any] | None = error("INTERNAL_ERROR", "The op did not finish.")
         call = Call(operation.operation_id, operation.request_id, operation.client)
         try:
-            result = self._handlers[operation.op](operation.args, call)
+            result = _sendable(self._handlers[operation.op](operation.args, call))
             failure = None
         except BridgeError as raised:
             failure = raised.body
-        except Exception:
+        except BaseException:
+            # Even an interrupt fails only its own op: anything leaving the Qt slot ends Krita.
             self._log.error(
                 "op %s (%s) raised\n%s",
                 operation.op,
@@ -195,6 +203,17 @@ class Jobs:
                 self._lock.notify_all()
 
     def _finish_failed(self, operation: Operation, failure: dict[str, Any]) -> None:
+        try:
+            json.dumps(failure, allow_nan=False)
+        except (TypeError, ValueError, RecursionError):
+            # Replaced, so every poll of the operation still gets an answer.
+            self._log.error(
+                "op %s (%s) failed with an error that is not JSON",
+                operation.op,
+                operation.operation_id,
+            )
+            message = "The op failed with an error the bridge could not send; see plugin.log."
+            failure = error("INTERNAL_ERROR", message, False, {"op": operation.op})
         operation.fail(failure)
         # Retryable means the op changed nothing, so a retry under the same id runs again.
         if failure["retryable"] and self._requests.get(operation.request_id) is operation:
@@ -223,7 +242,8 @@ class Jobs:
             cancelled = operation.state == QUEUED
             if cancelled:
                 self._queue.remove(operation)
-                operation.fail(error("CANCELLED", "The operation was cancelled before it ran."))
+                message = "The operation was cancelled before it ran."
+                self._finish_failed(operation, error("CANCELLED", message, True))
                 self._lock.notify_all()
             return operation.reply(), cancelled
 
@@ -235,3 +255,21 @@ class Jobs:
                 message = "Krita is quitting; the operation never ran."
                 self._finish_failed(operation, error("CANCELLED", message, True))
             self._lock.notify_all()
+
+
+def drain_in_slot(drain: Callable[[], None], log: logging.Logger) -> None:
+    # Krita's Qt slot runs the drain: anything leaving a PyQt5 slot, SystemExit included, ends
+    # Krita with the owner's unsaved work.
+    try:
+        drain()
+    except BaseException:
+        log.exception("the job queue failed")
+
+
+def _sendable(result: Any) -> dict[str, Any]:
+    # A reply the HTTP thread cannot send would leave every poll of it unanswered; the round
+    # trip also keeps a snapshot that later changes to the handler's objects cannot reach.
+    if not isinstance(result, dict):
+        raise TypeError(f"the op returned a {type(result).__name__}, not an object")
+    snapshot: dict[str, Any] = json.loads(json.dumps(result, allow_nan=False))
+    return snapshot

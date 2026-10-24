@@ -116,6 +116,25 @@ def _impure_core_imports(tree: ast.Module, module: str, is_package: bool) -> lis
     ]
 
 
+def _reads_before_waiting(tree: ast.Module) -> list[str]:
+    # Invariant 6: a function that reads pixels calls waitForDone() before its first read.
+    hits = []
+    for function in ast.walk(tree):
+        if not isinstance(function, (ast.FunctionDef, ast.AsyncFunctionDef)):
+            continue
+        calls = sorted(
+            (node.lineno, node.col_offset, node.func.attr)
+            for node in ast.walk(function)
+            if isinstance(node, ast.Call)
+            and isinstance(node.func, ast.Attribute)
+            and node.func.attr in ("pixelData", "waitForDone")
+        )
+        names = [name for _, _, name in calls]
+        if "pixelData" in names and "waitForDone" not in names[: names.index("pixelData")]:
+            hits.append(f"{function.lineno}: {function.name}")
+    return hits
+
+
 Rule = Callable[[ast.Module, str, bool], list[str]]
 
 
@@ -135,6 +154,32 @@ def test_plugin_imports_only_the_standard_library_qt_and_krita() -> None:
 def test_only_the_adapter_imports_krita_or_qt() -> None:
     hits = [f"{m}:{h}" for m, p, tree in _sources() for h in _misplaced_krita_imports(tree, m, p)]
     assert hits == []
+
+
+def test_the_adapter_waits_for_krita_before_every_pixel_read() -> None:
+    hits = [
+        f"{m}:{h}"
+        for m, _, tree in _sources()
+        if _within(m, ADAPTER)
+        for h in _reads_before_waiting(tree)
+    ]
+    assert hits == []
+
+
+@pytest.mark.parametrize(
+    ("source", "refused"),
+    [
+        ("def read(doc):\n    return doc.pixelData(0, 0, 1, 1)", True),
+        ("def read(doc):\n    data = doc.pixelData(0, 0, 1, 1)\n    doc.waitForDone()", True),
+        (
+            "def read(doc):\n    doc.waitForDone()\n    return [doc.pixelData(*r) for r in rs]",
+            False,
+        ),
+        ("def name(doc):\n    return doc.name()", False),
+    ],
+)
+def test_a_read_before_the_wait_is_found(source: str, refused: bool) -> None:
+    assert bool(_reads_before_waiting(ast.parse(source))) is refused
 
 
 def test_bridge_core_imports_only_the_standard_library_and_itself() -> None:

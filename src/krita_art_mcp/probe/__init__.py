@@ -14,7 +14,7 @@ from jsonschema import Draft202012Validator
 from mcp import Client, StdioServerParameters
 
 from krita_art_mcp import __version__, paths, schemas, setup_checks
-from krita_art_mcp.bridge_client import BridgeClient, Done, Failed
+from krita_art_mcp.bridge_client import BridgeClient, Done
 from krita_art_mcp.instructions import INSTRUCTIONS
 from krita_art_mcp.probe import opening, pixels
 from krita_art_mcp.probe.report import Report, close, code, tool
@@ -35,6 +35,7 @@ def run(
     harness: Path | None = None,
     serve: list[str] | None = None,
 ) -> int:
+    started = time.monotonic()
     report = Report(out)
     harness = harness or paths.harness_dir()
     # The probe owns the harness folder: leftovers from a killed run go first, and its own
@@ -43,12 +44,12 @@ def run(
         _sweep(harness)
         cleanup.callback(_sweep, harness)
         _probe(report, client or BridgeClient(), serve or _serve_command(), harness)
-    return report.summary()
+    return report.summary(time.monotonic() - started)
 
 
 def _sweep(harness: Path) -> None:
     shutil.rmtree(harness, ignore_errors=True)
-    harness.mkdir(parents=True, exist_ok=True)
+    paths.private_dir(harness)
 
 
 def _serve_command() -> list[str]:
@@ -77,7 +78,7 @@ def _probe(report: Report, client: BridgeClient, serve: list[str], harness: Path
         f"plugin {info.get('plugin_version')}",
     )
     asyncio.run(_over_stdio(report, _server(serve, harness, "server-a"), info))
-    _runtime(report, client, info)
+    _runtime(report, info)
     if _no_unsaved_documents(report, client):
         asyncio.run(_documents(report, client, serve, harness))
 
@@ -139,7 +140,7 @@ async def _over_stdio(
         )
 
 
-def _runtime(report: Report, client: BridgeClient, info: dict[str, Any]) -> None:
+def _runtime(report: Report, info: dict[str, Any]) -> None:
     report.measured(
         "Krita's runtime",
         f"Krita {info.get('krita_version')}, Qt {info.get('qt_version')}, "
@@ -151,23 +152,6 @@ def _runtime(report: Report, client: BridgeClient, info: dict[str, Any]) -> None
         str(info.get("setup_on_python_main_thread")),
     )
     report.measured("Node.paintPolylineStroke", str(info.get("paint_polyline_stroke")))
-    outcome = client.call("probe.undo_action")
-    if not isinstance(outcome, Done):
-        failure = outcome.error["message"] if isinstance(outcome, Failed) else "still running"
-        report.check("the edit_undo probe runs", False, failure)
-        return
-    result = outcome.result
-    if "skipped" in result:
-        report.measured("edit_undo", f"skipped: {result['skipped']}")
-        return
-    report.check("Krita has an edit_undo action", result.get("action_found") is True)
-    if result.get("action_found"):
-        before, after = result["before"], result["after_add_layer"]
-        report.measured(
-            "edit_undo text",
-            f"before {before['text']!r}; after adding a layer {after['text']!r} "
-            f"(tooltip {after['tooltip']!r})",
-        )
 
 
 def _no_unsaved_documents(report: Report, client: BridgeClient) -> bool:
@@ -205,19 +189,22 @@ async def _probe_documents(mcp: Client) -> list[dict[str, Any]]:
     ]
 
 
-async def _sweep_documents(mcp: Client, harness: Path) -> int:
+async def _own_documents(mcp: Client, harness: Path) -> list[dict[str, Any]]:
     # The probe's own: the documents it created, and any file it opened from its folder.
     listed = await tool(mcp, "krita_document_list", {})
     entries = (listed.get("data") or {}).get("documents", [])
     folder = os.path.realpath(harness) + "/"
-    leftovers = [
+    return [
         entry
         for entry in entries
         if (entry["name"].startswith(PREFIX) and entry["mode"] != "read_only")
         or (entry["mode"] != "new" and (entry["path"] or "").startswith(folder))
     ]
+
+
+async def _sweep_documents(mcp: Client, harness: Path) -> int:
     swept = 0
-    for entry in leftovers:
+    for entry in await _own_documents(mcp, harness):
         closed = await close(mcp, entry["document_id"])
         swept += bool((closed.get("data") or {}).get("closed"))
     return swept
@@ -236,9 +223,23 @@ async def _documents(report: Report, client: BridgeClient, serve: list[str], har
             await _cycles(report, a)
             await opening.run(report, a, b, client, harness)
             await pixels.run(report, a, client, harness)
+            await _no_leftovers(report, a, harness)
         finally:
             await _sweep_documents(a, harness)
             await _sweep_documents(b, harness)
+
+
+async def _no_leftovers(report: Report, mcp: Client, harness: Path) -> None:
+    # Before the final sweeps, which would hide what a check failed to clean up.
+    left = await _own_documents(mcp, harness)
+    # Beside the harness folder, as Places has it.
+    transfer = harness.parent / "transfer"
+    files = sorted(entry.name for entry in os.scandir(transfer)) if transfer.is_dir() else []
+    report.check(
+        "the probe left no document open and no transfer file",
+        not left and not files,
+        f"{len(left)} document(s) open, {len(files)} transfer file(s)",
+    )
 
 
 async def _document_checks(report: Report, a: Client, b: Client, harness: Path) -> None:

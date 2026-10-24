@@ -1629,6 +1629,110 @@ Part 8 (*Bridge protocol*, K41, K48).
   owner's documents saved, as now.
 - **A changed plugin loads only after a Krita restart;** decision 21 applies.
 
+**Done (2026-10-24, 0.6.0).**
+- **Decided with the owner at the start:**
+  - **F6 (the block's Ask): `probe.undo_action` is retired.** Its measurement (the label reads
+    `'Undo '` straight after a change) stays in session 2's done-note; sessions 7 and 9 build their
+    label checks on the agent's own document.
+  - **F7 changes the journal:** a no-effect outcome settles only the attempt it names; a receipt
+    still settles every attempt it deduplicated. Otherwise a late `krita_operation_get` on a
+    cancelled op marks a running retry settled, and a Krita restart could run it twice. It reverses
+    session 3's rule and test that a no-effect outcome settles them all.
+  - **F27 swallows `SystemExit` too:** in a PyQt5 slot it ends Krita, the loss F27 guards against.
+  - **F12: masks expire after the same hour as raw files,** since the server refreshes a mask it
+    sends again and a missing mask is retryable.
+  - **The owner restarted Krita** to load the plugin (3 documents open, 0 unsaved).
+- **A design check in plan mode** (one independent read of the code paths) found the F7 gap; the
+  404 window filling with time in which Krita held the GIL; a message promising more than the
+  client knows; error bodies the reply could not carry; a queue stalled and a job stranded
+  `running` after an interrupt; and a mask taken by one call while another refreshed it. The plan
+  folded in a fix for each.
+- **The server.**
+  - **`bridge_client`:** a 404 answered promptly for `REGISTER_GRACE_S` (2 s) before the bridge
+    has said `running` ends the follow with `_unregistered`: retryable `INTERNAL_ERROR`, `outcome:
+    "unregistered"`, in `call()` and `operation()` alike. A timeout, a reset or a reply slower than
+    0.5 s restarts the window. `outcome_of` keeps such an attempt unsettled.
+  - **`journal`:** `NO_EFFECT` settles by operation id, like `CONFLICT` and `NOT_SENT`.
+  - **`errors`:** `CANCELLED` is retryable.
+  - **`roots.refusal`:** `roots add` refuses `/`, the home folder, and any folder equal to,
+    holding or inside a data folder (the one holding `config.json`, and the server's), by realpath.
+  - **`tools.CALLS`** (was `_CALLS`) also serialises the baseline sweep at server start.
+  - **`tools/observe.BLEND_MODES`**, held equal to the plugin's; the probe reads it.
+  - **`paths.private_dir`**, used for the harness folder; **`transfer.put_mask`** refreshes a mask
+    it finds and writes one that is missing.
+- **The plugin.**
+  - **`jobs`:** `cancel` fails through `_finish_failed` (retryable, request id released); a result
+    must be a dict that survives `json.dumps(allow_nan=False)`, and is stored as that snapshot; an
+    error body that cannot be sent becomes a plain `INTERNAL_ERROR`; `_run` fails its op on any
+    `BaseException`; `drain` fails an op it popped but never finished; `drain_in_slot` swallows and
+    logs anything still escaping, and `Waker._run` calls it.
+  - **`transfer`:** `_expire` takes masks too, and also runs after a mask is taken; a mask that is
+    gone is a retryable `IO_ERROR`.
+  - **`log`:** `plugin.log` is made 0600, an older one narrowed, and a rotated one 0600.
+  - **The adapter:** `selection()` and `layers()` call `waitForDone()` first; `ops.py` loses the
+    undo probe.
+- **The probe:** the summary reads `probe: N PASS, M FAIL, K MEASURED in S s`; a last check
+  (`_no_leftovers`, before the final sweeps) finds open probe documents and transfer files; the
+  harness folder is 0700.
+- **Tooling:** `scripts/amend_schemas.py` holds the envelope, `guard` and `source`, copies each
+  `data` into the completed rule and open's `layers` into inspect's, and formats the 19 files;
+  `--check` changes nothing. It was a no-op on the files as they stood; a test holds them to it.
+- **Amendments:**
+  - **The three decisions above** (F7's journal rule, F27's `SystemExit`, F12's hour), the owner's,
+    in plan mode.
+  - **F24: one answer for `call()` and `operation()`,** retryable `outcome: "unregistered"`, not
+    `INVALID_ARGUMENT` "unknown operation", whose wording reads as the agent's mistake; and a slow
+    reply restarts the window. Settled in the plan (design check).
+  - **F9: `layers()` waits too.** The scan that holds F9 found it. Settled in the plan.
+  - **F11 checks error bodies as well as results,** and keeps the result as a snapshot. Settled in
+    the plan (design check).
+  - **F27 catches per job, and no op is stranded,** beside the slot's guard, so a swallowed
+    interrupt never stalls the queue. Settled in the plan (design check).
+  - **F12: a missing mask is retryable, and taking a mask expires the rest.** Settled in the plan
+    (design check).
+  - **F15 also refuses the server's data folder** (`KRITA_ART_MCP_DATA_DIR`, which holds the
+    journal). Settled in the plan.
+  - **F13's summary counts MEASURED too,** so no session counts them by hand. Settled in the plan.
+  - **F8 took the block's test branch, F18 its generator branch.** Settled in the plan.
+- **Measured** (Krita 5.3.4.1 on macOS, Apple Silicon, on a Krita the owner had just restarted with
+  nothing open):
+  - **`probe`:** 55 PASS, 0 FAIL, 14 MEASURED in 12.3 s; the leftover check PASS; H4 p50 5.5 ms,
+    p95 8.8 ms, max 19.4 ms; create and close mean 144 ms, max 156 ms; opens 132–151 ms; a native
+    capture 29 ms; the one expected "baseline … was not kept" line.
+  - **The raw preset digest changed a fifth time** (`234ce3da55e8e01c`); the canonical one held
+    (`d31399fb15465c79`).
+  - **Modes:** `plugin.log` went from 0644 to 0600 at the new plugin's first start, and `harness/`
+    from 0755 to 0700 at the probe's; everything in the data folder is now 0700 or 0600.
+  - **Leftovers:** `transfer/` and `harness/` empty after both runs; `plugin.log` with no warning or
+    error, and a `stopped` line for the Krita the owner quit.
+- **Checked by hand:** `doctor` after the owner's restart: steps 1–5 PASS, step 6 FAIL "no roots";
+  0 open documents.
+- **Falsified:**
+  - **The method.** A scratchpad driver broke one product line at a time (the scan itself, for the
+    scan's own test), ran only the guarding test, copied the file back and compared it byte for
+    byte; `git status` matched before and after.
+  - **47 breaks, each failing at its own test:** the window ending a lost POST and a call left
+    running, the id leaving `_sent`, the silence, slow-reply and reset restarts; `unregistered`
+    unsettled and mapped to UNKNOWN; the no-effect rule; `CANCELLED` retryable on the server, in
+    the bridge's cancel and in its release; a non-JSON result end to end and in the core; an error
+    body; the snapshot; an interrupt in a handler, before a job runs, and in the slot; the log
+    narrowed and rotated; masks expiring, on a take too, and a gone mask retryable; the refreshed
+    mask; the two adapter waits and the scan's own rule; every op in `RECEIPTS`; the blend modes and
+    the three bounds; the five roots refusals; the sweep under `CALLS`; the summary line and the
+    private harness folder; the leftover check's documents and files; a stale schema file, and the
+    script's `guard` and `data` copies.
+  - **Live:** the leftover check FAILed ("1 document(s) open") with the pixel checks' first close
+    skipped, and the final sweep closed that document.
+- **Known debt:** an interrupt landing between taking a job and running it fails that job, but the
+  jobs queued behind it wait for the next call to wake the queue. A server killed mid-write leaves a
+  `.mask-*.tmp`, which only the bridge's start sweeps.
+- **Numbers:**
+  - `verify`: 6 stages, all PASS;
+  - 360 server tests passed, 0 skipped (+26);
+  - 270 plugin-core tests passed, 0 skipped (+21);
+  - `probe`: 55 PASS, 0 FAIL, 14 MEASURED (−1 and +1 PASS, −1 MEASURED), 12.3 s;
+  - 11 registered tools; 19 schema files; instructions 2,773 characters.
+
 ---
 
 ## 7: Preparing a change

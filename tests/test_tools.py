@@ -1,18 +1,24 @@
+import ast
 import asyncio
+import inspect
+import textwrap
 import threading
 import time
+from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
+import pytest
 from mcp import Client
 from mcp.server.mcpserver import MCPServer
 from mcp.types import CallToolResult
 
-from krita_art_mcp import envelope, schemas, tools
+from krita_art_mcp import baselines, envelope, schemas, server, tools
 from krita_art_mcp.bridge_client import BridgeClient
 from krita_art_mcp.journal import Journal
 from krita_art_mcp.paths import Places
 from krita_art_mcp.server import build_server
+from krita_art_mcp.tools import operations
 
 INFO_DATA: dict[str, Any] = schemas.load("krita_server_info")["example"]["structuredContent"][
     "data"
@@ -38,7 +44,8 @@ def _completed(arguments: dict[str, Any], client_name: str | None = None) -> Cal
 def test_only_built_tools_are_registered_with_their_contract_schemas(tmp_path: Path) -> None:
     async def listed() -> list[Any]:
         journal, places = Journal(tmp_path / "journal"), Places.under(tmp_path, tmp_path)
-        async with Client(build_server(BridgeClient(), journal, places)) as mcp:
+        client = BridgeClient(bridge_file=tmp_path / "bridge.json")
+        async with Client(build_server(client, journal, places)) as mcp:
             return list((await mcp.list_tools()).tools)
 
     registered = asyncio.run(listed())
@@ -161,3 +168,44 @@ def test_calls_from_one_server_process_run_one_at_a_time() -> None:
     results = asyncio.run(concurrent())
     assert [result.is_error for result in results] == [False] * 4
     assert overlaps == 0
+
+
+def _ops_sent(function: Callable[..., Any]) -> set[str]:
+    tree = ast.parse(textwrap.dedent(inspect.getsource(function)))
+    return {
+        node.args[0].value
+        for node in ast.walk(tree)
+        if isinstance(node, ast.Call)
+        and isinstance(node.func, ast.Attribute)
+        and node.func.attr == "call"
+        and node.args
+        and isinstance(node.args[0], ast.Constant)
+        and isinstance(node.args[0].value, str)
+    }
+
+
+def test_every_op_a_tool_sends_has_that_tools_receipt() -> None:
+    # krita_operation_get rebuilds a call's receipt from its op alone.
+    sent = {name: _ops_sent(function) for name, function in tools.TOOLS.items()}
+    for name, ops in sent.items():
+        for op in ops:
+            known = operations.RECEIPTS.get(op)
+            assert known is not None and known.tool == name, (name, op)
+    assert set(operations.RECEIPTS) == set().union(*sent.values())
+
+
+def test_the_baseline_sweep_takes_its_turn_with_the_tool_calls(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    held: list[bool] = []
+    monkeypatch.setattr(
+        server,
+        "BridgeClient",
+        lambda **options: BridgeClient(bridge_file=tmp_path / "b", **options),
+    )
+    monkeypatch.setattr(
+        baselines, "sweep", lambda client, folder: held.append(tools.CALLS.locked())
+    )
+    server._sweep_baselines(Places.under(tmp_path, tmp_path))
+    assert held == [True]
+    assert not tools.CALLS.locked()

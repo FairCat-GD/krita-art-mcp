@@ -12,7 +12,8 @@ LIST_FIELDS = {"kind", "cursor", "limit"}
 MAX_LIMIT = 100
 CURSOR = re.compile(r"^(0|[1-9][0-9]*)$")
 # The blend modes paint calls will accept, as Krita's composite-op ids (K21): Krita paints an
-# unknown id as normal without a word, so nothing outside this list is ever passed to it.
+# unknown id as normal without a word, so nothing outside this list is ever passed to it. The
+# server holds an equal list of the ids.
 BLEND_MODES = (
     ("normal", "Normal"),
     ("multiply", "Multiply"),

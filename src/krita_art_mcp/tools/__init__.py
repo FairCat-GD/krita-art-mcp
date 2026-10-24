@@ -44,7 +44,7 @@ BUILT_TOOLS = sorted(TOOLS)
 
 log = logging.getLogger(__name__)
 # Each server process serialises its own calls (PDD Part 8); mcp would run them concurrently.
-_CALLS = threading.Lock()
+CALLS = threading.Lock()
 
 
 class _NoFields(ArgModelBase):
@@ -84,7 +84,7 @@ def build(name: str, run: Run) -> Tool:
     # Sync on purpose: mcp runs it on a worker thread, so a 45 s bridge wait never stalls stdio.
     def call(arguments: dict[str, Any], ctx: Context) -> CallToolResult:
         client_name = _client_name(ctx)
-        with _CALLS:
+        with CALLS:
             return _checked(name, arguments, client_name, run, inputs, outputs)
 
     return Tool(

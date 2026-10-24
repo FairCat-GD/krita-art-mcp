@@ -5,6 +5,13 @@ from pathlib import Path
 PLUGIN_NAME = "krita_art_mcp_bridge"
 
 
+def private_dir(path: Path) -> Path:
+    # mkdir's mode reaches only the last folder, and only when it makes it.
+    path.mkdir(mode=0o700, parents=True, exist_ok=True)
+    path.chmod(0o700)
+    return path
+
+
 def default_data_dir() -> Path:
     # bridge.json, logs and the harness folder stay here whatever KRITA_ART_MCP_DATA_DIR says,
     # because Krita launched from the Dock never sees the variable (decision 25).

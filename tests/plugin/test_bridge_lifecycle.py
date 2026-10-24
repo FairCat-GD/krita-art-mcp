@@ -206,6 +206,25 @@ def test_the_log_rotates_at_5_mb(tmp_path: Path) -> None:
     assert Path(handler.baseFilename) == tmp_path / "logs" / "plugin.log"
 
 
+def test_the_log_is_private_and_stays_private_when_it_rotates(tmp_path: Path) -> None:
+    log_dir = tmp_path / "logs"
+    log_dir.mkdir()
+    older = log_dir / "plugin.log"
+    older.write_text("written by an older plugin\n")
+    older.chmod(0o644)
+    logger = log.setup(log_dir)
+    [handler] = logger.handlers
+    assert isinstance(handler, logging.handlers.RotatingFileHandler)
+    assert stat.S_IMODE(older.stat().st_mode) == 0o600
+    logger.info("before the rotation")
+    handler.doRollover()
+    logger.info("after the rotation")
+    handler.close()
+    for name in ("plugin.log", "plugin.log.1"):
+        assert stat.S_IMODE((log_dir / name).stat().st_mode) == 0o600
+    assert "after the rotation" in older.read_text()
+
+
 def test_start_sweeps_the_transfer_files_an_ended_session_left(tmp_path: Path) -> None:
     data_dir = tmp_path / "data"
     leftover = data_dir / "transfer" / "0123.raw"

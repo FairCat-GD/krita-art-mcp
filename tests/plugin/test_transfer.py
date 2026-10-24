@@ -70,15 +70,39 @@ def test_a_transfer_folder_that_cannot_be_written_is_an_io_error(tmp_path: Path)
     assert refused.value.body["code"] == "IO_ERROR"
 
 
-def test_a_file_no_server_read_for_an_hour_goes_at_the_next_write(tmp_path: Path) -> None:
-    old = transfer.write(tmp_path, b"\0" * 4, 1, 1, "BGRA8", now=1_000_000.0)
-    recent = transfer.write(tmp_path, b"\0" * 4, 1, 1, "BGRA8", now=1_000_000.0)
-    os.utime(old["path"], (1_000_000.0 - transfer.STALE_S - 1,) * 2)
-    os.utime(recent["path"], (1_000_000.0 - 60,) * 2)
-    mask = tmp_path / ("mask-" + "0" * 64 + ".a8")
-    mask.write_bytes(b"\0")
-    os.utime(mask, (0, 0))
-    transfer.write(tmp_path, b"\0" * 4, 1, 1, "BGRA8", now=1_000_000.0)
-    assert not Path(old["path"]).exists()
-    # Only the plugin's own files expire; a server's mask waits for the op that reads it.
-    assert Path(recent["path"]).exists() and mask.exists()
+NOW = 1_000_000.0
+
+
+def _aged(path: Path, seconds: float) -> Path:
+    os.utime(path, (NOW - seconds,) * 2)
+    return path
+
+
+def test_a_file_or_mask_nobody_took_for_an_hour_goes_at_the_next_write(tmp_path: Path) -> None:
+    old = transfer.write(tmp_path, b"\0" * 4, 1, 1, "BGRA8", now=NOW)
+    recent = transfer.write(tmp_path, b"\0" * 4, 1, 1, "BGRA8", now=NOW)
+    _aged(Path(old["path"]), transfer.STALE_S + 1)
+    _aged(Path(recent["path"]), 60)
+    old_mask = _aged(Path(str(_mask(tmp_path, b"\0", 1, 1)["path"])), transfer.STALE_S + 1)
+    recent_mask = _aged(Path(str(_mask(tmp_path, b"\1", 1, 1)["path"])), 60)
+    other = tmp_path / "notes.txt"
+    other.write_text("not ours")
+    _aged(other, transfer.STALE_S + 1)
+    transfer.write(tmp_path, b"\0" * 4, 1, 1, "BGRA8", now=NOW)
+    assert not Path(old["path"]).exists() and not old_mask.exists()
+    assert Path(recent["path"]).exists() and recent_mask.exists() and other.exists()
+
+
+def test_taking_a_mask_expires_what_nobody_took(tmp_path: Path) -> None:
+    stale = _aged(Path(str(_mask(tmp_path, b"\0", 1, 1)["path"])), transfer.STALE_S + 1)
+    spec = _mask(tmp_path, b"\0\1", 2, 1)
+    assert transfer.take_mask(tmp_path, spec, now=NOW) == b"\0\1"
+    assert list(tmp_path.iterdir()) == []
+    assert not stale.exists()
+
+
+def test_a_mask_that_is_gone_is_retryable(tmp_path: Path) -> None:
+    spec = {"path": str(tmp_path / f"mask-{'0' * 64}.a8"), "size_px": [1, 1], "format": "A8"}
+    with pytest.raises(BridgeError) as refused:
+        transfer.take_mask(tmp_path, {**spec, "sha256": "0" * 64})
+    assert (refused.value.body["code"], refused.value.body["retryable"]) == ("IO_ERROR", True)

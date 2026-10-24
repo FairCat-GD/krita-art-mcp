@@ -11,6 +11,7 @@ class Report:
         self._out = out
         self.passed = 0
         self.failed = 0
+        self.measured_count = 0
 
     def check(self, name: str, passed: bool, detail: str = "") -> bool:
         if passed:
@@ -21,13 +22,17 @@ class Report:
         return passed
 
     def measured(self, name: str, detail: str) -> None:
+        self.measured_count += 1
         self._line("MEASURED", name, detail)
 
     def note(self, text: str) -> None:
         print(text, file=self._out, flush=True)
 
-    def summary(self) -> int:
-        self.note(f"probe: {self.passed} PASS, {self.failed} FAIL")
+    def summary(self, seconds: float) -> int:
+        self.note(
+            f"probe: {self.passed} PASS, {self.failed} FAIL, {self.measured_count} MEASURED "
+            f"in {seconds:.1f} s"
+        )
         return 1 if self.failed or not self.passed else 0
 
     def _line(self, outcome: str, name: str, detail: str) -> None:

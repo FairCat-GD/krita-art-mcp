@@ -13,9 +13,10 @@ VERSION = 1
 # the journal can, and it reads this far back.
 WINDOW_DAYS = 7
 
-# What became of one attempt. The bridge dedups within a Krita session, so a receipt or a
-# no-effect refusal is the outcome of every attempt it shares; a conflict, or a call that never
-# reached the bridge, is its own attempt's alone.
+# What became of one attempt. The bridge dedups within a Krita session, so a receipt is the
+# outcome of every attempt it shares. A no-effect refusal releases the request_id, so an attempt
+# sent after it may have run; like a conflict, or a call that never reached the bridge, it settles
+# its own attempt alone.
 RECEIPT = "receipt"
 NO_EFFECT = "no_effect"
 NOT_SENT = "not_sent"
@@ -220,7 +221,7 @@ class Journal:
             raise KeyError(phase)
         prior = self._requests.setdefault(request_id, Prior())
         for attempt in prior.attempts:
-            if outcome in (CONFLICT, NOT_SENT):
+            if outcome in (CONFLICT, NOT_SENT, NO_EFFECT):
                 same = attempt.operation_id == operation_id
             else:
                 same = (attempt.session_id, attempt.args_sha256) == (session_id, digest)

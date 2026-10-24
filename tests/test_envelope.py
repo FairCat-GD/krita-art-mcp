@@ -1,11 +1,15 @@
 import json
+import logging
 from typing import Any
 
 import bridge_core
 import pytest
 from bridge_core import documents as bridge_documents
 from bridge_core import errors as bridge_errors
+from bridge_core import pixels as bridge_pixels
 from bridge_core import processes as bridge_processes
+from bridge_core import resources as bridge_resources
+from bridge_core.jobs import Jobs
 from bridge_core.source_hash import source_hash as plugin_source_hash
 from jsonschema import Draft202012Validator
 
@@ -13,6 +17,7 @@ from krita_art_mcp import envelope, errors, paths, plugin_files, processes, sche
 from krita_art_mcp.bridge_client import WAIT_BUDGET_S
 from krita_art_mcp.instructions import INSTRUCTIONS
 from krita_art_mcp.tools import documents as tool_documents
+from krita_art_mcp.tools import observe
 
 ENVELOPE_FIELDS = ["api_version", "status", "document_id", "revision", "operation_id", "error"]
 
@@ -50,6 +55,30 @@ def test_the_server_and_plugin_constants_agree() -> None:
         bridge_documents.SRGB_PROFILE,
         bridge_documents.DEPTH,
     )
+    assert observe.BLEND_MODES == tuple(mode for mode, _ in bridge_resources.BLEND_MODES)
+
+
+def test_the_plugins_bounds_are_the_schemas_limits() -> None:
+    sample = schemas.load("krita_sample")["inputSchema"]["properties"]
+    assert sample["points"]["maxItems"] == bridge_pixels.MAX_POINTS
+    assert sample["radius"]["maximum"] == bridge_pixels.MAX_RADIUS
+    listing = schemas.load("krita_resource_list")["inputSchema"]["properties"]
+    assert listing["limit"]["maximum"] == bridge_resources.MAX_LIMIT
+
+
+def test_a_cancelled_call_is_retryable_alike_on_both_sides() -> None:
+    # It never ran, whether cancelled or failed at stop, so a retry under its request_id runs.
+    client = {"pid": 1, "started_at": "test"}
+    log = logging.getLogger("test_envelope")
+    jobs = Jobs({"record": lambda args, call: {}}, lambda: None, lambda: True, log)
+    jobs.submit("op-1", "req-1", "record", {}, client)
+    jobs.submit("op-2", "req-2", "record", {}, client)
+    cancelled = jobs.cancel("op-1")
+    jobs.stop()
+    stopped = jobs.wait("op-2", 0)
+    assert cancelled is not None and stopped is not None
+    found = {cancelled[0]["error"]["retryable"], stopped["error"]["retryable"]}
+    assert found == {errors.CODES["CANCELLED"][0]} == {True}
 
 
 def test_the_server_and_plugin_hash_the_plugin_alike() -> None:

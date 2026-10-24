@@ -1,5 +1,6 @@
 import logging
 import logging.handlers
+import os
 from pathlib import Path
 
 from . import paths
@@ -27,12 +28,30 @@ def setup(log_dir: Path) -> logging.Logger:
     for old in list(logger.handlers):
         logger.removeHandler(old)
         old.close()
+    path = log_dir / "plugin.log"
+    _private_file(str(path))
     handler = logging.handlers.RotatingFileHandler(
-        log_dir / "plugin.log", maxBytes=MAX_BYTES, backupCount=1, encoding="utf-8"
+        path, maxBytes=MAX_BYTES, backupCount=1, encoding="utf-8"
     )
+    # Rotation starts a new file, which must be private too.
+    handler.rotator = _rotate
     handler.setFormatter(_RedactingFormatter())
     logger.addHandler(handler)
     return logger
+
+
+def _private_file(path: str) -> None:
+    # Made 0600, or narrowed to it when an older run made it with the default mode.
+    fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_APPEND, 0o600)
+    try:
+        os.fchmod(fd, 0o600)
+    finally:
+        os.close(fd)
+
+
+def _rotate(source: str, dest: str) -> None:
+    os.replace(source, dest)
+    _private_file(source)
 
 
 def redact(logger: logging.Logger, secret: str) -> None:

@@ -5,7 +5,7 @@ from typing import Any
 
 import pytest
 from bridge_core.errors import BridgeError
-from bridge_core.jobs import Call, Handler, Jobs
+from bridge_core.jobs import Call, Handler, Jobs, drain_in_slot
 
 CLIENT = {"pid": 1, "started_at": "test"}
 
@@ -93,7 +93,7 @@ def test_cancel_affects_queued_jobs_only() -> None:
     reply, cancelled = jobs.cancel("queued") or ({}, None)
     assert cancelled is True
     assert reply["status"] == "error"
-    assert reply["error"]["code"] == "CANCELLED"
+    assert (reply["error"]["code"], reply["error"]["retryable"]) == ("CANCELLED", True)
     jobs.drain()
     assert outcomes["while running"][1] is False
     assert outcomes["while running"][0]["status"] == "running"
@@ -297,6 +297,110 @@ def test_queued_jobs_failed_at_stop_never_ran_and_say_so() -> None:
     assert queued.reply()["error"]["code"] == "CANCELLED"
     assert queued.reply()["error"]["retryable"] is True
     assert ran == []
+
+
+def test_a_cancelled_job_never_ran_so_its_request_id_runs_on_retry() -> None:
+    jobs, ran = _counting()
+    jobs.submit("op-1", "req-1", "record", {"x": 1}, CLIENT)
+    assert jobs.cancel("op-1") is not None
+    retry = jobs.submit("op-2", "req-1", "record", {"x": 1}, CLIENT)
+    other = jobs.submit("op-3", "req-1", "record", {"x": 2}, CLIENT)
+    jobs.drain()
+    assert retry is not None and retry.operation_id == "op-2"
+    assert retry.reply()["status"] == "done"
+    assert ran == [{"x": 1}]
+    # The arguments stay bound to the request_id.
+    assert other is not None and other.reply()["error"]["code"] == "REQUEST_ID_CONFLICT"
+
+
+@pytest.mark.parametrize(
+    "result",
+    [[1, 2], {"colours": {"red"}}, {"mean": float("nan")}, {"buffer": memoryview(b"\0")}],
+    ids=["a list", "a set", "NaN", "a buffer"],
+)
+def test_a_result_the_reply_cannot_carry_fails_typed(result: Any) -> None:
+    jobs, _, records = _jobs({"odd": lambda args, call: result})
+    _submit(jobs, "a", "odd")
+    jobs.drain()
+    reply = jobs.wait("a", 0)
+    assert reply is not None and reply["status"] == "error"
+    assert (reply["error"]["code"], reply["error"]["retryable"]) == ("INTERNAL_ERROR", False)
+    assert any("raised" in message for message in records.messages)
+
+
+def test_an_error_the_reply_cannot_carry_fails_typed_and_keeps_its_request_id() -> None:
+    def odd(args: dict[str, Any], call: Call) -> dict[str, Any]:
+        raise BridgeError("BUSY", "Try again.", True, {"where": object()})
+
+    jobs, _, _ = _jobs({"record": odd})
+    jobs.submit("op-1", "req-1", "record", {"x": 1}, CLIENT)
+    jobs.drain()
+    reply = jobs.wait("op-1", 0)
+    assert reply is not None
+    assert (reply["error"]["code"], reply["error"]["retryable"]) == ("INTERNAL_ERROR", False)
+    retry = jobs.submit("op-2", "req-1", "record", {"x": 1}, CLIENT)
+    assert retry is not None and retry.operation_id == "op-1"
+
+
+def test_a_result_is_kept_as_it_was_when_the_op_finished() -> None:
+    shared = {"count": 1}
+    jobs, _, _ = _jobs({"record": lambda args, call: shared})
+    _submit(jobs, "a")
+    jobs.drain()
+    shared["count"] = 2
+    reply = jobs.wait("a", 0)
+    assert reply is not None and reply["result"] == {"count": 1}
+
+
+@pytest.mark.parametrize("interrupt", [KeyboardInterrupt, SystemExit])
+def test_an_interrupt_in_a_handler_fails_its_op_and_the_next_job_runs(
+    interrupt: type[BaseException],
+) -> None:
+    def stopped(args: dict[str, Any], call: Call) -> dict[str, Any]:
+        raise interrupt()
+
+    jobs, _, _ = _jobs({"stopped": stopped, "record": lambda args, call: {"ran": True}})
+    _submit(jobs, "a", "stopped")
+    _submit(jobs, "b")
+    jobs.drain()
+    first, second = jobs.wait("a", 0), jobs.wait("b", 0)
+    assert first is not None and first["error"]["code"] == "INTERNAL_ERROR"
+    assert second is not None and second["status"] == "done"
+
+
+def test_an_interrupt_before_a_job_runs_never_strands_it_running(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    jobs, ran = _counting()
+    _submit(jobs, "a")
+    _submit(jobs, "b")
+    real = jobs._run
+
+    def interrupted(operation: Any) -> None:
+        monkeypatch.setattr(jobs, "_run", real)
+        raise KeyboardInterrupt
+
+    monkeypatch.setattr(jobs, "_run", interrupted)
+    with pytest.raises(KeyboardInterrupt):
+        jobs.drain()
+    reply = jobs.wait("a", 0)
+    assert reply is not None and reply["error"]["code"] == "INTERNAL_ERROR"
+    # The drain is free again, and the next wake runs what is queued.
+    jobs.drain()
+    assert ran == [{"id": "b"}]
+
+
+@pytest.mark.parametrize("raised", [KeyboardInterrupt, SystemExit, ValueError])
+def test_nothing_leaves_the_slot_that_drains_the_queue(raised: type[BaseException]) -> None:
+    def drain() -> None:
+        raise raised()
+
+    records = _Records()
+    log = logging.getLogger("test_jobs_slot")
+    log.handlers = [records]
+    log.propagate = False
+    drain_in_slot(drain, log)
+    assert records.messages == ["the job queue failed"]
 
 
 def test_a_finished_operation_keeps_its_receipt_but_not_its_arguments() -> None:

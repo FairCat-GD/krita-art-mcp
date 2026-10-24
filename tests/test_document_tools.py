@@ -205,7 +205,7 @@ def test_a_call_refused_before_it_changed_anything_runs_on_retry(world: World) -
             ),
             journal.NO_EFFECT,
         ),
-        # stop() fails queued calls as retryable, because they never ran.
+        # A queued call that is cancelled, or failed at stop, never ran.
         (
             Failed({"code": "CANCELLED", "retryable": True, "details": {}}, submitted=True),
             journal.NO_EFFECT,
@@ -228,6 +228,17 @@ def test_a_call_refused_before_it_changed_anything_runs_on_retry(world: World) -
         (
             Failed(
                 {"code": "INTERNAL_ERROR", "retryable": False, "details": {"outcome": "uncertain"}}
+            ),
+            journal.UNKNOWN,
+        ),
+        # The bridge never registered it, but a late arrival could still run it.
+        (
+            Failed(
+                {
+                    "code": "INTERNAL_ERROR",
+                    "retryable": True,
+                    "details": {"outcome": "unregistered"},
+                }
             ),
             journal.UNKNOWN,
         ),
@@ -529,16 +540,24 @@ def _finish(journal_: Journal, operation_id: str, outcome: str) -> None:
     )
 
 
-def test_an_outcome_from_the_bridge_settles_every_attempt_it_deduplicated(
-    tmp_path: Path,
+@pytest.mark.parametrize(
+    ("outcome", "settled"),
+    [
+        (journal.RECEIPT, [journal.RECEIPT, journal.RECEIPT]),
+        # The refusal released the request_id, so op-1 may be a later attempt that ran.
+        (journal.NO_EFFECT, [journal.UNKNOWN, journal.NO_EFFECT]),
+    ],
+)
+def test_a_receipt_settles_every_attempt_it_deduplicated_and_a_refusal_only_its_own(
+    tmp_path: Path, outcome: str, settled: list[str]
 ) -> None:
     writer = _journal_on(tmp_path, NOW)
     _attempt(writer, "op-1")
     _attempt(writer, "op-2")
-    _finish(writer, "op-2", journal.NO_EFFECT)
+    _finish(writer, "op-2", outcome)
     prior = _journal_on(tmp_path, NOW).lookup("req-1")
     assert prior is not None
-    assert [attempt.outcome for attempt in prior.attempts] == [journal.NO_EFFECT] * 2
+    assert [attempt.outcome for attempt in prior.attempts] == settled
 
 
 def test_a_call_that_never_reached_the_bridge_settles_only_itself(tmp_path: Path) -> None:
@@ -550,6 +569,34 @@ def test_a_call_that_never_reached_the_bridge_settles_only_itself(tmp_path: Path
     assert prior is not None
     assert [attempt.outcome for attempt in prior.attempts] == [journal.UNKNOWN, journal.NOT_SENT]
     assert prior.unknown_elsewhere("later-krita") is prior.attempts[0]
+
+
+def test_a_call_the_bridge_never_registered_ends_and_its_retry_runs_once(
+    world: World, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    client = world.client(grace_s=0.3)
+    send = client._request
+
+    def lossy(bridge: Any, method: str, path: str, body: Any, timeout: float) -> Any:
+        if path == "/v1/call":
+            raise ConnectionResetError("the connection was reset before the bridge read it")
+        return send(bridge, method, path, body, timeout)
+
+    monkeypatch.setattr(client, "_request", lossy)
+    server = Server(build_server(client, world.journal(), world.places()))
+    lost = server.content("krita_document_create", _create())
+    assert lost["error"]["details"]["outcome"] == "unregistered"
+    assert lost["error"]["retryable"] is True
+    monkeypatch.setattr(client, "_request", send)
+    created = server.content("krita_document_create", _create())
+    assert created["status"] == "completed"
+    assert world.port.created == 1
+    assert [line.get("outcome") for line in _lines(world)] == [
+        None,
+        journal.UNKNOWN,
+        None,
+        journal.RECEIPT,
+    ]
 
 
 def test_a_poll_waits_for_a_call_the_bridge_has_not_registered_yet(world: World) -> None:

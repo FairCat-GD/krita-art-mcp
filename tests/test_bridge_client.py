@@ -17,8 +17,8 @@ from jsonschema import Draft202012Validator
 from mcp import Client
 from mcp.types import CallToolResult
 
-from krita_art_mcp import schemas
-from krita_art_mcp.bridge_client import BridgeClient, Done, Failed, Pending
+from krita_art_mcp import bridge_client, schemas
+from krita_art_mcp.bridge_client import REGISTER_GRACE_S, BridgeClient, Done, Failed, Pending
 from krita_art_mcp.journal import Journal
 from krita_art_mcp.paths import Places
 from krita_art_mcp.server import build_server
@@ -43,11 +43,13 @@ def _client(
     bridge_file: Path,
     budget_s: float = 2.0,
     is_live_krita: Callable[[int], bool] = lambda pid: True,
+    grace_s: float = REGISTER_GRACE_S,
 ) -> BridgeClient:
     return BridgeClient(
         bridge_file=bridge_file,
         budget_s=budget_s,
         poll_s=0.2,
+        grace_s=grace_s,
         is_live_krita=is_live_krita,
         explain=lambda: NOT_RUNNING,
     )
@@ -65,11 +67,19 @@ def live(tmp_path: Path) -> Iterator[Live]:
     def boom(args: dict[str, Any], call: Call) -> dict[str, Any]:
         raise RuntimeError("boom")
 
+    def odd(args: dict[str, Any], call: Call) -> dict[str, Any]:
+        return {"colours": {"red"}}
+
     bridge = Bridge(
         data_dir=tmp_path,
         package_dir=PLUGIN_PACKAGE,
         facts=FACTS,
-        handlers={"echo": lambda args, call: {"echo": args}, "hold": hold, "boom": boom},
+        handlers={
+            "echo": lambda args, call: {"echo": args},
+            "hold": hold,
+            "boom": boom,
+            "odd": odd,
+        },
         wake=main.wake,
         on_main_thread=main.is_current,
         is_live_krita=lambda pid: False,
@@ -127,6 +137,62 @@ def scripted(tmp_path: Path) -> Iterator[Callable[[list[tuple[int, Any]]], Path]
         servers.append(server)
         threading.Thread(target=server.serve_forever, daemon=True).start()
         return _write_bridge_file(tmp_path, server.server_address[1], "scripted")
+
+    yield start
+    for server in servers:
+        server.shutdown()
+        server.server_close()
+
+
+# Each answer, by path and seconds since the bridge started: a delay, then a status and body; a
+# status of None closes the connection without a reply.
+Answer = tuple[float, int | None, Any]
+
+
+class Timeline(ThreadingHTTPServer):
+    # A fake bridge whose answers follow the clock, for a Krita that holds the GIL for a while.
+    daemon_threads = True
+
+    def __init__(self, answer: Callable[[str, float], Answer]) -> None:
+        super().__init__(("127.0.0.1", 0), _TimelineHandler)
+        self.answer = answer
+        self.started = time.monotonic()
+
+    def handle_error(self, request: Any, client_address: Any) -> None:
+        pass  # A client whose poll timed out has gone.
+
+
+class _TimelineHandler(BaseHTTPRequestHandler):
+    server: Timeline
+
+    def log_message(self, format: str, *args: Any) -> None:
+        pass
+
+    def _answer(self) -> None:
+        self.rfile.read(int(self.headers.get("Content-Length") or 0))
+        delay, status, body = self.server.answer(self.path, time.monotonic() - self.server.started)
+        time.sleep(delay)
+        if status is None:
+            return
+        data = json.dumps(body).encode()
+        self.send_response(status)
+        self.send_header("Content-Length", str(len(data)))
+        self.end_headers()
+        self.wfile.write(data)
+
+    do_GET = _answer
+    do_POST = _answer
+
+
+@pytest.fixture
+def timeline(tmp_path: Path) -> Iterator[Callable[[Callable[[str, float], Answer]], Path]]:
+    servers: list[Timeline] = []
+
+    def start(answer: Callable[[str, float], Answer]) -> Path:
+        server = Timeline(answer)
+        servers.append(server)
+        threading.Thread(target=server.serve_forever, daemon=True).start()
+        return _write_bridge_file(tmp_path, server.server_address[1], "timeline")
 
     yield start
     for server in servers:
@@ -196,6 +262,13 @@ def test_a_plugin_error_passes_through(live: Live) -> None:
     assert _code(outcome) == "INTERNAL_ERROR"
     assert isinstance(outcome, Failed) and outcome.error["details"] == {"op": "boom"}
     assert _code(live.client().call("paint_everything")) == "INVALID_ARGUMENT"
+
+
+def test_a_result_that_is_not_json_fails_at_once_instead_of_running_on(live: Live) -> None:
+    started = time.monotonic()
+    outcome = live.client(budget_s=5.0).call("odd")
+    assert _code(outcome) == "INTERNAL_ERROR"
+    assert time.monotonic() - started < 1.0
 
 
 def test_a_wrong_token_is_refused_by_the_bridge(live: Live) -> None:
@@ -336,6 +409,100 @@ def test_a_bridge_that_stops_listening_mid_call_is_uncertain(tmp_path: Path) -> 
     outcome = _client(path).call("echo")
     assert _uncertain(outcome)
     assert isinstance(outcome, Failed) and "stopped accepting" in outcome.error["message"]
+
+
+LOST: Answer = (0.0, None, None)
+NOT_FOUND: Answer = (0.0, 404, {"session_id": "timeline", "status": "error"})
+DONE: Answer = (
+    0.0,
+    200,
+    {
+        "session_id": "timeline",
+        "status": "done",
+        "operation_id": "op-x",
+        "request_id": "req-x",
+        "op": "echo",
+        "result": {"ok": True},
+    },
+)
+
+
+def _unregistered(outcome: Any, operation_id: str | None = None) -> bool:
+    return (
+        isinstance(outcome, Failed)
+        and outcome.error["code"] == "INTERNAL_ERROR"
+        and outcome.error["retryable"] is True
+        and outcome.error["details"]["outcome"] == "unregistered"
+        and operation_id in (None, outcome.error["details"]["operation_id"])
+        and outcome.submitted is False
+    )
+
+
+def test_a_post_the_bridge_never_registered_ends_after_the_window(
+    timeline: Callable[[Callable[[str, float], Answer]], Path],
+) -> None:
+    path = timeline(lambda request, elapsed: LOST if request == "/v1/call" else NOT_FOUND)
+    client = _client(path, budget_s=5.0, grace_s=0.4)
+    started = time.monotonic()
+    outcome = client.call("echo")
+    assert _unregistered(outcome)
+    assert 0.4 <= time.monotonic() - started < 2.0
+    assert client._sent == {}
+
+
+def test_a_call_left_running_that_never_registered_ends_after_the_window(
+    timeline: Callable[[Callable[[str, float], Answer]], Path],
+) -> None:
+    client = _client(timeline(lambda request, elapsed: NOT_FOUND), budget_s=5.0, grace_s=0.4)
+    client._sent["op-lost"] = "timeline"
+    started = time.monotonic()
+    outcome = client.operation("op-lost")
+    assert _unregistered(outcome, "op-lost")
+    assert time.monotonic() - started < 2.0
+    assert client._sent == {}
+
+
+def _silent_for_a_while(request: str, elapsed: float) -> Answer:
+    # Prompt 404s, then a silence longer than a poll's socket timeout, then 404s, then the call.
+    if request == "/v1/call":
+        return LOST
+    if 0.2 <= elapsed < 0.9:
+        return 1.3 - elapsed, 404, NOT_FOUND[2]
+    return DONE if elapsed >= 1.3 else NOT_FOUND
+
+
+def _slow_for_a_while(request: str, elapsed: float) -> Answer:
+    # Prompt 404s, then one 404 answered slowly, then 404s, then the call.
+    if request == "/v1/call":
+        return LOST
+    if 0.2 <= elapsed < 0.5:
+        return 0.6, 404, NOT_FOUND[2]
+    return DONE if elapsed >= 1.3 else NOT_FOUND
+
+
+def _reset_for_a_while(request: str, elapsed: float) -> Answer:
+    # Prompt 404s, then connections closed without a reply, then 404s, then the call.
+    if request == "/v1/call" or 0.2 <= elapsed < 0.9:
+        return LOST
+    return DONE if elapsed >= 1.3 else NOT_FOUND
+
+
+@pytest.mark.parametrize(
+    "answer",
+    [_silent_for_a_while, _slow_for_a_while, _reset_for_a_while],
+    ids=["silent", "slow", "reset"],
+)
+def test_the_window_restarts_while_krita_holds_the_gil(
+    timeline: Callable[[Callable[[str, float], Answer]], Path],
+    monkeypatch: pytest.MonkeyPatch,
+    answer: Callable[[str, float], Answer],
+) -> None:
+    # A POST stuck behind a long Krita call registers only once the bridge answers promptly.
+    if answer is _silent_for_a_while:
+        monkeypatch.setattr(bridge_client, "SOCKET_SLACK_S", 0.1)
+    outcome = _client(timeline(answer), budget_s=5.0, grace_s=0.8).call("echo")
+    assert isinstance(outcome, Done), outcome
+    assert outcome.result == {"ok": True}
 
 
 def _call_tool(client: BridgeClient, name: str, data_dir: Path) -> CallToolResult:

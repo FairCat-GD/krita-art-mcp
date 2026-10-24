@@ -15,7 +15,7 @@ from fake_krita import FakePort, FakeResources, MainThread
 from mcp import Client
 from mcp.types import CallToolResult
 
-from krita_art_mcp.bridge_client import BridgeClient
+from krita_art_mcp.bridge_client import REGISTER_GRACE_S, BridgeClient
 from krita_art_mcp.journal import Journal
 from krita_art_mcp.paths import Places
 from krita_art_mcp.server import build_server
@@ -48,11 +48,17 @@ class World:
         # The bridge's data dir is tmp_path; each server keeps its own baselines.
         return Places.under(self.tmp_path, self.tmp_path / name)
 
-    def client(self, identity: dict[str, Any] = A, budget_s: float = 3.0) -> BridgeClient:
+    def client(
+        self,
+        identity: dict[str, Any] = A,
+        budget_s: float = 3.0,
+        grace_s: float = REGISTER_GRACE_S,
+    ) -> BridgeClient:
         return BridgeClient(
             bridge_file=self.tmp_path / "bridge.json",
             budget_s=budget_s,
             poll_s=0.2,
+            grace_s=grace_s,
             is_live_krita=lambda pid: True,
             explain=lambda: NOT_RUNNING,
             identity=identity,

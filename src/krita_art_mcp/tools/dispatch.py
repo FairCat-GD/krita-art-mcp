@@ -41,7 +41,8 @@ def outcome_of(outcome: Done | Failed) -> str:
     if isinstance(outcome, Done):
         return journal.RECEIPT
     error = outcome.error
-    if error["details"].get("outcome") == "uncertain":
+    # Neither says whether the call ran, so the attempt stays unsettled.
+    if error["details"].get("outcome") in ("uncertain", "unregistered"):
         return journal.UNKNOWN
     if not outcome.submitted:
         return journal.NOT_SENT

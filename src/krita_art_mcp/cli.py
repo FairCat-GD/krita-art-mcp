@@ -44,7 +44,12 @@ def main(argv: Sequence[str] | None = None) -> int:
     if args.command == "roots":
         from krita_art_mcp import paths, roots
 
-        return roots.run(args.action, getattr(args, "directory", None), paths.config_file())
+        return roots.run(
+            args.action,
+            getattr(args, "directory", None),
+            paths.config_file(),
+            data_dirs=[paths.default_data_dir(), paths.server_data_dir()],
+        )
     if args.command == "doctor":
         from krita_art_mcp import doctor
 

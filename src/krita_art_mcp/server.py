@@ -36,6 +36,8 @@ def serve() -> None:
 
 def _sweep_baselines(places: Places) -> None:
     try:
-        baselines.sweep(BridgeClient(budget_s=SWEEP_BUDGET_S), places.baselines_dir)
+        # One bridge call at a time per server process, the sweep's included.
+        with tools.CALLS:
+            baselines.sweep(BridgeClient(budget_s=SWEEP_BUDGET_S), places.baselines_dir)
     except Exception:
         log.exception("the orphaned baselines were not swept")

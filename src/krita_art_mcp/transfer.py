@@ -54,7 +54,10 @@ def put_mask(directory: Path, mask: Pixels) -> dict[str, Any]:
     digest = hashlib.sha256(data).hexdigest()
     directory.mkdir(mode=0o700, parents=True, exist_ok=True)
     path = directory / f"mask-{digest}.a8"
-    if not path.exists():
+    try:
+        # A mask already there is made fresh, so the bridge's expiry leaves it to this call.
+        os.utime(path)
+    except FileNotFoundError:
         temp = directory / f".mask-{digest}.{os.getpid()}.tmp"
         fd = os.open(temp, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
         try:

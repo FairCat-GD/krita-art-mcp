@@ -1,6 +1,11 @@
+import json
+import shutil
+from pathlib import Path
 from typing import Any
 
+import amend_schemas
 import pytest
+from amend_schemas import GUARD, SOURCE
 from jsonschema import Draft202012Validator
 
 from krita_art_mcp import schemas
@@ -54,17 +59,6 @@ def test_input_schema_rejects_unknown_fields(tool_name: str) -> None:
     assert schemas.load(tool_name)["inputSchema"]["additionalProperties"] is False
 
 
-GUARD = {
-    "type": "object",
-    "properties": {
-        "document_id": {"type": "string", "minLength": 1},
-        "request_id": {"type": "string", "minLength": 1},
-    },
-    "required": ["document_id", "request_id"],
-    "additionalProperties": False,
-}
-
-
 def _shapes(value: Any, key: str) -> list[Any]:
     if isinstance(value, dict):
         found = [value[key]] if key in value else []
@@ -102,17 +96,6 @@ def test_open_and_inspect_describe_a_layer_with_one_shape() -> None:
     assert set(entry["required"]) == set(entry["properties"]) >= {"id", "parent_id", "protected"}
 
 
-SOURCE = {
-    "type": "object",
-    "properties": {
-        "document_id": {"type": "string", "minLength": 1},
-        "frame": {"type": "integer", "minimum": 0},
-    },
-    "required": ["document_id", "frame"],
-    "additionalProperties": False,
-}
-
-
 def test_every_copy_of_source_is_the_phase_1_source() -> None:
     found = {
         name: _shapes(schemas.load(name)["inputSchema"].get("properties", {}), "source")
@@ -134,3 +117,24 @@ def test_the_two_copies_of_data_in_an_output_schema_agree(tool_name: str) -> Non
     assert (
         output["properties"]["data"]["anyOf"][0] == output["allOf"][0]["then"]["properties"]["data"]
     )
+
+
+def test_the_schema_files_are_as_the_amendment_script_writes_them() -> None:
+    assert amend_schemas.stale() == []
+
+
+def test_the_amendment_script_finds_a_shared_shape_that_drifted(tmp_path: Path) -> None:
+    folder = tmp_path / "schemas"
+    shutil.copytree(amend_schemas.FOLDER, folder, ignore=shutil.ignore_patterns("*.py", "__*"))
+    drifts: list[tuple[str, list[str | int]]] = [
+        ("krita_sample.json", ["outputSchema", "allOf", 0, "then"]),
+        ("krita_document_close.json", ["inputSchema", "properties", "guard"]),
+    ]
+    for name, path in drifts:
+        tool = json.loads((folder / name).read_text())
+        shape = tool
+        for key in path:
+            shape = shape[key]
+        shape.clear()
+        (folder / name).write_text(json.dumps(tool, indent=2, ensure_ascii=False) + "\n")
+    assert amend_schemas.stale(folder) == ["krita_document_close.json", "krita_sample.json"]

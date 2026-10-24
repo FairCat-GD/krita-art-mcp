@@ -6,7 +6,7 @@ size, and undo or keep it. It is for painted (non-pixel) 2D game art.
 
 ## Status
 
-Phase 1 is being built. Version 0.5.0 connects the server to a running Krita through the plugin
+Phase 1 is being built. Version 0.6.0 connects the server to a running Krita through the plugin
 and offers these tools:
 
 - `krita_server_info`: Krita's version, what this build can do, and the folders agents may use;
@@ -52,7 +52,9 @@ The painting tools arrive in the coming releases; `CHANGELOG.md` lists what each
    uv run krita-art-mcp roots add /path/to/your/art
    ```
 
-   `roots list` shows them, and `roots remove <folder>` takes one away.
+   `roots list` shows them, and `roots remove <folder>` takes one away. `roots add` refuses `/`,
+   your home folder, and krita-art-mcp's own data folder, anything inside it, or any folder that
+   holds it.
 6. Check the setup. `doctor` names the first step that fails, and how to fix it:
 
    ```bash
@@ -114,7 +116,8 @@ uv run krita-art-mcp serve
 repository, then drives a real `serve` over stdio against your running Krita. It works only in
 `~/Library/Application Support/krita-art-mcp/harness/`, where it writes its own fictional ORA,
 KRA and PNG files, and it never changes your roots. Its document checks run only when none
-of your Krita documents has unsaved changes, and close only the documents the probe made.
+of your Krita documents has unsaved changes, and close only the documents the probe made. It
+ends with its PASS, FAIL and MEASURED counts and how long it ran.
 
 ## Documentation
 

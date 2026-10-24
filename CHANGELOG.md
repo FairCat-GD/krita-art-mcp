@@ -6,6 +6,42 @@ All notable changes to krita-art-mcp are documented here. The format follows
 
 ## [Unreleased]
 
+## [0.6.0] — 2026-10-24
+
+Fixes from the architecture review after the first seven tools: lost calls end, cancelled calls
+can be retried, Krita survives an interrupt, and a few files and folders are now private.
+
+### Changed
+
+- **A call that never reached Krita now ends after a few seconds,** instead of being reported
+  `running` for ever, with every `krita_operation_get` on it waiting the full 45 seconds. It fails
+  as retryable, with `outcome: "unregistered"`: retry it with the same `request_id`, which can
+  never run it twice. A call queued behind a long Krita call is still waited for.
+- **A cancelled call can be retried.** `CANCELLED` is now retryable: the call never ran, so a
+  retry with its `request_id` runs it.
+- **`krita-art-mcp roots add` refuses folders that reach too far:** `/`, your home folder, and
+  krita-art-mcp's own data folders or any folder that holds one, each with the reason.
+- **`krita-art-mcp probe`** ends with its PASS, FAIL and MEASURED counts and how long it ran. Before
+  cleaning up, it checks that it left no document open and no pixels in the transfer folder. It no
+  longer opens a throwaway document to read Krita's Undo label, so outside its document checks it
+  leaves your view alone.
+
+### Fixed
+
+- **A result or error the plugin cannot send fails the call at once** with `INTERNAL_ERROR`,
+  instead of leaving it running until the server's wait ran out.
+- **An interrupt inside Krita's Python fails only the call it hit,** and the next calls still run.
+  It no longer takes Krita down with your unsaved work.
+- **Masks the server hands Krita are removed after an hour** if no call took them. A call whose
+  mask is gone is retryable, and the retry sends it again.
+- **Reading the selection waits for Krita to finish painting first.**
+- **A retry still running is never marked settled** when an earlier, refused attempt of the same
+  `request_id` is read late, so a Krita restart can never run it twice.
+- **The plugin's log and the probe's folder are private** (`0600` and `0700`), like the rest of
+  the data folder, and the log stays private when it rotates.
+- **The server's start-up cleanup of baselines takes its turn** with tool calls instead of
+  reaching Krita beside them.
+
 ## [0.5.0] — 2026-10-24
 
 Agents can now see pixels: capture any part of a document as an image, sample exact colours, and
@@ -186,6 +222,7 @@ The first release is the scaffold that the Phase 1 tools are built on.
   reports its version to the client; it offers no tools yet.
 - **`krita-art-mcp --version`.** It prints the installed version.
 
+[0.5.0]: https://github.com/FairCat-GD/krita-art-mcp/commit/5ead34bc4e5624e92165b211d1daa2f66ed95fb1
 [0.4.0]: https://github.com/FairCat-GD/krita-art-mcp/commit/c081c59ff54e38b9a8799fa0a78955146745174c
 [0.3.0]: https://github.com/FairCat-GD/krita-art-mcp/commit/ef279d377f4aa515edb0ef36a69d60654f9744d1
 [0.2.0]: https://github.com/FairCat-GD/krita-art-mcp/commit/6e9237f4f728f237ec855f84855f2c6eba2d077d
