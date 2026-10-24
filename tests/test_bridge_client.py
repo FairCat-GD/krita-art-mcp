@@ -462,13 +462,17 @@ def test_a_call_left_running_that_never_registered_ends_after_the_window(
     assert client._sent == {}
 
 
+# Each timeline keeps 404s coming for longer than the grace (1.2 s) without the restart, and
+# registers the call well inside the grace with it, with a margin of 0.2 s or more either way.
+
+
 def _silent_for_a_while(request: str, elapsed: float) -> Answer:
     # Prompt 404s, then a silence longer than a poll's socket timeout, then 404s, then the call.
     if request == "/v1/call":
         return LOST
-    if 0.2 <= elapsed < 0.9:
-        return 1.3 - elapsed, 404, NOT_FOUND[2]
-    return DONE if elapsed >= 1.3 else NOT_FOUND
+    if 0.2 <= elapsed < 1.4:
+        return 2.2 - elapsed, 404, NOT_FOUND[2]
+    return DONE if elapsed >= 2.2 else NOT_FOUND
 
 
 def _slow_for_a_while(request: str, elapsed: float) -> Answer:
@@ -476,15 +480,15 @@ def _slow_for_a_while(request: str, elapsed: float) -> Answer:
     if request == "/v1/call":
         return LOST
     if 0.2 <= elapsed < 0.5:
-        return 0.6, 404, NOT_FOUND[2]
-    return DONE if elapsed >= 1.3 else NOT_FOUND
+        return 1.0, 404, NOT_FOUND[2]
+    return DONE if elapsed >= 2.0 else NOT_FOUND
 
 
 def _reset_for_a_while(request: str, elapsed: float) -> Answer:
     # Prompt 404s, then connections closed without a reply, then 404s, then the call.
-    if request == "/v1/call" or 0.2 <= elapsed < 0.9:
+    if request == "/v1/call" or 0.2 <= elapsed < 1.4:
         return LOST
-    return DONE if elapsed >= 1.3 else NOT_FOUND
+    return DONE if elapsed >= 2.2 else NOT_FOUND
 
 
 @pytest.mark.parametrize(
@@ -500,7 +504,7 @@ def test_the_window_restarts_while_krita_holds_the_gil(
     # A POST stuck behind a long Krita call registers only once the bridge answers promptly.
     if answer is _silent_for_a_while:
         monkeypatch.setattr(bridge_client, "SOCKET_SLACK_S", 0.1)
-    outcome = _client(timeline(answer), budget_s=5.0, grace_s=0.8).call("echo")
+    outcome = _client(timeline(answer), budget_s=5.0, grace_s=1.2).call("echo")
     assert isinstance(outcome, Done), outcome
     assert outcome.result == {"ok": True}
 

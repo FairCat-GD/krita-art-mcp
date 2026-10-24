@@ -50,7 +50,9 @@ def _private_file(path: str) -> None:
 
 
 def _rotate(source: str, dest: str) -> None:
-    os.replace(source, dest)
+    # Like the default rotator, a log deleted meanwhile is simply started afresh.
+    if os.path.exists(source):
+        os.replace(source, dest)
     _private_file(source)
 
 

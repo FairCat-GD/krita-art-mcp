@@ -103,7 +103,7 @@ def test_a_native_capture_is_the_composites_bytes_with_its_image_and_path(world:
     assert base64.b64decode(image.data) == path.read_bytes()
     # Clients that downscale or drop images still get the path (C4).
     assert isinstance(result.content[0], TextContent) and str(path) in result.content[0].text
-    assert list((world.tmp_path / "transfer").iterdir()) == []
+    assert list((world.data / "transfer").iterdir()) == []
 
 
 def test_a_layer_capture_is_the_layers_own_pixels(world: World) -> None:
@@ -266,7 +266,7 @@ def test_outside_srgb_the_colour_maths_are_null_and_greyscale_refused(world: Wor
     grey = _capture(document_id, scale=0.5, filter="box", greyscale=True)
     refused = world.server().content("krita_capture", grey)
     assert refused["error"]["code"] == "COLOR_PROFILE_MISMATCH"
-    assert list((world.tmp_path / "transfer").iterdir()) == []
+    assert list((world.data / "transfer").iterdir()) == []
 
 
 def test_resources_page_through_the_cursor_with_fingerprints(world: World) -> None:

@@ -131,10 +131,11 @@ def test_the_amendment_script_finds_a_shared_shape_that_drifted(tmp_path: Path) 
         ("krita_document_close.json", ["inputSchema", "properties", "guard"]),
     ]
     for name, path in drifts:
-        tool = json.loads((folder / name).read_text())
+        tool = json.loads((folder / name).read_text(encoding="utf-8"))
         shape = tool
         for key in path:
             shape = shape[key]
         shape.clear()
-        (folder / name).write_text(json.dumps(tool, indent=2, ensure_ascii=False) + "\n")
+        text = json.dumps(tool, indent=2, ensure_ascii=False) + "\n"
+        (folder / name).write_text(text, encoding="utf-8")
     assert amend_schemas.stale(folder) == ["krita_document_close.json", "krita_sample.json"]

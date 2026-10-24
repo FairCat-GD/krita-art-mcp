@@ -10,8 +10,9 @@ from krita_art_mcp.journal import Journal
 from krita_art_mcp.paths import Places
 
 SERVER_NAME = "krita-art"
-# The orphan sweep only reports; it never waits out a busy Krita.
-SWEEP_BUDGET_S = 5.0
+# The orphan sweep only reports, and holds the call lock while it runs, so it never waits out a
+# busy Krita.
+SWEEP_BUDGET_S = 2.0
 
 log = logging.getLogger(__name__)
 

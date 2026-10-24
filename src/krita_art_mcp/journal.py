@@ -8,6 +8,8 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
+from krita_art_mcp.paths import private_dir
+
 VERSION = 1
 # Within one Krita session the bridge dedups however old the id; across a Krita restart only
 # the journal can, and it reads this far back.
@@ -15,8 +17,8 @@ WINDOW_DAYS = 7
 
 # What became of one attempt. The bridge dedups within a Krita session, so a receipt is the
 # outcome of every attempt it shares. A no-effect refusal releases the request_id, so an attempt
-# sent after it may have run; like a conflict, or a call that never reached the bridge, it settles
-# its own attempt alone.
+# sent after it may have run: it settles only its own attempt and the one whose operation the
+# bridge named. A conflict, or a call that never reached the bridge, settles its own alone.
 RECEIPT = "receipt"
 NO_EFFECT = "no_effect"
 NOT_SENT = "not_sent"
@@ -125,6 +127,7 @@ class Journal:
         session_id: str,
         outcome: str,
         result: dict[str, Any],
+        bridge_operation_id: str | None = None,
         document_path: str | None = None,
         layer_names: Sequence[str] = (),
     ) -> None:
@@ -133,6 +136,7 @@ class Journal:
                 "client": client,
                 "request_id": request_id,
                 "operation_id": operation_id,
+                "bridge_operation_id": bridge_operation_id,
                 "tool": tool,
                 "args_sha256": args_sha256,
                 "session_id": session_id,
@@ -148,7 +152,7 @@ class Journal:
         now = self._now()
         line = {"v": VERSION, "ts": now.isoformat(timespec="milliseconds"), **entry}
         data = (json.dumps(line, ensure_ascii=False, separators=(",", ":")) + "\n").encode()
-        self._directory.mkdir(mode=0o700, parents=True, exist_ok=True)
+        private_dir(self._directory)
         path = self._directory / f"{now.date().isoformat()}.jsonl"
         fd = os.open(path, os.O_RDWR | os.O_APPEND | os.O_CREAT, 0o600)
         try:
@@ -219,9 +223,12 @@ class Journal:
         outcome, result = line["outcome"], line.get("result")
         if phase != "finished" or outcome not in OUTCOMES:
             raise KeyError(phase)
+        named = {operation_id, line.get("bridge_operation_id")} if outcome == NO_EFFECT else set()
         prior = self._requests.setdefault(request_id, Prior())
         for attempt in prior.attempts:
-            if outcome in (CONFLICT, NOT_SENT, NO_EFFECT):
+            if outcome == NO_EFFECT:
+                same = attempt.operation_id in named
+            elif outcome in (CONFLICT, NOT_SENT):
                 same = attempt.operation_id == operation_id
             else:
                 same = (attempt.session_id, attempt.args_sha256) == (session_id, digest)

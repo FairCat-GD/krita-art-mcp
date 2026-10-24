@@ -94,6 +94,11 @@ def roots_allowed(setup: Setup) -> Step:
         return Step(name, False, str(problem), fix)
     if not allowed:
         return Step(name, False, "no roots, so agents can open nothing", roots.ADD)
+    reaching = roots.too_far(allowed, setup.config_file)
+    if reaching:
+        detail = f"{reaching} of {len(allowed)} roots reach too far"
+        fix = "Run `uv run krita-art-mcp roots remove <folder>` for /, home or the data folder."
+        return Step(name, False, detail, fix)
     missing = sum(not os.path.isdir(root) for root in allowed)
     if missing:
         detail = f"{missing} of {len(allowed)} roots are no longer folders"

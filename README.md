@@ -54,7 +54,7 @@ The painting tools arrive in the coming releases; `CHANGELOG.md` lists what each
 
    `roots list` shows them, and `roots remove <folder>` takes one away. `roots add` refuses `/`,
    your home folder, and krita-art-mcp's own data folder, anything inside it, or any folder that
-   holds it.
+   holds it; if `config.json` already lists one, opens are refused until you remove it.
 6. Check the setup. `doctor` names the first step that fails, and how to fix it:
 
    ```bash

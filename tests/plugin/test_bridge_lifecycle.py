@@ -225,6 +225,19 @@ def test_the_log_is_private_and_stays_private_when_it_rotates(tmp_path: Path) ->
     assert "after the rotation" in older.read_text()
 
 
+def test_a_log_deleted_while_krita_runs_rotates_into_a_fresh_one(tmp_path: Path) -> None:
+    logger = log.setup(tmp_path / "logs")
+    [handler] = logger.handlers
+    assert isinstance(handler, logging.handlers.RotatingFileHandler)
+    (tmp_path / "logs" / "plugin.log").unlink()
+    handler.doRollover()
+    logger.info("after the rotation")
+    handler.close()
+    path = tmp_path / "logs" / "plugin.log"
+    assert stat.S_IMODE(path.stat().st_mode) == 0o600
+    assert "after the rotation" in path.read_text()
+
+
 def test_start_sweeps_the_transfer_files_an_ended_session_left(tmp_path: Path) -> None:
     data_dir = tmp_path / "data"
     leftover = data_dir / "transfer" / "0123.raw"

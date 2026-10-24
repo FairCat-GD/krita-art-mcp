@@ -25,6 +25,8 @@ H4_CALLS = 500
 H4_P95_BUDGET_S = 0.050
 MAX_INSTRUCTIONS = 4096
 CYCLES = 20
+# Another client's transfer file lives for milliseconds; one the probe leaked stays.
+LEFTOVER_SETTLE_S = 1.0
 # Every document the probe makes carries this name, so a killed run's leftovers can be found.
 PREFIX = "krita-art-mcp probe"
 
@@ -218,23 +220,36 @@ async def _documents(report: Report, client: BridgeClient, serve: list[str], har
         swept = await _sweep_documents(a, harness) + await _sweep_documents(b, harness)
         if swept:
             report.note(f"Closed {swept} document(s) a killed probe run left open.")
+        before = _transfer_files(harness)
         try:
             await _document_checks(report, a, b, harness)
             await _cycles(report, a)
             await opening.run(report, a, b, client, harness)
             await pixels.run(report, a, client, harness)
-            await _no_leftovers(report, a, harness)
+            await _no_leftovers(report, a, harness, before)
         finally:
             await _sweep_documents(a, harness)
             await _sweep_documents(b, harness)
 
 
-async def _no_leftovers(report: Report, mcp: Client, harness: Path) -> None:
-    # Before the final sweeps, which would hide what a check failed to clean up.
-    left = await _own_documents(mcp, harness)
+def _transfer_files(harness: Path) -> set[str]:
     # Beside the harness folder, as Places has it.
     transfer = harness.parent / "transfer"
-    files = sorted(entry.name for entry in os.scandir(transfer)) if transfer.is_dir() else []
+    return {entry.name for entry in os.scandir(transfer)} if transfer.is_dir() else set()
+
+
+async def _settle() -> None:
+    await asyncio.sleep(LEFTOVER_SETTLE_S)
+
+
+async def _no_leftovers(report: Report, mcp: Client, harness: Path, before: set[str]) -> None:
+    # Before the final sweeps, which would hide what a check failed to clean up. Only files that
+    # appeared during the run and outlast a pause count, so another client's are left out.
+    left = await _own_documents(mcp, harness)
+    files = _transfer_files(harness) - before
+    if files:
+        await _settle()
+        files &= _transfer_files(harness)
     report.check(
         "the probe left no document open and no transfer file",
         not left and not files,

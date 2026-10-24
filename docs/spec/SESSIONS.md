@@ -1732,6 +1732,41 @@ Part 8 (*Bridge protocol*, K41, K48).
   - 270 plugin-core tests passed, 0 skipped (+21);
   - `probe`: 55 PASS, 0 FAIL, 14 MEASURED (−1 and +1 PASS, −1 MEASURED), 12.3 s;
   - 11 registered tools; 19 schema files; instructions 2,773 characters.
+- **Review (`/code-review high`), 10 findings, all fixed at the owner's request.**
+  - **A deduplicated attempt stayed unsettled after a refusal it shared,** so later retries
+    skipped the roots precheck and a retry after a restart was refused. A finished line now
+    carries `bridge_operation_id`, the operation the bridge answered with, and a no-effect outcome
+    settles that attempt and its own.
+  - **A too-wide root already in `config.json` took effect.** Both sides' `allowed()` now refuse
+    every path while one is listed (the plugin's `reaches_too_far` holds the server's rule), and
+    `doctor` step 6 counts them. The server's `World` keeps its data folder apart from the art
+    root, as on the owner's Mac.
+  - **The leftover check counted another client's transfer files.** It counts only files that
+    appeared during the document checks and still exist after a one-second pause.
+  - **A deleted `plugin.log` broke rotation;** `_rotate` renames only a file that exists.
+  - **`amend_schemas.py` used the locale's encoding;** it reads and writes UTF-8, and renders
+    once.
+  - **The start-up sweep held the call lock for up to 5 s;** its budget is 2 s.
+  - **The window tests' margins** are 0.2 s or more, with a 1.2 s grace.
+  - **A dead `CANCELLED` case** left the outcome test.
+  - **The server's data-folder `mkdir`s** (journal, transfer, roots, baselines, captures) use
+    `paths.private_dir`.
+  - **Falsified:** 13 breaks, each failing at its own test: the deleted-log rotation; files from
+    before the run and another client's file; the no-effect rule and the server recording the
+    bridge's operation; the load-time refusal on each side, the plugin rule's home and above
+    cases, and doctor's count; the three widened window cases. The home case first passed with
+    its rule broken, because the data folder lay inside home and the holding rule caught it; the
+    test now keeps the data folder outside home, and it fails. The encoding fix has no check that
+    can fail under this machine's UTF-8 locale.
+  - **Measured** on the reinstalled plugin (the session quit Krita with 0 documents open and
+    started it again, at the owner's word): `probe` 55 PASS, 0 FAIL, 14 MEASURED in 12.5 s; H4 p95
+    9.1 ms; the raw preset digest changed a sixth time (`eb2cc2667d8c69a9`), the canonical one held;
+    `transfer/` and `harness/` empty, `harness/` 0700, `plugin.log` 0600 with no warning or error.
+  - **Numbers after the review:**
+    - `verify`: 6 stages, all PASS;
+    - 370 server tests passed, 0 skipped (+10);
+    - 271 plugin-core tests passed, 0 skipped (+1);
+    - `probe`: 55 PASS, 0 FAIL, 14 MEASURED.
 
 ---
 

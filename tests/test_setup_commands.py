@@ -206,8 +206,9 @@ def test_doctor_passes_and_reports_unsaved_documents(tmp_path: Path) -> None:
         (None, "no roots, so agents can open nothing"),
         ({"v": 1, "roots": ["/nonexistent-root-for-a-test"]}, "1 of 1 roots are no longer folders"),
         ({"v": 2, "roots": []}, "config.json is version 2"),
+        ({"v": 1, "roots": ["/"]}, "1 of 1 roots reach too far"),
     ],
-    ids=["no roots", "a root gone", "a newer config"],
+    ids=["no roots", "a root gone", "a newer config", "a root too wide"],
 )
 def test_doctor_step_6_needs_a_root_that_is_still_a_folder(
     tmp_path: Path, config: dict[str, Any] | None, detail: str
@@ -216,6 +217,7 @@ def test_doctor_step_6_needs_a_root_that_is_still_a_folder(
         "no roots": "roots add",
         "1 of 1 roots": "roots remove",
         "config.json is version 2": "delete it and add the roots again",
+        "1 of 1 roots reach": "roots remove",
     }
     setup = _setup(tmp_path, installed=True, enabled=True, running=True, rooted=False)
     if config is not None:
@@ -266,8 +268,14 @@ def test_the_probe_fails_when_the_bridge_does_not_answer(tmp_path: Path) -> None
 
 @pytest.mark.parametrize(
     ("documents", "files", "passed"),
-    [([], [], True), (["krita-art-mcp probe left open"], [], False), ([], ["0123.raw"], False)],
-    ids=["clean", "a document left open", "a transfer file left"],
+    [
+        ([], [], True),
+        (["krita-art-mcp probe left open"], [], False),
+        ([], ["leaked.raw"], False),
+        ([], ["there-before.raw"], True),
+        ([], ["read-meanwhile.raw"], True),
+    ],
+    ids=["clean", "a document left", "a file left", "a file from before", "another client's"],
 )
 def test_the_probe_checks_its_leftovers_before_it_sweeps(
     tmp_path: Path,
@@ -280,6 +288,12 @@ def test_the_probe_checks_its_leftovers_before_it_sweeps(
     transfer.mkdir()
     for name in files:
         (transfer / name).write_bytes(b"")
+
+    async def settle() -> None:
+        # Another client's server reads its file while the probe pauses.
+        (transfer / "read-meanwhile.raw").unlink(missing_ok=True)
+
+    monkeypatch.setattr(probe, "_settle", settle)
     entries = [{"name": name, "mode": "new", "path": None} for name in documents]
     entries.append({"name": "the owner's own", "mode": "read_only", "path": "/art/hero.kra"})
 
@@ -290,6 +304,8 @@ def test_the_probe_checks_its_leftovers_before_it_sweeps(
     monkeypatch.setattr(probe, "tool", listed)
     out = io.StringIO()
     report = Report(out)
-    asyncio.run(probe._no_leftovers(report, cast(Any, None), harness))
+    before = {"there-before.raw"}
+    asyncio.run(probe._no_leftovers(report, cast(Any, None), harness, before))
     assert (report.passed, report.failed) == (int(passed), int(not passed))
-    assert f"{len(documents)} document(s) open, {len(files)} transfer file(s)" in out.getvalue()
+    count = len(files) if not passed else 0
+    assert f"{len(documents)} document(s) open, {count} transfer file(s)" in out.getvalue()

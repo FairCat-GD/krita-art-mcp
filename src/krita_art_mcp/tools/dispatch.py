@@ -152,6 +152,7 @@ def record(
             session_id=session_id,
             outcome=outcome_of(outcome),
             result=stored(result),
+            bridge_operation_id=outcome.operation_id,
         )
     except OSError:
         # The call is done either way; a retry will find its dispatched line and ask the bridge.

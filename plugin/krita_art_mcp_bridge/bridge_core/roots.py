@@ -8,6 +8,10 @@ from .errors import BridgeError
 
 # config.json's format; the server holds an equal copy and writes the file.
 CONFIG_VERSION = 1
+TOO_FAR = (
+    "config.json allows a root that reaches too far: /, the home folder, or krita-art-mcp's data "
+    "folder. Run `uv run krita-art-mcp roots list`, then `roots remove` that root."
+)
 
 
 def load(config: Path) -> list[str]:
@@ -39,8 +43,16 @@ def load(config: Path) -> list[str]:
 
 def allowed(data: Path) -> list[str]:
     # The harness folder is always allowed, so the probe needs no root of the owner's.
-    listed = [*load(paths.config_file(data)), str(paths.harness_dir(data))]
-    return [os.path.realpath(root) for root in listed]
+    listed = [os.path.realpath(root) for root in load(paths.config_file(data))]
+    home, folder = os.path.realpath(Path.home()), os.path.realpath(data)
+    if any(reaches_too_far(root, home, folder) for root in listed):
+        raise _config_error(TOO_FAR)
+    return [*listed, os.path.realpath(paths.harness_dir(data))]
+
+
+def reaches_too_far(real: str, home: str, data: str) -> bool:
+    # As the server's `roots add` refuses: /, the home folder, or the data folder, inside or out.
+    return real in ("/", home) or inside(real, [data]) or inside(data, [real])
 
 
 def resolve(path: Any, field: str) -> str:

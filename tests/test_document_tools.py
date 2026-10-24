@@ -211,10 +211,6 @@ def test_a_call_refused_before_it_changed_anything_runs_on_retry(world: World) -
             journal.NO_EFFECT,
         ),
         (
-            Failed({"code": "CANCELLED", "retryable": False, "details": {}}, submitted=True),
-            journal.RECEIPT,
-        ),
-        (
             Failed(
                 {"code": "REQUEST_ID_CONFLICT", "retryable": False, "details": {}}, submitted=True
             ),
@@ -487,7 +483,7 @@ def test_a_server_that_cannot_read_its_start_time_sends_nothing(
 
     monkeypatch.setattr(processes, "start_time", lambda pid: "")
     client = BridgeClient(
-        bridge_file=world.tmp_path / "bridge.json",
+        bridge_file=world.data / "bridge.json",
         is_live_krita=lambda pid: True,
         explain=lambda: NOT_RUNNING,
     )
@@ -527,7 +523,9 @@ def _attempt(journal_: Journal, operation_id: str, session_id: str = "s") -> Non
     )
 
 
-def _finish(journal_: Journal, operation_id: str, outcome: str) -> None:
+def _finish(
+    journal_: Journal, operation_id: str, outcome: str, bridge_operation_id: str | None = None
+) -> None:
     journal_.finished(
         client=None,
         request_id="req-1",
@@ -537,27 +535,57 @@ def _finish(journal_: Journal, operation_id: str, outcome: str) -> None:
         session_id="s",
         outcome=outcome,
         result={"structured": {}, "text": "", "is_error": False},
+        bridge_operation_id=bridge_operation_id,
     )
 
 
 @pytest.mark.parametrize(
-    ("outcome", "settled"),
+    ("outcome", "bridge_operation", "settled"),
     [
-        (journal.RECEIPT, [journal.RECEIPT, journal.RECEIPT]),
-        # The refusal released the request_id, so op-1 may be a later attempt that ran.
-        (journal.NO_EFFECT, [journal.UNKNOWN, journal.NO_EFFECT]),
+        (journal.RECEIPT, "op-2", [journal.RECEIPT, journal.RECEIPT]),
+        # The bridge answered op-2 with op-1's operation, so the refusal is both attempts'.
+        (journal.NO_EFFECT, "op-1", [journal.NO_EFFECT, journal.NO_EFFECT]),
+        # Its own operation: op-1 may be another attempt, sent after a release, that ran.
+        (journal.NO_EFFECT, "op-2", [journal.UNKNOWN, journal.NO_EFFECT]),
     ],
+    ids=["a receipt", "a deduplicated refusal", "a refusal of its own"],
 )
-def test_a_receipt_settles_every_attempt_it_deduplicated_and_a_refusal_only_its_own(
-    tmp_path: Path, outcome: str, settled: list[str]
+def test_a_receipt_settles_every_attempt_it_deduplicated_and_a_refusal_only_those_it_names(
+    tmp_path: Path, outcome: str, bridge_operation: str, settled: list[str]
 ) -> None:
     writer = _journal_on(tmp_path, NOW)
     _attempt(writer, "op-1")
     _attempt(writer, "op-2")
-    _finish(writer, "op-2", outcome)
+    _finish(writer, "op-2", outcome, bridge_operation)
     prior = _journal_on(tmp_path, NOW).lookup("req-1")
     assert prior is not None
     assert [attempt.outcome for attempt in prior.attempts] == settled
+
+
+def test_a_refusal_a_retry_shared_settles_both_attempts(world: World) -> None:
+    # The retry joined the running call, so the bridge answers it with that call's outcome.
+    def refused_once_released() -> None:
+        world.gate.wait(10)
+        raise BridgeError("KRITA_MODAL_DIALOG", "A dialog is open.", True)
+
+    world.gate.clear()
+    world.port.on_create.append(refused_once_released)
+    running = world.server(budget_s=0.4).content("krita_document_create", _create())
+    assert running["status"] == "running"
+    retried: list[dict[str, Any]] = []
+    retry = threading.Thread(
+        target=lambda: retried.append(
+            world.server(budget_s=5.0).content("krita_document_create", _create())
+        )
+    )
+    retry.start()
+    time.sleep(0.3)
+    world.gate.set()
+    retry.join(10)
+    assert retried[0]["error"]["code"] == "KRITA_MODAL_DIALOG"
+    prior = world.journal().lookup("req-new")
+    assert prior is not None
+    assert [attempt.outcome for attempt in prior.attempts] == [journal.NO_EFFECT] * 2
 
 
 def test_a_call_that_never_reached_the_bridge_settles_only_itself(tmp_path: Path) -> None:
@@ -680,7 +708,7 @@ def _art(world: World) -> Path:
     # A root of the world's own; the bridge and the servers read the same config.json.
     art = world.tmp_path / "art"
     (art / "accepted").mkdir(parents=True, exist_ok=True)
-    roots.save(world.tmp_path / "config.json", [str(art)])
+    roots.save(world.data / "config.json", [str(art)])
     return art
 
 
@@ -717,7 +745,7 @@ def test_open_inspect_and_close_keep_and_drop_the_baseline(world: World) -> None
     assert kept is not None
     raw = np.frombuffer(bgra(8, 4), dtype=np.uint8).reshape(4, 8, 4)
     assert (kept == raw[..., [2, 1, 0, 3]]).all()
-    assert list((world.tmp_path / "transfer").iterdir()) == []
+    assert list((world.data / "transfer").iterdir()) == []
     seen = server.content("krita_document_inspect", {"document_id": document_id, "frame": 0})
     assert seen["status"] == "completed" and seen["data"]["layers"] == data["layers"]
     assert seen["data"]["baseline_id"] == data["baseline_id"]
@@ -794,7 +822,7 @@ def test_a_root_removed_after_the_send_never_refuses_the_call_that_ran(world: Wo
         session_id=world.bridge.session_id,
         args=arguments,
     )
-    roots.save(world.tmp_path / "config.json", [])
+    roots.save(world.data / "config.json", [])
     retried = world.server().content("krita_document_open", arguments)
     assert retried["status"] == "completed"
     assert retried["data"]["baseline_id"] == ran.result["baseline_id"]
@@ -828,18 +856,18 @@ def test_inspect_counts_the_selection_and_reads_frame_0_only(world: World) -> No
         "selected_pixels": 4,
         "coverage_px": (255 + 128 + 255 + 255) / 255,
     }
-    assert list((world.tmp_path / "transfer").iterdir()) == []
+    assert list((world.data / "transfer").iterdir()) == []
     later = server.content("krita_document_inspect", {**arguments, "frame": 1})
     assert later["error"]["code"] == "UNSUPPORTED_CAPABILITY" and later["operation_id"] is None
 
 
 def test_a_selection_file_read_already_asks_for_another_inspect(world: World) -> None:
     gone = {
-        "path": str(world.tmp_path / "transfer" / "gone.raw"),
+        "path": str(world.data / "transfer" / "gone.raw"),
         "size_px": [1, 1],
         "format": "A8",
     }
-    (world.tmp_path / "transfer").mkdir(exist_ok=True)
+    (world.data / "transfer").mkdir(exist_ok=True)
     result = {"selection": {"bounds_px": {"x": 0, "y": 0, "width": 1, "height": 1}, "pixels": gone}}
     outcome = documents_tools.resolve_inspect(
         world.places(), Done(result, "op-1", "document.inspect")

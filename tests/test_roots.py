@@ -176,6 +176,42 @@ def test_roots_add_refuses_a_folder_that_reaches_too_far(
     assert roots.run("add", art, config, io.StringIO(), home=home, data_dirs=[server]) == 0
 
 
+@pytest.mark.parametrize(
+    ("root", "refused"),
+    [
+        ("/", True),
+        ("home", True),
+        ("data", True),
+        ("data/harness", True),
+        ("", True),
+        ("home/art", False),
+    ],
+    ids=["slash", "home", "the data folder", "inside it", "above it", "an art folder"],
+)
+def test_both_sides_refuse_a_root_in_config_that_reaches_too_far(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, root: str, refused: bool
+) -> None:
+    # A root written by hand, or before `roots add` refused it, never takes effect. The data
+    # folder lies outside home here, so each rule is seen on its own.
+    home = tmp_path / "home"
+    data = tmp_path / "data"
+    for made in (data / "harness", home / "art"):
+        made.mkdir(parents=True)
+    monkeypatch.setenv("HOME", str(home))
+    config = data / "config.json"
+    roots.save(config, [str(home / "art"), root if root == "/" else str(tmp_path / root)])
+    hero = str(home / "art" / "hero.kra")
+    if not refused:
+        assert roots.inside(hero, roots.allowed(config, data / "harness"))
+        assert plugin_roots.check(data, hero, "source_path") == os.path.realpath(hero)
+        return
+    with pytest.raises(roots.ConfigError, match="reaches too far"):
+        roots.allowed(config, data / "harness")
+    with pytest.raises(BridgeError) as found:
+        plugin_roots.check(data, hero, "source_path")
+    assert "reaches too far" in found.value.body["message"]
+
+
 def test_roots_add_needs_a_folder_and_never_overwrites_a_broken_config(tree: Path) -> None:
     config = tree / "data" / "config.json"
     hero = str(tree / "art" / "accepted" / "hero.kra")

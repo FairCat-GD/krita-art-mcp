@@ -7,6 +7,8 @@ from typing import Any
 import numpy as np
 from numpy.typing import NDArray
 
+from krita_art_mcp.paths import private_dir
+
 # Bytes per pixel of each layout a transfer file holds; the plugin holds an equal copy.
 FORMATS = {"BGRA8": 4, "A8": 1}
 
@@ -52,7 +54,7 @@ def put_mask(directory: Path, mask: Pixels) -> dict[str, Any]:
         raise TransferError("a mask is a 2-D array of 8-bit values")
     data = np.ascontiguousarray(mask).tobytes()
     digest = hashlib.sha256(data).hexdigest()
-    directory.mkdir(mode=0o700, parents=True, exist_ok=True)
+    private_dir(directory)
     path = directory / f"mask-{digest}.a8"
     try:
         # A mask already there is made fresh, so the bridge's expiry leaves it to this call.

@@ -114,29 +114,30 @@ def _text(tool: dict[str, Any]) -> str:
 
 
 def stale(folder: Path = FOLDER) -> list[str]:
-    # The files this script would change.
-    return [path.name for path, text in _rendered(folder).items() if path.read_text() != text]
+    return [path.name for path in _changes(folder)]
 
 
-def _rendered(folder: Path) -> dict[Path, str]:
+def _changes(folder: Path) -> dict[Path, str]:
+    # Each file this script would change, with the text it would write.
     paths = {path.stem: path for path in sorted(folder.glob("*.json"))}
-    tools = {name: json.loads(path.read_text()) for name, path in paths.items()}
-    return {paths[name]: _text(tool) for name, tool in amended(tools).items()}
+    current = {name: path.read_text(encoding="utf-8") for name, path in paths.items()}
+    tools = amended({name: json.loads(text) for name, text in current.items()})
+    rendered = {name: _text(tool) for name, tool in tools.items()}
+    return {paths[name]: text for name, text in rendered.items() if text != current[name]}
 
 
 def main(argv: list[str]) -> int:
     if argv not in ([], ["--check"]):
         print("usage: uv run scripts/amend_schemas.py [--check]")
         return 2
-    changed = stale()
+    changes = _changes(FOLDER)
     if argv:
-        for name in changed:
-            print(f"amend_schemas: {name} is not as this script writes it")
-        return 1 if changed else 0
-    for path, text in _rendered(FOLDER).items():
-        if path.name in changed:
-            path.write_text(text)
-            print(f"amend_schemas: wrote {path.name}")
+        for path in changes:
+            print(f"amend_schemas: {path.name} is not as this script writes it")
+        return 1 if changes else 0
+    for path, text in changes.items():
+        path.write_text(text, encoding="utf-8")
+        print(f"amend_schemas: wrote {path.name}")
     return 0
 
 

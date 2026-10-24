@@ -15,6 +15,7 @@ from PIL import Image
 
 from krita_art_mcp import colour
 from krita_art_mcp.envelope import MAX_RESULT_BYTES
+from krita_art_mcp.paths import private_dir
 from krita_art_mcp.transfer import Pixels
 
 FILTERS = {
@@ -155,12 +156,10 @@ def folder_for(captures: Path, today: datetime.date) -> Path:
 
 
 def write(target: Path, data: bytes) -> None:
-    # Whole or not at all, private, and never over another file's name mid-write. mkdir gives
-    # its mode to the last folder only, so captures/ and its day folder are made one by one.
-    captures = target.parent.parent
-    captures.parent.mkdir(parents=True, exist_ok=True)
-    for folder in (captures, target.parent):
-        folder.mkdir(mode=0o700, exist_ok=True)
+    # Whole or not at all, private, and never over another file's name mid-write; captures/ and
+    # its day folder are each made private.
+    for folder in (target.parent.parent, target.parent):
+        private_dir(folder)
     fd, temp = tempfile.mkstemp(dir=target.parent, prefix=".", suffix=".tmp")
     try:
         with os.fdopen(fd, "wb") as stream:

@@ -10,9 +10,9 @@ Release 0.7.0.
 - **Round 1 is the Phase 1 build.** Sessions 0 to 6 and 6a are done; 7 to 15 remain, releasing
   0.7.0 to 0.13.0.
 - **The push status.** `origin` is the private GitHub repository `FairCat-GD/krita-art-mcp`.
-  `origin/main` holds everything through session 6's review commit, `review: the F24 remedy
-  keeps the late-registration case, and 9 smaller`. Session 6a's commit waits for the next approved
-  push. List `origin/main..HEAD` before any push.
+  `origin/main` holds everything through session 6a's review commit, `review: shared refusals
+  settle both attempts, and 9 smaller`, so `origin/main..HEAD` starts empty. List
+  `origin/main..HEAD` before any push.
 - **What 6a changed that session 7 builds on** (block 6a's done-note has the detail):
   - **Schemas are amended with `uv run scripts/amend_schemas.py`.** Edit your schema's input, the
     `data` under its output's properties, and its example; the script writes the envelope,
@@ -28,8 +28,12 @@ Release 0.7.0.
     anything else, `BaseException` included, fails its own op as a non-retryable `INTERNAL_ERROR`.
     Retryable still means "changed nothing", and releases the request_id. `CANCELLED` is
     retryable. F25's "dirty before the first mutation" sits on top of this.
-  - **The journal.** A no-effect outcome settles only its own attempt; a receipt settles every
-    attempt it deduplicated.
+  - **The journal.** A no-effect outcome settles its own attempt and the one whose operation the
+    bridge answered with (its `bridge_operation_id`); a receipt settles every attempt it
+    deduplicated.
+  - **Roots.** A root that reaches too far (`/`, home, the data folder, inside or out) is refused
+    by `roots add`, and, if already in `config.json`, by both sides' `allowed()` and by `doctor`.
+  - **The server's folders** in the data folder go through `paths.private_dir`.
   - **The bridge client.** A 404 answered promptly for 2 s (`REGISTER_GRACE_S`) before the bridge
     has said `running` ends a follow with `outcome: "unregistered"` (retryable). F2's bounded
     retention will make a read's operation id 404 once it is dropped; `operation()` on such an id
@@ -44,9 +48,10 @@ Release 0.7.0.
   - **`tools.CALLS`** is the server's call lock (it was `_CALLS`).
 - **Baseline** (session 7 moves it only by what it adds):
   - `verify`: 6 stages, all PASS;
-  - 360 server tests passed, 0 skipped;
-  - 270 plugin-core tests passed, 0 skipped;
-  - `probe`: 55 PASS, 0 FAIL, 14 MEASURED, about 12 s;
+  - 370 server tests passed, 0 skipped;
+  - 271 plugin-core tests passed, 0 skipped;
+  - `probe`: 55 PASS, 0 FAIL, 14 MEASURED, about 12 s; it ignores transfer files that were there
+    before its document checks or vanish within a second, which are another client's;
   - 11 registered tools; 19 schema files; instructions 2,773 characters (F5: this session adds at
     most 300 net, after trimming).
 - **Not done:**

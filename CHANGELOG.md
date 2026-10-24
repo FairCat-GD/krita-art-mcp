@@ -20,11 +20,14 @@ can be retried, Krita survives an interrupt, and a few files and folders are now
 - **A cancelled call can be retried.** `CANCELLED` is now retryable: the call never ran, so a
   retry with its `request_id` runs it.
 - **`krita-art-mcp roots add` refuses folders that reach too far:** `/`, your home folder, and
-  krita-art-mcp's own data folders or any folder that holds one, each with the reason.
+  krita-art-mcp's own data folders or any folder that holds one, each with the reason. Such a root
+  already in `config.json` is refused too: opens fail until you remove it, and `doctor` names it
+  in step 6.
 - **`krita-art-mcp probe`** ends with its PASS, FAIL and MEASURED counts and how long it ran. Before
   cleaning up, it checks that it left no document open and no pixels in the transfer folder. It no
   longer opens a throwaway document to read Krita's Undo label, so outside its document checks it
-  leaves your view alone.
+  leaves your view alone. Files another program hands through the transfer folder meanwhile are
+  not counted as its leftovers.
 
 ### Fixed
 
@@ -36,11 +39,16 @@ can be retried, Krita survives an interrupt, and a few files and folders are now
   mask is gone is retryable, and the retry sends it again.
 - **Reading the selection waits for Krita to finish painting first.**
 - **A retry still running is never marked settled** when an earlier, refused attempt of the same
-  `request_id` is read late, so a Krita restart can never run it twice.
+  `request_id` is read late, so a Krita restart can never run it twice. A refusal that a retry
+  shared with the call it joined still settles both.
 - **The plugin's log and the probe's folder are private** (`0600` and `0700`), like the rest of
   the data folder, and the log stays private when it rotates.
 - **The server's start-up cleanup of baselines takes its turn** with tool calls instead of
-  reaching Krita beside them.
+  reaching Krita beside them, and gives up after 2 seconds when Krita is busy.
+- **The plugin's log survives being deleted while Krita runs:** the next rotation starts a fresh,
+  private one.
+- **Every folder the server makes in the data folder is private,** including ones an older
+  version made with the default mode.
 
 ## [0.5.0] — 2026-10-24
 
@@ -222,6 +230,7 @@ The first release is the scaffold that the Phase 1 tools are built on.
   reports its version to the client; it offers no tools yet.
 - **`krita-art-mcp --version`.** It prints the installed version.
 
+[0.6.0]: https://github.com/FairCat-GD/krita-art-mcp/commit/b1c679e85ab9632372ea4114a8718e6a2a5328cc
 [0.5.0]: https://github.com/FairCat-GD/krita-art-mcp/commit/5ead34bc4e5624e92165b211d1daa2f66ed95fb1
 [0.4.0]: https://github.com/FairCat-GD/krita-art-mcp/commit/c081c59ff54e38b9a8799fa0a78955146745174c
 [0.3.0]: https://github.com/FairCat-GD/krita-art-mcp/commit/ef279d377f4aa515edb0ef36a69d60654f9744d1

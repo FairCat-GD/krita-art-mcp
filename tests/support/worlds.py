@@ -34,6 +34,8 @@ class World:
         self, tmp_path: Path, bridge: Bridge, port: FakePort, resources: FakeResources
     ) -> None:
         self.tmp_path = tmp_path
+        # The bridge's data folder, apart from the art roots, as on the owner's Mac.
+        self.data = tmp_path / "data"
         self.bridge = bridge
         self.port = port
         self.resources = resources
@@ -45,8 +47,8 @@ class World:
         return Journal(self.tmp_path / name / "journal", now=lambda: NOW)
 
     def places(self, name: str = "a") -> Places:
-        # The bridge's data dir is tmp_path; each server keeps its own baselines.
-        return Places.under(self.tmp_path, self.tmp_path / name)
+        # Each server keeps its own baselines.
+        return Places.under(self.data, self.tmp_path / name)
 
     def client(
         self,
@@ -55,7 +57,7 @@ class World:
         grace_s: float = REGISTER_GRACE_S,
     ) -> BridgeClient:
         return BridgeClient(
-            bridge_file=self.tmp_path / "bridge.json",
+            bridge_file=self.data / "bridge.json",
             budget_s=budget_s,
             poll_s=0.2,
             grace_s=grace_s,
@@ -99,13 +101,14 @@ def running_world(tmp_path: Path) -> Iterator[World]:
         state["world"].gate.wait(10)
         return {"slow": True}
 
+    data = tmp_path / "data"
     bridge = Bridge(
-        data_dir=tmp_path,
+        data_dir=data,
         package_dir=PLUGIN_PACKAGE,
         facts={"krita_version": "5.3.4", "qt_major": 5},
         handlers={
-            **documents.handlers(registry, port, tmp_path),
-            **harness.handlers(registry, port, tmp_path),
+            **documents.handlers(registry, port, data),
+            **harness.handlers(registry, port, data),
             **resources.handlers(resources_port),
             "slow": slow,
         },

@@ -5,9 +5,16 @@ from collections.abc import Sequence
 from pathlib import Path
 from typing import TextIO
 
+from krita_art_mcp.paths import private_dir
+
 # config.json's format; the plugin holds an equal copy (`bridge_core.roots.CONFIG_VERSION`).
 VERSION = 1
 ADD = "Run `uv run krita-art-mcp roots add <folder>` for each folder agents may use."
+# The plugin holds an equal rule (`bridge_core.roots.reaches_too_far`).
+TOO_FAR = (
+    "{name} allows a root that reaches too far: /, the home folder, or krita-art-mcp's data "
+    "folder. Run `uv run krita-art-mcp roots list`, then `roots remove` that root."
+)
 
 
 class ConfigError(Exception):
@@ -42,7 +49,7 @@ def load(config: Path) -> list[str]:
 
 
 def save(config: Path, roots: list[str]) -> None:
-    config.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
+    private_dir(config.parent)
     temp = config.with_name(f".{config.name}.{os.getpid()}.tmp")
     temp.unlink(missing_ok=True)
     fd = os.open(temp, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
@@ -60,7 +67,16 @@ def save(config: Path, roots: list[str]) -> None:
 
 def allowed(config: Path, harness: Path) -> list[str]:
     # The harness folder is always allowed, so the probe needs no root of the owner's.
-    return [os.path.realpath(root) for root in [*load(config), str(harness)]]
+    listed = load(config)
+    if too_far(listed, config):
+        raise ConfigError(TOO_FAR.format(name=config.name))
+    return [os.path.realpath(root) for root in [*listed, str(harness)]]
+
+
+def too_far(roots: list[str], config: Path) -> int:
+    # Roots written by hand, or before `add` refused them, against the folder config.json is in.
+    home, data = os.path.realpath(Path.home()), [os.path.realpath(config.parent)]
+    return sum(refusal(os.path.realpath(root), home, data) is not None for root in roots)
 
 
 def resolve(path: str) -> str | None:

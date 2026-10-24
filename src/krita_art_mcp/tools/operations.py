@@ -75,7 +75,7 @@ def operation_get(call: ToolCall, arguments: dict[str, Any]) -> CallToolResult:
         reason = f"the receipt does not match {known.tool}'s output schema: {mismatch.message}"
         return envelope.failure("INTERNAL_ERROR", details={"reason": reason})
     data["receipt"] = receipt.structured_content
-    _finish_journaled(call, outcome, receipt)
+    _finish_journaled(call, outcome, receipt, operation_id)
     content = receipt.structured_content or {}
     text = f"Operation {data['operation_id']} ({tool}) {data['state']}."
     result = envelope.completed(
@@ -94,7 +94,9 @@ def _state(outcome: Outcome) -> str:
     return outcome.status
 
 
-def _finish_journaled(call: ToolCall, outcome: Done | Failed, receipt: CallToolResult) -> None:
+def _finish_journaled(
+    call: ToolCall, outcome: Done | Failed, receipt: CallToolResult, operation_id: str
+) -> None:
     # A call that came back running has no finished line yet; this is where it ends.
     if outcome.request_id is None or outcome.session_id is None:
         return
@@ -115,7 +117,7 @@ def _finish_journaled(call: ToolCall, outcome: Done | Failed, receipt: CallToolR
         outcome.request_id,
         digest,
         outcome.session_id,
-        outcome.operation_id,
+        operation_id,
         outcome,
         receipt,
     )

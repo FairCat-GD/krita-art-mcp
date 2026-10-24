@@ -9,7 +9,7 @@ import numpy as np
 
 from krita_art_mcp import transfer
 from krita_art_mcp.bridge_client import BridgeClient, Done, Failed
-from krita_art_mcp.paths import Places
+from krita_art_mcp.paths import Places, private_dir
 
 BASELINE_ID = re.compile(r"^baseline-[0-9a-f]{12}$")
 
@@ -74,7 +74,7 @@ def load(directory: Path, baseline_id: Any) -> transfer.Pixels | None:
 
 
 def _write(target: Path, pixels: transfer.Pixels) -> None:
-    target.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
+    private_dir(target.parent)
     fd, temp = tempfile.mkstemp(dir=target.parent, prefix=".", suffix=".npy.tmp")
     try:
         with os.fdopen(fd, "wb") as stream:
