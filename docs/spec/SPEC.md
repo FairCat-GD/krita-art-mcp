@@ -221,6 +221,11 @@ Each is a rule, not a preference. *Enforced by* names what fails when it breaks.
    code.** *Why:* scripted pixel edits caused the defects this product exists to fix (pillar 1).
    *Enforced by* a source scan in `verify` banning `setPixelData`, `Filter.apply`, `saveAs`,
    `exec` and `eval` in the plugin, and the tool list.
+   **Amended 2026-10-24 by the owner, in review 6:** the wording stands; the scan gains one
+   exception, decided for session 7 (`REVIEW-2026-10-24.md` F1). `Selection.setPixelData` loads
+   a server-rasterised mask into a selection (PDD K11), which writes no layer. It may be called
+   in one adapter function only, on a receiver that function built with `Selection()`; an AST
+   test holds the receiver's origin and that no other call site exists.
 2. **Accepted sources are never opened for writing, and no save overwrites a file.** *Why:*
    accepted art is the quality floor. *Enforced by* working-copy opens with hash checks,
    `FILE_EXISTS`, and harness checks that the source hash is unchanged.

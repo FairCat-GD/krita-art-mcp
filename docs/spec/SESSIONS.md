@@ -37,18 +37,20 @@ Never push without being asked.
 | 4 | Opening files: roots, the transfer path, `harness.*`, `document_open` with its baseline, `document_inspect` | 9, 20, 25–27 | **0.4.0** |
 | 5 | Reading pixels: `capture`, `sample`, `resource_list` | 5, 10 | **0.5.0** |
 | 6 | Architecture review: observe | 2 | — |
-| 7 | Preparing a change: `layer_create`, `selection_set`, `protection_set`, the undo ledger, `history_step` | 5, 26, 27 | **0.6.0** |
-| 8 | The verification core, and `layer_update` | 20, 27 | **0.7.0** |
-| 9 | `paint_stroke`, verified per stroke; N-01/N-09 benchmarks | 6, 20 | **0.8.0** |
+| 6a | Review fixes: observe (inserted by review 6) | 2 | **0.6.0** |
+| 7 | Preparing a change: `layer_create`, `selection_set`, `protection_set`, the undo ledger, `history_step` | 5, 26, 27 | **0.7.0** |
+| 8 | The verification core, and `layer_update` | 20, 27 | **0.8.0** |
+| 9 | `paint_stroke`, verified per stroke; N-01/N-09 benchmarks | 6, 20 | **0.9.0** |
 | 10 | Architecture review: paint safely | 2 | — |
-| 11 | `preview_render`; N-02 benchmark | 6, 31 | **0.9.0** |
-| 12 | `document_save`, verified by reopening; H4 long save | 27, 29 | **0.10.0** |
+| 11 | `preview_render`; N-02 benchmark | 6, 31 | **0.10.0** |
+| 12 | `document_save`, verified by reopening; H4 long save | 27, 29 | **0.11.0** |
 | 13 | Architecture review: every tool built | 2 | — |
-| 14 | Acceptance: the full harness, the contract's exercises, H2, H3, final server instructions | 28, 30, 31 | **0.11.0** |
-| 15 | Docs, changelog, manual runs; close the round | 2, 32 | **0.12.0** |
+| 14 | Acceptance: the full harness, the contract's exercises, H2, H3, final server instructions | 28, 30, 31 | **0.12.0** |
+| 15 | Docs, changelog, manual runs; close the round | 2, 32 | **0.13.0** |
 
 A review session (6, 10, 13) changes no product code and cuts no version. A session it inserts
-takes the next version, and every later version shifts by one; the handoff says so.
+takes the next version, and every later version shifts by one; the handoff says so. Review 6
+inserted 6a on 2026-10-24, so sessions 7–15 moved from 0.6.0–0.12.0 to 0.7.0–0.13.0.
 
 ---
 
@@ -1485,14 +1487,151 @@ sessions 1–5.
   down as a finding.
 - **Measure, don't infer.** Timings, leaks and leftovers are measured.
 
+**Done (2026-10-24, no version).**
+- **Decided with the owner in plan mode**, over the 27 findings of `REVIEW-2026-10-24.md`:
+  - **F1 (High):** `Selection.setPixelData` becomes the scan's one exception, in one adapter
+    function on a `Selection()` it built, held by an AST test; invariant 1's wording stands and
+    SPEC §5 carries the owner's dated note. Amendment to block 7.
+  - **F2, F3, F4, F5, F25 (Medium)** become amendments: F2 and F4 to 7, F3 to 9, F5 to 7, 8, 9,
+    11 and 14, F25 to 7 and 8.
+  - **The mechanical fixes** (F6–F9, F11–F20, F24, F26, F27) become one inserted session, **6a**
+    at 0.6.0; sessions 7–15 shift to 0.7.0–0.13.0.
+  - **F10** is measured in 9. **F23** is 7's *Ask at the start*. **F21, F22** are recorded.
+    Nothing goes to the backlog.
+- **The review.** `REVIEW-2026-10-24.md`: method, the baseline as found, what holds (the
+  layering, every invariant traced to its enforcement and tests, the constants held equal, fit
+  for Phases 2–6), 27 findings with `file:line` evidence, the drift inventory, the job system,
+  transfer path and registry against sessions 7–12, where each finding landed, and the
+  measurements. A second cold read by an independent agent, without the first read's notes,
+  added F24–F27 and confirmed six others.
+- **The plan.** The table and the 6a block above; amendment lines in blocks 7, 8, 9, 11 and 14,
+  each marked "amended by review 6"; the versions of 7–15 shifted.
+- **Amendments:** none to this block. The measurements ran after the owner approved the plan,
+  since `probe` drives the owner's Krita; the probe needed three runs (one gated by an unsaved
+  document, one with Krita closed, one full), recorded in the REVIEW's §7.
+- **Measured** (Krita 5.3.4.1 on macOS, Apple Silicon; details in the REVIEW):
+  - `probe`: 13.5 s wall time; H4 p50 5.2 ms, p95 18.0 ms, max 59.5 ms on a Krita 20 s old;
+    create and close mean 153 ms, max 183 ms; opens 155–175 ms; a native capture 36 ms.
+  - The raw preset digest changed a fourth time; the canonical one held.
+  - `transfer/` and `harness/` empty after every run; `plugin.log` without warning or error.
+  - A bridge start at 18:13 with no `stopped` before it: Krita had ended without its quit signal;
+    the next start took over the stale `bridge.json` as designed.
+  - The server instructions: 2,773 of 4,096 characters.
+- **Checked by hand:** the owner saved their documents, quit Krita and started it again with
+  none open, so the full probe could run; the session restarted nothing itself.
+- **Falsified:** nothing; the review adds no check.
+- **Numbers** (unchanged, as found):
+  - `verify`: 6 stages, all PASS;
+  - 334 server tests passed, 0 skipped;
+  - 249 plugin-core tests passed, 0 skipped;
+  - `probe`: 55 PASS, 0 FAIL, 15 MEASURED;
+  - 11 registered tools; 19 schema files.
+
+---
+
+## 6a: Review fixes — observe
+
+Inserted by review 6 on 2026-10-24. The owner chose one fix session for the review's mechanical
+findings, so that session 7, the round's largest block, starts clean. Each item names its
+finding in `REVIEW-2026-10-24.md`; the pointers are to the code as the review saw it (`d5af786`).
+
+**Read:** `SPEC.md` §5 (invariants 6, 9, 12, 13); `REVIEW-2026-10-24.md` §3 and §5; `PDD.md`
+Part 8 (*Bridge protocol*, K41, K48).
+
+- **The bridge client** (F24, invariant 9). A POST the bridge never registered is reported
+  `running` for ever (`src/krita_art_mcp/bridge_client.py:200-230`, `:142-145`). Bound the 404
+  grace to a short window after the bridge first answers in the same follow; afterwards a 404 is
+  "unknown operation". `operation()` on an id this process sent but never saw registered answers
+  the same way instead of waiting out another budget. A retry of the tool call still runs, since
+  the bridge never saw its request id.
+- **Jobs** (F7, F11, F27).
+  - `cancel` routes through `_finish_failed` and `CANCELLED` is retryable on both sides
+    (`bridge_core/jobs.py:223-227`, `src/krita_art_mcp/errors.py:19`): a cancelled queued job
+    never ran, like one failed at stop.
+  - `Jobs._run` serialises the handler's result once (`json.dumps`) and fails the operation with
+    `INTERNAL_ERROR` when it cannot, so a non-JSON result can never loop the client
+    (`bridge_core/server.py:94`, `bridge_client.py:204-205`).
+  - `Waker._run` catches `BaseException`, logs it and swallows it, re-raising `SystemExit` only
+    (`krita_adapter/main_thread.py:19-25`).
+- **The adapter** (F6, F9).
+  - `KritaDocuments.selection()` waits for Krita before reading (`krita_adapter/documents.py:127-140`).
+  - `probe.undo_action` switches views as the adapter does (`windows()[0]`, `View.setVisible`
+    through `bring_forward`/`restore_view`) or is retired, the owner's choice at the start
+    (`krita_adapter/ops.py:29, 46`). Its measurement is kept in session 2's done-note.
+- **Transfer** (F12). Masks expire too: `_expire` covers `mask-*.a8` after a longer window, or the
+  server discards its mask when the call is not sent (`bridge_core/transfer.py:57-66`,
+  `src/krita_art_mcp/transfer.py:49-68`).
+- **Receipts** (F8). One table per tool, `(tool, op, receipt, resolve)`, from which the send and
+  `RECEIPTS` both derive, or a test that every `call("…")` literal in the tool modules has its
+  entry (`src/krita_art_mcp/tools/operations.py:27-41`).
+- **Constants** (F19, F26). A server-side blend-mode whitelist held equal to the plugin's
+  (`bridge_core/resources.py:16-27`; the probe's copy at `probe/pixels.py:23-34` reads it);
+  `MAX_POINTS`, `MAX_RADIUS` and `MAX_LIMIT` pinned to the schema limits in the constants test
+  (`tests/test_envelope.py:45-52`).
+- **Roots** (F15). `roots add` refuses `/`, the home folder and any folder containing the data
+  directory, with a message (`src/krita_art_mcp/roots.py:86-96`).
+- **The server** (F16, F17). The baseline sweep runs under `_CALLS` (`src/krita_art_mcp/server.py:31-34`);
+  `tests/test_tools.py:41` points its client at `tmp_path`.
+- **The data directory** (F14). The harness folder is made private (`probe/__init__.py:51`) and
+  `plugin.log` is 0600 (`bridge_core/log.py:30`).
+- **The probe** (F13). The summary prints the run's wall time; a last check lists `transfer/`
+  (empty) and the probe's own documents (none open).
+- **Schemas** (F18). The amendment tooling is committed under `scripts/` (or the shared shapes
+  are generated into the 19 files from one source and the result tested), so sessions 7–12 amend
+  with it instead of one-off scripts.
+- **Docs.**
+  - `CHANGELOG.md`: 0.6.0, and the missing `[0.5.0]` link reference
+    (`5ead34bc4e5624e92165b211d1daa2f66ed95fb1`) (F20).
+  - README and `CLAUDE.md`: the probe's run-time line and `roots add`'s refusals, where they
+    state the behaviour.
+- **Ask at the start of 6a:** retire `probe.undo_action`, or make it switch views as the adapter
+  does. Proposed by review 6, not yet confirmed.
+
+**Gates:**
+- `uv run scripts/verify.py`, with these tests: the bounded 404 grace and the strict answer
+  afterwards; cancel releasing its request id; a non-JSON result failing typed; the swallowed
+  `BaseException`; the mask expiry; every tool op in `RECEIPTS`; the three bounds and the
+  whitelist held equal; the refused roots; the private harness folder and log.
+- `probe` green, printing its wall time, and its leftover check PASS.
+- Each new check falsified once.
+
+**Watch for:**
+- **The 404 grace has a real case.** A POST stuck behind a long Krita call registers only when
+  the GIL is released; `test_a_poll_waits_for_a_call_the_bridge_has_not_registered_yet` must
+  keep passing with the bound.
+- **`probe.undo_action` touches the owner's view.** Whatever is chosen, run it only with the
+  owner's documents saved, as now.
+- **A changed plugin loads only after a Krita restart;** decision 21 applies.
+
 ---
 
 ## 7: Preparing a change
 
-**Read:** `SPEC.md` §1 (decisions 5, 26, 27), §5 (invariants 4, 5); `PDD.md` Part 4
+**Read:** `SPEC.md` §1 (decisions 5, 26, 27), §5 (invariants 1, 4, 5); `PDD.md` Part 4
 (`krita_layer_create`, `krita_selection_set`, `krita_protection_set`, `krita_history_step`), Part
-8 (K7, K8, K10, K11, K22, K23, K43, K46); any REVIEW finding the handoff assigns here.
+8 (K7, K8, K10, K11, K22, K23, K43, K46); `REVIEW-2026-10-24.md` F1, F2, F4, F5, F23, F25.
 
+- **Amended by review 6 (2026-10-24):**
+  - **F1: raster selections load through `Selection.setPixelData`, the scan's one exception.**
+    One adapter function may call `setPixelData`, on a receiver the same function built with
+    `Selection()`; an AST test holds both rules (the receiver's origin, and no other call site),
+    and the scan stays as it is everywhere else. SPEC §5 invariant 1 carries the owner's note;
+    `CLAUDE.md`'s invariant line is updated here.
+  - **F2: bounded retention in the bridge.** Operations whose `request_id` the server minted
+    (reads) are kept only until first delivery plus a window; operations with an agent's
+    `request_id` stay for the session, as invariant 9 wants (`bridge_core/jobs.py:92-96`).
+  - **F4: the K46 node choice lives in the core.** `_unmasked`'s logic
+    (`krita_adapter/documents.py:284-293`) becomes a pure function over `tree()`'s dict in
+    `bridge_core`, tested with a global and a local mask; the adapter activates the chosen id.
+  - **F5: the instructions' budget.** This session adds at most 300 characters net and trims the
+    present text first; 2,773 of 4,096 are used.
+  - **F25: dirty before the first mutation.** Every mutating handler marks its handle dirty (or
+    unsafe) before its first libkis mutation, so an exception afterwards leaves it dirty; the
+    "dirty on success only" test (`tests/plugin/test_documents.py:192-199`) is reshaped to say
+    "clean after a refusal before the mutation".
+- **Ask at the start of 7** (F23): where the allowed mask's bytes live — in memory on the handle
+  (64 MB for an 8k canvas, per document) or in a file under the data directory read per stroke.
+  Proposed by review 6, not yet confirmed.
 - **`krita_layer_create`**.
   - Types `paint` and `group`, and new layers are editable.
   - Inside a protected group it is allowed, unless an appearance-affecting property of the group
@@ -1520,8 +1659,9 @@ sessions 1–5.
 - **Refusals** for the new mutations: `DOCUMENT_READ_ONLY` and `LOCKED_TARGET`.
 - **`harness.*`**: a selection mask set as the active node (K46).
 - **Docs.**
-  - `CHANGELOG.md`: 0.6.0.
+  - `CHANGELOG.md`: 0.7.0 (0.6.0 before review 6 inserted 6a).
   - README: the tool list.
+  - `CLAUDE.md`: invariant 1's enforcement line (F1).
   - Server instructions: add a layer before painting; to repair several regions, allow their
     union once and select each; undo steps include selection commits and layer creation.
 
@@ -1551,8 +1691,14 @@ sessions 1–5.
 
 **Read:** `SPEC.md` §1 (decisions 20, 27), §5 (invariants 5, 6); `PDD.md` Part 4
 (`krita_layer_update`; `krita_paint_stroke`, *Per-stroke verification*), Part 8 (*Verification*,
-K13, K22, K42, K43, K44); any REVIEW finding the handoff assigns here.
+K13, K22, K42, K43, K44); `REVIEW-2026-10-24.md` F5, F19, F25.
 
+- **Amended by review 6 (2026-10-24):**
+  - **F25:** the core's contract marks the handle dirty before the first libkis mutation, as
+    session 7 began; a confirmed rollback leaves it as it was, an unconfirmed one marks it unsafe.
+  - **F19:** `blend_mode`'s enum in `krita_layer_update` is checked against the server's
+    whitelist constant (6a).
+  - **F5:** at most 300 characters net added to the instructions.
 - **The verification core.** `layer_update` uses it now and `paint_stroke` in session 9. All of
   it runs in the plugin's main-thread job.
   - **Scope:** the node's bounds, a region, or the whole canvas.
@@ -1582,7 +1728,7 @@ K13, K22, K42, K43, K44); any REVIEW finding the handoff assigns here.
 - **K43:** the redo of a rolled-back blend change is refused.
 - **`harness.*`**: a filter layer, a filter mask, a transform mask and a clone layer.
 - **Docs.**
-  - `CHANGELOG.md`: 0.7.0.
+  - `CHANGELOG.md`: 0.8.0 (0.7.0 before review 6 inserted 6a).
   - Server instructions: to recolour inside a silhouette under `preserve_composite_alpha`, paint
     on a new `inherit_alpha` layer; most property changes cannot be undone.
 
@@ -1611,8 +1757,18 @@ K13, K22, K42, K43, K44); any REVIEW finding the handoff assigns here.
 
 **Read:** `SPEC.md` §1 (decisions 6, 20), §5 (invariants 1, 5, 6); `PDD.md` Part 4
 (`krita_paint_stroke`, *States & edge cases*), Part 5 (N-01, N-06 to N-09), Part 8 (K2 to K5, K9,
-K10, K18, K21, K30, K37, K43, K44, K47); any REVIEW finding the handoff assigns here.
+K10, K18, K21, K30, K37, K43, K44, K47); `REVIEW-2026-10-24.md` F2, F3, F5, F10, F19.
 
+- **Amended by review 6 (2026-10-24), measured and recorded in the done-note:**
+  - **F2:** Krita's memory before and after the N-01 run, against the bridge's retention.
+  - **F3:** the journal's size and a fresh server's first-lookup time after the N-01 run; if
+    either bites, the index stops decoding `args` (a sidecar per operation, the lines small).
+  - **F10:** the open time and disk use of the N-09 fixture's baseline (256 MB as BGRA8); then
+    a bound on `working_copy` opens above `capture_source_pixels`, a tiled baseline, or a
+    baseline written lazily for the first `preview_render`, the owner's call.
+  - **F19:** `blend_mode`'s enum in `krita_paint_stroke` is checked against the server's
+    whitelist constant (6a).
+  - **F5:** at most 300 characters net added to the instructions.
 - **`krita_paint_stroke`**, with its schema amended per PDD Part 4: `pressure` and `time_ms`
   optional; `rotation_deg`, `tangential_pressure` and `speed` added; an explicit `layer_id`;
   `smooth`, `input_fallback` and `verify`.
@@ -1644,7 +1800,7 @@ K10, K18, K21, K30, K37, K43, K44, K47); any REVIEW finding the handoff assigns 
     sparse (small content on the full canvas), so the ORA stays small; measure Krita's memory
     before and after and record it.
 - **Docs.**
-  - `CHANGELOG.md`: 0.8.0.
+  - `CHANGELOG.md`: 0.9.0 (0.8.0 before review 6 inserted 6a).
   - README: the tool list.
   - Server instructions: one stroke per call; `input_fallback` and what flat strokes mean; there
     is no raw pixel tool; the owner may be watching and must not edit presets while an agent
@@ -1708,8 +1864,10 @@ Placed at the owner's request, after the paint-safely milestone and before the d
 ## 11: preview_render
 
 **Read:** `SPEC.md` §1 (decisions 6, 31); `PDD.md` Part 1 (pillar 4), Part 4
-(`krita_preview_render`), Part 5 (N-02); any REVIEW finding the handoff assigns here.
+(`krita_preview_render`), Part 5 (N-02); `REVIEW-2026-10-24.md` F5.
 
+- **Amended by review 6 (2026-10-24), F5:** at most 300 characters net added to the
+  instructions.
 - **`krita_preview_render`**, with its schema amended per PDD Part 4.
   - **Recipes:** explicit `{id, target_pixels_per_unit | target_size_px, integer_zoom?}`, with a
     `filter`.
@@ -1726,7 +1884,7 @@ Placed at the owner's request, after the paint-safely milestone and before the d
   transfer path.
 - **Benchmark N-02:** two recipes on a 2000 × 2000 master, p95 under 2.0 s.
 - **Docs.**
-  - `CHANGELOG.md`: 0.9.0.
+  - `CHANGELOG.md`: 0.10.0 (0.9.0 before review 6 inserted 6a).
   - README: the tool list.
   - Server instructions: check `krita_preview_render` at the asset's game sizes after every one
     to three strokes.
@@ -1775,7 +1933,7 @@ finding the handoff assigns here.
   answers within 1 s after the save, and no job is lost or duplicated. Reach the 20 s with the
   fewest layers that do it, measured first, and record Krita's memory; never dense 8k layers.
 - **Docs.**
-  - `CHANGELOG.md`: 0.10.0.
+  - `CHANGELOG.md`: 0.11.0 (0.10.0 before review 6 inserted 6a).
   - README: the tool list.
 
 **Gates:**
@@ -1844,11 +2002,13 @@ handoff assigns here.
 - **H3, by hand:** the owner registers the server in Codex, and the Codex agent describes a
   capture of a known test pattern.
 - **The server instructions, finalised** against PDD Part 4's list, at or under 4,096 characters.
+  Amended by review 6 (F5): sessions 7–11 each added at most 300 characters net, so this is a
+  finalisation, not a cut; the owner decides what goes if the cap still binds.
 - **F-24** (a floating message while a job runs), if time allows (decision 31).
 - **N-04 in the harness:** nothing is written outside the roots, the data directory, and Krita's
   own temp and autosave files.
 - **Docs.**
-  - `CHANGELOG.md`: 0.11.0.
+  - `CHANGELOG.md`: 0.12.0 (0.11.0 before review 6 inserted 6a).
   - README: registration, checked by hand in both clients.
 - **Ask at the start of 14:** which six stock presets the H2 sheet uses. The session proposes
   them from `krita_resource_list`, and the owner confirms.
@@ -1880,7 +2040,7 @@ handoff assigns here.
 - **`docs/BACKLOG.md`**: everything still open, including *Not yet checked by hand* (decision 29's
   two items among them), and the REVIEW findings the owner did not take.
 - **Docs.**
-  - `CHANGELOG.md`: 0.12.0.
+  - `CHANGELOG.md`: 0.13.0 (0.12.0 before review 6 inserted 6a).
   - The release commit carries the last done-note.
   - Then a separate `docs: close round 1` commit deletes `docs/spec/` and rewrites the handoff
     from the between-rounds template, naming the release commit.
