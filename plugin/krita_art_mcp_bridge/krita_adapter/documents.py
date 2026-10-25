@@ -232,15 +232,16 @@ class KritaDocuments:
         document.refreshProjection()
         document.waitForDone()
 
-    def effects(self, document: Any) -> dict[str, Any]:
+    def effects(self, document: Any, reach: bool) -> dict[str, Any]:
         styled, clones, animated = [], {}, False
         pending = list(document.rootNode().childNodes())
         while pending:
             node = pending.pop()
             node_id = _layer_id(node)
-            if str(node.layerStyleToAsl()):
+            # libkis says whether a layer has a style only by serialising it.
+            if reach and str(node.layerStyleToAsl()):
                 styled.append(node_id)
-            if str(node.type()) == "clonelayer":
+            if reach and str(node.type()) == "clonelayer":
                 clones[node_id] = _source_id(node)
             animated = animated or bool(node.animated())
             pending.extend(node.childNodes())

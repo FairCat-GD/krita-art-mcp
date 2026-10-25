@@ -11,7 +11,7 @@ from mcp.types import ImageContent
 from PIL import Image
 from worlds import NOW, B, World, running_world
 
-from krita_art_mcp import verification
+from krita_art_mcp import imaging, verification
 from krita_art_mcp.bridge_client import Done, Failed
 from krita_art_mcp.tools import changes
 
@@ -209,3 +209,59 @@ def test_images_that_cannot_be_made_leave_the_change_reported(
     made = resolved.result["verification"]
     assert (made["before"], made["after"], made["changed_px"]) == (None, None, 1)
     assert not raw.exists()
+
+
+def test_a_png_that_cannot_be_written_keeps_its_pixels_for_a_rebuild(
+    world: World, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    places = world.places()
+    places.transfer_dir.mkdir(parents=True, exist_ok=True)
+    raw = places.transfer_dir / "before.raw"
+    raw.write_bytes(bytes([1, 2, 3, 255]))
+    sent = {
+        "mode": "region",
+        "rect": {"x": 0, "y": 0, "width": 1, "height": 1},
+        "changed_px": 1,
+        "changed_bounds_px": {"x": 0, "y": 0, "width": 1, "height": 1},
+        "changed_outside_px": 0,
+        "alpha_changed_px": 0,
+        "preserve_composite_alpha": False,
+        "before": {"path": str(raw), "size_px": [1, 1], "format": "BGRA8"},
+        "after": None,
+        "diff": None,
+    }
+    outcome = Done({"verification": sent}, OPERATION)
+    real_write = imaging.write
+
+    def full(target: Path, data: bytes) -> None:
+        raise OSError("the disk is full")
+
+    monkeypatch.setattr(imaging, "write", full)
+    first = changes.resolve_update(places, outcome)
+    assert isinstance(first, Done) and first.result["verification"]["before"] is None
+    assert raw.exists()
+    monkeypatch.setattr(imaging, "write", real_write)
+    again = changes.resolve_update(places, outcome)
+    assert isinstance(again, Done) and again.result["verification"]["before"] is not None
+    assert not raw.exists()
+
+
+def test_a_diff_too_large_to_inline_is_named_but_not_inlined(
+    world: World, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    document_id = _document(world)
+    server = world.server()
+    protect = {
+        "guard": {"document_id": document_id, "request_id": "req-p"},
+        "protected_layer_ids": [],
+        "allowed_change_mask": {"rect": {"x": 0, "y": 0, "width": 4, "height": 8}},
+        "preserve_composite_alpha": False,
+        "preserve_canvas": False,
+    }
+    server.content("krita_protection_set", protect)
+    monkeypatch.setattr(imaging, "INLINE_BYTES", 10)
+    result = server.call("krita_layer_update", _update(document_id, "req-big", opacity=0.5))
+    content = result.structured_content or {}
+    assert content["error"]["code"] == "PROTECTED_REGION_CHANGED"
+    assert content["error"]["details"]["verification"]["diff"] is not None
+    assert not any(isinstance(part, ImageContent) for part in result.content)

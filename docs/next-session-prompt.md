@@ -10,8 +10,9 @@ Release 0.9.0.
 - **Round 1 is the Phase 1 build.** Sessions 0 to 8, 6a and 7a are done; 9 to 15 remain,
   releasing 0.9.0 to 0.13.0.
 - **The push status.** `origin` is the private GitHub repository `FairCat-GD/krita-art-mcp`.
-  `origin/main` holds everything through session 7a's review commit; session 8's commits are
-  local until the owner approves a push. List `origin/main..HEAD` before any push.
+  `origin/main` holds everything through session 8's review commit ("review: only copy and
+  destination blends refuse region, and 9 smaller"), pushed with the owner's approval; nothing
+  is local. List `origin/main..HEAD` before any push.
 - **What 8 built that 9 stands on** (block 8's done-note has the detail):
   - **The verification core** (`bridge_core/verification.py`), pure and tested on 3.10:
     - `reach(tree, effects, target)` lists every node that can carry a change past the target's
@@ -26,8 +27,8 @@ Release 0.9.0.
     - `check(before, after, allowed, preserve_alpha)` gives a `Verdict` with flags, counts,
       changed bounds, `protected_changed` and `leaked`;
     - `same(before, again)` confirms a rollback byte for byte;
-    - `files(...)` writes before and after for a pass and before and the flags for a refusal,
-      never failing the call.
+    - `files(...)` writes before and after (up to 2048², `MAX_IMAGE_PIXELS`) for a pass and
+      before and the flags for a refusal, never failing the call.
   - **What a stroke must still wire.** `layer_update` passes no `target_id` and no `hashed`: the
     target read, the protected hashes and the target's bounds check are built and unit-tested,
     and first used by the stroke. `protected_pixels_changed` from protected layers' before and
@@ -41,8 +42,11 @@ Release 0.9.0.
     - a refresh, then `same()` with the before-read and the tree;
     - confirmed: `dirty = was`; otherwise `handle.unsafe` and `ROLLBACK_FAILED`.
   - **The server side** (`src/krita_art_mcp/verification.py`, `tools/changes.resolve_update`):
-    - `<op>.before.png`, `<op>.after.png` and `<op>.diff.png`, each found before made;
-    - the diff image of offending pixels, at most 1024 px, inline in the error result;
+    - `<op>.before.png`, `<op>.after.png` and `<op>.diff.png`, each found before made through
+      `verification.keep`, which the selection's mask and history's capture share; raw files stay
+      until their PNG exists;
+    - the diff image of offending pixels, at most 1024 px, inline in the error result when it
+      fits under `INLINE_BYTES`;
     - images null when another server took the pixels, never a changed outcome;
     - the plugin computes the counts, the server only the images (owner, at plan time).
   - **The fingerprint carries each node's blend mode,** so history tells the bridge's blend step
@@ -50,8 +54,8 @@ Release 0.9.0.
   - **`harness.add_node`** adds a blur filter layer, a blur filter mask, a transform mask or a
     clone; it seals the ledger.
 - **What the specs said that turned out otherwise** (block 8's amendments and measurements):
-  - **Region scope is refused for more than PDD Part 4 lists:** blends outside the whitelist,
-    derived-bounds layer types (clone, fill, file, vector, filter as a target), filter layers
+  - **Region scope is refused for more than PDD Part 4 lists:** copy and destination blends on
+    the changed layers (Krita composites them past the extent), derived-bounds layer types (clone, fill, file, vector, filter as a target), filter layers
     nested in later siblings, animated documents. A stroke's R analysis should use `reach` as it
     is.
   - **Under `inherit_alpha`, Krita writes colour into fully transparent composite pixels** (1,728
@@ -66,10 +70,10 @@ Release 0.9.0.
   - **4096 × 4096 costs:** a verified layer update 0.57–0.64 s, a leak with rollback 0.79 s.
 - **Baseline** (session 9 moves it only by what it adds):
   - `verify`: 6 stages, all PASS;
-  - 434 server tests passed, 0 skipped;
-  - 438 plugin-core tests passed, 0 skipped;
-  - `probe`: 75 PASS, 0 FAIL, 25 MEASURED, about 41 s;
-  - 16 registered tools; 19 schema files; instructions 2,920 characters (F5: session 9 adds at most
+  - 436 server tests passed, 0 skipped;
+  - 442 plugin-core tests passed, 0 skipped;
+  - `probe`: 75 PASS, 0 FAIL, 25 MEASURED, about 39 s;
+  - 16 registered tools; 19 schema files; instructions 2,910 characters (F5: session 9 adds at most
     300 net).
 - **Not done:**
   - **The owner's roots.** `doctor` step 6 FAILs with "no roots" until the owner runs

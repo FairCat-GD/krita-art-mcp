@@ -87,7 +87,7 @@ def test_the_plugins_bounds_are_the_schemas_limits() -> None:
     assert history["steps"]["maximum"] == bridge_history.MAX_STEPS
     protection = schemas.load("krita_protection_set")["inputSchema"]["properties"]
     assert protection["protected_layer_ids"]["maxItems"] == bridge_protection.MAX_PROTECTED
-    assert bridge_verification.MAX_IMAGE_PIXELS == observe.LIMITS["capture_pixels"]
+    assert bridge_verification.MAX_IMAGE_PIXELS == verification.IMAGE_PIXELS
 
 
 def test_a_cancelled_call_is_retryable_alike_on_both_sides() -> None:

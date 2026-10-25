@@ -348,9 +348,11 @@ class FakePort:
         self.calls.append("refresh")
         self._redraw(document.key)
 
-    def effects(self, document: Any) -> dict[str, Any]:
+    def effects(self, document: Any, reach: bool) -> dict[str, Any]:
+        self.calls.append(f"effects {reach}")
         default = {"styled": [], "clones": {}, "animated": False}
-        return copy.deepcopy(self.reach.get(document.key, default))
+        found = copy.deepcopy(self.reach.get(document.key, default))
+        return found if reach else {**found, "styled": [], "clones": {}}
 
     def add_fixture_node(self, document: Any, kind: str, layer_id: str) -> tuple[str, bool]:
         key = document.key

@@ -241,12 +241,20 @@ def test_a_layer_style_on_the_target_or_an_ancestor_is_named_one_above_is_not() 
     assert _reasons(tree, target["id"], {**NONE, "styled": [above["id"]]}) == []
 
 
-def test_a_blend_outside_the_whitelist_is_named_on_layers_only() -> None:
-    target = _node(1, "root-1", 0, blend_mode="destination-in")
+@pytest.mark.parametrize("mode", sorted(verification.SPREADING_BLENDS))
+def test_a_blend_that_composites_past_the_extent_is_named_in_the_target(mode: str) -> None:
+    target = _node(1, "root-1", 0, blend_mode=mode)
     assert _reasons(_tree(target), target["id"]) == [("blend_mode", target["id"])]
-    plain = _node(2, "root-1", 1)
-    mask = _node(3, plain["id"], 0, type="transparencymask", blend_mode="copy")
-    assert _reasons(_tree(plain, mask), plain["id"]) == []
+    group = _node(2, "root-1", 1, type="grouplayer")
+    inner = _node(3, group["id"], 0, blend_mode=mode)
+    assert _reasons(_tree(group, inner), group["id"]) == [("blend_mode", inner["id"])]
+
+
+def test_per_pixel_blends_masks_and_ancestors_blends_bound_the_change() -> None:
+    group = _node(1, "root-1", 0, type="grouplayer", blend_mode="destination-in")
+    target = _node(2, group["id"], 0, blend_mode="hard_light")
+    mask = _node(3, target["id"], 0, type="transparencymask", blend_mode="copy")
+    assert _reasons(_tree(group, target, mask), target["id"]) == []
 
 
 def test_a_filter_layer_above_the_target_or_an_ancestor_is_named_one_below_is_not() -> None:

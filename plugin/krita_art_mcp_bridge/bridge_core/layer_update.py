@@ -45,7 +45,7 @@ def handlers(registry: Registry, port: DocumentsPort, data: Path) -> dict[str, H
         rect, before, allowed = None, None, None
         if APPEARANCE & set(changes):
             info = port.describe(document)
-            effects = port.effects(document)
+            effects = port.effects(document, mode == verification.REGION)
             if mode == verification.REGION:
                 _refuse_reach(verification.reach(tree, effects, layer_id), layer_id)
             rect = verification.scope(mode, tree, layer_id, info["size_px"])
@@ -85,7 +85,7 @@ def handlers(registry: Registry, port: DocumentsPort, data: Path) -> dict[str, H
                     before, after, allowed, handle.preserve_composite_alpha
                 )
                 if verdict.leaked:
-                    problem = _leak(verdict)
+                    problem = _leak()
         except BridgeError as raised:
             problem = raised
         except Exception as raised:
@@ -150,8 +150,7 @@ def handlers(registry: Registry, port: DocumentsPort, data: Path) -> dict[str, H
         problem: BridgeError,
         verdict: verification.Verdict | None,
     ) -> None:
-        # Invariant 5: native undo for the blend, the old values for the rest, then the scope
-        # and the tree confirmed as they were; otherwise the document is unsafe.
+        # Invariant 5: undone, then confirmed by the scope and the tree, or the document is unsafe.
         rolled_back, confirmed = _restore(handle, args["layer_id"], tree, applied, step, before)
         details = {
             **problem.body["details"],
@@ -310,16 +309,13 @@ def _refuse_reach(reasons: list[dict[str, str]], layer_id: str) -> None:
     raise BridgeError("UNSUPPORTED_CAPABILITY", message, False, details)
 
 
-def _leak(verdict: verification.Verdict) -> BridgeError:
-    details = {
-        "changed_outside_px": verdict.changed_outside_px,
-        "alpha_changed_px": verdict.alpha_changed_px,
-    }
+def _leak() -> BridgeError:
+    # The counts go in details.verification.
     message = (
         "The change reached the composite where protection forbids it "
         "(outside the allowed mask, or its alpha under preserve_composite_alpha)."
     )
-    return BridgeError("PROTECTED_REGION_CHANGED", message, False, details)
+    return BridgeError("PROTECTED_REGION_CHANGED", message)
 
 
 def _node(tree: dict[str, Any], layer_id: str) -> dict[str, Any]:

@@ -2517,6 +2517,38 @@ K13, K22, K42, K43, K44); `REVIEW-2026-10-24.md` F5, F19, F25.
   - 438 plugin-core tests passed, 0 skipped (+74);
   - `probe`: 75 PASS, 0 FAIL, 25 MEASURED (+9 PASS, +4 MEASURED), 40.7 s;
   - 16 registered tools (+1); 19 schema files; instructions 2,920 characters (+300).
+- **Review (`/code-review high`), 10 findings, all fixed at the owner's request.**
+  - **The blend rule refused every blend outside the paint whitelist,** on ancestors too. Only
+    copy, destination-in and destination-atop composite past a layer's extent
+    (`kis_layer_projection_plane.cpp:48-50`, `v6.0.4.1`), and only on the changed layers: the rule
+    now names those three on the target and its subtree (`SPREADING_BLENDS`).
+  - **A PNG that could not be written lost its pixels,** because the raw files went regardless;
+    they now stay until their PNG exists, for a later rebuild.
+  - **The inline diff had no size bound,** so an oversized one would turn the refusal into a bare
+    `INTERNAL_ERROR`; it is inlined only under `INLINE_BYTES`, and its artifact always named.
+  - **The diff image did float work at the scope's full size;** it now composites and greys with
+    Pillow in 8 bits and fades the shrunk image only.
+  - **Two full-size PNGs per update** cost about 1.4 s for painted art at 4096² under the server's
+    call lock (0.72 s each, measured); the receipt keeps before and after up to 2048² now, held
+    equal on both sides (`IMAGE_PIXELS`, `MAX_IMAGE_PIXELS`).
+  - **The PNG helpers had two homes;** `verification.keep`, `image_of` and `artifact` serve the
+    selection's mask and history's capture too.
+  - **`effects` serialised every layer style for every change;** styles and clones are read only
+    for region scope.
+  - **The leak counts were in the details twice;** they live in `details.verification`.
+  - **The instructions named only part of the refusals;** they now add copy blends and animated
+    documents, at 2,910 characters (+290).
+  - **Comments of three lines** are shortened.
+  - **Falsified:** 7 breaks, each failing its own test: the spreading blends named, per-pixel and
+    ancestor blends not, full scope reading no styles, one home for the counts, raw files kept on a
+    failed write, the inline bound, the image bound held equal.
+  - **Measured:** `probe` 75 PASS, 0 FAIL, 25 MEASURED in 38.6 s on the reviewed build. The first
+    run stopped at the export's `BUSY` (Krita's autosave); the rerun passed.
+  - **Numbers after the review:**
+    - `verify`: 6 stages, all PASS;
+    - 436 server tests passed, 0 skipped (+2);
+    - 442 plugin-core tests passed, 0 skipped (+4);
+    - `probe`: 75 PASS, 0 FAIL, 25 MEASURED, 38.6 s.
 
 ---
 

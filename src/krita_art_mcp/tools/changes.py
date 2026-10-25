@@ -77,8 +77,7 @@ def layer_update(call: ToolCall, arguments: dict[str, Any]) -> CallToolResult:
 
 
 def resolve_update(places: Places, outcome: Outcome) -> Outcome:
-    # The verification's files become PNGs before the receipt, wherever the outcome arrives;
-    # never raises, and never turns a change into a failure or a failure into another.
+    # PNGs before the receipt, wherever the outcome arrives; never raises or changes the outcome.
     if isinstance(outcome, Done) and isinstance(outcome.result.get("verification"), dict):
         sent = outcome.result["verification"]
         try:
@@ -135,6 +134,9 @@ def _diff_image(details: dict[str, Any]) -> ImageContent | None:
     try:
         png = path.read_bytes()
     except OSError:
+        return None
+    # The artifact still names it; inline it would break the message bound.
+    if len(png) > imaging.INLINE_BYTES:
         return None
     return ImageContent.model_validate(
         {
@@ -265,50 +267,24 @@ def _selection_files(places: Places, outcome: Done) -> Outcome:
             if isinstance(made, Failed):
                 return made
             if made is not None:
-                data["mask"] = _artifact(*made)
+                data["mask"] = verification.artifact(*made)
     return replace(outcome, result={"document_id": result["document_id"], **data})
 
 
 def _kept_png(
     places: Places, outcome: Done, spec: dict[str, Any], what: str
 ) -> tuple[Path, bytes] | Failed | None:
-    # The op's pixels as captures/<day>/<operation_id>.png, found before made so
-    # krita_operation_get rebuilds the receipt after the transfer file went. None when another
-    # server process took the pixels first (a retry it shared): the change itself is made.
-    operation_id = operation_id_of(outcome)
-    found = imaging.find(places.captures_dir, operation_id, ".png")
-    if found is not None:
-        return found, found.read_bytes()
+    # None when another server took the pixels first (a retry it shared): the change is made.
     try:
-        pixels = transfer.take(places.transfer_dir, spec)
-    except transfer.TransferError:
-        again = imaging.find(places.captures_dir, operation_id, ".png")
-        if again is not None:
-            return again, again.read_bytes()
-        log.warning("the %s of %s was not kept: its pixels were already taken", what, operation_id)
-        return None
-    grey = pixels.shape[2] == 1
-    png = imaging.encode(Image.fromarray(np.ascontiguousarray(pixels[..., 0] if grey else pixels)))
-    target = imaging.folder_for(places.captures_dir, today()) / f"{operation_id}.png"
-    try:
-        imaging.write(target, png)
+        kept = verification.keep(
+            places, operation_id_of(outcome), ".png", today(), [spec], verification.image_of
+        )
     except OSError as problem:
         message = f"The {what} could not be written: {problem}"
         return failed(outcome, error_body("IO_ERROR", message, retryable=True))
-    discard(places, spec)
-    imaging.sweep(places.captures_dir, today())
-    return target, png
-
-
-def _artifact(path: Path, png: bytes) -> dict[str, Any]:
-    return {
-        "uri": str(path),
-        "path": str(path),
-        "mime_type": "image/png",
-        "sha256": hashlib.sha256(png).hexdigest(),
-        "size_bytes": len(png),
-        "retention_days": imaging.RETENTION_DAYS,
-    }
+    if kept is not None:
+        discard(places, spec)
+    return kept
 
 
 def selection_receipt(outcome: Outcome) -> CallToolResult:
@@ -432,7 +408,7 @@ def _history_files(places: Places, outcome: Done) -> Outcome:
             with Image.open(io.BytesIO(png)) as image:
                 rgba = np.array(image.convert("RGBA"), dtype=np.uint8).tobytes()
             data["content_sha256"] = hashlib.sha256(rgba).hexdigest()
-            data["capture"] = _artifact(path, png)
+            data["capture"] = verification.artifact(path, png)
     return replace(outcome, result={"document_id": result["document_id"], **data})
 
 

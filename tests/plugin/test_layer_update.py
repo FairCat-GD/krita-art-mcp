@@ -322,6 +322,14 @@ def test_a_spreading_node_refuses_region_before_any_change_and_full_passes(world
     assert done["verification"]["rect"] == _box(0, 0, 8, 4)
 
 
+def test_full_scope_reads_no_layer_styles_or_clones(world: World) -> None:
+    document_id, _ = world.document()
+    world.port.reach[1] = {"styled": [PAINT], "clones": {}, "animated": False}
+    world.port.calls.clear()
+    world.update(document_id, PAINT, "full", opacity=0.5)
+    assert "effects False" in world.port.calls and "effects True" not in world.port.calls
+
+
 def test_an_animated_document_is_refused_in_either_mode(world: World) -> None:
     document_id, handle = world.document()
     world.port.reach[1] = {"styled": [], "clones": {}, "animated": True}
@@ -343,6 +351,8 @@ def test_a_leak_is_restored_confirmed_and_refused(world: World) -> None:
     assert (details["rolled_back"], details["rollback_verified"]) == (True, True)
     checked = details["verification"]
     assert (checked["changed_px"], checked["changed_outside_px"]) == (16, 8)
+    # The counts have one home.
+    assert "changed_outside_px" not in details and "alpha_changed_px" not in details
     assert checked["after"] is None and checked["before"] is not None
     flags = _spec_bytes(checked["diff"])
     assert flags.count(verification.CHANGED | verification.OUTSIDE) == 8

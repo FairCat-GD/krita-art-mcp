@@ -28,17 +28,17 @@ checked against protection and undone if it reaches where protection forbids.
     default) or the whole canvas (`verify: "full"`). Nothing may change where the allowed mask is
     0, and under `preserve_composite_alpha` no alpha value may change.
   - A filter layer above the layer, a filter, transform or colorize mask, a layer style, a clone
-    of the layer, or a blend mode outside the whitelist could carry the change past its bounds.
+    of the layer, or a copy or destination blend on it could carry the change past its bounds.
     Region checks are then refused with `UNSUPPORTED_CAPABILITY`, naming every such node, and
     `verify: "full"` works.
   - A change that breaks protection is undone, Krita's native undo for a blend change and the
     old values for the rest, and the undo is confirmed byte for byte. The call then fails with
-    `PROTECTED_REGION_CHANGED`, its counts, and an image of the offending pixels, inline and
-    saved. A rolled-back blend change is never redone.
+    `PROTECTED_REGION_CHANGED`, its counts, and an image of the offending pixels, saved, and
+    inline when it fits the message. A rolled-back blend change is never redone.
   - An undo that cannot be confirmed fails with `ROLLBACK_FAILED` and marks the document unsafe;
     later changes to it answer `DOCUMENT_UNSAFE` until it is reopened.
   - A passing change reports how many pixels changed and where, and keeps PNGs of the layer's
-    region before and after (up to 4096 × 4096).
+    region before and after (up to 2048 × 2048).
   - Animated documents are refused, since only frame 0 is checked.
 - **`krita_history_step`** undoes and redoes blend changes, told apart from a blend change made
   by hand by the layers' blend modes.
@@ -325,6 +325,7 @@ The first release is the scaffold that the Phase 1 tools are built on.
   reports its version to the client; it offers no tools yet.
 - **`krita-art-mcp --version`.** It prints the installed version.
 
+[0.8.0]: https://github.com/FairCat-GD/krita-art-mcp/commit/16ca9eaff39736ed752f9c03577cbe6fefdaaa3f
 [0.7.0]: https://github.com/FairCat-GD/krita-art-mcp/commit/d188986373e1e4975dcfc5d1412e862f12566b14
 [0.6.0]: https://github.com/FairCat-GD/krita-art-mcp/commit/b1c679e85ab9632372ea4114a8718e6a2a5328cc
 [0.5.0]: https://github.com/FairCat-GD/krita-art-mcp/commit/5ead34bc4e5624e92165b211d1daa2f66ed95fb1

@@ -10,14 +10,13 @@ from .inspection import check_shown_frame
 from .pixels import MAX_READ_PIXELS
 from .port import DocumentsPort
 from .registry import Handle
-from .resources import BLEND_MODES
 
 REGION = "region"
 FULL = "full"
 MODES = (REGION, FULL)
 # The largest scope whose before and after images go to the server; it holds an equal bound
-# (capture_pixels).
-MAX_IMAGE_PIXELS = 4096 * 4096
+# (verification.IMAGE_PIXELS).
+MAX_IMAGE_PIXELS = 2048 * 2048
 # The checks take the scope in bands of this many pixels: whole-buffer work, bounded memory.
 BAND_PIXELS = 1 << 20
 
@@ -35,9 +34,8 @@ SPREADING = {
     "transformmask": "transform_mask",
     "colorizemask": "colorize_mask",
 }
-# A blend outside the whitelist (copy, the destination modes) can change pixels past the layer's
-# own, over a whole update rect.
-_BLENDS = {mode for mode, _ in BLEND_MODES}
+# Krita composites these past a layer's own extent (kis_layer_projection_plane.cpp).
+SPREADING_BLENDS = {"copy", "destination-in", "destination-atop"}
 
 
 def _table(mark: Callable[[int], int]) -> bytes:
@@ -54,8 +52,7 @@ _IS_ALPHA = _table(lambda value: 1 if value & ALPHA else 0)
 
 
 class Reading:
-    # One scope as read before or after a change: the composite (B, G, R, A), the target's own
-    # pixels when asked for, and a SHA-256 per hashed layer.
+    # A scope's composite (B, G, R, A), and the target's pixels and layer hashes when asked for.
     def __init__(
         self,
         rect: dict[str, int],
@@ -106,9 +103,7 @@ class Verdict:
 
 
 def reach(tree: dict[str, Any], effects: dict[str, Any], target_id: str) -> list[dict[str, str]]:
-    # Every node that could carry a change of the target past the target's own bounds, where a
-    # region read would miss it: on the target, inside it or on an ancestor; a filter layer above
-    # it; a clone of it.
+    # Every node that could carry the target's change past its bounds, where a region read misses.
     by_id = {node["id"]: node for node in tree["nodes"]}
     children: dict[str, list[dict[str, Any]]] = {}
     for node in tree["nodes"]:
@@ -132,11 +127,12 @@ def reach(tree: dict[str, Any], effects: dict[str, Any], target_id: str) -> list
             note("layer_type", node["id"])
         if node["id"] in styled:
             note("layer_style", node["id"])
-        if not kind.endswith("mask") and node["blend_mode"] not in _BLENDS:
-            note("blend_mode", node["id"])
 
     for node in _subtree(children, path[0]):
         own(node)
+        # Only a changed layer's own blend spreads; an ancestor's works pixel by pixel.
+        if not node["type"].endswith("mask") and node["blend_mode"] in SPREADING_BLENDS:
+            note("blend_mode", node["id"])
     for ancestor in path[1:]:
         own(ancestor)
         for child in children.get(ancestor["id"], []):
@@ -168,8 +164,7 @@ def _subtree(
 
 
 def scope(mode: str, tree: dict[str, Any], target_id: str, size: list[int]) -> dict[str, int]:
-    # full is the canvas; region is the union of the exact bounds of the target and everything
-    # inside it, clipped to the canvas, and may be empty.
+    # The target's and its descendants' exact bounds, clipped to the canvas; full is the canvas.
     if mode == FULL:
         return {"x": 0, "y": 0, "width": size[0], "height": size[1]}
     children: dict[str, list[dict[str, Any]]] = {}
@@ -195,7 +190,7 @@ def scope(mode: str, tree: dict[str, Any], target_id: str, size: list[int]) -> d
 def refuse_unverifiable(
     info: dict[str, Any], effects: dict[str, Any], rect: dict[str, int]
 ) -> None:
-    # Before any change: what the reads cannot see is never changed.
+    # Before any change: nothing the reads cannot see is changed.
     check_shown_frame(info)
     if effects["animated"]:
         details: dict[str, Any] = {"reason": "animated", "supported": [0]}
@@ -256,8 +251,7 @@ def _bytes(buffer: Any) -> memoryview:
 
 
 def check(before: Reading, after: Reading, allowed: bytes | None, preserve_alpha: bool) -> Verdict:
-    # Whole-buffer byte operations per band, never a loop per pixel: a flags byte per pixel says
-    # whether it changed, lies outside the allowed mask, and changed its alpha.
+    # One flags byte per pixel from whole-buffer operations per band, never a loop per pixel.
     rect = before.rect
     pixels = rect["width"] * rect["height"] if rect["width"] > 0 and rect["height"] > 0 else 0
     flags = bytearray(pixels)
@@ -335,9 +329,7 @@ def files(
     verdict: Verdict,
     failed: bool,
 ) -> dict[str, Any]:
-    # Written once the verdict and any rollback are done; a file that cannot be written is left
-    # out and never changes the outcome. A failure sends the flags for the diff image instead
-    # of the after image.
+    # After the verdict and any rollback; a file that cannot be written is left out.
     rect = before.rect
     pixels = rect["width"] * rect["height"] if rect["width"] > 0 and rect["height"] > 0 else 0
     folder = paths.transfer_dir(data)
