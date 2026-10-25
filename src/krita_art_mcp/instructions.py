@@ -33,6 +33,9 @@ cannot be undone. krita_history_step never goes below the last protection change
 filter, mask, style, clone or copy blend could spread one, use verify full. Animated documents \
 are refused. To recolour a silhouette under preserve_composite_alpha, paint on a new \
 inherit_alpha layer.
+- krita_paint_stroke paints one stroke per call, one undo step, checked like a layer change \
+and undone on a leak. Per-point pressure, tilt or timing is refused unless input_fallback is \
+flat, which paints every point at pressure 1.
 - krita_capture returns an image and its PNG's path. scale 1 is the native crop; other scales \
 resample with your filter onto a background, checker by default. max_px (1600, at most 4096) \
 bounds the long edge: capture tiles for more. A layer capture is the layer's own pixels, without \
@@ -41,5 +44,6 @@ its opacity, masks or inherit-alpha clip.
 weighted by alpha. Never judge a colour from a capture.
 - krita_resource_list lists brush presets (their id and sha256 are what paint calls take), \
 blend modes, profiles and palettes.
-- No tool writes raw pixels or runs code. The owner may be watching Krita while you work.
+- No tool writes raw pixels or runs code. The owner may be watching Krita, and must not edit \
+brush presets while you paint.
 """

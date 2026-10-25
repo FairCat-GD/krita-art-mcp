@@ -24,6 +24,7 @@ log = logging.getLogger(__name__)
 STEP_TOOLS = {
     "layer.create": "krita_layer_create",
     "layer.update": "krita_layer_update",
+    "paint.stroke": "krita_paint_stroke",
     "selection.set": "krita_selection_set",
 }
 
@@ -53,7 +54,7 @@ def layer_receipt(outcome: Outcome) -> CallToolResult:
     def text(result: dict[str, Any]) -> str:
         return f"Added {result['type']} layer {result['layer_id']} to {result['document_id']}."
 
-    return from_outcome(outcome, _without_document, text, _document)
+    return from_outcome(outcome, without_document, text, document_of)
 
 
 def layer_update(call: ToolCall, arguments: dict[str, Any]) -> CallToolResult:
@@ -116,15 +117,15 @@ def update_receipt(outcome: Outcome) -> CallToolResult:
             line += f"; {checked['changed_px']} px changed, verified over {checked['mode']}"
         return line + "."
 
-    receipt = from_outcome(outcome, _without_document, text, _document)
+    receipt = from_outcome(outcome, without_document, text, document_of)
     if isinstance(outcome, Failed):
-        image = _diff_image(outcome.error["details"])
+        image = diff_image(outcome.error["details"])
         if image is not None:
             receipt.content.append(image)
     return receipt
 
 
-def _diff_image(details: dict[str, Any]) -> ImageContent | None:
+def diff_image(details: dict[str, Any]) -> ImageContent | None:
     # The refusal's diff, inline, as the call and krita_operation_get both show it.
     checked = details.get("verification")
     diff = checked.get("diff") if isinstance(checked, dict) else None
@@ -293,7 +294,7 @@ def selection_receipt(outcome: Outcome) -> CallToolResult:
             return f"{result['document_id']} has no selection."
         return f"Selected {result['selected_pixels']} px in {result['document_id']}."
 
-    return from_outcome(outcome, _without_document, text, _document)
+    return from_outcome(outcome, without_document, text, document_of)
 
 
 def protection_set(call: ToolCall, arguments: dict[str, Any]) -> CallToolResult:
@@ -349,7 +350,7 @@ def protection_receipt(outcome: Outcome) -> CallToolResult:
             f"changes allowed in {allowed}."
         )
 
-    return from_outcome(outcome, _without_document, text, _document)
+    return from_outcome(outcome, without_document, text, document_of)
 
 
 def history_step(call: ToolCall, arguments: dict[str, Any]) -> CallToolResult:
@@ -419,13 +420,13 @@ def history_receipt(outcome: Outcome) -> CallToolResult:
             return f"{done} in {result['document_id']}, verified."
         return f"{done} in {result['document_id']}; stopped: {result['stopped']}."
 
-    return from_outcome(outcome, _without_document, text, _document)
+    return from_outcome(outcome, without_document, text, document_of)
 
 
-def _without_document(result: dict[str, Any]) -> dict[str, Any]:
+def without_document(result: dict[str, Any]) -> dict[str, Any]:
     return {key: value for key, value in result.items() if key != "document_id"}
 
 
-def _document(result: dict[str, Any]) -> str | None:
+def document_of(result: dict[str, Any]) -> str | None:
     document_id: str | None = result.get("document_id")
     return document_id

@@ -9,7 +9,7 @@ from krita_art_mcp import envelope, schemas
 from krita_art_mcp.bridge_client import BeforeSend, Done, Failed, Outcome
 from krita_art_mcp.journal import JournalError
 from krita_art_mcp.paths import Places
-from krita_art_mcp.tools import changes, documents, observe, pixels
+from krita_art_mcp.tools import changes, documents, observe, painting, pixels
 from krita_art_mcp.tools.dispatch import Receipt, ToolCall, journaled, record
 
 Resolver = Callable[[Places, Outcome], Outcome]
@@ -45,6 +45,7 @@ RECEIPTS: dict[str, Known] = {
     ),
     "protection.set": Known("krita_protection_set", changes.protection_receipt),
     "history.step": Known("krita_history_step", changes.history_receipt, changes.resolve_history),
+    "paint.stroke": Known("krita_paint_stroke", painting.paint_receipt, changes.resolve_update),
 }
 
 

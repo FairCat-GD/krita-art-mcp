@@ -64,6 +64,7 @@ def test_only_built_tools_are_registered_with_their_contract_schemas(tmp_path: P
             "krita_layer_update",
             "krita_operation_cancel",
             "krita_operation_get",
+            "krita_paint_stroke",
             "krita_protection_set",
             "krita_resource_list",
             "krita_sample",
