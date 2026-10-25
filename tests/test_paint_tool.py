@@ -356,3 +356,11 @@ def test_a_refusal_without_a_diff_has_no_image() -> None:
     error = {"code": "LOCKED_TARGET", "message": "m", "retryable": False, "details": {}}
     receipt, content = _checked_receipt(Failed(error, OPERATION, submitted=True))
     assert content["error"]["code"] == "LOCKED_TARGET" and len(receipt.content) == 1
+
+
+def test_a_full_stroke_may_report_a_reach_the_plugin_cannot_name(world: World) -> None:
+    result = _result(_counts(mode="full", before=None, after=None, diff=None))
+    result["effective_brush"]["reach"] = {"tip": "unknown", "scatter": 5, "margin_px": 32}
+    resolved = changes.resolve_update(world.places(), Done(result, OPERATION))
+    _, content = _checked_receipt(resolved)
+    assert content["data"]["effective_brush"]["reach"]["tip"] == "unknown"

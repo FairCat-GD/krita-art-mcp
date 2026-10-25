@@ -392,7 +392,8 @@
                         "enum": [
                           "round",
                           "square",
-                          "image"
+                          "image",
+                          "unknown"
                         ]
                       },
                       "scatter": {
@@ -902,7 +903,8 @@
                           "enum": [
                             "round",
                             "square",
-                            "image"
+                            "image",
+                            "unknown"
                           ]
                         },
                         "scatter": {
