@@ -79,3 +79,39 @@ def test_the_png_fixture_holds_exactly_its_pixels(tmp_path: Path) -> None:
     merged = fixtures.composite(fixtures.probe_stack())
     fixtures.write_png(tmp_path / "fixture.png", merged)
     assert (_decoded((tmp_path / "fixture.png").read_bytes()) == merged).all()
+
+
+def test_a_sparse_ora_stores_each_layer_at_its_own_size(tmp_path: Path) -> None:
+    layers = fixtures.update_stack()[1:]
+    fixtures.write_sparse_ora(tmp_path / "sparse.ora", layers, 64, 48)
+    with zipfile.ZipFile(tmp_path / "sparse.ora") as archive:
+        first = archive.infolist()[0]
+        assert (first.filename, first.compress_type) == ("mimetype", zipfile.ZIP_STORED)
+        stack = ElementTree.fromstring(archive.read("stack.xml")).find("stack")
+        assert stack is not None
+        paint = next(iter(stack))
+        assert (paint.get("name"), paint.get("x"), paint.get("y")) == ("probe paint", "8", "8")
+        assert _decoded(archive.read(paint.get("src") or "")).shape == (16, 24, 4)
+        merged = _decoded(archive.read("mergedimage.png"))
+    # The 8-bit merge matches the float one wherever alpha is 0 or 255.
+    assert (merged == fixtures.composite(layers)).all()
+
+
+def test_a_sparse_ora_takes_src_over_paint_layers_only(tmp_path: Path) -> None:
+    with pytest.raises(ValueError):
+        fixtures.write_sparse_ora(tmp_path / "group.ora", fixtures.update_stack(), 64, 48)
+    clip = (fixtures.Layer("clip", fixtures.rect(2, 2, (1, 2, 3)), composite_op="svg:src-atop"),)
+    with pytest.raises(ValueError):
+        fixtures.write_sparse_ora(tmp_path / "clip.ora", clip, 64, 48)
+    assert not (tmp_path / "group.ora").exists() and not (tmp_path / "clip.ora").exists()
+
+
+def test_every_benchmark_layer_lies_inside_the_strokes_area() -> None:
+    area = {"x": 800, "y": 800, "width": 400, "height": 400}
+    layers = fixtures.benchmark_stack(30, area)
+    assert len({layer.name for layer in layers}) == 30
+    for layer in layers:
+        assert layer.pixels is not None
+        height, width = layer.pixels.shape[:2]
+        assert area["x"] <= layer.x and layer.x + width <= area["x"] + area["width"]
+        assert area["y"] <= layer.y and layer.y + height <= area["y"] + area["height"]

@@ -6,7 +6,7 @@ from krita import InfoObject, Krita, Selection
 
 from ..bridge_core import log
 from ..bridge_core.errors import BridgeError
-from . import selections
+from . import painting, selections
 from .qt import EXCLUDE_USER_INPUT, QApplication, QCoreApplication
 
 INITIAL_LAYER = "Layer 1"
@@ -318,6 +318,33 @@ class KritaDocuments:
             raise BridgeError("INTERNAL_ERROR", f"Krita did not add the {kind}.")
         document.waitForDone()
         return _layer_id(node), bytes(document.pixelData(0, 0, width, height)) != before
+
+    def set_brush(self, document: Any, brush: dict[str, Any]) -> dict[str, Any]:
+        return painting.set_brush(document, brush)
+
+    def brush(self, document: Any) -> dict[str, Any]:
+        return painting.read_brush(document)
+
+    def paint_ability(self, document: Any, layer_id: str) -> str:
+        return str(_node(document, layer_id).paintAbility())
+
+    def paint_path(self, document: Any, layer_id: str, path: dict[str, Any]) -> None:
+        painting.paint_path(document, _node(document, layer_id), path)
+
+    def cumulative_undo(self) -> bool:
+        return painting.cumulative_undo()
+
+    def view_state(self, document: Any) -> dict[str, Any]:
+        return painting.view_state(document)
+
+    def set_view(self, document: Any, view: dict[str, Any]) -> dict[str, Any]:
+        return painting.set_view(document, view)
+
+    def brush_state(self, document: Any, preset_names: list[str]) -> dict[str, Any]:
+        return painting.brush_state(document, preset_names)
+
+    def set_brush_state(self, document: Any, state: dict[str, Any]) -> None:
+        painting.set_brush_state(document, state)
 
     def export_kra(self, document: Any, target: str) -> bool:
         # exportImage, never saveAs: the document keeps pointing at its own file (K39).
