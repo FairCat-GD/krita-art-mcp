@@ -116,6 +116,39 @@ class DocumentsPort(Protocol):
     # composite changed.
     def add_fixture_node(self, document: Any, kind: str, layer_id: str) -> tuple[str, bool]: ...
 
+    # Applies the brush on the active view in K3's order: preset (a resource name), size,
+    # opacity, flow, blend, eraser, alpha lock, rotation, colour ([r, g, b, a] floats through
+    # ManagedColor, K18). Returns brush() afterwards.
+    def set_brush(self, document: Any, brush: dict[str, Any]) -> dict[str, Any]: ...
+
+    # The active view's brush as Krita holds it: the keys set_brush takes, "preset" being the
+    # current preset's name, plus "preset_xml", the current preset's Preset.toXML().
+    def brush(self, document: Any) -> dict[str, Any]: ...
+
+    # Node.paintAbility() for the layer, with the document's view in front (K9).
+    def paint_ability(self, document: Any, layer_id: str) -> str: ...
+
+    # Mirror painting and wrap-around off, the path painted with Node.paintPath (one stroke, one
+    # undo step), waitForDone, both modes put back in a finally that logs and never raises.
+    # LAYER_NOT_FOUND for an unknown id; anything Krita raises passes through.
+    def paint_path(self, document: Any, layer_id: str, path: dict[str, Any]) -> None: ...
+
+    # Whether Krita merges consecutive strokes into one undo step.
+    def cumulative_undo(self) -> bool: ...
+
+    # Harness only: the view of the document in front, {zoom, rotation_deg, pan_px}; set_view
+    # sets any of those keys and returns view_state() after.
+    def view_state(self, document: Any) -> dict[str, Any]: ...
+
+    def set_view(self, document: Any, view: dict[str, Any]) -> dict[str, Any]: ...
+
+    # Harness only: brush() without preset_xml as "current", and under "presets", by file id,
+    # each preset's {size_px, opacity, flow, blend_mode, eraser} as Krita holds them; JSON-able.
+    # set_brush_state writes those presets' values back, then "current".
+    def brush_state(self, document: Any, preset_ids: list[str]) -> dict[str, Any]: ...
+
+    def set_brush_state(self, document: Any, state: dict[str, Any]) -> None: ...
+
     # Writes the document as KRA with Krita's own exporter; False while autosave holds it (K45).
     def export_kra(self, document: Any, target: str) -> bool: ...
 

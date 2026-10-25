@@ -59,11 +59,19 @@ class Reading:
         composite: Any,
         target: Any | None = None,
         hashes: dict[str, str] | None = None,
+        target_id: str | None = None,
+        rects: dict[str, dict[str, int]] | None = None,
+        kept: tuple[str, Any] | None = None,
     ) -> None:
         self.rect = rect
         self.composite = composite
         self.target = target
         self.hashes = hashes or {}
+        self.target_id = target_id
+        # A layer's own rect where it is read over other than the scope.
+        self.rects = rects or {}
+        # The first hashed layer whose hash was not the expected one, with its pixels.
+        self.kept = kept
 
 
 class Verdict:
@@ -227,27 +235,79 @@ def read(
     rect: dict[str, int],
     target_id: str | None = None,
     hashed: Iterable[str] = (),
+    rects: dict[str, dict[str, int]] | None = None,
+    expected: dict[str, str] | None = None,
 ) -> Reading:
-    if rect["width"] <= 0 or rect["height"] <= 0:
+    # Each layer over its own rect in rects, or the scope's; expected keeps the pixels of the
+    # first hashed layer whose hash differs from it.
+    rects = rects or {}
+    if _empty(rect) and not rects:
         return Reading(rect, b"")
-    # K46: a selection mask's overlay would enter the composite.
-    with nodes.unmasked_view(port, document):
-        [composite] = port.composite_rects(document, [rect])
+    composite: Any = b""
+    if not _empty(rect):
+        # K46: a selection mask's overlay would enter the composite.
+        with nodes.unmasked_view(port, document):
+            [composite] = port.composite_rects(document, [rect])
+        composite = _bytes(composite)
     target = None
     if target_id is not None:
-        [target] = port.layer_rects(document, target_id, [rect])
-        target = _bytes(target)
+        target = _layer(port, document, target_id, rects.get(target_id, rect))
     hashes = {}
+    kept = None
     for layer_id in hashed:
         # One layer's buffer at a time.
-        [pixels] = port.layer_rects(document, layer_id, [rect])
-        hashes[layer_id] = hashlib.sha256(_bytes(pixels)).hexdigest()
-    return Reading(rect, _bytes(composite), target, hashes)
+        pixels = _layer(port, document, layer_id, rects.get(layer_id, rect))
+        hashes[layer_id] = hashlib.sha256(pixels).hexdigest()
+        if kept is None and expected is not None and expected.get(layer_id) != hashes[layer_id]:
+            kept = (layer_id, pixels)
+    return Reading(rect, composite, target, hashes, target_id, rects, kept)
+
+
+def again(port: DocumentsPort, document: Any, reading: Reading) -> Reading:
+    # The same reads as before, nothing kept.
+    hashed = list(reading.hashes)
+    return read(port, document, reading.rect, reading.target_id, hashed, reading.rects)
+
+
+def _empty(rect: dict[str, int]) -> bool:
+    return rect["width"] <= 0 or rect["height"] <= 0
+
+
+def _layer(port: DocumentsPort, document: Any, layer_id: str, rect: dict[str, int]) -> Any:
+    if _empty(rect):
+        return memoryview(b"")
+    [pixels] = port.layer_rects(document, layer_id, [rect])
+    return _bytes(pixels)
 
 
 def _bytes(buffer: Any) -> memoryview:
     # Krita's own array, viewed as bytes, never copied.
     return memoryview(buffer).cast("B")
+
+
+def changes(old: Any, new: Any, rect: dict[str, int]) -> tuple[int, dict[str, int] | None]:
+    # How many BGRA pixels differ between two reads of one rect, and the canvas rect around them.
+    pixels = 0 if _empty(rect) else rect["width"] * rect["height"]
+    marked = bytearray(pixels)
+    for start in range(0, pixels, BAND_PIXELS):
+        stop = min(pixels, start + BAND_PIXELS)
+        changed = 0
+        for channel in range(4):
+            changed |= _int(old[start * 4 + channel : stop * 4 : 4]) ^ _int(
+                new[start * 4 + channel : stop * 4 : 4]
+            )
+        marked[start:stop] = changed.to_bytes(stop - start, "little").translate(_MARK_CHANGED)
+    return marked.count(CHANGED), _bounds(marked, rect)
+
+
+def crop(buffer: Any, outer: dict[str, int], inner: dict[str, int]) -> bytes:
+    # The BGRA rows of inner, a rect inside outer, from a read of outer.
+    width, left = outer["width"] * 4, (inner["x"] - outer["x"]) * 4
+    top = inner["y"] - outer["y"]
+    return b"".join(
+        buffer[(top + row) * width + left : (top + row) * width + left + inner["width"] * 4]
+        for row in range(inner["height"])
+    )
 
 
 def check(before: Reading, after: Reading, allowed: bytes | None, preserve_alpha: bool) -> Verdict:

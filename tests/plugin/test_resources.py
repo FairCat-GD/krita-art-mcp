@@ -35,10 +35,11 @@ def test_brushes_carry_their_file_name_engine_and_fingerprint() -> None:
 
 
 def test_the_fingerprint_ignores_the_order_qt_writes_attributes_in() -> None:
-    reordered = (
-        '<Preset name="Basic Round" paintopid="paintbrush">'
-        '<param name="EraserMode" type="string">false</param></Preset>'
-    )
+    reordered = PRESET_XML.replace(
+        '<Preset paintopid="paintbrush" name="Basic Round">',
+        '<Preset name="Basic Round" paintopid="paintbrush">',
+    ).replace('type="string" name="PressureScatter"', 'name="PressureScatter" type="string"')
+    assert reordered != PRESET_XML
     assert resources.fingerprint(reordered) == resources.fingerprint(PRESET_XML)
     changed = PRESET_XML.replace("false", "true")
     assert resources.fingerprint(changed)[1] != resources.fingerprint(PRESET_XML)[1]

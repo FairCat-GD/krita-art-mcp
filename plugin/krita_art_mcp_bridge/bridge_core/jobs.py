@@ -237,6 +237,15 @@ class Jobs:
         if failure["retryable"] and self._requests.get(operation.request_id) is operation:
             del self._requests[operation.request_id]
 
+    def retention(self) -> dict[str, int]:
+        # What the bridge holds for dedup, so a long session's growth can be measured.
+        with self._lock:
+            return {
+                "operations": len(self._operations),
+                "requests": len(self._requests),
+                "bound": len(self._bound),
+            }
+
     def delivered(self, operation_id: str) -> None:
         # Called once a final reply has been written, so a read lost on the way is still found.
         with self._lock:

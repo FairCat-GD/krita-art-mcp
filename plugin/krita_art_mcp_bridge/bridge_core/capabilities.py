@@ -3,16 +3,22 @@ from typing import Any
 # The capability matrix agents adapt to. Each entry is true for this build: a capability is
 # supported only once it is built and tested, and `since` names the release that built it.
 _MATRIX: dict[str, tuple[bool, str | None, str]] = {
-    "stroke.native_brush": (False, None, "Native brush strokes are not built in this release."),
+    "stroke.native_brush": (
+        True,
+        "0.9.0",
+        "One Krita brush stroke per call (Node.paintPath, every point at pressure 1), one undo "
+        "step, verified against protection and undone on a leak.",
+    ),
     "stroke.per_point_input": (
         False,
         None,
         "Per-point pressure, tilt, rotation and timing need Krita 6.1 / 5.4.",
     ),
     "stroke.smoothing": (
-        False,
-        None,
-        "Server-side smoothing (none, catmull_rom) comes with native brush strokes.",
+        True,
+        "0.9.0",
+        "none and catmull_rom, applied on the server; Krita's tool smoothing is not reachable "
+        "from scripts.",
     ),
     "undo.grouping": (
         False,
@@ -30,10 +36,9 @@ _MATRIX: dict[str, tuple[bool, str | None, str]] = {
         "A running Krita call cannot be interrupted; only queued operations can be cancelled.",
     ),
     "selection.enforced": (
-        False,
-        None,
-        "krita_selection_set sets the selection; strokes that keep to it arrive with native "
-        "brush strokes.",
+        True,
+        "0.9.0",
+        "Strokes keep to the global selection; a layer with a local selection mask is refused.",
     ),
     "color_spaces": (
         False,

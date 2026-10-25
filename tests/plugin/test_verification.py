@@ -148,6 +148,14 @@ def test_a_read_activates_a_layer_in_place_of_an_active_selection_mask() -> None
     assert not port.is_masked(document.key)
 
 
+def test_an_empty_scope_still_reads_layers_over_their_own_rects() -> None:
+    port = FakePort()
+    document = _document(port)
+    empty = {"x": 0, "y": 0, "width": 0, "height": 0}
+    found = verification.read(port, document, empty, layer_id(1, 0), [], {layer_id(1, 0): RECT})
+    assert bytes(found.composite) == b"" and bytes(found.target or b"") == bytes([1, 2, 3, 255]) * 8
+
+
 def test_an_empty_scope_reads_nothing() -> None:
     port = FakePort()
     document = _document(port)
