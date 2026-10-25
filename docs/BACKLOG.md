@@ -64,14 +64,35 @@ runs; after it closes, read it from git history at round 1's release commit.
   whenever a filter layer sits above the layer or a filter mask on it, whatever the filter. A
   per-pixel filter (levels, curves, HSV) cannot spread a change, so knowing the filter's kind
   would spare such documents `verify: "full"`.
-- **Opening an 8192 × 8192 document through the bridge** (0.8.0). Krita 5.3.4.1 was killed, with
-  no crash report and no clean shutdown, while the bridge opened a two-layer 8k ORA; the same open
-  at 4096 × 4096 took 0.6 s. Not reproduced; N-09 needs an 8k master.
+- **Krita's memory after an 8192 × 8192 document closes** (0.9.0). Opening the N-09 master
+  (30 layers) took 4.7–5.2 s and raised Krita's resident memory by 300–500 MB, which stayed after
+  the close; across a probe run Krita grew from about 0.9 GB to 1.5 GB. The 0.8.0 kill while
+  opening an 8k ORA did not recur in six 8k opens. Whether Krita returns the memory later, or a
+  painting day accumulates it, is unmeasured.
+- **Erasing** (0.9.0). `eraser: true` is refused with `UNSUPPORTED_CAPABILITY`: on Krita 5.3.4.1,
+  `View.eraserMode()` read false after `setEraserMode(True)`, with `b) Basic-2 Opacity` and with
+  the stock `a) Eraser Soft`, so no stroke could be confirmed to erase. The order of the brush
+  setters and posted events are the first things to try.
+- **A single dab** (0.9.0). Krita paints no dab for a stroke without length: one point, two equal
+  points and a 0.01 px segment each painted nothing; a 0.5 px segment painted one dab. A one-point
+  stroke is refused; an agent wanting a dab sends two points half a pixel apart.
+- **Region scope for other brush engines** (0.9.0). Region scope needs the pixel engine
+  (`paintbrush`); Color Smudge, the Quick Brush (the stock `b) Basic-1`), MyPaint, spray, deform,
+  tangent-normal and others need `verify: "full"`, since their reach is not parsed. Each engine
+  could be measured and allowed as its reach is shown.
+- **Not-finite numbers in other tools' inputs** (0.9.0). The MCP server accepts `NaN`, `Infinity`
+  and `1e400`, and a `number` schema's `minimum` and `maximum` let NaN through. Only
+  `krita_paint_stroke` refuses them on the server; `krita_layer_update`'s `opacity` and the other
+  number inputs reach the plugin with them.
+- **Krita's preset history** (0.9.0). Activating a preset, through the bridge or the probe, makes
+  Krita record it in `kritarc` (`LastPreset`, `presethistory`). The probe puts the owner's current
+  preset back; the history keeps the presets it used. Accepted by the owner and recorded; a
+  separate resource folder would avoid it.
 - **Changes under alpha 0** (0.8.0). The checks compare every composite byte, so a colour change
   in fully transparent pixels counts. Showing an `inherit_alpha` layer over a silhouette changed
   the colour bytes of every transparent pixel under it (1,728 px changed, 768 of them visible).
-  Under an allowed mask that would refuse an invisible change; whether alpha-0 pixels should count
-  is for `krita_paint_stroke` to decide.
+  Under an allowed mask that would refuse an invisible change. `krita_paint_stroke` counts them
+  too (0.9.0): the checks stay byte-exact.
 - **Composite reads in two Krita states** (0.5.0). "Isolate active layer" mode changes the
   composite a read sees, and a document with two views reports the first view's active node. Both
   are untested.
@@ -100,6 +121,10 @@ these are the parts only a person can see.
 - **N-03 in Activity Monitor** (0.2.0). With the plugin loaded and Krita idle, Krita's CPU should
   stay under 1%. `top` measured 0.0% in six samples 5 s apart. Look at Krita's row in Activity
   Monitor for a minute while it is idle.
+
+- **Mirror painting and wrap-around put back after a stroke** (0.9.0). The adapter switches both
+  off for the stroke and back on in a `finally`; no harness op turns them on, so the probe never
+  sees the restore. With either on in Krita, paint one stroke and check both are on afterwards.
 
 ## Directions
 

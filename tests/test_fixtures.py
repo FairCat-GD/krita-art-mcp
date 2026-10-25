@@ -95,6 +95,15 @@ def test_a_sparse_ora_stores_each_layer_at_its_own_size(tmp_path: Path) -> None:
         merged = _decoded(archive.read("mergedimage.png"))
     # The 8-bit merge matches the float one wherever alpha is 0 or 255.
     assert (merged == fixtures.composite(layers)).all()
+    # A layer's transparent pixels leave what lies under them.
+    holed = fixtures.rect(8, 8, (240, 30, 60))
+    holed[2:6, 2:6, 3] = 0
+    holes = (fixtures.Layer("probe hole", holed, x=10, y=10), *layers)
+    fixtures.write_sparse_ora(tmp_path / "holed.ora", holes, 64, 48)
+    with zipfile.ZipFile(tmp_path / "holed.ora") as archive:
+        merged = _decoded(archive.read("mergedimage.png"))
+    assert tuple(merged[14, 14]) == (200, 40, 90, 255)
+    assert (merged == fixtures.composite(holes)).all()
 
 
 def test_a_sparse_ora_takes_src_over_paint_layers_only(tmp_path: Path) -> None:

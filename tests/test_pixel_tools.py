@@ -1,7 +1,6 @@
 import base64
 import hashlib
 import io
-import xml.etree.ElementTree as ElementTree
 from collections.abc import Iterator
 from pathlib import Path
 from typing import Any
@@ -9,6 +8,7 @@ from typing import Any
 import numpy as np
 import pytest
 from bridge_core import documents, pixels
+from bridge_core import resources as bridge_resources
 from fake_krita import PRESET_XML, bgra, layer_id
 from mcp.types import CallToolResult, ImageContent, TextContent
 from PIL import Image
@@ -276,8 +276,8 @@ def test_resources_page_through_the_cursor_with_fingerprints(world: World) -> No
     assert (data["kind"], data["total"], data["next_cursor"]) == ("brush", 3, "2")
     assert [entry["id"] for entry in data["resources"]] == ["airbrush-soft.kpp", "basic-round.kpp"]
     basic = data["resources"][1]
-    canonical = ElementTree.canonicalize(PRESET_XML)
-    assert basic["sha256"] == hashlib.sha256(canonical.encode("utf-8")).hexdigest()
+    # The plugin's own digest, which leaves out what every stroke sets.
+    assert basic["sha256"] == bridge_resources.fingerprint(PRESET_XML)[1]
     assert basic["engine"] == "paintbrush"
     rest = server.content("krita_resource_list", {"kind": "brush", "cursor": "2", "limit": 2})
     [broken] = rest["data"]["resources"]

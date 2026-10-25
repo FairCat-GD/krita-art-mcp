@@ -28,16 +28,62 @@ BLEND_MODES = (
 )
 
 
+# What every paint call sets on the active preset, which Krita keeps in it: a stroke must not
+# move the fingerprint the next stroke is checked against.
+PER_CALL = {"OpacityValue", "FlowValue", "CompositeOp", "EraserMode"}
+# The tip's size and rotation, which a stroke writes into the tip's own XML.
+TIP_PER_CALL = ("diameter", "scale", "angle")
+# What Krita adds to an image tip the first time it loads the preset, at these values; md5sum
+# is the tip image's own hash, added then too.
+TIP_DEFAULTS = {
+    "ColorAsMask": "1",
+    "BrightnessAdjustment": "0",
+    "ContrastAdjustment": "0",
+    "brushApplication": "0",
+    "AdjustmentVersion": "2",
+    "AdjustmentMidPoint": "127",
+    "AutoAdjustMidPoint": "0",
+    "md5sum": None,
+}
+
+
 def fingerprint(xml: str) -> tuple[str | None, str | None]:
-    # The engine, and the SHA-256 of the settings as canonical XML (C14N 2.0): Qt writes a
-    # preset's attributes in hash order, which may differ from one Krita run to the next.
+    # The engine, and the SHA-256 of the settings as canonical XML (C14N 2.0), without the
+    # per-call values: Qt writes a preset's attributes in hash order, which may differ from one
+    # Krita run to the next.
     try:
         root = ElementTree.fromstring(xml)
-        canonical = ElementTree.canonicalize(xml)
     except ElementTree.ParseError:
         return None, None
+    for param in root.findall("param"):
+        name = param.get("name") or ""
+        if name in PER_CALL:
+            root.remove(param)
+        elif name.endswith("brush_definition") and param.text:
+            param.text = _sizeless(param.text)
+    canonical = ElementTree.canonicalize(ElementTree.tostring(root, encoding="unicode"))
     engine = root.get("paintopid") or None
     return engine, hashlib.sha256(canonical.encode("utf-8")).hexdigest()
+
+
+def _sizeless(tip: str) -> str:
+    # The tip's own XML, canonical, without what a stroke sets, the defaults Krita fills in, and
+    # the whitespace Krita lays it out with, which change once Krita writes the tip back.
+    try:
+        element = ElementTree.fromstring(tip)
+    except ElementTree.ParseError:
+        return tip
+    for node in element.iter():
+        for key in TIP_PER_CALL:
+            node.attrib.pop(key, None)
+        for key, default in TIP_DEFAULTS.items():
+            if key in node.attrib and default in (None, node.attrib[key]):
+                del node.attrib[key]
+        if node.text is not None and not node.text.strip():
+            node.text = None
+        if node.tail is not None and not node.tail.strip():
+            node.tail = None
+    return ElementTree.canonicalize(ElementTree.tostring(element, encoding="unicode"))
 
 
 def handlers(port: ResourcesPort) -> dict[str, Handler]:

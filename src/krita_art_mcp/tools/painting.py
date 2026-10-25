@@ -44,6 +44,12 @@ def paint_stroke(call: ToolCall, arguments: dict[str, Any]) -> CallToolResult:
     if unbounded is not None:
         message = f"{unbounded} holds a number that is not finite."
         return envelope.failure("INVALID_ARGUMENT", message, details={"field": unbounded})
+    first = points[0]
+    if all((point["x"], point["y"]) == (first["x"], first["y"]) for point in points):
+        # Krita paints no dab for a stroke without length.
+        message = "Krita paints no dab for a single point; send two points."
+        details = {"points": len(points), "minimum_distinct": 2}
+        return envelope.failure("UNSUPPORTED_CAPABILITY", message, details=details)
     op_args["path"] = path
 
     def send(before_send: BeforeSend) -> Outcome:
@@ -77,6 +83,12 @@ def _refusal(arguments: dict[str, Any]) -> CallToolResult | None:
     if not brush.get("antialias", True):
         message = "Every stroke is antialiased in this release."
         details = {"antialias": False, "supported": [True]}
+        return envelope.failure("UNSUPPORTED_CAPABILITY", message, details=details)
+    if brush["eraser"]:
+        # Krita 5.3.4 never reads a script's eraser mode back as set, so no stroke could be
+        # confirmed to erase.
+        message = "Erasing is not supported in this release; paint over instead."
+        details = {"eraser": True, "supported": [False]}
         return envelope.failure("UNSUPPORTED_CAPABILITY", message, details=details)
     if arguments.get("input_fallback") != "flat":
         for index, point in enumerate(arguments["points"]):

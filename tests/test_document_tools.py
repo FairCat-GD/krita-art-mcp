@@ -76,7 +76,7 @@ def test_the_journal_line_is_written_before_the_call_is_sent(world: World) -> No
     assert seen == [["dispatched"]]
     lines = _lines(world)
     assert [line["phase"] for line in lines] == ["dispatched", "finished"]
-    assert lines[0]["args"] == _create()
+    assert journal.arguments(world.tmp_path / "a" / "journal", lines[0]) == _create()
     assert lines[0]["session_id"] == world.bridge.session_id
     assert lines[1]["outcome"] == journal.RECEIPT
 
@@ -86,6 +86,43 @@ def test_the_journal_is_private(world: World) -> None:
     folder = world.tmp_path / "a" / "journal"
     assert stat.S_IMODE(folder.stat().st_mode) == 0o700
     assert stat.S_IMODE((folder / "2026-10-24.jsonl").stat().st_mode) == 0o600
+
+
+def test_a_line_names_its_arguments_file_and_never_holds_them(world: World) -> None:
+    world.server().content("krita_document_create", _create())
+    folder = world.tmp_path / "a" / "journal"
+    dispatched = _lines(world)[0]
+    assert dispatched["v"] == journal.VERSION == 2
+    assert "args" not in dispatched
+    held = folder / dispatched["args_file"]
+    assert held.parent.parent == folder / journal.ARGS_DIR
+    assert json.loads(held.read_text()) == _create()
+    for path in (folder / journal.ARGS_DIR, held.parent, held):
+        assert stat.S_IMODE(path.stat().st_mode) == (0o600 if path.is_file() else 0o700)
+    assert not list(held.parent.glob("*.partial"))
+
+
+def test_a_version_1_line_with_its_arguments_inline_is_still_read(tmp_path: Path) -> None:
+    folder = tmp_path / "journal"
+    folder.mkdir()
+    line = {
+        "v": 1,
+        "ts": "2026-10-24T10:00:00.000+00:00",
+        "client": None,
+        "request_id": "req-old",
+        "operation_id": "op-old",
+        "tool": "krita_document_create",
+        "args_sha256": "a" * 64,
+        "session_id": "s-old",
+        "phase": "dispatched",
+        "args": {"name": "kept"},
+        "document_path": None,
+        "layer_names": [],
+    }
+    (folder / "2026-10-24.jsonl").write_text(json.dumps(line) + "\n")
+    prior = _journal_on(tmp_path, NOW).lookup("req-old")
+    assert prior is not None and prior.binding() == ("krita_document_create", "a" * 64)
+    assert journal.arguments(folder, line) == {"name": "kept"}
 
 
 def test_reads_are_not_journaled(world: World) -> None:
@@ -382,7 +419,8 @@ def test_cancel_reports_a_finished_operation_and_refuses_a_running_one(world: Wo
 def test_a_newer_journal_is_refused_with_a_clear_error(world: World) -> None:
     folder = world.tmp_path / "a" / "journal"
     folder.mkdir(parents=True)
-    (folder / "2026-10-24.jsonl").write_text(json.dumps({"v": 2, "request_id": "x"}) + "\n")
+    newer = {"v": journal.VERSION + 1, "request_id": "x"}
+    (folder / "2026-10-24.jsonl").write_text(json.dumps(newer) + "\n")
     result = world.server().content("krita_document_create", _create())
     assert result["error"]["code"] == "INTERNAL_ERROR"
     assert "newer" in result["error"]["message"]
@@ -683,7 +721,7 @@ def test_a_refused_read_never_applies_a_line_twice(tmp_path: Path) -> None:
     _attempt(writer, "op-1")
     path = tmp_path / "journal" / "2026-10-24.jsonl"
     with path.open("a") as stream:
-        stream.write(json.dumps({"v": 2, "request_id": "req-new"}) + "\n")
+        stream.write(json.dumps({"v": journal.VERSION + 1, "request_id": "req-new"}) + "\n")
     reader = _journal_on(tmp_path, NOW)
     for _ in range(2):
         with pytest.raises(journal.JournalError):

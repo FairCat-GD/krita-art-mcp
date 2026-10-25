@@ -10,6 +10,8 @@ IMAGE = "image"
 # or an image tip's corner out to half its diagonal.
 EXTENT = {ROUND: 0.5, SQUARE: math.sqrt(2) / 2, IMAGE: math.sqrt(2) / 2}
 MIN_MARGIN_PX = 32
+# The dab mask's whole pixels and antialiased edge, past its exact extent.
+ROUNDING_PX = 2
 # Scatter strength runs 0 to 5 (K44).
 MAX_SCATTER = 5.0
 # The reasons a region stroke is refused when the reach cannot be named.
@@ -31,7 +33,10 @@ def brush_reach(xml: str) -> dict[str, Any]:
 
 
 def margin_px(size: float, tip: str, scatter: float) -> float:
-    return max(float(MIN_MARGIN_PX), size * (EXTENT[tip] + scatter))
+    # Scatter moves a dab by up to its strength times the dab mask's width and height (K44),
+    # which a rotated tip's corners stretch to twice its extent.
+    extent = EXTENT[tip]
+    return max(float(MIN_MARGIN_PX), size * (extent + 2 * extent * scatter) + ROUNDING_PX)
 
 
 def _reach(

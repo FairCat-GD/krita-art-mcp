@@ -46,6 +46,11 @@ TAKEN = ("blend_mode", "eraser", "alpha_lock")
 def handlers(
     registry: Registry, port: DocumentsPort, resources: ResourcesPort, data: Path
 ) -> dict[str, Handler]:
+    # For each preset, the digests Krita's loading of it gave after the bridge activated it, by
+    # the digest it was checked against: Krita fills in a tip's defaults on its first activation
+    # in a session, which moves the listed digest without anyone changing the preset.
+    activated: dict[tuple[str, str], str] = {}
+
     def stroke(handle: Handle, args: dict[str, Any], call: Call) -> dict[str, Any]:
         document, layer_id, mode, asked = (
             handle.document,
@@ -60,7 +65,7 @@ def handlers(
         size = info["size_px"]
         _on_canvas(args["path"], size, asked["size_px"])
         name = _preset(resources, asked["preset_id"])
-        listed = _listed(resources, name, asked["preset_id"], asked["preset_sha256"])
+        listed = _listed(resources, name, asked["preset_id"], asked["preset_sha256"], activated)
         if port.cumulative_undo():
             details: dict[str, Any] = {"reason": "cumulative_undo"}
             message = (
@@ -74,6 +79,9 @@ def handlers(
         with in_front(port, document):
             effective = port.set_brush(document, _krita_brush(asked, name))
             _taken(asked, name, effective)
+            _, loaded = preset_fingerprint(resources.preset_xmls([name]).get(name, ""))
+            if loaded is not None and loaded != listed:
+                activated[(asked["preset_id"], loaded)] = listed
             ability = port.paint_ability(document, layer_id)
             if ability != PAINTABLE:
                 details = {"layer_id": layer_id, "paint_ability": ability}
@@ -530,14 +538,22 @@ def _preset(resources: ResourcesPort, preset_id: str) -> str:
     raise BridgeError("INVALID_ARGUMENT", message, False, details)
 
 
-def _listed(resources: ResourcesPort, name: str, preset_id: str, wanted: str | None) -> str:
-    # The digest resource.list gives for the preset.
-    _, digest = preset_fingerprint(resources.preset_xmls([name]).get(name, ""))
-    if digest is None:
+def _listed(
+    resources: ResourcesPort,
+    name: str,
+    preset_id: str,
+    wanted: str | None,
+    activated: dict[tuple[str, str], str],
+) -> str:
+    # The digest resource.list gave for the preset before the bridge's own activation of it
+    # moved it, if it did.
+    _, found = preset_fingerprint(resources.preset_xmls([name]).get(name, ""))
+    if found is None:
         details: dict[str, Any] = {"preset_id": preset_id}
         message = "Krita cannot describe this preset, so its stroke could not be reported."
         raise BridgeError("INVALID_ARGUMENT", message, False, details)
-    if wanted is not None and wanted != digest:
+    digest = activated.get((preset_id, found), found)
+    if wanted is not None and wanted not in (digest, found):
         details = {"preset_id": preset_id, "expected": wanted, "found": digest}
         message = "The preset changed since its hash was taken; list it again."
         raise BridgeError("RESOURCE_HASH_MISMATCH", message, False, details)

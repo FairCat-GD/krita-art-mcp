@@ -4,7 +4,7 @@ from typing import Any
 
 from krita import Extension, Krita
 
-from ..bridge_core import documents, harness, log, paths, resources
+from ..bridge_core import documents, harness, log, painting, paths, resources
 from ..bridge_core.bridge import Bridge
 from ..bridge_core.processes import holder_alive, is_live_krita
 from ..bridge_core.registry import Registry
@@ -47,6 +47,7 @@ class KritaArtMcpExtension(Extension):
                 **ops.HANDLERS,
                 **documents.handlers(registry, port, data_dir),
                 **harness.handlers(registry, port, data_dir),
+                **painting.handlers(registry, port, KritaResources(), data_dir),
                 **resources.handlers(KritaResources()),
             },
             wake=self._waker.emit,

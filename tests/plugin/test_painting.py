@@ -593,19 +593,20 @@ def test_the_reach_is_parsed_from_the_preset_and_fails_closed(
 
 def test_the_margin_is_set_by_the_tip_and_the_scatter() -> None:
     assert brushes.margin_px(10, "round", 0) == 32
-    assert brushes.margin_px(100, "round", 0) == 50
-    assert brushes.margin_px(100, "square", 0) == pytest.approx(100 * math.sqrt(2) / 2)
-    assert brushes.margin_px(100, "image", 1) == pytest.approx(100 * (math.sqrt(2) / 2 + 1))
-    assert brushes.margin_px(20, "round", 2) == 50
+    assert brushes.margin_px(100, "round", 0) == 52
+    assert brushes.margin_px(100, "square", 0) == pytest.approx(100 * math.sqrt(2) / 2 + 2)
+    # A rotated image tip's mask is up to sqrt(2) times its size, and scatter scales with it.
+    assert brushes.margin_px(100, "image", 1) == pytest.approx(100 * 3 * math.sqrt(2) / 2 + 2)
+    assert brushes.margin_px(20, "round", 2) == 52
 
 
 @pytest.mark.parametrize(
     ("preset", "size", "margin"),
     [
-        ("hard-square.kpp", 100, 100 * math.sqrt(2) / 2),
-        ("bristles.kpp", 60, 60 * math.sqrt(2) / 2),
-        ("scatter.kpp", 20, 50),
-        ("hard-round.kpp", 100, 50),
+        ("hard-square.kpp", 100, 100 * math.sqrt(2) / 2 + 2),
+        ("bristles.kpp", 60, 60 * math.sqrt(2) / 2 + 2),
+        ("scatter.kpp", 20, 52),
+        ("hard-round.kpp", 100, 52),
     ],
 )
 def test_r_grows_by_the_effective_brush_s_margin(
@@ -625,7 +626,7 @@ def test_r_comes_from_the_size_krita_holds(world: World) -> None:
     document_id, _ = world.document()
     world.port.adjust = {"size_px": 100.0}
     done = world.stroke(document_id, brush={"size_px": 10})
-    assert done["effective_brush"]["reach"]["margin_px"] == 50
+    assert done["effective_brush"]["reach"]["margin_px"] == 52
 
 
 @pytest.mark.parametrize(
@@ -657,7 +658,7 @@ def test_full_scope_widens_an_unnamed_reach(world: World) -> None:
     assert reach == {
         "tip": "unknown",
         "scatter": brushes.MAX_SCATTER,
-        "margin_px": pytest.approx(10 * (math.sqrt(2) / 2 + 5)),
+        "margin_px": pytest.approx(10 * (math.sqrt(2) / 2) * 11 + 2),
     }
     assert done["effective_brush"]["engine"] == "airbrush"
 
@@ -1128,3 +1129,33 @@ def test_probe_retention_counts_what_the_bridge_holds(tmp_path: Path) -> None:
     refused = bridge.jobs.submit("op-4", "req-4", "probe.retention", {"x": 1}, A)
     bridge.drain()
     assert refused is not None and refused.reply()["error"]["code"] == "INVALID_ARGUMENT"
+
+
+def test_a_preset_krita_fills_in_on_its_first_activation_keeps_its_listed_digest(
+    world: World,
+) -> None:
+    document_id, _ = world.document()
+    name = "Hard Round"
+    listed = resources.fingerprint(world.resources.xmls[name])[1]
+    real = world.port.set_brush
+    filled = world.resources.xmls[name].replace(
+        "</Preset>", '<param name="Filled">1</param></Preset>'
+    )
+
+    def first_load(document: Any, brush: dict[str, Any]) -> dict[str, Any]:
+        # Krita adds what the stored preset leaves out when it first loads it.
+        world.resources.xmls[name] = filled
+        return real(document, brush)
+
+    world.port.set_brush = first_load  # type: ignore[method-assign]
+    brush = {"preset_id": "hard-round.kpp", "preset_sha256": listed}
+    first = world.stroke(document_id, brush=brush)
+    second = world.stroke(document_id, brush=brush)
+    assert first["effective_brush"]["preset_sha256"] == listed
+    assert second["effective_brush"]["preset_sha256"] == listed
+    # The digest Krita lists now is taken too, and anything the owner changes is not.
+    now = resources.fingerprint(filled)[1]
+    assert world.stroke(document_id, brush={**brush, "preset_sha256": now})["layer_id"] == PAINT
+    world.resources.xmls[name] = filled.replace('"Filled">1', '"Filled">2')
+    refused = world.stroke_refused(document_id, brush=brush)
+    assert refused["code"] == "RESOURCE_HASH_MISMATCH"

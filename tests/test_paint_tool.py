@@ -9,7 +9,7 @@ from jsonschema import Draft202012Validator
 from mcp.types import ImageContent
 from worlds import NOW, World, running_world
 
-from krita_art_mcp import schemas, verification
+from krita_art_mcp import journal, schemas, verification
 from krita_art_mcp.bridge_client import BridgeClient, Done, Failed, Outcome
 from krita_art_mcp.tools import changes, painting
 from krita_art_mcp.tools.dispatch import ToolCall
@@ -97,6 +97,17 @@ REFUSALS = [
         _with_brush(color={"space": "srgb", "rgba": [0.4, 0.3, 0.3, 0.5]}),
         "INVALID_ARGUMENT",
         {"alpha": 0.5},
+    ),
+    (_with_brush(eraser=True), "UNSUPPORTED_CAPABILITY", {"eraser": True, "supported": [False]}),
+    (
+        {**_stroke(), "points": [{"x": 4.5, "y": 4.5}]},
+        "UNSUPPORTED_CAPABILITY",
+        {"points": 1, "minimum_distinct": 2},
+    ),
+    (
+        {**_stroke(), "points": [{"x": 4.5, "y": 4.5}, {"x": 4.5, "y": 4.5}]},
+        "UNSUPPORTED_CAPABILITY",
+        {"points": 2, "minimum_distinct": 2},
     ),
 ]
 
@@ -190,7 +201,8 @@ def test_the_defaults_are_filled_and_the_path_sent(
         )
     ]
     dispatched = [line for line in _journal(world) if line["phase"] == "dispatched"]
-    assert [(line["tool"], line["args"]) for line in dispatched] == [
+    folder = world.tmp_path / "a" / "journal"
+    assert [(line["tool"], journal.arguments(folder, line)) for line in dispatched] == [
         ("krita_paint_stroke", arguments)
     ]
 

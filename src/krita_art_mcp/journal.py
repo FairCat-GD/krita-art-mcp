@@ -10,7 +10,10 @@ from typing import Any
 
 from krita_art_mcp.paths import private_dir
 
-VERSION = 1
+# Version 2 keeps each call's arguments in a file of their own, so reading the journal never
+# decodes them; version 1 lines carry them inline and are still read.
+VERSION = 2
+ARGS_DIR = "args"
 # Within one Krita session the bridge dedups however old the id; across a Krita restart only
 # the journal can, and it reads this far back.
 WINDOW_DAYS = 7
@@ -31,6 +34,13 @@ log = logging.getLogger(__name__)
 
 class JournalError(Exception):
     pass
+
+
+def arguments(directory: Path, line: dict[str, Any]) -> Any:
+    # A dispatched line's arguments, inline (version 1) or from their own file (version 2).
+    if "args_file" in line:
+        return json.loads((directory / line["args_file"]).read_text(encoding="utf-8"))
+    return line["args"]
 
 
 def utc_now() -> datetime.datetime:
@@ -101,6 +111,8 @@ class Journal:
         document_path: str | None = None,
         layer_names: Sequence[str] = (),
     ) -> None:
+        # The arguments are on disk before the line that names them.
+        args_file = self._write_args(operation_id, args)
         self._append(
             {
                 "client": client,
@@ -110,11 +122,30 @@ class Journal:
                 "args_sha256": args_sha256,
                 "session_id": session_id,
                 "phase": "dispatched",
-                "args": args,
+                "args_file": args_file,
                 "document_path": document_path,
                 "layer_names": list(layer_names),
             }
         )
+
+    def _write_args(self, operation_id: str, args: dict[str, Any]) -> str:
+        relative = f"{ARGS_DIR}/{self._now().date().isoformat()}/{operation_id}.json"
+        target = self._directory / relative
+        # Each folder made private, since mkdir's mode reaches only the last.
+        private_dir(self._directory)
+        private_dir(self._directory / ARGS_DIR)
+        private_dir(target.parent)
+        partial = target.with_name(target.name + ".partial")
+        data = json.dumps(args, ensure_ascii=False, separators=(",", ":")).encode()
+        fd = os.open(partial, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+        try:
+            view = memoryview(data)
+            while view:
+                view = view[os.write(fd, view) :]
+        finally:
+            os.close(fd)
+        os.replace(partial, target)
+        return relative
 
     def finished(
         self,

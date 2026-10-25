@@ -2630,6 +2630,191 @@ K10, K18, K21, K30, K37, K43, K44, K47); `REVIEW-2026-10-24.md` F2, F3, F5, F10,
 - **Strokes over 1 s show Krita's busy dialog** (K41). It is expected; it is not a modal refusal.
 - **Colour exactness goes through `ManagedColor`** (K18). Measure it, and record what was measured.
 
+**Done (2026-10-25, 0.9.0).**
+- **Decided with the owner at plan time:**
+  - **Benchmark strokes:** 20 per benchmark, each a 200-point S-curve about 600 px long in a
+    400 × 400 area, 40 px brush (R 464 × 364); three corner-to-corner strokes measured, not gated.
+  - **R's margin is set by the tip** (`e` 0.5 for a round auto tip, √2⁄2 for square and image
+    tips); it only widens R.
+  - **F3's rule:** it bites if, extrapolated to 7 days × 2,000 strokes of 200 points, a fresh
+    first lookup would pass 1 s or the journal 100 MB; then the arguments move to a sidecar here.
+  - **Restarts:** at 0 unsaved documents, without asking.
+  - **Parallel parts, as a one-session trial** of the kit's *Parallel parts* section
+    (`~/Documents/Claude Templates & Notes/AppDev/workflow-kit/parallel/DEVELOPMENT-WORKFLOW.md`);
+    this project's workflow and `CLAUDE.md` unchanged. Krita runs only at integration.
+- **Decided with the owner mid-session:**
+  - **The preset fingerprint leaves out what every stroke sets** (opacity, flow, blend, eraser,
+    and the tip's diameter, scale and angle), since Krita writes them into the active preset and
+    the next stroke's hash check would fail.
+  - **Krita's preset history in `kritarc` is accepted and recorded:** activating presets makes
+    Krita write `LastPreset` and `presethistory` itself. A scratchpad driver of this session
+    activated about 50 stock presets without saving the brush state first, so the owner's earlier
+    selection there was not put back.
+  - **A one-point stroke and `eraser: true` are refused** with `UNSUPPORTED_CAPABILITY` (measured
+    below); erasing goes to `docs/BACKLOG.md`.
+  - **F10: a lazy baseline, in session 11** (block 11 amended).
+- **A design check in plan mode** (one independent read of the plan against the code) found:
+  - a stroke's ledger step has no identity of its own (equal fingerprints, a shared label), so
+    history could undo another stroke and cross the protection floor;
+  - R was built from the asked brush, not the one Krita paints with;
+  - the target-bounds check cannot see a dab outside R inside the layer's old bounds, and fails at
+    the canvas edge;
+  - a raise in `paint_path` was assumed to have changed nothing;
+  - the protected-layer hash skip needed the bounds compared after the stroke;
+  - the memory of full scope at 8k; `step.region`; the schema copy and the tests that hold it.
+
+  The plan folded in a fix for each: the witness, the brush read back and checked twice, the
+  guard ring, the raise path, the bounds comparison.
+- **The plugin core** (`bridge_core/painting.py`, `brushes.py`; part 9.1):
+  - **`paint.stroke`,** guarded like `layer.update`, with exact arguments, then the refusals in
+    order: colour space, the target (protected, type and space, any local selection mask), on-curve
+    points past the canvas grown by half the size, the preset by file id (with the 5 nearest),
+    the listed fingerprint, cumulative undo, region reach.
+  - **Inside `in_front`:** the brush set in K3's order and read back (preset, blend, eraser and
+    alpha lock must be taken), `paintAbility()`, the reach from the effective preset's XML
+    (`brush_reach`: engine, tip, spacing, scatter; region fails closed on another engine, an
+    unknown tip or missing scatter keys), R and the ring R′, the refusals over the scope,
+    `OUTSIDE_ALLOWED_MASK` over R, a refresh, the before-read (the composite over the scope, the
+    target over R′ or its old bounds ∪ R′, each protected paint layer meeting the scope hashed over
+    its bounds ∩ scope), the brush read again, the fingerprint, `before_change()`, `paint_path`.
+  - **The checks:** the composite; every protected paint layer's bounds and hash; in region scope
+    the target's diff inside R and its bounds inside its old bounds ∪ unclipped R′.
+  - **The step** carries a witness (the target's own bytes over its diff D, hashed before and
+    after); `history.move` checks it before and after every move. An empty D seals the ledger.
+  - **Rollback:** one undo through `history.move`, or after a raise a re-read and an undo only
+    when the label and a witness built from the re-read match; confirmed by the re-read, `same()`
+    and the bounds; otherwise unsafe and `ROLLBACK_FAILED`. Never retryable; a `BaseException`
+    marks the document unsafe.
+  - **The preset check remembers the bridge's own activations** for the Krita session (the
+    digest a preset had before its first activation, by the digest it has after), so a preset
+    Krita fills in on loading keeps its listed hash, and any other change still mismatches.
+  - **Harness:** `harness.view` (zoom, rotation, pan), `harness.brush_state` (by file id),
+    `harness.undo`; `probe.retention` on the bridge; `probe.preset_xml` for measurements.
+  - **Capabilities:** `stroke.native_brush`, `stroke.smoothing`, `selection.enforced` since 0.9.0.
+- **The adapter** (`krita_adapter/painting.py`, coordinator): the `View` setters and getters in
+  K3's order, `ManagedColor` with components in B, G, R, A order (N-06 exact), `Node.paintPath`
+  with mirror painting and wrap-around off and put back, the cumulative-undo setting
+  (`useCumulativeUndoRedo`), `Canvas` zoom and rotation, pan through the canvas controller's scroll
+  bars, the brush state by preset file id. The extension registers `paint.stroke`.
+- **The server** (part 9.2, then the coordinator):
+  - **`krita_paint_stroke`** (`tools/painting.py`, `strokes.py`): refusals before the journal
+    (argument errors first: eraser with alpha lock, colour alpha; then `smooth` basic or
+    stabilizer, `antialias: false`, the eraser, the input gate; then numbers that are not finite;
+    then a stroke without length); Catmull-Rom as exact cubics; `journaled`; `resolve_update` for
+    the PNGs; the receipt with `input_applied: "flat"` and an inline diff on a refusal.
+  - **The schema** as PDD Part 4, `verification` copied from `krita_layer_update` by
+    `amend_schemas.py`; `reach.tip` includes `unknown`.
+  - **The journal is version 2:** each call's arguments go to `journal/args/<day>/<op>.json`
+    (0600, written before the line names them); version 1 lines are still read.
+  - **Instructions:** 3,175 characters (+265).
+- **The probe** (`probe/painting.py`, coordinator): the paint checks and both benchmarks on the
+  probe's own working copies, the brush state read first and written back; `write_sparse_ora`
+  for the 2k and 8k masters.
+- **Amendments:**
+  - **The plan-time decisions above**, with the owner.
+  - **R's margin** is `max(32, size × (e + 2e·s) + 2)`: the scatter moves a dab by up to its
+    strength times the dab mask's width and height, which a rotated tip stretches to 2e × size,
+    and the mask's whole pixels add up to 2 px. One stroke in 30 of `y) Texture Spray` at size 24
+    passed the narrower margin and was caught by the ring and rolled back; 120 strokes on three
+    presets passed the wider one. The session's own finding; it only widens R, as decision 2 allows.
+  - **The guard ring, the witness, the fail-closed reach parse with `brush_engine`, the bounds
+    skip for protected layers, the cumulative-undo refusal:** design check, amended at plan time.
+  - **Any local selection mask is refused,** not only an active one: libkis does not say which is
+    active. Plan time.
+  - **Full scope widens an unnamed reach** (an unknown tip as √2⁄2, an unknown scatter as 5, with
+    `reach.tip` `unknown`), and the ring and target-bounds checks run in region scope only. Answered
+    by the coordinator to part 9.1 mid-run.
+  - **The counts stay nested in `verification`,** as `krita_layer_update`'s, not at the top level;
+    `protected_pixels_changed` counts the first changed protected layer, after the stroke against
+    after the undo; `OUTSIDE_ALLOWED_MASK` is judged over R. Plan time.
+  - **The fingerprint's two further exclusions:** the tip's angle (the brush rotation each stroke
+    sets) and its layout whitespace, then the defaults Krita fills into an image tip on first load,
+    then the bridge's memory of its own activations; each found live.
+  - **F3's sidecar landed** (it bit by the journal's size, 180 MB a week).
+  - **The parallel-parts trial,** amended at plan time with the owner; see *Parts*.
+- **Measured** (Krita 5.3.4.1 on macOS, Apple Silicon):
+  - **Labels:** a stroke is "Scripted Brush Stroke"; Krita's Redo action reads "Redo " and stays
+    enabled even with nothing to redo.
+  - **Stock presets:** `b) Basic-1` is the Quick Brush engine (`roundmarker`), so region scope
+    refuses it; the probe uses `b) Basic-2 Opacity` (hard round), `b) Airbrush Soft` and
+    `y) Texture Spray` (image tip, scatter 1). Of about 50 stock presets tried, the pixel
+    engine's parsed and painted in region scope; Color Smudge, MyPaint, spray, deform and
+    tangent-normal refused.
+  - **A stroke writes into the active preset:** `OpacityValue`, `FlowValue`, and the tip's
+    `diameter`, `scale` and `angle`. On a preset's first activation in a session Krita fills
+    defaults into an image tip (`ColorAsMask`, `BrightnessAdjustment`, `md5sum` and others), and
+    rewrites the tip's whitespace.
+  - **No dab without length:** one point, two equal points and a 0.01 px segment painted nothing;
+    0.5 px painted one dab.
+  - **The eraser:** `eraserMode()` read false after `setEraserMode(True)` with every preset tried.
+  - **Pan** is reachable through the canvas controller's scroll bars; zoom and rotation through
+    `Canvas`.
+  - **N-01:** p95 0.08 s (budget 1.5 s), mean 0.07 s; corner to corner 0.39–0.42 s.
+  - **N-09:** p95 0.26 s (budget 3 s), mean 0.21 s; corner to corner 3.81–3.85 s.
+  - **F2:** Krita 937 MB before N-01 and 1,037 MB after; the bridge held 894 operations, 890
+    requests and 890 bindings after the run.
+  - **F3:** before the sidecar 12.8 KB per stroke, a week 180 MB and 0.93 s (it bit); after it
+    3.2 KB of lines per stroke, a week 44 MB and 0.21 s.
+  - **F10:** the 8k open 4.7–5.2 s, a 268 MB baseline, Krita +300–500 MB that stayed after the
+    close; no recurrence of 0.8.0's kill in six 8k opens.
+  - **`probe` on the 0.9.0 build:** 95 PASS, 0 FAIL, 32 MEASURED in 70.1 s; H4 p50 4.9 ms, p95
+    5.4 ms, max 39.3 ms; create and close mean 692 ms; `transfer/` and `harness/` empty,
+    `plugin.log` with no warning or error.
+- **Checked by hand:** `doctor` before and after each of the session's eleven Krita restarts:
+  0 open, 0 unsaved, steps 1–5 PASS, step 6 FAIL "no roots".
+- **Falsified:**
+  - **The parts' own** (their notes): part 9.1 89 breaks, part 9.2 one per new check, each failing
+    at its own test; four tests strengthened in 9.1 first.
+  - **The coordinator's 23 unit breaks,** each failing at its own test with the tree unchanged:
+    the eraser and lengthless refusals, each fingerprint exclusion and default, the activation
+    memory (both halves), the margin's scatter term and rounding, the journal's sidecar (inline
+    args, the folder's mode, the partial file, the v1 reader), the fake's snapshot order, the
+    stroke's step tool, the PNG resolve, the refusal's retryable flag, the sparse writer's three
+    rules. The sparse merge's test was strengthened (a transparent hole) before its break failed.
+  - **Live:** one server run and three plugin builds, split so no break failed another new check
+    for its own reason:
+    - **server:** a sleep on 200-point strokes, `input_fallback` ignored, the eraser refusal off;
+    - **build A:** the capability flag, the channel order, the local-mask refusal, the outside-mask
+      refusal, the brush state not written back, the path moved by the view's rotation, a longer
+      sleep for N-09;
+    - **build B:** the witness off (after the probe's witness check was strengthened: two strokes,
+      so the label alone cannot tell), a rollback that claims an undo;
+    - **build C:** the stroke painted twice, the bridge's dedup off, the reach refusal off, the
+      read-only gate off.
+- **Known debt:** erasing, a single dab, region scope for other engines, not-finite numbers in
+  other tools, Krita's memory after an 8k close, the preset history, and the mirror and
+  wrap-around restore by hand (all in `docs/BACKLOG.md`).
+- **Numbers:**
+  - `verify`: 6 stages, all PASS;
+  - 483 server tests passed, 0 skipped (+47);
+  - 556 plugin-core tests passed, 0 skipped (+114);
+  - `probe`: 95 PASS, 0 FAIL, 32 MEASURED (+20 PASS, +7 MEASURED), 70.1 s;
+  - 17 registered tools (+1); 19 schema files; instructions 3,175 characters (+265).
+- **Parts** (2, run in parallel with the owner's yes; merged in the order 9.1, 9.2):
+  - **9.1, the plugin core.** Built as above, against the fake on 3.10; 89 breaks falsified;
+    +112 plugin-core tests. It stopped three times for contract gaps, which the coordinator
+    answered: full scope with an unnamed reach; the brush state keyed by file id, not name; and the
+    types stage, which needed the adapter's methods, so it cherry-picked the coordinator's two work
+    commits (identical patches, so the merge stayed clean). Wall time 14:00–14:32.
+  - **9.2, the server tool.** Built as above; one break per new check; +35 server tests; found that
+    NaN and Infinity pass the schemas. One amendment from the coordinator (the `unknown` tip).
+    Wall time about 22 minutes.
+  - **The coordinator,** meanwhile: the adapter, the probe and the fixtures (two work commits
+    before the merges).
+  - **Integration fixes:** the fake took its undo snapshot before giving a fresh document its
+    pixels, and gave lazily made layers other pixels than its reads had shown, so the end-to-end
+    tests' rollback and history undo failed until both were fixed (fake only; Krita always holds
+    a layer's pixels). Every other failure at integration was a live fact, listed above.
+  - **The counts add up:** server 436 + 3 (fixtures) + 35 (9.2) + 9 (integration) = 483;
+    plugin-core 442 + 112 (9.1) + 2 (integration) = 556.
+  - **Time saved:** about 45 minutes of the coding stretch (the parts ran 14:01–14:33 beside the
+    coordinator's own steps, against an estimated 80 minutes one after another); integration and
+    the live work, the larger part of the session, are unchanged.
+  - **What the briefs missed:** the types stage on a branch without the adapter; the harness op's
+    preset ids against the port's names; the unnamed reach in full scope. Each was a contract gap
+    a part had to stop on.
+  - **Merge trouble:** none; both merges were clean and `verify` passed on each drafted message.
+
 ---
 
 ## 10: Architecture review: paint safely
@@ -2667,6 +2852,11 @@ Placed at the owner's request, after the paint-safely milestone and before the d
 
 - **Amended by review 6 (2026-10-24), F5:** at most 300 characters net added to the
   instructions.
+- **Amended by the owner in session 9 (2026-10-25), F10:** the `as_opened` baseline is written
+  lazily, for the first `krita_preview_render` that needs it, rather than at every open, and
+  still shows the document as it was opened (the working copy's file, which no save overwrites,
+  holds that state). Session 9 measured an 8192 × 8192 working-copy open at 4.7–5.2 s with a
+  268 MB baseline on disk.
 - **`krita_preview_render`**, with its schema amended per PDD Part 4.
   - **Recipes:** explicit `{id, target_pixels_per_unit | target_size_px, integer_zoom?}`, with a
     `filter`.

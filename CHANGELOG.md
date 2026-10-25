@@ -6,6 +6,62 @@ All notable changes to krita-art-mcp are documented here. The format follows
 
 ## [Unreleased]
 
+## [0.9.0] — 2026-10-25
+
+Agents can now paint: one native Krita brush stroke per call, checked against protection inside
+Krita in the same call, and undone by Krita's own undo if it reaches where protection forbids.
+
+### Added
+
+- **`krita_paint_stroke`.** One stroke with a Krita brush preset on a paint layer of the agent's
+  own, as one undo step named "Scripted Brush Stroke".
+  - The brush is set in full on every call: preset, size, opacity, flow, blend mode, alpha lock,
+    rotation and colour. The receipt reports each as Krita then holds it, with the preset's
+    engine, spacing and reach.
+  - `smooth: "catmull_rom"` curves the path on the server; `none` paints straight segments.
+  - Per-point pressure, tilt, rotation, tangential pressure, speed or timing is refused unless
+    `input_fallback: "flat"`, which paints every point at pressure 1 (`input_applied: "flat"`).
+  - Refused before anything is painted: a protected layer (`LOCKED_TARGET`); a group, a mask, or
+    a layer Krita cannot paint (`LAYER_NOT_PAINTABLE`); a layer with a local selection mask
+    (`LAYER_HAS_LOCAL_SELECTION`); a document that is not RGBA / U8 / sRGB
+    (`COLOR_PROFILE_MISMATCH`); a point outside the canvas grown by half the brush; an unknown
+    preset, with the nearest names; a preset whose settings changed since it was listed
+    (`RESOURCE_HASH_MISMATCH`); a stroke wholly outside the allowed mask
+    (`OUTSIDE_ALLOWED_MASK`); Krita's cumulative undo switched on; the eraser, the eraser with
+    alpha lock, a single point, `smooth` `basic` or `stabilizer`, `antialias: false`, and numbers
+    that are not finite.
+  - Mirror painting and wrap-around are switched off for the stroke and put back after it.
+- **Verified strokes.** Each stroke is checked inside Krita in the same call:
+  - over its reach R, the path's bounds grown by the brush's size and scatter (`verify:
+    "region"`, the default), or over the whole canvas (`verify: "full"`);
+  - no composite byte may change where the allowed mask is 0, no protected layer's pixels may
+    change, and under `preserve_composite_alpha` no alpha value may change;
+  - in region scope the preset's reach must be one the plugin can name (the pixel engine, a
+    round, square or image tip, and its scatter), the layer may change only inside R, and a
+    filter, mask, style, clone or copy blend that could spread the stroke is refused with
+    `UNSUPPORTED_CAPABILITY`; `verify: "full"` paints them;
+  - a stroke that breaks protection is undone by native undo and the undo confirmed byte for
+    byte; the call fails with `PROTECTED_REGION_CHANGED`, its counts and an inline image of the
+    offending pixels. An undo that cannot be confirmed is `ROLLBACK_FAILED` and marks the document
+    unsafe. A rolled-back stroke is never redone.
+  - A passing stroke reports the layer's changed bounds and keeps PNGs of R before and after.
+- **History tells strokes apart by their pixels.** `krita_history_step` undoes and redoes
+  strokes, and stops at a stroke undone by hand or one it did not make.
+- **`krita_server_info`** reports `stroke.native_brush`, `stroke.smoothing` and
+  `selection.enforced` as supported since 0.9.0.
+- **The server instructions** cover painting, and ask that the owner not edit brush presets
+  while an agent paints.
+
+### Changed
+
+- **A preset's `sha256` in `krita_resource_list`** leaves out what every stroke sets (opacity,
+  flow, blend, eraser, and the tip's size and rotation), so painting with a preset never changes
+  the fingerprint the next stroke is checked against. The defaults Krita fills into a tip when it
+  first loads a preset are left out too.
+- **The journal keeps each call's arguments in a file of its own** (`journal/args/`), so a server
+  starting up reads only small lines. Journal lines are now version 2; version 1 lines are still
+  read.
+
 ## [0.8.0] — 2026-10-25
 
 Agents can now change a layer's properties, and every change that shows in the composite is

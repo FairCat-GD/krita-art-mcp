@@ -27,9 +27,9 @@ TOOL = "krita_paint_stroke"
 LABEL = "Scripted Brush Stroke"
 # Stock presets by name, the first Krita lists winning: a hard round tip, a soft one, and one
 # that scatters its dabs.
-HARD = ("b) Basic-1", "b) Basic-2 Opacity", "Basic-1")
-SOFT = ("b) Airbrush Soft", "b) Basic-5 Size", "Airbrush Soft")
-SCATTER = ("u) Texture Spray", "v) Texture Spray", "i) Splat Spray", "Texture Spray")
+HARD = ("b) Basic-2 Opacity", "d) Ink-3 Gpen")
+SOFT = ("b) Airbrush Soft",)
+SCATTER = ("y) Texture Spray", "v) Texture Impressionism")
 # N-06's colours, #A7C284 among them, in red, green and blue bytes.
 COLOURS = (
     (167, 194, 132),
@@ -168,10 +168,18 @@ async def run(report: Report, a: Client, b: Client, client: BridgeClient, harnes
                 action="write",
                 state=saved.result["state"],
             )
+            again = _harness(
+                client,
+                "harness.brush_state",
+                document_id=document_id,
+                action="read",
+                preset_ids=used,
+            )
+            now = again.result["state"] if isinstance(again, Done) else None
             report.check(
-                "the window's brush state is written back after the paint checks",
-                isinstance(put_back, Done),
-                str(put_back) if not isinstance(put_back, Done) else "",
+                "the window's brush state is written back after the paint checks, as it was read",
+                isinstance(put_back, Done) and now == saved.result["state"],
+                "" if now == saved.result["state"] else f"{saved.result['state']} became {now}",
             )
         else:
             report.check("the window's brush state is read before painting", False, str(saved))
@@ -387,15 +395,22 @@ async def _witness(
     if layer_id is None:
         report.check("the witness check's layer is added", False)
         return
-    done = await tool(a, TOOL, _stroke(document_id, layer_id, _brush(hard), _line(20, 50, 140, 50)))
+    # Two strokes, so the step under the one undone by hand has the same label: only the
+    # pixels tell them apart.
+    first = await tool(
+        a, TOOL, _stroke(document_id, layer_id, _brush(hard), _line(20, 30, 140, 30))
+    )
+    done = await tool(a, TOOL, _stroke(document_id, layer_id, _brush(hard), _line(20, 60, 140, 60)))
     by_hand = _harness(client, "harness.undo", document_id=document_id)
+    under = by_hand.result.get("undo") if isinstance(by_hand, Done) else None
     refused = await tool(a, "krita_history_step", history_args(document_id, "undo"))
     report.check(
-        "a stroke undone in Krita by hand stops history: its step no longer shows its pixels",
-        done.get("status") == "completed"
-        and isinstance(by_hand, Done)
+        "a stroke undone in Krita by hand stops history, though the stroke under it has the same "
+        "label: its step no longer shows its pixels",
+        first.get("status") == done.get("status") == "completed"
+        and under == LABEL
         and code(refused) == "INVALID_ARGUMENT",
-        f"{code(done)}, hand undo {isinstance(by_hand, Done)}, history {code(refused)}",
+        f"{code(done)}, Krita's undo now {under!r}, history {code(refused)}",
     )
 
 
@@ -452,6 +467,14 @@ async def _refusals(
             _stroke(document_id, layer_id, _brush(hard, eraser=True, alpha_lock=True), line),
             "INVALID_ARGUMENT",
         ),
+        "the eraser": (
+            _stroke(document_id, layer_id, _brush(hard, eraser=True), line),
+            "UNSUPPORTED_CAPABILITY",
+        ),
+        "a single point": (
+            _stroke(document_id, layer_id, _brush(hard), line[:1]),
+            "UNSUPPORTED_CAPABILITY",
+        ),
         "smooth stabilizer": (
             _stroke(document_id, layer_id, _brush(hard), line, smooth="stabilizer"),
             "UNSUPPORTED_CAPABILITY",
@@ -463,8 +486,8 @@ async def _refusals(
     ]
     report.check(
         "paint_stroke refuses a protected layer, a group, a point past the canvas, pressure "
-        "without input_fallback, an unknown or changed preset, eraser with alpha lock and the "
-        "stabilizer, each with its code",
+        "without input_fallback, an unknown or changed preset, eraser with alpha lock, the "
+        "eraser, a single point and the stabilizer, each with its code",
         not wrong,
         "; ".join(wrong),
     )
@@ -584,6 +607,8 @@ async def _masks(
                 mode: await tool(a, TOOL, _stroke(document_id, layer_id, brush, edge, verify=mode))
                 for mode in ("region", "full")
             }
+            if role == "soft":
+                await _k43(report, a, client, document_id)
             after = await _composite(a, document_id, width, height)
             confirmed = {
                 mode: ((content.get("error") or {}).get("details") or {}).get("rollback_verified")
@@ -601,14 +626,6 @@ async def _masks(
                 f"kept {outside}, leaked {[code(c) for c in leaked.values()]}, "
                 f"confirmed {confirmed}, composite {differs(after, before) or 'as before'}",
             )
-        labels = _harness(client, "harness.undo_labels", document_id=document_id)
-        offered = labels.result.get("redo") if isinstance(labels, Done) else None
-        redo = await tool(a, "krita_history_step", history_args(document_id, "redo"))
-        report.check(
-            "K43: Krita offers the redo of a rolled-back stroke, and history refuses it",
-            offered == LABEL and code(redo) == "INVALID_ARGUMENT",
-            f"Krita's redo {offered!r}, history {code(redo)}",
-        )
         hard = presets["hard"]
         away = await tool(
             a, TOOL, _stroke(document_id, layer_id, _brush(hard), _line(145, 85, 155, 90))
@@ -621,6 +638,18 @@ async def _masks(
         )
     finally:
         await close(a, document_id)
+
+
+async def _k43(report: Report, a: Client, client: BridgeClient, document_id: str) -> None:
+    # Straight after a rollback, before any other step deletes Krita's redo of it.
+    labels = _harness(client, "harness.undo_labels", document_id=document_id)
+    offered = labels.result.get("redo") if isinstance(labels, Done) else None
+    redo = await tool(a, "krita_history_step", history_args(document_id, "redo"))
+    report.check(
+        "K43: Krita offers the redo of a rolled-back stroke, and history refuses it",
+        offered == LABEL and code(redo) == "INVALID_ARGUMENT",
+        f"Krita's redo {offered!r}, history {code(redo)}",
+    )
 
 
 async def _select(a: Client, document_id: str, shape: dict[str, Any]) -> None:
@@ -773,7 +802,7 @@ async def _benchmark(
             report.check(f"{name}'s layer is added", False)
             return
         journal = harness / "server-a" / "journal"
-        logged, rss = _size(journal), _krita_rss_kb()
+        logged, rss = _lines_size(journal), _krita_rss_kb()
         brush = _brush(hard, size_px=BRUSH_PX)
         took, scopes, failures = [], [], []
         for index in range(STROKES):
@@ -820,7 +849,8 @@ def _retention(report: Report, client: BridgeClient, rss_before: int | None) -> 
 
 
 def _journal(report: Report, journal: Path, before: int, strokes: int) -> None:
-    size = _size(journal)
+    # The lines a lookup decodes, apart from the argument files it never reads.
+    size = _lines_size(journal)
     started = time.perf_counter()
     Journal(journal).lookup(str(uuid.uuid4()))
     lookup_s = time.perf_counter() - started
@@ -828,9 +858,15 @@ def _journal(report: Report, journal: Path, before: int, strokes: int) -> None:
     week = per_stroke * WEEK_STROKES
     week_s = lookup_s * week / size if size else 0.0
     bites = week_s > LOOKUP_BUDGET_S or week > JOURNAL_BUDGET_BYTES
+    held = _size(journal / "args")
     report.measured(
         "F3: the journal after N-01, and a heavy week extrapolated (decision 3)",
-        f"{size / 1e6:.2f} MB, {per_stroke / 1e3:.1f} KB per stroke, a fresh first lookup "
-        f"{lookup_s * 1000:.0f} ms; a week of {WEEK_STROKES} strokes: {week / 1e6:.0f} MB and "
-        f"{week_s:.2f} s, so it {'bites' if bites else 'does not bite'}",
+        f"lines {size / 1e6:.2f} MB, {per_stroke / 1e3:.1f} KB per stroke, argument files "
+        f"{held / 1e6:.2f} MB, a fresh first lookup {lookup_s * 1000:.0f} ms; a week of "
+        f"{WEEK_STROKES} strokes: {week / 1e6:.0f} MB of lines and {week_s:.2f} s, so it "
+        f"{'bites' if bites else 'does not bite'}",
     )
+
+
+def _lines_size(journal: Path) -> int:
+    return sum(path.stat().st_size for path in journal.glob("*.jsonl"))

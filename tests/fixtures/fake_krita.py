@@ -10,6 +10,8 @@ from bridge_core.errors import BridgeError
 
 # Krita as the registry sees it, for the plugin-core tests on 3.10 and the server's tool tests.
 SPACE = ("RGBA", "U8", documents.SRGB_PROFILE)
+# A paint layer with no pixels of its own reads as this, B, G, R, A.
+UNREAD = bytes([30, 20, 10, 255])
 
 
 class FakeDocument:
@@ -247,7 +249,7 @@ class FakePort:
         if layer_id in self.buffers:
             width = self.live[document.key]["size_px"][0]
             return [crop(bytes(self.buffers[layer_id]), width, rect, 4) for rect in rects]
-        pixel = self.layer_pixels.get(layer_id, bytes([30, 20, 10, 255]))
+        pixel = self.layer_pixels.get(layer_id, UNREAD)
         return [pixel * (rect["width"] * rect["height"]) for rect in rects]
 
     def selection_rect(self, document: Any, rect: dict[str, int]) -> bytes | None:
@@ -519,12 +521,14 @@ class FakePort:
                 stream.write(b"a KRA, as far as the tests care")
         return self.export_works
 
-    def paintable(self, key: int, pixel: bytes = bytes(4)) -> None:
-        # Gives every paint layer of a document its own pixels, and the composite a buffer.
+    def paintable(self, key: int, pixel: bytes | None = bytes(4)) -> None:
+        # Gives every paint layer of a document its own pixels, and the composite a buffer; with
+        # pixel None, each layer starts as layer_rects read it before it had any.
         width, height = self.live[key]["size_px"]
         for node in self._tree(key)["nodes"]:
             if node["type"] == "paintlayer" and node["id"] not in self.buffers:
-                self.buffers[node["id"]] = bytearray(pixel * (width * height))
+                fill = self.layer_pixels.get(node["id"], UNREAD) if pixel is None else pixel
+                self.buffers[node["id"]] = bytearray(fill * (width * height))
         found = self.canvas.get(key)
         if not isinstance(found, bytearray):
             self.canvas[key] = bytearray(found or bgra(width, height))
@@ -562,6 +566,8 @@ class FakePort:
         self._maybe_fail("paint_path")
         key = document.key
         node = self._layer(key, layer_id)
+        # The pixels exist before the snapshot, so an undo has them to put back.
+        self.paintable(key, None)
         before = self._state(key)
         self.paths.append(copy.deepcopy(path))
         brush = self.brush_now
@@ -574,7 +580,6 @@ class FakePort:
             red, green, blue = (round(value * 255) for value in brush["color"][:3])
             pixel = bytes([blue, green, red, 255])
         size = self.live[key]["size_px"]
-        self.paintable(key)
         composite = self.canvas[key]
         assert isinstance(composite, bytearray)
         for box in boxes:
