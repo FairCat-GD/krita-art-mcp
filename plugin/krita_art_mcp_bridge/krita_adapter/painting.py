@@ -1,4 +1,5 @@
 import logging
+import os
 from typing import Any
 
 from krita import Krita, ManagedColor, Preset
@@ -197,19 +198,19 @@ def _window_view() -> Any:
     return view
 
 
-def brush_state(document: Any, preset_names: list[str]) -> dict[str, Any]:
+def brush_state(document: Any, preset_ids: list[str]) -> dict[str, Any]:
     view = _window_view()
     current = _current(view)
     presets = {}
-    found = Krita.instance().resources("preset")
+    found = _by_file()
     try:
-        for name in preset_names:
-            resource = found.get(name)
+        for preset_id in preset_ids:
+            resource = found.get(preset_id)
             if resource is None:
                 continue
             view.setCurrentBrushPreset(resource)
             values = _current(view)
-            presets[name] = {field: values[field] for field in PRESET_FIELDS}
+            presets[preset_id] = {field: values[field] for field in PRESET_FIELDS}
     finally:
         _put_back(view, current)
     return {"current": current, "presets": presets}
@@ -217,14 +218,22 @@ def brush_state(document: Any, preset_names: list[str]) -> dict[str, Any]:
 
 def set_brush_state(document: Any, state: dict[str, Any]) -> None:
     view = _window_view()
-    found = Krita.instance().resources("preset")
-    for name, values in state["presets"].items():
-        resource = found.get(name)
+    found = _by_file()
+    for preset_id, values in state["presets"].items():
+        resource = found.get(preset_id)
         if resource is None:
             continue
         view.setCurrentBrushPreset(resource)
         _preset_values(view, values)
     _put_back(view, state["current"])
+
+
+def _by_file() -> dict[str, Any]:
+    # Presets by file name, the id resource.list gives them.
+    found = {}
+    for name, resource in Krita.instance().resources("preset").items():
+        found[os.path.basename(str(resource.filename())) or str(name)] = resource
+    return found
 
 
 def _put_back(view: Any, current: dict[str, Any]) -> None:
