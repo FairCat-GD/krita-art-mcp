@@ -82,9 +82,12 @@ def _colour(rgba: list[float]) -> Any:
 def paint_path(document: Any, node: Any, path: dict[str, Any]) -> None:
     view = view_of(document)
     canvas = view.canvas()
-    mirrors = _switch_mirrors_off()
-    wrapped = _switch_wrap_off(canvas)
+    # Each mode is noted before it is switched off, so the finally puts back whatever it reached.
+    mirrors: list[str] = []
+    wrapped: list[bool] = []
     try:
+        _switch_mirrors_off(mirrors)
+        _switch_wrap_off(canvas, wrapped)
         node.paintPath(_painter_path(path), "ForegroundColor", "None")
         document.waitForDone()
     finally:
@@ -104,18 +107,16 @@ def _painter_path(path: dict[str, Any]) -> Any:
     return shape
 
 
-def _switch_mirrors_off() -> dict[str, bool]:
+def _switch_mirrors_off(was: list[str]) -> None:
     # Mirror painting is a canvas resource Krita's actions toggle (K2).
-    was = {}
     for name in MIRRORS:
         action = Krita.instance().action(name)
         if action is not None and action.isChecked():
-            was[name] = True
+            was.append(name)
             action.setChecked(False)
-    return was
 
 
-def _restore_mirrors(was: dict[str, bool]) -> None:
+def _restore_mirrors(was: list[str]) -> None:
     # Never raises, so a restore cannot hide the stroke's own outcome.
     for name in was:
         try:
@@ -124,15 +125,14 @@ def _restore_mirrors(was: dict[str, bool]) -> None:
             logging.getLogger(log.NAME).exception("mirror painting was not put back")
 
 
-def _switch_wrap_off(canvas: Any) -> bool:
+def _switch_wrap_off(canvas: Any, wrapped: list[bool]) -> None:
     # Scripted strokes honour wrap-around mode (K47).
-    wrapped = bool(canvas.wrapAroundMode())
-    if wrapped:
+    if canvas.wrapAroundMode():
+        wrapped.append(True)
         canvas.setWrapAroundMode(False)
-    return wrapped
 
 
-def _restore_wrap(canvas: Any, wrapped: bool) -> None:
+def _restore_wrap(canvas: Any, wrapped: list[bool]) -> None:
     if not wrapped:
         return
     try:

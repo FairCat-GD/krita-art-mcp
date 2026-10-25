@@ -1,10 +1,9 @@
-import math
 import os
 from pathlib import Path
 from typing import Any
 
 from . import files, nodes, paths, roots
-from .errors import BridgeError, exact, no_arguments
+from .errors import BridgeError, exact, no_arguments, number
 from .history import in_front
 from .jobs import Call, Handler
 from .pixels import check_rect
@@ -198,10 +197,11 @@ def handlers(registry: Registry, port: DocumentsPort, data: Path) -> dict[str, H
         # Krita's own Undo, as a hand would press it: the ledger is left for history to catch.
         exact(args, {"document_id"})
         handle = fixture(args["document_id"])
+        # The document changes through the bridge, so it is dirty, as after any op that changes it.
+        handle.before_change()
         with in_front(port, handle.document):
             port.undo(handle.document)
             undo_label, redo_label = port.undo_labels(handle.document)
-        handle.touched()
         return {"document_id": handle.document_id, "undo": undo_label, "redo": redo_label}
 
     return {
@@ -224,9 +224,9 @@ def _check_view(view: Any) -> None:
         raise BridgeError("INVALID_ARGUMENT", message)
     good = True
     if "zoom" in view:
-        good = _finite(view["zoom"]) and view["zoom"] > 0
+        good = number(view["zoom"]) and view["zoom"] > 0
     if "rotation_deg" in view:
-        good = good and _finite(view["rotation_deg"])
+        good = good and number(view["rotation_deg"])
     if "pan_px" in view:
         pan = view["pan_px"]
         good = (
@@ -237,7 +237,3 @@ def _check_view(view: Any) -> None:
         )
     if not good:
         raise BridgeError("INVALID_ARGUMENT", "view is malformed.")
-
-
-def _finite(value: Any) -> bool:
-    return isinstance(value, (int, float)) and not isinstance(value, bool) and math.isfinite(value)

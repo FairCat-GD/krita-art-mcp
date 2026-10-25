@@ -102,12 +102,17 @@ REFUSALS = [
     (
         {**_stroke(), "points": [{"x": 4.5, "y": 4.5}]},
         "UNSUPPORTED_CAPABILITY",
-        {"points": 1, "minimum_distinct": 2},
+        {"length_px": 0, "minimum_length_px": 0.5},
     ),
     (
         {**_stroke(), "points": [{"x": 4.5, "y": 4.5}, {"x": 4.5, "y": 4.5}]},
         "UNSUPPORTED_CAPABILITY",
-        {"points": 2, "minimum_distinct": 2},
+        {"length_px": 0, "minimum_length_px": 0.5},
+    ),
+    (
+        {**_stroke(), "points": [{"x": 4.5, "y": 4.5}, {"x": 4.6, "y": 4.5}, {"x": 4.5, "y": 4.7}]},
+        "UNSUPPORTED_CAPABILITY",
+        {"minimum_length_px": 0.5},
     ),
 ]
 
@@ -292,6 +297,7 @@ def _result(checked: dict[str, Any]) -> dict[str, Any]:
         "protected_pixels_changed": 0,
         "undo_label": "Scripted Brush Stroke",
         "undo_steps": 1,
+        "history_sealed": False,
         "verification": checked,
     }
 
@@ -324,6 +330,17 @@ def test_a_stroke_receipt_keeps_the_scope_as_pngs_and_says_flat(world: World) ->
     assert Path(made["before"]["path"]).exists() and not Path(after["path"]).exists()
     assert receipt.content[0].text == (
         f"Painted 2 point(s) on layer {LAYER} of doc-1; 1 px changed, verified over region."
+    )
+
+
+def test_a_sealed_stroke_says_history_stops_there(world: World) -> None:
+    checked = _counts(before=None, after=None, diff=None)
+    result = {**_result(checked), "changed_bounds_px": None, "history_sealed": True}
+    resolved = changes.resolve_update(world.places(), Done(result, OPERATION))
+    receipt, content = _checked_receipt(resolved)
+    assert content["data"]["history_sealed"] is True
+    assert receipt.content[0].text.endswith(
+        "; the layer did not change, so history stops at this stroke."
     )
 
 

@@ -4,7 +4,7 @@ from collections.abc import Iterator
 from pathlib import Path
 from typing import Any
 
-from . import nodes, paths, transfer
+from . import nodes, paths, transfer, verification
 from .errors import BridgeError, exact
 from .jobs import Call, Handler
 from .ledger import Fingerprint, Step, fingerprint
@@ -161,7 +161,7 @@ def handlers(registry: Registry, port: DocumentsPort, data: Path) -> dict[str, H
                 if not applied:
                     _refuse(handle, outcome, seen)
                 break
-        region = _union([step.region for step in applied])
+        region = verification.union(step.region for step in applied)
         pixels = None
         if region is not None:
             with nodes.unmasked_view(port, handle.document):
@@ -213,14 +213,3 @@ def _refuse(handle: Handle, outcome: str, seen: dict[str, Any]) -> None:
         "the bridge cannot name), so history stops there."
     )
     raise BridgeError("INVALID_ARGUMENT", message, False, details)
-
-
-def _union(regions: list[dict[str, int] | None]) -> dict[str, int] | None:
-    found = [region for region in regions if region is not None]
-    if not found:
-        return None
-    left = min(region["x"] for region in found)
-    top = min(region["y"] for region in found)
-    right = max(region["x"] + region["width"] for region in found)
-    bottom = max(region["y"] + region["height"] for region in found)
-    return {"x": left, "y": top, "width": right - left, "height": bottom - top}

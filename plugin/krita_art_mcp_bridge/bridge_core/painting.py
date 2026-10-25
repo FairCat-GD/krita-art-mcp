@@ -8,7 +8,7 @@ from typing import Any
 
 from . import brushes, log, verification
 from .documents import COLOR_MODEL, DEPTH, SRGB_PROFILE
-from .errors import BridgeError, exact
+from .errors import BridgeError, exact, number
 from .history import DONE, LABELS, UNDO, in_front, move
 from .inspection import TYPES
 from .jobs import Call, Handler
@@ -101,7 +101,7 @@ def handlers(
             target_rect = (
                 ring
                 if mode == verification.REGION
-                else _clip(_union([_box(old_bounds), loose_ring]) or loose_ring, size)
+                else _clip(verification.union([_box(old_bounds), loose_ring]) or loose_ring, size)
             )
             verification.refuse_unverifiable(info, effects, scope)
             verification.refuse_unverifiable(info, effects, target_rect)
@@ -159,6 +159,7 @@ def handlers(
         after: verification.Reading | None = None
         verdict: verification.Verdict | None = None
         diff: dict[str, int] | None = None
+        sealed = False
         problem: BridgeError | None = None
         try:
             port.paint_path(document, layer_id, args["path"])
@@ -176,8 +177,10 @@ def handlers(
             )
             _, diff = verification.changes(before.target, after.target, stroke.target_rect)
             if diff is None:
-                # No pixel tells this stroke's step from another, so history stops below it.
+                # Krita still pushes a step, but its undo changes no pixel, so nothing could
+                # confirm it: history stops below it, and the receipt says so.
                 handle.ledger.seal()
+                sealed = True
             else:
                 witness = (
                     layer_id,
@@ -185,7 +188,7 @@ def handlers(
                     _sha(verification.crop(before.target, stroke.target_rect, diff)),
                     _sha(verification.crop(after.target, stroke.target_rect, diff)),
                 )
-                region = _union([verdict.changed_bounds_px, diff])
+                region = verification.union([verdict.changed_bounds_px, diff])
                 made = Step(
                     "paint.stroke",
                     call.operation_id,
@@ -203,7 +206,7 @@ def handlers(
             if stroke.mode == verification.FULL and new and not _inside(new, stroke.target_rect):
                 # Full scope does not hold the target to R; what it painted past the read shows
                 # in its bounds.
-                diff = _union([diff, new])
+                diff = verification.union([diff, new])
         except BridgeError as raised:
             problem = raised
         except Exception as raised:
@@ -227,6 +230,7 @@ def handlers(
             "protected_pixels_changed": 0,
             "undo_label": LABELS["paint.stroke"],
             "undo_steps": 1,
+            "history_sealed": sealed,
             "verification": verification.files(data, args["verify"], before, after, verdict, False),
         }
 
@@ -276,9 +280,10 @@ def handlers(
         step: Step | None,
         old_bounds: dict[str, int],
         kept: tuple[str, Any] | None,
-    ) -> tuple[bool, bool, int]:
+    ) -> tuple[bool, bool, int | None]:
         # Whether an undo ran, whether the document was confirmed as it was, and how many pixels
-        # of the first changed protected layer the stroke had changed.
+        # of the first changed protected layer the stroke had changed; None when no undo
+        # brought back what they are counted against.
         document, before = handle.document, stroke.before
         layer_id = before.target_id or ""
         try:
@@ -286,7 +291,7 @@ def handlers(
             if step is not None:
                 outcome, _, _ = move(port, handle, step, UNDO, step.after)
                 if outcome != DONE:
-                    return False, False, 0
+                    return False, False, None
                 handle.ledger.rolled_back()
                 undone = True
             else:
@@ -297,7 +302,7 @@ def handlers(
                 back = _back(port, document, before, again, layer_id, old_bounds)
                 if not back:
                     if not _undo_unnamed(handle, call, stroke, again):
-                        return False, False, 0
+                        return False, False, None
                     undone = True
                 del again
             if undone:
@@ -305,8 +310,11 @@ def handlers(
                 again = verification.again(port, document, before)
                 back = _back(port, document, before, again, layer_id, old_bounds)
                 del again
-            counted = 0
-            if kept is not None:
+            counted: int | None = 0
+            if kept is not None and not back:
+                # Not confirmed back, so the layer's pixels now are no measure of the change.
+                counted = None
+            elif kept is not None:
                 kept_id, pixels = kept
                 rect = before.rects.get(kept_id, before.rect)
                 [now] = port.layer_rects(document, kept_id, [rect])
@@ -314,7 +322,7 @@ def handlers(
             return undone, back, counted
         except Exception:
             logging.getLogger(log.NAME).exception("paint.stroke's rollback raised")
-            return False, False, 0
+            return False, False, None
 
     def _undo_unnamed(
         handle: Handle, call: Call, stroke: "Stroke", again: verification.Reading
@@ -405,16 +413,16 @@ def _check_brush(brush: Any) -> None:
     sha = brush["preset_sha256"]
     if sha is not None and (not isinstance(sha, str) or not SHA256.match(sha)):
         _malformed("preset_sha256")
-    if not _number(brush["size_px"]) or not MIN_SIZE_PX <= brush["size_px"] <= MAX_SIZE_PX:
+    if not number(brush["size_px"]) or not MIN_SIZE_PX <= brush["size_px"] <= MAX_SIZE_PX:
         _malformed("size_px")
     for key in ("opacity", "flow"):
-        if not _number(brush[key]) or not 0 <= brush[key] <= 1:
+        if not number(brush[key]) or not 0 <= brush[key] <= 1:
             _malformed(key)
     color = brush["color"]
     if (
         not isinstance(color, list)
         or len(color) != 4
-        or not all(_number(value) and 0 <= value <= 1 for value in color)
+        or not all(number(value) and 0 <= value <= 1 for value in color)
     ):
         _malformed("color")
     if color[3] != 1:
@@ -429,7 +437,7 @@ def _check_brush(brush: Any) -> None:
         raise BridgeError("INVALID_ARGUMENT", message)
     if brush["blend_mode"] not in {mode for mode, _ in BLEND_MODES}:
         _malformed("blend_mode")
-    if not _number(brush["rotation_deg"]):
+    if not number(brush["rotation_deg"]):
         _malformed("rotation_deg")
 
 
@@ -457,15 +465,11 @@ def _integer(value: Any) -> bool:
     return isinstance(value, int) and not isinstance(value, bool)
 
 
-def _number(value: Any) -> bool:
-    return isinstance(value, (int, float)) and not isinstance(value, bool) and math.isfinite(value)
-
-
 def _numbers(values: Any, lengths: tuple[int, ...]) -> bool:
     return (
         isinstance(values, list)
         and len(values) in lengths
-        and all(_number(value) for value in values)
+        and all(number(value) for value in values)
     )
 
 
@@ -650,7 +654,7 @@ def _verdict(
     moved = [node_id for node_id, old in protected.items() if bounds.get(node_id) != old]
     changed = sorted(set(verdict.protected_changed) | set(moved))
     new = _box(bounds.get(layer_id))
-    allowed_bounds = _union([_box(old_bounds), stroke.loose_ring]) or stroke.loose_ring
+    allowed_bounds = verification.union([_box(old_bounds), stroke.loose_ring]) or stroke.loose_ring
     # R bounds the check only in region scope; full scope reads every composite byte.
     outside = stroke.mode == verification.REGION and (
         (diff is not None and not _inside(diff, stroke.region))
@@ -752,17 +756,6 @@ def _meet(rect: dict[str, int], scope: dict[str, int]) -> dict[str, int] | None:
     bottom = min(rect["y"] + rect["height"], scope["y"] + scope["height"])
     if right <= left or bottom <= top:
         return None
-    return {"x": left, "y": top, "width": right - left, "height": bottom - top}
-
-
-def _union(rects: list[dict[str, int] | None]) -> dict[str, int] | None:
-    found = [rect for rect in rects if rect is not None and _box(rect) is not None]
-    if not found:
-        return None
-    left = min(rect["x"] for rect in found)
-    top = min(rect["y"] for rect in found)
-    right = max(rect["x"] + rect["width"] for rect in found)
-    bottom = max(rect["y"] + rect["height"] for rect in found)
     return {"x": left, "y": top, "width": right - left, "height": bottom - top}
 
 

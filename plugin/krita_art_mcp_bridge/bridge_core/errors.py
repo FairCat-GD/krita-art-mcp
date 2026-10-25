@@ -1,3 +1,4 @@
+import math
 from typing import Any
 
 # The Phase 1 error codes; the server holds an equal copy.
@@ -66,3 +67,8 @@ def exact(args: dict[str, Any], fields: set[str]) -> None:
     if set(args) != fields:
         details = {"expected": sorted(fields), "given": sorted(args)}
         raise BridgeError("INVALID_ARGUMENT", "The op's arguments are wrong.", False, details)
+
+
+def number(value: Any) -> bool:
+    # A finite JSON number; True and False are not numbers here.
+    return isinstance(value, (int, float)) and not isinstance(value, bool) and math.isfinite(value)

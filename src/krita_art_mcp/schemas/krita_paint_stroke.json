@@ -476,6 +476,9 @@
               "undo_steps": {
                 "const": 1
               },
+              "history_sealed": {
+                "type": "boolean"
+              },
               "verification": {
                 "type": "object",
                 "properties": {
@@ -677,6 +680,7 @@
               "protected_pixels_changed",
               "undo_label",
               "undo_steps",
+              "history_sealed",
               "verification"
             ]
           },
@@ -987,6 +991,9 @@
                 "undo_steps": {
                   "const": 1
                 },
+                "history_sealed": {
+                  "type": "boolean"
+                },
                 "verification": {
                   "type": "object",
                   "properties": {
@@ -1188,6 +1195,7 @@
                 "protected_pixels_changed",
                 "undo_label",
                 "undo_steps",
+                "history_sealed",
                 "verification"
               ]
             },
@@ -1343,6 +1351,7 @@
         "protected_pixels_changed": 0,
         "undo_label": "Scripted Brush Stroke",
         "undo_steps": 1,
+        "history_sealed": false,
         "verification": {
           "mode": "region",
           "rect": {

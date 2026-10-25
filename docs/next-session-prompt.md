@@ -8,8 +8,9 @@ safely", findings only, no product code and no version.
 - **Round 1 is the Phase 1 build.** Sessions 0 to 9, 6a and 7a are done. Session 10 is the second
   architecture review. Sessions 11 to 15 remain, releasing 0.10.0 to 0.13.0.
 - **The push status.** `origin` is the private GitHub repository `FairCat-GD/krita-art-mcp`.
-  `origin/main` holds everything through "docs: check only hygiene when pushing". Session 9's
-  work is local, with its merges and commits. List `origin/main..HEAD` before any push.
+  `origin/main` holds everything through session 9's review commit ("review: a stroke that
+  changes nothing says history stops, and 9 smaller"), its parts and merges included, pushed with
+  the owner's approval; nothing is local. List `origin/main..HEAD` before any push.
 - **Session 9 ran as a one-session trial of parallel parts.**
   - The kit is `~/Documents/Claude Templates & Notes/AppDev/workflow-kit/parallel/DEVELOPMENT-WORKFLOW.md`.
     This project's own workflow and `CLAUDE.md` did not change.
@@ -25,15 +26,17 @@ safely", findings only, no product code and no version.
     - Rollback is native undo, confirmed.
     - The preset fingerprint leaves out per-call fields, and the bridge remembers its own
       activations.
+    - A stroke that changes no pixel seals history, and its receipt says so (`history_sealed`).
   - **Journal lines are version 2:** each call's arguments are kept in a sidecar file.
 - **Decided by the owner in session 9:**
-  - **Refused for now:** erasing and one-point strokes.
+  - **Refused for now:** erasing, and strokes shorter than half a pixel.
   - **Accepted and recorded:** Krita writes the presets it activates into `kritarc`'s preset
     history.
   - **F10:** a lazy baseline in session 11 (block 11 amended).
 - **For the review's focus** (block 10):
-  - **Headroom:** N-01 p95 0.08 s against 1.5 s, N-09 p95 0.26 s against 3 s. Corner-to-corner
-    strokes take 0.4 s at 2k and 3.8 s at 8k.
+  - **Headroom:** N-01 p95 0.09 s against 1.5 s, N-09 p95 0.23 s against 3 s, with every
+    protected layer covering each stroke's region. Corner-to-corner strokes take 0.4 s at 2k and
+    3.7 s at 8k.
   - **The harness:** about 70 s, of which the benchmarks are about 15 s.
   - **Review 6's findings in session 9:**
     - F2 and F3 were measured; F3 bit and was fixed by the sidecar.
@@ -42,8 +45,8 @@ safely", findings only, no product code and no version.
     - F5 used 265 of its 300 characters.
 - **Baseline** (session 10 changes no code, so it records these as found):
   - `verify`: 6 stages, all PASS;
-  - 483 server tests passed, 0 skipped;
-  - 556 plugin-core tests passed, 0 skipped;
+  - 486 server tests passed, 0 skipped;
+  - 558 plugin-core tests passed, 0 skipped;
   - `probe`: 95 PASS, 0 FAIL, 32 MEASURED, about 70 s;
   - 17 registered tools; 19 schema files; instructions 3,175 characters.
 - **Not done:**

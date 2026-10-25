@@ -28,8 +28,8 @@ Krita in the same call, and undone by Krita's own undo if it reaches where prote
     preset, with the nearest names; a preset whose settings changed since it was listed
     (`RESOURCE_HASH_MISMATCH`); a stroke wholly outside the allowed mask
     (`OUTSIDE_ALLOWED_MASK`); Krita's cumulative undo switched on; the eraser, the eraser with
-    alpha lock, a single point, `smooth` `basic` or `stabilizer`, `antialias: false`, and numbers
-    that are not finite.
+    alpha lock, a stroke shorter than half a pixel (Krita paints no dab for it), `smooth` `basic`
+    or `stabilizer`, `antialias: false`, and numbers that are not finite.
   - Mirror painting and wrap-around are switched off for the stroke and put back after it.
 - **Verified strokes.** Each stroke is checked inside Krita in the same call:
   - over its reach R, the path's bounds grown by the brush's size and scatter (`verify:
@@ -45,6 +45,8 @@ Krita in the same call, and undone by Krita's own undo if it reaches where prote
     offending pixels. An undo that cannot be confirmed is `ROLLBACK_FAILED` and marks the document
     unsafe. A rolled-back stroke is never redone.
   - A passing stroke reports the layer's changed bounds and keeps PNGs of R before and after.
+  - A stroke that changes none of the layer's pixels cannot be told apart from another by
+    history, so history stops at it; its receipt says so (`history_sealed: true`).
 - **History tells strokes apart by their pixels.** `krita_history_step` undoes and redoes
   strokes, and stops at a stroke undone by hand or one it did not make.
 - **`krita_server_info`** reports `stroke.native_brush`, `stroke.smoothing` and
@@ -56,8 +58,8 @@ Krita in the same call, and undone by Krita's own undo if it reaches where prote
 
 - **A preset's `sha256` in `krita_resource_list`** leaves out what every stroke sets (opacity,
   flow, blend, eraser, and the tip's size and rotation), so painting with a preset never changes
-  the fingerprint the next stroke is checked against. The defaults Krita fills into a tip when it
-  first loads a preset are left out too.
+  the fingerprint the next stroke is checked against. A preset Krita fills in when the bridge
+  first uses it in a session keeps the hash it was listed with.
 - **The journal keeps each call's arguments in a file of its own** (`journal/args/`), so a server
   starting up reads only small lines. Journal lines are now version 2; version 1 lines are still
   read.
@@ -381,6 +383,7 @@ The first release is the scaffold that the Phase 1 tools are built on.
   reports its version to the client; it offers no tools yet.
 - **`krita-art-mcp --version`.** It prints the installed version.
 
+[0.9.0]: https://github.com/FairCat-GD/krita-art-mcp/commit/04a86abd869aae2deea4326f17acbaf159efef3b
 [0.8.0]: https://github.com/FairCat-GD/krita-art-mcp/commit/16ca9eaff39736ed752f9c03577cbe6fefdaaa3f
 [0.7.0]: https://github.com/FairCat-GD/krita-art-mcp/commit/d188986373e1e4975dcfc5d1412e862f12566b14
 [0.6.0]: https://github.com/FairCat-GD/krita-art-mcp/commit/b1c679e85ab9632372ea4114a8718e6a2a5328cc

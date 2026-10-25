@@ -89,6 +89,8 @@ class Journal:
         self._offsets: dict[Path, int] = {}
         self._requests: dict[str, Prior] = {}
         self._sessions: dict[str, str] = {}
+        # The argument folders this process has made private, so each is made so once.
+        self._private: set[Path] = set()
 
     def lookup(self, request_id: str) -> Prior | None:
         self._refresh()
@@ -131,10 +133,12 @@ class Journal:
     def _write_args(self, operation_id: str, args: dict[str, Any]) -> str:
         relative = f"{ARGS_DIR}/{self._now().date().isoformat()}/{operation_id}.json"
         target = self._directory / relative
-        # Each folder made private, since mkdir's mode reaches only the last.
-        private_dir(self._directory)
-        private_dir(self._directory / ARGS_DIR)
-        private_dir(target.parent)
+        if target.parent not in self._private:
+            # Each folder made private, since mkdir's mode reaches only the last.
+            private_dir(self._directory)
+            private_dir(self._directory / ARGS_DIR)
+            private_dir(target.parent)
+            self._private.add(target.parent)
         partial = target.with_name(target.name + ".partial")
         data = json.dumps(args, ensure_ascii=False, separators=(",", ":")).encode()
         fd = os.open(partial, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)

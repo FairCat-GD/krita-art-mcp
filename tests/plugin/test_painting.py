@@ -228,6 +228,7 @@ def test_a_stroke_is_painted_verified_over_r_and_reported(world: World) -> None:
         1,
         0,
     )
+    assert done["history_sealed"] is False
     effective = done["effective_brush"]
     assert (
         effective["preset_sha256"] == resources.fingerprint(world.resources.xmls["Basic Round"])[1]
@@ -941,6 +942,8 @@ def test_an_empty_diff_seals_history_and_pushes_nothing(world: World) -> None:
     assert handle.ledger.undo_available() == 1
     done = world.stroke(document_id, brush={"eraser": True})
     assert done["changed_bounds_px"] is None and done["undo_steps"] == 1
+    # The receipt says history stops here, since nothing could confirm the step's undo.
+    assert done["history_sealed"] is True
     assert len(handle.ledger.steps) == 1 and handle.ledger.undo_available() == 0
     assert world.port.undo_labels(handle.document)[0] == LABEL
 
@@ -976,6 +979,22 @@ def test_an_undo_krita_does_not_take_fails_the_rollback(world: World) -> None:
     assert world.stroke_refused(document_id)["code"] == "DOCUMENT_UNSAFE"
 
 
+def test_a_protected_change_whose_undo_fails_is_not_counted(world: World) -> None:
+    document_id, _ = world.document()
+
+    def touch(key: int) -> None:
+        start = (60 * WIDTH + 40) * 4
+        world.port.buffers[BASE][start : start + 12] = bytes(12)
+
+    world.port.on_paint.append(touch)
+    world.port.undo_works = False
+    body = world.stroke_refused(document_id)
+    details = body["details"]
+    assert body["code"] == "ROLLBACK_FAILED"
+    # Nothing was undone, so the layer's pixels now measure nothing.
+    assert (details["protected_layer_ids"], details["protected_pixels_changed"]) == ([BASE], None)
+
+
 def test_a_rollback_whose_reread_differs_fails(world: World) -> None:
     document_id, handle = world.document()
     world.allow(document_id, _box(0, 0, 45, HEIGHT))
@@ -992,6 +1011,28 @@ def test_a_rollback_whose_reread_differs_fails(world: World) -> None:
     assert body["code"] == "ROLLBACK_FAILED"
     assert (body["details"]["rolled_back"], body["details"]["rollback_verified"]) == (True, False)
     assert handle.unsafe
+
+
+def test_a_protected_change_whose_undo_is_not_confirmed_is_not_counted(world: World) -> None:
+    document_id, _ = world.document()
+
+    def touch(key: int) -> None:
+        start = (60 * WIDTH + 40) * 4
+        world.port.buffers[BASE][start : start + 12] = bytes(12)
+
+    undo = world.port.undo
+
+    def drifting(document: Any) -> None:
+        undo(document)
+        canvas = world.port.canvas[1]
+        assert isinstance(canvas, bytearray)
+        canvas[(30 * WIDTH + 30) * 4] ^= 1
+
+    world.port.on_paint.append(touch)
+    world.port.undo = drifting  # type: ignore[method-assign]
+    details = world.stroke_refused(document_id)["details"]
+    assert (details["rolled_back"], details["rollback_verified"]) == (True, False)
+    assert (details["protected_layer_ids"], details["protected_pixels_changed"]) == ([BASE], None)
 
 
 def test_a_rollback_that_leaves_the_target_s_bounds_grown_fails(world: World) -> None:
@@ -1024,8 +1065,11 @@ def test_a_hand_undo_stops_history_at_the_stroke_it_took(world: World) -> None:
     document_id, handle = world.harness_document()
     world.stroke(document_id)
     world.stroke(document_id, path={"start": [120, 60], "segments": [[130, 60]]})
+    handle.dirty = False
     undone = world.run("harness.undo", {"document_id": document_id})
     assert (undone["undo"], undone["redo"]) == (LABEL, LABEL)
+    # An undo through the bridge changes the document, so closing with refuse must see it.
+    assert handle.dirty
     assert handle.ledger.undo_available() == 2
     world.stroke(document_id, path={"start": [80, 20], "segments": [[90, 20]]})
     # The ledger names three strokes; Krita holds the first and the third.

@@ -1,3 +1,4 @@
+import itertools
 import math
 from typing import Any
 
@@ -12,6 +13,8 @@ from krita_art_mcp.tools.dispatch import ToolCall, from_outcome, journaled
 PER_POINT = ("time_ms", "tilt_x", "tilt_y", "rotation_deg", "tangential_pressure", "speed")
 SMOOTHED = ["none", "catmull_rom"]
 BRUSH_NUMBERS = ("size_px", "opacity", "flow", "rotation_deg")
+# Krita paints no dab for a stroke shorter than this: 0.01 px painted nothing, 0.5 px one dab.
+MIN_LENGTH_PX = 0.5
 
 
 def paint_stroke(call: ToolCall, arguments: dict[str, Any]) -> CallToolResult:
@@ -44,11 +47,16 @@ def paint_stroke(call: ToolCall, arguments: dict[str, Any]) -> CallToolResult:
     if unbounded is not None:
         message = f"{unbounded} holds a number that is not finite."
         return envelope.failure("INVALID_ARGUMENT", message, details={"field": unbounded})
-    first = points[0]
-    if all((point["x"], point["y"]) == (first["x"], first["y"]) for point in points):
-        # Krita paints no dab for a stroke without length.
-        message = "Krita paints no dab for a single point; send two points."
-        details = {"points": len(points), "minimum_distinct": 2}
+    length = sum(
+        math.hypot(point["x"] - previous["x"], point["y"] - previous["y"])
+        for previous, point in itertools.pairwise(points)
+    )
+    if length < MIN_LENGTH_PX:
+        message = (
+            f"Krita paints no dab for a stroke shorter than {MIN_LENGTH_PX} px; send points at "
+            "least that far apart."
+        )
+        details = {"length_px": length, "minimum_length_px": MIN_LENGTH_PX}
         return envelope.failure("UNSUPPORTED_CAPABILITY", message, details=details)
     op_args["path"] = path
 
@@ -135,11 +143,15 @@ def paint_receipt(outcome: Outcome) -> CallToolResult:
 
     def text(result: dict[str, Any]) -> str:
         checked = result["verification"]
-        return (
+        line = (
             f"Painted {result['accepted_points']} point(s) on layer {result['layer_id']} of "
             f"{result['document_id']}; {checked['changed_px']} px changed, verified over "
-            f"{checked['mode']}."
+            f"{checked['mode']}"
         )
+        if result["history_sealed"]:
+            # Its undo would change no pixel, so nothing could confirm it.
+            line += "; the layer did not change, so history stops at this stroke"
+        return line + "."
 
     receipt = from_outcome(outcome, data, text, changes.document_of)
     if isinstance(outcome, Failed):

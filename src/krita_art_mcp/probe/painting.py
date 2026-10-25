@@ -43,7 +43,7 @@ COLOURS = (
     (30, 110, 200),
     (240, 160, 30),
 )
-# Decision 6's budgets, and decision 1's strokes: 200-point S-curves in a 400 x 400 area.
+# N-01's and N-09's budgets, and the strokes they time: 200-point S-curves in a 400 x 400 area.
 BENCHMARKS = (
     {"name": "N-01", "size": 2000, "layers": 20, "budget_s": 1.5},
     {"name": "N-09", "size": 8192, "layers": 30, "budget_s": 3.0},
@@ -53,7 +53,7 @@ LONG_STROKES = 3
 POINTS = 200
 BRUSH_PX = 40
 AREA_PX = 400
-# F3's rule (decision 3): a heavy week, and what counts as biting.
+# What counts as the journal's cost biting, over a heavy week of strokes.
 WEEK_STROKES = 7 * 2000
 LOOKUP_BUDGET_S = 1.0
 JOURNAL_BUDGET_BYTES = 100 * 1024 * 1024
@@ -860,7 +860,7 @@ def _journal(report: Report, journal: Path, before: int, strokes: int) -> None:
     bites = week_s > LOOKUP_BUDGET_S or week > JOURNAL_BUDGET_BYTES
     held = _size(journal / "args")
     report.measured(
-        "F3: the journal after N-01, and a heavy week extrapolated (decision 3)",
+        "F3: the journal after N-01, and a heavy week extrapolated",
         f"lines {size / 1e6:.2f} MB, {per_stroke / 1e3:.1f} KB per stroke, argument files "
         f"{held / 1e6:.2f} MB, a fresh first lookup {lookup_s * 1000:.0f} ms; a week of "
         f"{WEEK_STROKES} strokes: {week / 1e6:.0f} MB of lines and {week_s:.2f} s, so it "

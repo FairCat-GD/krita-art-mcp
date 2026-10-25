@@ -78,18 +78,6 @@ def test_the_fingerprint_leaves_out_what_every_stroke_sets() -> None:
         )
 
     assert resources.fingerprint(image("0.5")) == resources.fingerprint(image("2"))
-    # Krita fills in an image tip's defaults when it first loads it; any other value counts.
-    filled = preset_xml(
-        "Image",
-        brush='<Brush type="png_brush" scale="2" spacing="0.1" ColorAsMask="1" md5sum="ab"'
-        ' AdjustmentMidPoint="127" ContrastAdjustment="0"/>',
-    )
-    assert resources.fingerprint(filled) == resources.fingerprint(image("2"))
-    contrast = filled.replace(
-        "ContrastAdjustment=&quot;0&quot;", "ContrastAdjustment=&quot;0.5&quot;"
-    )
-    assert contrast != filled
-    assert resources.fingerprint(contrast)[1] != resources.fingerprint(image("2"))[1]
     # Anything else in the tip, or any other setting, still moves it.
     assert resources.fingerprint(image("2", "0.3"))[1] != resources.fingerprint(image("2"))[1]
     other = asked.replace(

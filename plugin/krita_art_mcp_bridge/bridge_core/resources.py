@@ -33,18 +33,6 @@ BLEND_MODES = (
 PER_CALL = {"OpacityValue", "FlowValue", "CompositeOp", "EraserMode"}
 # The tip's size and rotation, which a stroke writes into the tip's own XML.
 TIP_PER_CALL = ("diameter", "scale", "angle")
-# What Krita adds to an image tip the first time it loads the preset, at these values; md5sum
-# is the tip image's own hash, added then too.
-TIP_DEFAULTS = {
-    "ColorAsMask": "1",
-    "BrightnessAdjustment": "0",
-    "ContrastAdjustment": "0",
-    "brushApplication": "0",
-    "AdjustmentVersion": "2",
-    "AdjustmentMidPoint": "127",
-    "AutoAdjustMidPoint": "0",
-    "md5sum": None,
-}
 
 
 def fingerprint(xml: str) -> tuple[str | None, str | None]:
@@ -67,8 +55,8 @@ def fingerprint(xml: str) -> tuple[str | None, str | None]:
 
 
 def _sizeless(tip: str) -> str:
-    # The tip's own XML, canonical, without what a stroke sets, the defaults Krita fills in, and
-    # the whitespace Krita lays it out with, which change once Krita writes the tip back.
+    # The tip's own XML, canonical, without what a stroke sets and the whitespace Krita lays it
+    # out with, which changes once Krita writes the tip back.
     try:
         element = ElementTree.fromstring(tip)
     except ElementTree.ParseError:
@@ -76,9 +64,6 @@ def _sizeless(tip: str) -> str:
     for node in element.iter():
         for key in TIP_PER_CALL:
             node.attrib.pop(key, None)
-        for key, default in TIP_DEFAULTS.items():
-            if key in node.attrib and default in (None, node.attrib[key]):
-                del node.attrib[key]
         if node.text is not None and not node.text.strip():
             node.text = None
         if node.tail is not None and not node.tail.strip():

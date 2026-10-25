@@ -13,7 +13,8 @@ from krita_art_mcp.transfer import Pixels
 # differ, so a missed B, G, R, A swap shows.
 WIDTH, HEIGHT = 64, 48
 PAINT_WIDTH, PAINT_HEIGHT = 160, 96
-BENCHMARK_SIDE = 96
+# Past the strokes' area on each side: more than any benchmark stroke's region reaches.
+BENCHMARK_PAD = 96
 
 
 @dataclass(frozen=True)
@@ -101,15 +102,15 @@ def paint_stack() -> tuple[Layer, ...]:
 
 
 def benchmark_stack(count: int, area: dict[str, int]) -> tuple[Layer, ...]:
-    # Small opaque squares inside the strokes' area, so every protected layer meets each
-    # stroke's region and is hashed; the rest of the canvas stays empty, so the file is small.
-    side = BENCHMARK_SIDE
-    columns = max(1, (area["width"] - side) // 8)
+    # Opaque squares each covering the strokes' area and its margin, so every protected layer is
+    # read over the whole of each stroke's region; the rest of the canvas stays empty, so the
+    # file stays small.
+    pad = BENCHMARK_PAD
+    side = max(area["width"], area["height"]) + 2 * pad
     layers = []
     for index in range(count):
-        x = area["x"] + (index * 8) % columns
-        y = area["y"] + (index * 13) % max(1, area["height"] - side)
         colour = (40 + index * 7 % 200, 200 - index * 5 % 150, 90 + index * 3 % 120)
+        x, y = area["x"] - pad - index % 4, area["y"] - pad - index % 3
         layers.append(Layer(f"probe bench {index}", rect(side, side, colour), x=x, y=y))
     return tuple(reversed(layers))
 

@@ -115,12 +115,15 @@ def test_a_sparse_ora_takes_src_over_paint_layers_only(tmp_path: Path) -> None:
     assert not (tmp_path / "group.ora").exists() and not (tmp_path / "clip.ora").exists()
 
 
-def test_every_benchmark_layer_lies_inside_the_strokes_area() -> None:
+def test_every_benchmark_layer_covers_the_strokes_area_and_its_margin() -> None:
     area = {"x": 800, "y": 800, "width": 400, "height": 400}
     layers = fixtures.benchmark_stack(30, area)
     assert len({layer.name for layer in layers}) == 30
+    reach = 64
     for layer in layers:
         assert layer.pixels is not None
         height, width = layer.pixels.shape[:2]
-        assert area["x"] <= layer.x and layer.x + width <= area["x"] + area["width"]
-        assert area["y"] <= layer.y and layer.y + height <= area["y"] + area["height"]
+        assert layer.x <= area["x"] - reach and area["x"] + area["width"] + reach <= layer.x + width
+        assert (
+            layer.y <= area["y"] - reach and area["y"] + area["height"] + reach <= layer.y + height
+        )

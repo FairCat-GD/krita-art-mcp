@@ -102,6 +102,26 @@ def test_a_line_names_its_arguments_file_and_never_holds_them(world: World) -> N
     assert not list(held.parent.glob("*.partial"))
 
 
+def test_a_day_s_argument_folder_is_made_private_once(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    made: list[Path] = []
+    real = paths.private_dir
+
+    def counted(path: Path) -> Path:
+        made.append(path)
+        return real(path)
+
+    monkeypatch.setattr(journal, "private_dir", counted)
+    writer = _journal_on(tmp_path, NOW)
+    _attempt(writer, "op-1")
+    first = len(made)
+    _attempt(writer, "op-2")
+    # The second call makes only the journal's own folder private, for its line.
+    assert len(made) - first == 1
+    assert (tmp_path / "journal" / journal.ARGS_DIR).is_dir()
+
+
 def test_a_version_1_line_with_its_arguments_inline_is_still_read(tmp_path: Path) -> None:
     folder = tmp_path / "journal"
     folder.mkdir()

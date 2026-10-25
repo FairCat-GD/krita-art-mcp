@@ -2814,6 +2814,41 @@ K10, K18, K21, K30, K37, K43, K44, K47); `REVIEW-2026-10-24.md` F2, F3, F5, F10,
     preset ids against the port's names; the unnamed reach in full scope. Each was a contract gap
     a part had to stop on.
   - **Merge trouble:** none; both merges were clean and `verify` passed on each drafted message.
+- **Review (`/code-review high`), 10 findings, all fixed at the owner's request.** It covered the
+  parts' commits, the merges and the session commit together.
+  - **A stroke that changes no pixel sealed history silently.** Krita pushes "Scripted Brush
+    Stroke" for it (measured), but that step's undo changes no pixel, so nothing could confirm it
+    and sealing stays the safe course. The receipt now says so (`history_sealed`, in the schema,
+    and the text line), and finding 4's refusal removes the common cause.
+  - **Mirror painting could stay off** if switching wrap-around off raised before the `finally`;
+    both switches now run inside it, each noting a mode before turning it off.
+  - **The benchmarks understated the hashing:** the protected layers were 96 px squares, hashed
+    only where they meet R. Each now covers the strokes' area and its margin. N-01 p95 0.09 s and
+    N-09 p95 0.23 s, against 0.08 s and 0.26 s before: the hashing over R costs little.
+  - **Sub-half-pixel strokes passed and painted nothing:** the refusal now takes the stroke's
+    length, under 0.5 px (measured: 0.01 px painted nothing, 0.5 px one dab).
+  - **A failed rollback reported 0 protected pixels:** it reports `null` when no confirmed undo
+    brought back what they are counted against.
+  - **The probe's comments cited a review finding and the plan's decision numbers,** which
+    collide with `SPEC.md`'s; they now say what they mean.
+  - **The image-tip defaults list** duplicated the activation memory and was tied to one Krita
+    build; it is gone, and the memory carries the bridge's own first uses.
+  - **Rect union and the finite-number check had several homes;** `verification.union` and
+    `errors.number` now serve the core, history and the harness.
+  - **`harness.undo` left the document clean;** it now marks it dirty, as any change through the
+    bridge does.
+  - **The journal made three folders private on every call;** each day's folder once per process.
+    The argument files stay, as the journal does (PDD Part 6: permanent).
+  - **Falsified:** 8 breaks, each failing its own test with the tree unchanged: the sealed flag,
+    its receipt text, the length refusal, the uncounted protected change (both paths), the harness
+    undo's dirt, the folders made private once, the benchmark layers' cover. The adapter's restore
+    of the modes has no check: no harness op can turn them on (in `docs/BACKLOG.md`).
+  - **Measured:** `probe` 95 PASS, 0 FAIL, 32 MEASURED in 70.8 s on the reviewed build.
+  - **Numbers after the review:**
+    - `verify`: 6 stages, all PASS;
+    - 486 server tests passed, 0 skipped (+3);
+    - 558 plugin-core tests passed, 0 skipped (+2);
+    - `probe`: 95 PASS, 0 FAIL, 32 MEASURED, 70.8 s.
 
 ---
 

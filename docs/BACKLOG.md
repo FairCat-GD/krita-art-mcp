@@ -74,8 +74,9 @@ runs; after it closes, read it from git history at round 1's release commit.
   the stock `a) Eraser Soft`, so no stroke could be confirmed to erase. The order of the brush
   setters and posted events are the first things to try.
 - **A single dab** (0.9.0). Krita paints no dab for a stroke without length: one point, two equal
-  points and a 0.01 px segment each painted nothing; a 0.5 px segment painted one dab. A one-point
-  stroke is refused; an agent wanting a dab sends two points half a pixel apart.
+  points and a 0.01 px segment each painted nothing; a 0.5 px segment painted one dab. A stroke
+  shorter than half a pixel is refused; an agent wanting a dab sends two points half a pixel
+  apart.
 - **Region scope for other brush engines** (0.9.0). Region scope needs the pixel engine
   (`paintbrush`); Color Smudge, the Quick Brush (the stock `b) Basic-1`), MyPaint, spray, deform,
   tangent-normal and others need `verify: "full"`, since their reach is not parsed. Each engine
