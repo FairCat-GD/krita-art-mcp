@@ -72,6 +72,9 @@ def test_the_blend_enum_agents_send_is_the_whitelist() -> None:
     update = schemas.load("krita_layer_update")["inputSchema"]["properties"]
     assert tuple(update["properties"]["properties"]["blend_mode"]["enum"]) == observe.BLEND_MODES
     assert update["verify"]["enum"] == list(bridge_verification.MODES)
+    stroke = schemas.load("krita_paint_stroke")["inputSchema"]["properties"]
+    assert tuple(stroke["brush"]["properties"]["blend_mode"]["enum"]) == observe.BLEND_MODES
+    assert stroke["verify"]["enum"] == list(bridge_verification.MODES)
 
 
 def test_the_plugins_bounds_are_the_schemas_limits() -> None:
@@ -88,6 +91,8 @@ def test_the_plugins_bounds_are_the_schemas_limits() -> None:
     protection = schemas.load("krita_protection_set")["inputSchema"]["properties"]
     assert protection["protected_layer_ids"]["maxItems"] == bridge_protection.MAX_PROTECTED
     assert bridge_verification.MAX_IMAGE_PIXELS == verification.IMAGE_PIXELS
+    stroke = schemas.load("krita_paint_stroke")["inputSchema"]["properties"]
+    assert stroke["points"]["maxItems"] == observe.LIMITS["stroke_points"]
 
 
 def test_a_cancelled_call_is_retryable_alike_on_both_sides() -> None:

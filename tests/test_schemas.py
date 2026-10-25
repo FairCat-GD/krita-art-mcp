@@ -119,6 +119,13 @@ def test_the_two_copies_of_data_in_an_output_schema_agree(tool_name: str) -> Non
     )
 
 
+def test_a_stroke_reports_its_verification_in_layer_updates_shape() -> None:
+    update = schemas.load("krita_layer_update")["outputSchema"]["properties"]["data"]["anyOf"][0]
+    stroke = schemas.load("krita_paint_stroke")["outputSchema"]["properties"]["data"]["anyOf"][0]
+    checked = update["properties"]["verification"]["anyOf"]
+    assert stroke["properties"]["verification"] == checked[0] and checked[1] == {"type": "null"}
+
+
 def test_the_schema_files_are_as_the_amendment_script_writes_them() -> None:
     assert amend_schemas.stale() == []
 
@@ -130,6 +137,13 @@ def test_the_amendment_script_finds_a_shared_shape_that_drifted(tmp_path: Path) 
         ("krita_sample.json", ["outputSchema", "allOf", 0, "then"]),
         ("krita_document_close.json", ["inputSchema", "properties", "guard"]),
     ]
+    # Both copies of the stroke's verification, so only the copy from layer_update restores it.
+    stroke_data: list[str | int] = ["outputSchema", "properties", "data", "anyOf", 0]
+    rule_data: list[str | int] = ["outputSchema", "allOf", 0, "then", "properties", "data"]
+    drifts += [
+        ("krita_paint_stroke.json", [*data, "properties", "verification"])
+        for data in (stroke_data, rule_data)
+    ]
     for name, path in drifts:
         tool = json.loads((folder / name).read_text(encoding="utf-8"))
         shape = tool
@@ -138,4 +152,8 @@ def test_the_amendment_script_finds_a_shared_shape_that_drifted(tmp_path: Path) 
         shape.clear()
         text = json.dumps(tool, indent=2, ensure_ascii=False) + "\n"
         (folder / name).write_text(text, encoding="utf-8")
-    assert amend_schemas.stale(folder) == ["krita_document_close.json", "krita_sample.json"]
+    assert amend_schemas.stale(folder) == [
+        "krita_document_close.json",
+        "krita_paint_stroke.json",
+        "krita_sample.json",
+    ]

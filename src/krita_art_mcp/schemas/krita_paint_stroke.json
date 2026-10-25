@@ -1,6 +1,6 @@
 {
   "name": "krita_paint_stroke",
-  "description": "Paint one native brush stroke on the transaction target.",
+  "description": "Paint one native brush stroke with a Krita brush preset on a paint layer, as one undo step. smooth catmull_rom curves the path through the points. The stroke is checked against protection over its reach (verify region) or the whole canvas (verify full) and undone on a leak. Every point is painted at pressure 1: per-point input is refused unless input_fallback is flat.",
   "inputSchema": {
     "type": "object",
     "properties": {
@@ -22,7 +22,7 @@
         ],
         "additionalProperties": false
       },
-      "edit_id": {
+      "layer_id": {
         "type": "string",
         "minLength": 1
       },
@@ -39,7 +39,8 @@
           },
           "size_px": {
             "type": "number",
-            "exclusiveMinimum": 0
+            "minimum": 1,
+            "maximum": 1000
           },
           "opacity": {
             "type": "number",
@@ -98,13 +99,26 @@
           "eraser": {
             "type": "boolean"
           },
-          "smoothing": {
+          "blend_mode": {
             "type": "string",
             "enum": [
-              "none",
-              "basic",
-              "stabilizer"
+              "normal",
+              "multiply",
+              "screen",
+              "overlay",
+              "soft_light_svg",
+              "darken",
+              "lighten",
+              "color",
+              "luminize",
+              "behind"
             ]
+          },
+          "alpha_lock": {
+            "type": "boolean"
+          },
+          "rotation_deg": {
+            "type": "number"
           },
           "antialias": {
             "type": "boolean"
@@ -112,14 +126,11 @@
         },
         "required": [
           "preset_id",
-          "preset_sha256",
           "size_px",
           "opacity",
           "flow",
           "color",
-          "eraser",
-          "smoothing",
-          "antialias"
+          "eraser"
         ],
         "additionalProperties": false
       },
@@ -152,23 +163,55 @@
               "type": "number",
               "minimum": -90,
               "maximum": 90
+            },
+            "rotation_deg": {
+              "type": "number"
+            },
+            "tangential_pressure": {
+              "type": "number",
+              "minimum": -1,
+              "maximum": 1
+            },
+            "speed": {
+              "type": "number",
+              "minimum": 0
             }
           },
           "required": [
             "x",
-            "y",
-            "pressure",
-            "time_ms"
+            "y"
           ],
           "additionalProperties": false
         },
         "minItems": 1,
         "maxItems": 4096
+      },
+      "smooth": {
+        "type": "string",
+        "enum": [
+          "none",
+          "catmull_rom",
+          "basic",
+          "stabilizer"
+        ]
+      },
+      "input_fallback": {
+        "type": "string",
+        "enum": [
+          "flat"
+        ]
+      },
+      "verify": {
+        "type": "string",
+        "enum": [
+          "region",
+          "full"
+        ]
       }
     },
     "required": [
       "guard",
-      "edit_id",
+      "layer_id",
       "brush",
       "points"
     ],
@@ -220,62 +263,21 @@
           {
             "type": "object",
             "properties": {
+              "layer_id": {
+                "type": "string",
+                "minLength": 1
+              },
               "stroke_id": {
-                "type": "string"
+                "type": "string",
+                "minLength": 1
               },
               "accepted_points": {
-                "type": "integer"
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 4096
               },
-              "changed_bounds_px": {
-                "type": "object",
-                "properties": {
-                  "x": {
-                    "type": "integer"
-                  },
-                  "y": {
-                    "type": "integer"
-                  },
-                  "width": {
-                    "type": "integer"
-                  },
-                  "height": {
-                    "type": "integer"
-                  }
-                },
-                "required": [
-                  "x",
-                  "y",
-                  "width",
-                  "height"
-                ],
-                "additionalProperties": false
-              },
-              "protected_pixels_changed": {
-                "type": "integer"
-              },
-              "preview": {
-                "type": "object",
-                "properties": {
-                  "uri": {
-                    "type": "string"
-                  },
-                  "mime_type": {
-                    "type": "string"
-                  },
-                  "sha256": {
-                    "type": "string"
-                  },
-                  "size_bytes": {
-                    "type": "integer"
-                  }
-                },
-                "required": [
-                  "uri",
-                  "mime_type",
-                  "sha256",
-                  "size_bytes"
-                ],
-                "additionalProperties": false
+              "input_applied": {
+                "const": "flat"
               },
               "effective_brush": {
                 "type": "object",
@@ -288,9 +290,19 @@
                     "type": "string",
                     "pattern": "^[0-9a-f]{64}$"
                   },
+                  "engine": {
+                    "anyOf": [
+                      {
+                        "type": "string",
+                        "minLength": 1
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
                   "size_px": {
-                    "type": "number",
-                    "exclusiveMinimum": 0
+                    "type": "number"
                   },
                   "opacity": {
                     "type": "number",
@@ -349,41 +361,323 @@
                   "eraser": {
                     "type": "boolean"
                   },
-                  "smoothing": {
+                  "blend_mode": {
                     "type": "string",
-                    "enum": [
-                      "none",
-                      "basic",
-                      "stabilizer"
-                    ]
+                    "minLength": 1
+                  },
+                  "alpha_lock": {
+                    "type": "boolean"
+                  },
+                  "rotation_deg": {
+                    "type": "number"
                   },
                   "antialias": {
-                    "type": "boolean"
+                    "const": true
+                  },
+                  "spacing": {
+                    "anyOf": [
+                      {
+                        "type": "number"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "reach": {
+                    "type": "object",
+                    "properties": {
+                      "tip": {
+                        "type": "string",
+                        "enum": [
+                          "round",
+                          "square",
+                          "image"
+                        ]
+                      },
+                      "scatter": {
+                        "type": "number",
+                        "minimum": 0
+                      },
+                      "margin_px": {
+                        "type": "number",
+                        "minimum": 0
+                      }
+                    },
+                    "required": [
+                      "tip",
+                      "scatter",
+                      "margin_px"
+                    ],
+                    "additionalProperties": false
                   }
                 },
+                "additionalProperties": false,
                 "required": [
                   "preset_id",
                   "preset_sha256",
+                  "engine",
                   "size_px",
                   "opacity",
                   "flow",
                   "color",
                   "eraser",
-                  "smoothing",
-                  "antialias"
+                  "blend_mode",
+                  "alpha_lock",
+                  "rotation_deg",
+                  "antialias",
+                  "spacing",
+                  "reach"
+                ]
+              },
+              "changed_bounds_px": {
+                "anyOf": [
+                  {
+                    "type": "object",
+                    "properties": {
+                      "x": {
+                        "type": "integer",
+                        "minimum": 0
+                      },
+                      "y": {
+                        "type": "integer",
+                        "minimum": 0
+                      },
+                      "width": {
+                        "type": "integer",
+                        "minimum": 1
+                      },
+                      "height": {
+                        "type": "integer",
+                        "minimum": 1
+                      }
+                    },
+                    "required": [
+                      "x",
+                      "y",
+                      "width",
+                      "height"
+                    ],
+                    "additionalProperties": false
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "protected_pixels_changed": {
+                "const": 0
+              },
+              "undo_label": {
+                "type": "string",
+                "minLength": 1
+              },
+              "undo_steps": {
+                "const": 1
+              },
+              "verification": {
+                "type": "object",
+                "properties": {
+                  "mode": {
+                    "type": "string",
+                    "enum": [
+                      "region",
+                      "full"
+                    ]
+                  },
+                  "rect": {
+                    "type": "object",
+                    "properties": {
+                      "x": {
+                        "type": "integer",
+                        "minimum": 0
+                      },
+                      "y": {
+                        "type": "integer",
+                        "minimum": 0
+                      },
+                      "width": {
+                        "type": "integer",
+                        "minimum": 0
+                      },
+                      "height": {
+                        "type": "integer",
+                        "minimum": 0
+                      }
+                    },
+                    "required": [
+                      "x",
+                      "y",
+                      "width",
+                      "height"
+                    ],
+                    "additionalProperties": false
+                  },
+                  "changed_px": {
+                    "type": "integer",
+                    "minimum": 0
+                  },
+                  "changed_bounds_px": {
+                    "anyOf": [
+                      {
+                        "type": "object",
+                        "properties": {
+                          "x": {
+                            "type": "integer",
+                            "minimum": 0
+                          },
+                          "y": {
+                            "type": "integer",
+                            "minimum": 0
+                          },
+                          "width": {
+                            "type": "integer",
+                            "minimum": 1
+                          },
+                          "height": {
+                            "type": "integer",
+                            "minimum": 1
+                          }
+                        },
+                        "required": [
+                          "x",
+                          "y",
+                          "width",
+                          "height"
+                        ],
+                        "additionalProperties": false
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "changed_outside_px": {
+                    "const": 0
+                  },
+                  "alpha_changed_px": {
+                    "type": "integer",
+                    "minimum": 0
+                  },
+                  "before": {
+                    "anyOf": [
+                      {
+                        "type": "object",
+                        "properties": {
+                          "uri": {
+                            "type": "string",
+                            "minLength": 2,
+                            "pattern": "^/"
+                          },
+                          "path": {
+                            "type": "string",
+                            "minLength": 2,
+                            "pattern": "^/"
+                          },
+                          "mime_type": {
+                            "const": "image/png"
+                          },
+                          "sha256": {
+                            "type": "string",
+                            "pattern": "^[0-9a-f]{64}$"
+                          },
+                          "size_bytes": {
+                            "type": "integer",
+                            "minimum": 1
+                          },
+                          "retention_days": {
+                            "type": "integer",
+                            "minimum": 1
+                          }
+                        },
+                        "required": [
+                          "uri",
+                          "path",
+                          "mime_type",
+                          "sha256",
+                          "size_bytes",
+                          "retention_days"
+                        ],
+                        "additionalProperties": false
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "after": {
+                    "anyOf": [
+                      {
+                        "type": "object",
+                        "properties": {
+                          "uri": {
+                            "type": "string",
+                            "minLength": 2,
+                            "pattern": "^/"
+                          },
+                          "path": {
+                            "type": "string",
+                            "minLength": 2,
+                            "pattern": "^/"
+                          },
+                          "mime_type": {
+                            "const": "image/png"
+                          },
+                          "sha256": {
+                            "type": "string",
+                            "pattern": "^[0-9a-f]{64}$"
+                          },
+                          "size_bytes": {
+                            "type": "integer",
+                            "minimum": 1
+                          },
+                          "retention_days": {
+                            "type": "integer",
+                            "minimum": 1
+                          }
+                        },
+                        "required": [
+                          "uri",
+                          "path",
+                          "mime_type",
+                          "sha256",
+                          "size_bytes",
+                          "retention_days"
+                        ],
+                        "additionalProperties": false
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  }
+                },
+                "required": [
+                  "mode",
+                  "rect",
+                  "changed_px",
+                  "changed_bounds_px",
+                  "changed_outside_px",
+                  "alpha_changed_px",
+                  "before",
+                  "after"
                 ],
                 "additionalProperties": false
               }
             },
+            "additionalProperties": false,
             "required": [
+              "layer_id",
               "stroke_id",
               "accepted_points",
+              "input_applied",
+              "effective_brush",
               "changed_bounds_px",
               "protected_pixels_changed",
-              "preview",
-              "effective_brush"
-            ],
-            "additionalProperties": false
+              "undo_label",
+              "undo_steps",
+              "verification"
+            ]
           },
           {
             "type": "null"
@@ -479,62 +773,21 @@
             "data": {
               "type": "object",
               "properties": {
+                "layer_id": {
+                  "type": "string",
+                  "minLength": 1
+                },
                 "stroke_id": {
-                  "type": "string"
+                  "type": "string",
+                  "minLength": 1
                 },
                 "accepted_points": {
-                  "type": "integer"
+                  "type": "integer",
+                  "minimum": 1,
+                  "maximum": 4096
                 },
-                "changed_bounds_px": {
-                  "type": "object",
-                  "properties": {
-                    "x": {
-                      "type": "integer"
-                    },
-                    "y": {
-                      "type": "integer"
-                    },
-                    "width": {
-                      "type": "integer"
-                    },
-                    "height": {
-                      "type": "integer"
-                    }
-                  },
-                  "required": [
-                    "x",
-                    "y",
-                    "width",
-                    "height"
-                  ],
-                  "additionalProperties": false
-                },
-                "protected_pixels_changed": {
-                  "type": "integer"
-                },
-                "preview": {
-                  "type": "object",
-                  "properties": {
-                    "uri": {
-                      "type": "string"
-                    },
-                    "mime_type": {
-                      "type": "string"
-                    },
-                    "sha256": {
-                      "type": "string"
-                    },
-                    "size_bytes": {
-                      "type": "integer"
-                    }
-                  },
-                  "required": [
-                    "uri",
-                    "mime_type",
-                    "sha256",
-                    "size_bytes"
-                  ],
-                  "additionalProperties": false
+                "input_applied": {
+                  "const": "flat"
                 },
                 "effective_brush": {
                   "type": "object",
@@ -547,9 +800,19 @@
                       "type": "string",
                       "pattern": "^[0-9a-f]{64}$"
                     },
+                    "engine": {
+                      "anyOf": [
+                        {
+                          "type": "string",
+                          "minLength": 1
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
                     "size_px": {
-                      "type": "number",
-                      "exclusiveMinimum": 0
+                      "type": "number"
                     },
                     "opacity": {
                       "type": "number",
@@ -608,41 +871,323 @@
                     "eraser": {
                       "type": "boolean"
                     },
-                    "smoothing": {
+                    "blend_mode": {
                       "type": "string",
-                      "enum": [
-                        "none",
-                        "basic",
-                        "stabilizer"
-                      ]
+                      "minLength": 1
+                    },
+                    "alpha_lock": {
+                      "type": "boolean"
+                    },
+                    "rotation_deg": {
+                      "type": "number"
                     },
                     "antialias": {
-                      "type": "boolean"
+                      "const": true
+                    },
+                    "spacing": {
+                      "anyOf": [
+                        {
+                          "type": "number"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "reach": {
+                      "type": "object",
+                      "properties": {
+                        "tip": {
+                          "type": "string",
+                          "enum": [
+                            "round",
+                            "square",
+                            "image"
+                          ]
+                        },
+                        "scatter": {
+                          "type": "number",
+                          "minimum": 0
+                        },
+                        "margin_px": {
+                          "type": "number",
+                          "minimum": 0
+                        }
+                      },
+                      "required": [
+                        "tip",
+                        "scatter",
+                        "margin_px"
+                      ],
+                      "additionalProperties": false
                     }
                   },
+                  "additionalProperties": false,
                   "required": [
                     "preset_id",
                     "preset_sha256",
+                    "engine",
                     "size_px",
                     "opacity",
                     "flow",
                     "color",
                     "eraser",
-                    "smoothing",
-                    "antialias"
+                    "blend_mode",
+                    "alpha_lock",
+                    "rotation_deg",
+                    "antialias",
+                    "spacing",
+                    "reach"
+                  ]
+                },
+                "changed_bounds_px": {
+                  "anyOf": [
+                    {
+                      "type": "object",
+                      "properties": {
+                        "x": {
+                          "type": "integer",
+                          "minimum": 0
+                        },
+                        "y": {
+                          "type": "integer",
+                          "minimum": 0
+                        },
+                        "width": {
+                          "type": "integer",
+                          "minimum": 1
+                        },
+                        "height": {
+                          "type": "integer",
+                          "minimum": 1
+                        }
+                      },
+                      "required": [
+                        "x",
+                        "y",
+                        "width",
+                        "height"
+                      ],
+                      "additionalProperties": false
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "protected_pixels_changed": {
+                  "const": 0
+                },
+                "undo_label": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "undo_steps": {
+                  "const": 1
+                },
+                "verification": {
+                  "type": "object",
+                  "properties": {
+                    "mode": {
+                      "type": "string",
+                      "enum": [
+                        "region",
+                        "full"
+                      ]
+                    },
+                    "rect": {
+                      "type": "object",
+                      "properties": {
+                        "x": {
+                          "type": "integer",
+                          "minimum": 0
+                        },
+                        "y": {
+                          "type": "integer",
+                          "minimum": 0
+                        },
+                        "width": {
+                          "type": "integer",
+                          "minimum": 0
+                        },
+                        "height": {
+                          "type": "integer",
+                          "minimum": 0
+                        }
+                      },
+                      "required": [
+                        "x",
+                        "y",
+                        "width",
+                        "height"
+                      ],
+                      "additionalProperties": false
+                    },
+                    "changed_px": {
+                      "type": "integer",
+                      "minimum": 0
+                    },
+                    "changed_bounds_px": {
+                      "anyOf": [
+                        {
+                          "type": "object",
+                          "properties": {
+                            "x": {
+                              "type": "integer",
+                              "minimum": 0
+                            },
+                            "y": {
+                              "type": "integer",
+                              "minimum": 0
+                            },
+                            "width": {
+                              "type": "integer",
+                              "minimum": 1
+                            },
+                            "height": {
+                              "type": "integer",
+                              "minimum": 1
+                            }
+                          },
+                          "required": [
+                            "x",
+                            "y",
+                            "width",
+                            "height"
+                          ],
+                          "additionalProperties": false
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "changed_outside_px": {
+                      "const": 0
+                    },
+                    "alpha_changed_px": {
+                      "type": "integer",
+                      "minimum": 0
+                    },
+                    "before": {
+                      "anyOf": [
+                        {
+                          "type": "object",
+                          "properties": {
+                            "uri": {
+                              "type": "string",
+                              "minLength": 2,
+                              "pattern": "^/"
+                            },
+                            "path": {
+                              "type": "string",
+                              "minLength": 2,
+                              "pattern": "^/"
+                            },
+                            "mime_type": {
+                              "const": "image/png"
+                            },
+                            "sha256": {
+                              "type": "string",
+                              "pattern": "^[0-9a-f]{64}$"
+                            },
+                            "size_bytes": {
+                              "type": "integer",
+                              "minimum": 1
+                            },
+                            "retention_days": {
+                              "type": "integer",
+                              "minimum": 1
+                            }
+                          },
+                          "required": [
+                            "uri",
+                            "path",
+                            "mime_type",
+                            "sha256",
+                            "size_bytes",
+                            "retention_days"
+                          ],
+                          "additionalProperties": false
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "after": {
+                      "anyOf": [
+                        {
+                          "type": "object",
+                          "properties": {
+                            "uri": {
+                              "type": "string",
+                              "minLength": 2,
+                              "pattern": "^/"
+                            },
+                            "path": {
+                              "type": "string",
+                              "minLength": 2,
+                              "pattern": "^/"
+                            },
+                            "mime_type": {
+                              "const": "image/png"
+                            },
+                            "sha256": {
+                              "type": "string",
+                              "pattern": "^[0-9a-f]{64}$"
+                            },
+                            "size_bytes": {
+                              "type": "integer",
+                              "minimum": 1
+                            },
+                            "retention_days": {
+                              "type": "integer",
+                              "minimum": 1
+                            }
+                          },
+                          "required": [
+                            "uri",
+                            "path",
+                            "mime_type",
+                            "sha256",
+                            "size_bytes",
+                            "retention_days"
+                          ],
+                          "additionalProperties": false
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "mode",
+                    "rect",
+                    "changed_px",
+                    "changed_bounds_px",
+                    "changed_outside_px",
+                    "alpha_changed_px",
+                    "before",
+                    "after"
                   ],
                   "additionalProperties": false
                 }
               },
+              "additionalProperties": false,
               "required": [
+                "layer_id",
                 "stroke_id",
                 "accepted_points",
+                "input_applied",
+                "effective_brush",
                 "changed_bounds_px",
                 "protected_pixels_changed",
-                "preview",
-                "effective_brush"
-              ],
-              "additionalProperties": false
+                "undo_label",
+                "undo_steps",
+                "verification"
+              ]
             },
             "error": {
               "type": "null"
@@ -715,11 +1260,10 @@
         "document_id": "doc-1",
         "request_id": "req-001"
       },
-      "edit_id": "edit-1",
+      "layer_id": "3f0c9a2e-8b41-4d6a-9e57-c1a2b3d4e5f6",
       "brush": {
-        "preset_id": "brush-ink-1",
-        "preset_sha256": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
-        "size_px": 2,
+        "preset_id": "b) Basic-5 Size.kpp",
+        "size_px": 6,
         "opacity": 1,
         "flow": 1,
         "color": {
@@ -731,51 +1275,40 @@
             1
           ]
         },
-        "eraser": false,
-        "smoothing": "none",
-        "antialias": true
+        "eraser": false
       },
       "points": [
         {
-          "x": 22.5,
-          "y": 24.5,
-          "pressure": 0.4,
-          "time_ms": 0
+          "x": 20.5,
+          "y": 24.5
         },
         {
-          "x": 27.5,
-          "y": 26.5,
-          "pressure": 0.7,
-          "time_ms": 30
+          "x": 32.5,
+          "y": 30.5
+        },
+        {
+          "x": 44.5,
+          "y": 26.5
         }
-      ]
+      ],
+      "smooth": "catmull_rom"
     },
     "structuredContent": {
       "api_version": "0.2.0",
       "status": "completed",
       "document_id": "doc-1",
       "revision": null,
-      "operation_id": null,
+      "operation_id": "op-0123456789abcdef0123456789abcdef",
       "data": {
-        "stroke_id": "stroke-1",
-        "accepted_points": 2,
-        "changed_bounds_px": {
-          "x": 21,
-          "y": 23,
-          "width": 9,
-          "height": 5
-        },
-        "protected_pixels_changed": 0,
-        "preview": {
-          "uri": "krita-artifact://example/stroke.png",
-          "mime_type": "image/png",
-          "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
-          "size_bytes": 4096
-        },
+        "layer_id": "3f0c9a2e-8b41-4d6a-9e57-c1a2b3d4e5f6",
+        "stroke_id": "op-0123456789abcdef0123456789abcdef",
+        "accepted_points": 3,
+        "input_applied": "flat",
         "effective_brush": {
-          "preset_id": "brush-ink-1",
+          "preset_id": "b) Basic-5 Size.kpp",
           "preset_sha256": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
-          "size_px": 2,
+          "engine": "paintbrush",
+          "size_px": 6,
           "opacity": 1,
           "flow": 1,
           "color": {
@@ -788,8 +1321,59 @@
             ]
           },
           "eraser": false,
-          "smoothing": "none",
-          "antialias": true
+          "blend_mode": "normal",
+          "alpha_lock": false,
+          "rotation_deg": 0,
+          "antialias": true,
+          "spacing": 0.1,
+          "reach": {
+            "tip": "round",
+            "scatter": 0,
+            "margin_px": 32
+          }
+        },
+        "changed_bounds_px": {
+          "x": 17,
+          "y": 21,
+          "width": 31,
+          "height": 13
+        },
+        "protected_pixels_changed": 0,
+        "undo_label": "Scripted Brush Stroke",
+        "undo_steps": 1,
+        "verification": {
+          "mode": "region",
+          "rect": {
+            "x": 0,
+            "y": 0,
+            "width": 77,
+            "height": 63
+          },
+          "changed_px": 318,
+          "changed_bounds_px": {
+            "x": 17,
+            "y": 21,
+            "width": 31,
+            "height": 13
+          },
+          "changed_outside_px": 0,
+          "alpha_changed_px": 318,
+          "before": {
+            "uri": "/data/krita-art-mcp/captures/2026-10-25/op-0123456789abcdef0123456789abcdef.before.png",
+            "path": "/data/krita-art-mcp/captures/2026-10-25/op-0123456789abcdef0123456789abcdef.before.png",
+            "mime_type": "image/png",
+            "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "size_bytes": 412,
+            "retention_days": 7
+          },
+          "after": {
+            "uri": "/data/krita-art-mcp/captures/2026-10-25/op-0123456789abcdef0123456789abcdef.after.png",
+            "path": "/data/krita-art-mcp/captures/2026-10-25/op-0123456789abcdef0123456789abcdef.after.png",
+            "mime_type": "image/png",
+            "sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+            "size_bytes": 905,
+            "retention_days": 7
+          }
         }
       },
       "error": null

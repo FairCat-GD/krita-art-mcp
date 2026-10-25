@@ -4,7 +4,8 @@ Usage: uv run scripts/amend_schemas.py [--check]
 
 A tool's session edits its schema's input, the `data` under its output's properties, and its
 example. This script then writes the envelope, `guard` and `source` into every schema, copies
-each `data` into the completed rule and open's `layers` into inspect's, and formats the files.
+each `data` into the completed rule, open's `layers` into inspect's and layer_update's
+`verification` object into paint_stroke's, and formats the files.
 With --check it changes nothing and exits 1 if any file would change.
 """
 
@@ -91,6 +92,9 @@ def amended(tools: dict[str, dict[str, Any]]) -> dict[str, dict[str, Any]]:
     tools = copy.deepcopy(tools)
     layers = _data(tools["krita_document_open"])["properties"]["layers"]
     _data(tools["krita_document_inspect"])["properties"]["layers"] = copy.deepcopy(layers)
+    # A stroke always reports its verification, so it takes only the object branch.
+    checked = _data(tools["krita_layer_update"])["properties"]["verification"]["anyOf"][0]
+    _data(tools["krita_paint_stroke"])["properties"]["verification"] = copy.deepcopy(checked)
     for tool in tools.values():
         inputs = tool["inputSchema"]["properties"]
         for field, shape in SHARED_INPUTS.items():
