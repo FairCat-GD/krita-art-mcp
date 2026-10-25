@@ -45,16 +45,18 @@ Never push without being asked.
 | 8 | The verification core, and `layer_update` | 20, 27 | **0.8.0** |
 | 9 | `paint_stroke`, verified per stroke; N-01/N-09 benchmarks | 6, 20 | **0.9.0** |
 | 10 | Architecture review: paint safely | 2 | — |
-| 11 | `preview_render`; N-02 benchmark | 6, 31 | **0.10.0** |
-| 12 | `document_save`, verified by reopening; H4 long save | 27, 29 | **0.11.0** |
+| 10a | Review fixes: paint safely (inserted by review 10) | 2 | **0.10.0** |
+| 11 | `preview_render`; N-02 benchmark | 6, 31 | **0.11.0** |
+| 12 | `document_save`, verified by reopening; H4 long save | 27, 29 | **0.12.0** |
 | 13 | Architecture review: every tool built | 2 | — |
-| 14 | Acceptance: the full harness, the contract's exercises, H2, H3, final server instructions | 28, 30, 31 | **0.12.0** |
-| 15 | Docs, changelog, manual runs; close the round | 2, 32 | **0.13.0** |
+| 14 | Acceptance: the full harness, the contract's exercises, H2, H3, final server instructions | 28, 30, 31 | **0.13.0** |
+| 15 | Docs, changelog, manual runs; close the round | 2, 32 | **0.14.0** |
 
 A review session (6, 10, 13) changes no product code and cuts no version. A session it inserts
 takes the next version, and every later version shifts by one; the handoff says so. Review 6
 inserted 6a on 2026-10-24, so sessions 7–15 moved from 0.6.0–0.12.0 to 0.7.0–0.13.0. The owner
-inserted 7a on 2026-10-24 with no version, so no version moved.
+inserted 7a on 2026-10-24 with no version, so no version moved. Review 10 inserted 10a on
+2026-10-25, so sessions 11–15 moved from 0.10.0–0.13.0 to 0.11.0–0.14.0.
 
 ---
 
@@ -2878,6 +2880,100 @@ Placed at the owner's request, after the paint-safely milestone and before the d
 **Watch for:**
 - **Evidence, not scope**, as in session 6.
 
+**Done (2026-10-25, no version).**
+- **Decided with the owner in plan mode**, over the 13 findings of `REVIEW-2026-10-25.md`:
+  - **F1, F2 (Medium), F5, F6, F7, F9 (Low)** become one inserted session, **10a** at 0.10.0;
+    sessions 11–15 shift to 0.11.0–0.14.0.
+  - **F4 (Medium)** is recorded as two measured assumptions, and 10a measures a tall image tip
+    live against the margin's extent bound.
+  - **F3 (Medium)** — the three hand-rolled verified-mutation skeletons — is recorded for the
+    Phase 2 intake, which owns extracting one frame before any new mutating op.
+  - **F8 (Low)** is recorded; nothing to do. **F10 (Info)** is already in `docs/BACKLOG.md`
+    (*Undo labels in other languages*, 0.7.0). **F11, F12, F13 (Info)** are recorded.
+- **The review.** `REVIEW-2026-10-25.md`: method, the baseline as found, what holds (the
+  layering, the focus invariants 1, 4, 5, 6 and 13 traced to their enforcement, tests and probe
+  checks, the ledger's floor arithmetic, review 6's findings' fate, the pinned constants),
+  13 findings with `file:line` evidence on `dffdf73`, the drift inventory, the paint core against
+  sessions 11–12 and Phases 2–3, where each finding landed, and the measurements. A second,
+  independent cold read of the paint core, without the first read's notes, added F1, F2, F6 and
+  F8, sharpened F4 and F5, and confirmed the floor arithmetic and the retry safety; its findings
+  were verified on the code path before they were kept.
+- **The plan.** The 10a block below; the table and the shift note above; the version lines of
+  blocks 11, 12, 14 and 15 updated to the shifted numbers.
+- **Measured** (details in the REVIEW's §7): `probe` 95 PASS, 0 FAIL, 32 MEASURED in 67.9 s on a
+  first attempt (0 open, 0 unsaved); H4 p50 5.6 ms, p95 6.1 ms; create and close mean 717 ms;
+  N-01 p95 0.09 s of 1.5 s, N-09 p95 0.15 s of 3 s; the bridge held 1,216 operations after N-01;
+  the journal does not bite (3.2 KB of lines per stroke, first lookup 3 ms); `transfer/` and
+  `harness/` empty after the run, `plugin.log` clean.
+- **Checked by hand:** nothing needed checking; the session restarted nothing and the owner's
+  Krita held no documents.
+- **Falsified:** nothing; the review adds no check (10a falsifies the checks its fixes add).
+- **Numbers** (unchanged, as found):
+  - `verify`: 6 stages, all PASS;
+  - 486 server tests passed, 0 skipped;
+  - 558 plugin-core tests passed, 0 skipped;
+  - `probe`: 95 PASS, 0 FAIL, 32 MEASURED, 67.9 s;
+  - 17 registered tools; 19 schema files; instructions 3,175 characters.
+
+---
+
+## 10a: Review fixes — paint safely
+
+Inserted by review 10 (2026-10-25): the owner chose findings F1, F2, F5, F6, F7 and F9 of
+`REVIEW-2026-10-25.md` as one fix session, with F4's live measurement beside them. Sessions
+11–15 shift to 0.11.0–0.14.0.
+
+**Read:** `REVIEW-2026-10-25.md` §3 (F1, F2, F4–F7, F9) and §6; `SPEC.md` §5 (invariants 5, 8);
+`PDD.md` Part 4 (`krita_history_step`), Part 8 (K43, K44).
+
+- **F1: `layer.update` closes its `BaseException` window.** Mirror the stroke's handler
+  (`bridge_core/painting.py:141-145`) around the mutation phase of
+  `bridge_core/layer_update.py:67-95`: seal, mark unsafe, re-raise; `_blend`'s guard
+  (`:133-136`) gains the unsafe mark too.
+- **F2: `history.step` holds invariant 5 on every path.** Each `move` in `step_history`
+  (`bridge_core/history.py:149-163`) is wrapped so an escape marks the document unsafe; the
+  region capture (`:164-171`) becomes best-effort, as `verification.files` is — the receipt
+  reports the undos that ran, with `pixels: null` when the file could not be written.
+- **F6: a LOST stop says so.** `stopped` distinguishes LOST from REVERSED
+  (`history.py:157-162`); `krita_history_step.json`'s `stopped` enum gains the value
+  (`amend_schemas.py` after the edit), and the receipt's text names the document unsafe.
+- **F5: the unpinned duplicates are pinned or rehomed.** Parity tests for the stroke bounds
+  (`bridge_core/painting.py:36-37` against `krita_paint_stroke.json` and
+  `observe.LIMITS["stroke_points"]`), the adapter's `SRGB_PROFILE`
+  (`krita_adapter/painting.py:12`, or import it from `bridge_core.documents`), and the probe's
+  `LABEL` (`probe/painting.py:27` against `history.LABELS`); one home for the
+  allowed-mask/canvas-size rule (`verification.py:222-225`, `protection.py:96-99`) and for
+  `_refuse_reach` (`painting.py:567-575`, `layer_update.py:301-309`).
+- **F7: the probe retries a `BUSY` KRA export once,** with a fresh request id
+  (`probe/opening.py:100-126`).
+- **F9: Krita's default undo-stack limit is measured live** and recorded in the done-note;
+  `undo_limit`'s fallback (`krita_adapter/documents.py:264-271`) is set to the measured default.
+- **F4's measurement: a non-square image tip against the extent bound.** On a probe document,
+  a stroke with a stock preset whose image tip is markedly non-square, its actual changed bounds
+  compared with R; recorded as MEASURED, with the margin's `EXTENT[IMAGE]` assumption confirmed
+  or corrected.
+- **Docs.**
+  - `CHANGELOG.md`: 0.10.0 — the hardened failure paths (F1, F2, F6) under Fixed.
+  - README: the version line, if it names one.
+- **Ask at the start of 10a:** which stock preset carries F4's non-square image tip (the session
+  proposes one from `krita_resource_list`), and whether any carries none, in which case the
+  assumption is recorded as unmeasurable with stock presets.
+
+**Gates:**
+- `uv run scripts/verify.py`, with these tests: the `BaseException` paths of `layer.update`
+  (a non-`Exception` raise mid-mutation seals, marks unsafe and re-raises), the wrapped `move`
+  (an escape marks unsafe), the best-effort capture (an `IO_ERROR` leaves `pixels: null` on a
+  truthful receipt), the LOST `stopped` value, and the F5 parity tests.
+- Each new check falsified once.
+- `install-plugin`, a Krita restart (the plugin changes), then `probe` green, with the F4 and F9
+  measurements recorded.
+
+**Watch for:**
+- **A review fix must not loosen a refusal.** F2's best-effort capture changes only the file
+  write; a failed undo still fails the op.
+- **`amend_schemas.py` after any schema edit;** the `--check` test holds the files to it.
+- **Restart Krita only at 0 unsaved documents** (decision 21), as ever.
+
 ---
 
 ## 11: preview_render
@@ -2908,7 +3004,7 @@ Placed at the owner's request, after the paint-safely milestone and before the d
   transfer path.
 - **Benchmark N-02:** two recipes on a 2000 × 2000 master, p95 under 2.0 s.
 - **Docs.**
-  - `CHANGELOG.md`: 0.10.0 (0.9.0 before review 6 inserted 6a).
+  - `CHANGELOG.md`: 0.11.0 (0.9.0 before 6a, 0.10.0 before review 10 inserted 10a).
   - README: the tool list.
   - Server instructions: check `krita_preview_render` at the asset's game sizes after every one
     to three strokes.
@@ -2957,7 +3053,7 @@ finding the handoff assigns here.
   answers within 1 s after the save, and no job is lost or duplicated. Reach the 20 s with the
   fewest layers that do it, measured first, and record Krita's memory; never dense 8k layers.
 - **Docs.**
-  - `CHANGELOG.md`: 0.11.0 (0.10.0 before review 6 inserted 6a).
+  - `CHANGELOG.md`: 0.12.0 (0.10.0 before 6a, 0.11.0 before review 10 inserted 10a).
   - README: the tool list.
 
 **Gates:**
@@ -3032,7 +3128,7 @@ handoff assigns here.
 - **N-04 in the harness:** nothing is written outside the roots, the data directory, and Krita's
   own temp and autosave files.
 - **Docs.**
-  - `CHANGELOG.md`: 0.12.0 (0.11.0 before review 6 inserted 6a).
+  - `CHANGELOG.md`: 0.13.0 (0.11.0 before 6a, 0.12.0 before review 10 inserted 10a).
   - README: registration, checked by hand in both clients.
 - **Ask at the start of 14:** which six stock presets the H2 sheet uses. The session proposes
   them from `krita_resource_list`, and the owner confirms.
@@ -3064,7 +3160,7 @@ handoff assigns here.
 - **`docs/BACKLOG.md`**: everything still open, including *Not yet checked by hand* (decision 29's
   two items among them), and the REVIEW findings the owner did not take.
 - **Docs.**
-  - `CHANGELOG.md`: 0.13.0 (0.12.0 before review 6 inserted 6a).
+  - `CHANGELOG.md`: 0.14.0 (0.12.0 before 6a, 0.13.0 before review 10 inserted 10a).
   - The release commit carries the last done-note.
   - Then a separate `docs: close round 1` commit deletes `docs/spec/` and rewrites the handoff
     from the between-rounds template, naming the release commit.

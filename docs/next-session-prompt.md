@@ -1,60 +1,56 @@
-Read all of docs/spec/SPEC.md; docs/spec/PDD.md Parts 4 and 8, with Part 4's Phase 2 and Phase 3
-sections; CLAUDE.md; docs/spec/REVIEW-2026-10-24.md; then this file and the code and tests of
-sessions 1–9. Then do Session 10 of docs/spec/SESSIONS.md: the architecture review "paint
-safely", findings only, no product code and no version.
+Read docs/spec/REVIEW-2026-10-25.md §3 (F1, F2, F4–F7, F9) and §6; docs/spec/SPEC.md §1
+(decision 2), §5 (invariants 5, 8); docs/spec/PDD.md Part 4 (`krita_history_step`), Part 8 (K43,
+K44); CLAUDE.md; your block (10a) in docs/spec/SESSIONS.md and block 10's done-note; then this
+file. Do Session 10a: review fixes — paint safely. The block is the one home of its items; in
+short, it closes the `BaseException` window in `layer.update` (F1), holds invariant 5 on every
+`history.step` path and makes its capture best-effort (F2), reports a LOST stop (F6), pins or
+rehomes five duplicates (F5), retries a BUSY probe export once (F7), measures Krita's default
+undo-stack limit (F9), and measures a non-square image tip against the margin's extent bound
+(F4).
+
+Release 0.10.0.
 
 ## State you need that is not in the specs
 
-- **Round 1 is the Phase 1 build.** Sessions 0 to 9, 6a and 7a are done. Session 10 is the second
-  architecture review. Sessions 11 to 15 remain, releasing 0.10.0 to 0.13.0.
-- **The push status.** `origin` is the private GitHub repository `FairCat-GD/krita-art-mcp`.
-  `origin/main` holds everything through session 9's review commit ("review: a stroke that
-  changes nothing says history stops, and 9 smaller"), its parts and merges included, pushed with
-  the owner's approval; nothing is local. List `origin/main..HEAD` before any push.
-- **Session 9 ran as a one-session trial of parallel parts.**
-  - The kit is `~/Documents/Claude Templates & Notes/AppDev/workflow-kit/parallel/DEVELOPMENT-WORKFLOW.md`.
-    This project's own workflow and `CLAUDE.md` did not change.
-  - Two parts ran in their own worktrees: 9.1, the plugin core, and 9.2, the server tool. They
-    were merged `--no-ff` in that order, after two coordinator work commits.
-  - **For the review:** history shows the parts' commits, the two merges and the session commit.
-    Block 9's done-note has a *Parts* section recording what went well and what the briefs missed.
-  - `.gitignore` now ignores `.claude/worktrees/`, where the app makes session worktrees.
-- **What 9 built** (block 9's done-note has the detail):
-  - **`krita_paint_stroke`:** one native stroke, verified per stroke inside the plugin.
-    - R and a guard ring come from the effective brush.
-    - Each stroke step carries a pixel witness that history checks.
-    - Rollback is native undo, confirmed.
-    - The preset fingerprint leaves out per-call fields, and the bridge remembers its own
-      activations.
-    - A stroke that changes no pixel seals history, and its receipt says so (`history_sealed`).
-  - **Journal lines are version 2:** each call's arguments are kept in a sidecar file.
-- **Decided by the owner in session 9:**
-  - **Refused for now:** erasing, and strokes shorter than half a pixel.
-  - **Accepted and recorded:** Krita writes the presets it activates into `kritarc`'s preset
-    history.
-  - **F10:** a lazy baseline in session 11 (block 11 amended).
-- **For the review's focus** (block 10):
-  - **Headroom:** N-01 p95 0.09 s against 1.5 s, N-09 p95 0.23 s against 3 s, with every
-    protected layer covering each stroke's region. Corner-to-corner strokes take 0.4 s at 2k and
-    3.7 s at 8k.
-  - **The harness:** about 70 s, of which the benchmarks are about 15 s.
-  - **Review 6's findings in session 9:**
-    - F2 and F3 were measured; F3 bit and was fixed by the sidecar.
-    - F10 was measured and decided.
-    - F19 is held by a test.
-    - F5 used 265 of its 300 characters.
-- **Baseline** (session 10 changes no code, so it records these as found):
+- **Round 1 is the Phase 1 build.** Sessions 0 to 10 are done, 6a and 7a included. Session 10
+  inserted 10a (this session); 11 to 15 remain, releasing 0.11.0 to 0.14.0.
+- **The push status.** `origin` is the private GitHub repository. `origin/main` holds everything
+  through session 9's review commit ("review: a stroke that changes nothing says history stops,
+  and 9 smaller"). Session 10's architecture-review commit and the review-fixes commit after it
+  are local only. List `origin/main..HEAD` before any push.
+- **Session 10 changed no product code.** The REVIEW file, the 10a block, the shifted versions
+  (11–15 now 0.11.0–0.14.0 in the table and in blocks 11, 12, 14, 15) and this file are its
+  whole diff.
+- **What 10a touches, as it is now:**
+  - `plugin/krita_art_mcp_bridge/bridge_core/layer_update.py` — the mutation phase catches
+    `BridgeError`/`Exception` only; the stroke's `BaseException` handler in
+    `bridge_core/painting.py:141-145` is the pattern to mirror.
+  - `plugin/krita_art_mcp_bridge/bridge_core/history.py` — `step_history` calls `move` bare and
+    writes the region capture with a raising `transfer.write`; `verification.files` is the
+    best-effort pattern.
+  - `krita_history_step.json` — `stopped` gains a LOST value; edit the schema, then
+    `uv run scripts/amend_schemas.py` (a test holds the files to it).
+  - The F5 copies: `bridge_core/painting.py:36-37` bounds, `krita_adapter/painting.py:12`
+    `SRGB_PROFILE`, `probe/painting.py:27` `LABEL`, the allowed-mask size rule
+    (`verification.py:222-225` / `protection.py:96-99`), `_refuse_reach`
+    (`painting.py:567-575` / `layer_update.py:301-309`).
+  - `src/krita_art_mcp/probe/opening.py:100-126` — the BUSY retry.
+  - `krita_adapter/documents.py:264-271` — `undo_limit`'s fallback, set to the measured default.
+- **Ask at the start** (block 10a): which stock preset carries F4's non-square image tip; if none
+  does, the assumption is recorded as unmeasurable with stock presets.
+- **Baseline** (session 10, as found; 10a moves these only by what it adds):
   - `verify`: 6 stages, all PASS;
   - 486 server tests passed, 0 skipped;
   - 558 plugin-core tests passed, 0 skipped;
-  - `probe`: 95 PASS, 0 FAIL, 32 MEASURED, about 70 s;
-  - 17 registered tools; 19 schema files; instructions 3,175 characters.
+  - `probe`: 95 PASS, 0 FAIL, 32 MEASURED, 67.9 s;
+  - 17 registered tools; 19 schema files; instructions 3,175 characters (10a adds none).
 - **Not done:**
   - **The owner's roots.** `doctor` step 6 FAILs with "no roots" until the owner runs
     `roots add`. No session runs it, and the probe needs no roots.
-  - **By hand** (in `docs/BACKLOG.md`): N-03 in Activity Monitor; mirror painting and wrap-around
-    put back after a stroke; whether a K46 switch visibly moves the tab; the overlay in the mask
-    display mode; K46 with the global selection's mask; a layer style refusing region scope.
+  - **By hand** (in `docs/BACKLOG.md`): N-03 in Activity Monitor; mirror painting and
+    wrap-around put back after a stroke; whether a K46 switch visibly moves the tab; the overlay
+    in the mask display mode; K46 with the global selection's mask; a layer style refusing
+    region scope.
 
 ## Watch for
 
@@ -69,17 +65,17 @@ safely", findings only, no product code and no version.
   - **Nothing private in any file or commit message.** Last before each commit: draft the
     message into `"$(git rev-parse --git-dir)/COMMIT_DRAFT"`, run `verify` with it
     (`--message`), commit with `git commit -F`, delete the draft.
-- **A review is evidence, not scope** (block 10). It writes `docs/spec/REVIEW-<date>.md`, and the
-  owner picks the findings in plan mode.
-- **Brush state is window-wide (K3).** Any live run that paints changes the owner's current brush
-  and Krita's preset history. The probe saves and writes back the brush state. A scratchpad
-  driver must do the same: use `harness.brush_state` read first, and write it back after.
+- **A review fix must not loosen a refusal.** F2's best-effort capture changes only the file
+  write; a failed undo still fails the op.
+- **Every plugin change needs `install-plugin` and a Krita restart** before `probe` or `doctor`
+  step 5 passes; F1, F2 and F6 all change the plugin.
 - **Before the probe's paint checks, the stock presets must be listed in Krita:** `b) Basic-2
   Opacity`, `b) Airbrush Soft`, `y) Texture Spray`.
-- **The probe's export can answer `BUSY`** when Krita's autosave holds the harness document. A
-  rerun passes.
-- **Every plugin change needs `install-plugin` and a Krita restart** before `probe` or `doctor`
-  step 5 passes.
+- **The probe's export can answer `BUSY`** when Krita's autosave holds the harness document; F7
+  makes the probe retry it once — falsify that path like any new check.
+- **Brush state is window-wide (K3).** Any live run that paints changes the owner's current
+  brush and Krita's preset history. The probe saves and writes back the brush state; a
+  scratchpad driver must do the same (`harness.brush_state` read first, written back after).
 - **Comments state the present.** No session ids, no "used to", no review stories, no finding
   numbers in code.
 - **Every push needs its own approval.** List `origin/main..HEAD` first.
