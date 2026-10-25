@@ -1,4 +1,5 @@
 import contextlib
+import hashlib
 from collections.abc import Iterator
 from pathlib import Path
 from typing import Any
@@ -22,6 +23,7 @@ LABELS = {
     "layer.update": "Composition Mode Change",
     "selection.set": "",
     "selection.clear": "",
+    "paint.stroke": "Scripted Brush Stroke",
 }
 
 
@@ -53,23 +55,24 @@ def move(
     known: Fingerprint | None = None,
 ) -> tuple[str, dict[str, Any], Fingerprint | None]:
     # Undoes or redoes one ledger step, inside in_front(). Krita must show the step on top, by
-    # its label and by the document's state, before and after; a move that cannot be confirmed
-    # is reversed once, and the document is unsafe if that cannot be confirmed either. known is
-    # the state the previous move confirmed in this job, so it is not read again; the state now
-    # confirmed comes back.
+    # its label, the document's state and any witness pixels, before and after; a move that
+    # cannot be confirmed is reversed once, and the document is unsafe if that cannot be
+    # confirmed either. known is the state the previous move confirmed in this job, so it is not
+    # read again (pixels always are); the state now confirmed comes back.
     document = handle.document
     back = direction == UNDO
     now, then = (step.after, step.before) if back else (step.before, step.after)
-    seen = _shows(port, document, step.label, UNDO if back else REDO, now, known)
+    shown, hidden = _pixels(step, back), _pixels(step, not back)
+    seen = _shows(port, document, step.label, UNDO if back else REDO, now, known, shown)
     if seen is not None:
         return FOREIGN, seen, None
     was = handle.before_change()
     _act(port, document, back)
-    seen = _shows(port, document, step.label, REDO if back else UNDO, then)
+    seen = _shows(port, document, step.label, REDO if back else UNDO, then, None, hidden)
     if seen is None:
         return DONE, {}, then
     _act(port, document, not back)
-    if _shows(port, document, step.label, UNDO if back else REDO, now) is None:
+    if _shows(port, document, step.label, UNDO if back else REDO, now, None, shown) is None:
         # Back as it was, so nothing changed.
         handle.dirty = was
         return REVERSED, seen, now
@@ -91,14 +94,38 @@ def _shows(
     action: str,
     state: Fingerprint,
     known: Fingerprint | None = None,
+    pixels: tuple[str, dict[str, int], str] | None = None,
 ) -> dict[str, Any] | None:
     # None when the action names the step and the document is in that state; else what was seen.
     front = port.front() == document
     undo_label, redo_label = port.undo_labels(document)
     found = undo_label if action == UNDO else redo_label
-    if front and found == label and (known or fingerprint(port, document)) == state:
+    if (
+        front
+        and found == label
+        and (known or fingerprint(port, document)) == state
+        and _holds(port, document, pixels)
+    ):
         return None
     return {"expected_label": label, "found_label": found, "action": action, "in_front": front}
+
+
+def _pixels(step: Step, after: bool) -> tuple[str, dict[str, int], str] | None:
+    # The layer, rect and hash the step's witness expects on that side of it.
+    if step.witness is None:
+        return None
+    layer_id, rect, before, done = step.witness
+    return layer_id, rect, done if after else before
+
+
+def _holds(
+    port: DocumentsPort, document: Any, pixels: tuple[str, dict[str, int], str] | None
+) -> bool:
+    if pixels is None:
+        return True
+    layer_id, rect, digest = pixels
+    [buffer] = port.layer_rects(document, layer_id, [rect])
+    return hashlib.sha256(memoryview(buffer).cast("B")).hexdigest() == digest
 
 
 def handlers(registry: Registry, port: DocumentsPort, data: Path) -> dict[str, Handler]:

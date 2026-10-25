@@ -1,3 +1,4 @@
+import math
 import os
 from pathlib import Path
 from typing import Any
@@ -18,6 +19,11 @@ NODE_FIELDS = {"document_id", "kind", "layer_id"}
 # The nodes that spread a change past a layer's bounds (decision 20), as add_node makes them.
 NODE_KINDS = ("filter_layer", "filter_mask", "transform_mask", "clone_layer")
 MAX_TRIALS = 20
+VIEW_FIELDS = {"document_id", "view"}
+VIEW_KEYS = {"zoom", "rotation_deg", "pan_px"}
+BRUSH_READ_FIELDS = {"document_id", "action", "preset_ids"}
+BRUSH_WRITE_FIELDS = {"document_id", "action", "state"}
+MAX_PRESETS = 100
 
 
 def require_inside_harness(data: Path, path: Any, field: str) -> str:
@@ -149,6 +155,55 @@ def handlers(registry: Registry, port: DocumentsPort, data: Path) -> dict[str, H
                 return {"document_id": handle.document_id}
         return {"document_id": None}
 
+    def view(args: dict[str, Any], call: Call) -> dict[str, Any]:
+        # Reads or sets the zoom, rotation and pan of a harness document's view; no lease.
+        exact(args, VIEW_FIELDS)
+        handle = fixture(args["document_id"])
+        wanted = args["view"]
+        if wanted is not None:
+            _check_view(wanted)
+        if port.front() != handle.document:
+            raise BridgeError("INVALID_ARGUMENT", "The document must be in front.")
+        if wanted is None:
+            return {"document_id": handle.document_id, "view": port.view_state(handle.document)}
+        return {"document_id": handle.document_id, "view": port.set_view(handle.document, wanted)}
+
+    def brush_state(args: dict[str, Any], call: Call) -> dict[str, Any]:
+        # The window's brush and the named presets' values, read before a run and written back
+        # after it, since the brush is the owner's too (K3).
+        action = args.get("action")
+        if action == "read":
+            exact(args, BRUSH_READ_FIELDS)
+            ids = args["preset_ids"]
+            if (
+                not isinstance(ids, list)
+                or len(ids) > MAX_PRESETS
+                or not all(isinstance(one, str) and one for one in ids)
+            ):
+                message = f"preset_ids is up to {MAX_PRESETS} preset ids."
+                raise BridgeError("INVALID_ARGUMENT", message)
+            handle = fixture(args["document_id"])
+            state = port.brush_state(handle.document, list(ids))
+            return {"document_id": handle.document_id, "state": state}
+        if action == "write":
+            exact(args, BRUSH_WRITE_FIELDS)
+            if not isinstance(args["state"], dict):
+                raise BridgeError("INVALID_ARGUMENT", "state is what a read returned.")
+            handle = fixture(args["document_id"])
+            port.set_brush_state(handle.document, args["state"])
+            return {"document_id": handle.document_id}
+        raise BridgeError("INVALID_ARGUMENT", "action is read or write.")
+
+    def undo(args: dict[str, Any], call: Call) -> dict[str, Any]:
+        # Krita's own Undo, as a hand would press it: the ledger is left for history to catch.
+        exact(args, {"document_id"})
+        handle = fixture(args["document_id"])
+        with in_front(port, handle.document):
+            port.undo(handle.document)
+            undo_label, redo_label = port.undo_labels(handle.document)
+        handle.touched()
+        return {"document_id": handle.document_id, "undo": undo_label, "redo": redo_label}
+
     return {
         "harness.export_kra": export_kra,
         "harness.select_mask": select_mask,
@@ -157,4 +212,32 @@ def handlers(registry: Registry, port: DocumentsPort, data: Path) -> dict[str, H
         "harness.undo_labels": undo_labels,
         "harness.label_timing": label_timing,
         "harness.add_node": add_node,
+        "harness.view": view,
+        "harness.brush_state": brush_state,
+        "harness.undo": undo,
     }
+
+
+def _check_view(view: Any) -> None:
+    if not isinstance(view, dict) or not view or not set(view) <= VIEW_KEYS:
+        message = f"view sets one or more of {', '.join(sorted(VIEW_KEYS))}, or is null."
+        raise BridgeError("INVALID_ARGUMENT", message)
+    good = True
+    if "zoom" in view:
+        good = _finite(view["zoom"]) and view["zoom"] > 0
+    if "rotation_deg" in view:
+        good = good and _finite(view["rotation_deg"])
+    if "pan_px" in view:
+        pan = view["pan_px"]
+        good = (
+            good
+            and isinstance(pan, list)
+            and len(pan) == 2
+            and all(isinstance(value, int) and not isinstance(value, bool) for value in pan)
+        )
+    if not good:
+        raise BridgeError("INVALID_ARGUMENT", "view is malformed.")
+
+
+def _finite(value: Any) -> bool:
+    return isinstance(value, (int, float)) and not isinstance(value, bool) and math.isfinite(value)

@@ -1,4 +1,5 @@
 import copy
+import math
 import os
 import threading
 from typing import Any
@@ -88,7 +89,7 @@ class FakePort:
         self.layer_pixels: dict[str, bytes] = {}
         self.overlay = True
         # A document's composite, by key, in place of bgra(); and hooks run at each read.
-        self.canvas: dict[int, bytes] = {}
+        self.canvas: dict[int, bytes | bytearray] = {}
         self.on_read: list[Any] = []
         # A document's composite as a function of its tree, by key: reads show it as of the last
         # refresh or blend change, as Krita's projection does (K42).
@@ -97,6 +98,26 @@ class FakePort:
         # What effects() reports, by key; and hooks run after each property write.
         self.reach: dict[int, dict[str, Any]] = {}
         self.on_properties: list[Any] = []
+        # A layer's own pixels, canvas-sized BGRA, by layer id; a layer without one reads as its
+        # layer_pixels everywhere. A stroke writes them and the composite in canvas.
+        self.buffers: dict[str, bytearray] = {}
+        # The window's brush (K3), each preset's XML by name, and each preset's values by file id.
+        self.brush_now: dict[str, Any] = dict(BRUSH)
+        self.preset_xml: dict[str, str] = {name: xml for _, name, xml in PRESETS}
+        self.preset_state: dict[str, dict[str, Any]] = {}
+        self.brush_order: list[str] = []
+        # Brush fields Krita does not take, values it adjusts, and a change the next brush()
+        # read finds, as if something set the brush in between.
+        self.ignore_brush: set[str] = set()
+        self.adjust: dict[str, Any] = {}
+        self.brush_drift: dict[str, Any] = {}
+        self.ability: dict[str, str] = {}
+        self.cumulative = False
+        self.views: dict[int, dict[str, Any]] = {}
+        # Rects a stroke also paints, as a leak or a reach past R would; hooks run after it.
+        self.stray: list[dict[str, int]] = []
+        self.on_paint: list[Any] = []
+        self.paths: list[dict[str, Any]] = []
 
     def open_by_hand(self, name: str) -> int:
         key = self._add(name, 640, 480)
@@ -212,7 +233,7 @@ class FakePort:
                 document.key, self.render[document.key](self._tree(document.key))
             )
         else:
-            canvas = self.canvas.get(document.key) or bgra(width, height)
+            canvas = bytes(self.canvas.get(document.key) or bgra(width, height))
         return [crop(canvas, width, rect, 4) for rect in rects]
 
     def _redraw(self, key: int) -> None:
@@ -223,6 +244,9 @@ class FakePort:
         self.calls.append("read")
         if layer_id not in {node["id"] for node in self.tree(document)["nodes"]}:
             raise BridgeError("LAYER_NOT_FOUND", "No layer has that id.")
+        if layer_id in self.buffers:
+            width = self.live[document.key]["size_px"][0]
+            return [crop(bytes(self.buffers[layer_id]), width, rect, 4) for rect in rects]
         pixel = self.layer_pixels.get(layer_id, bytes([30, 20, 10, 255]))
         return [pixel * (rect["width"] * rect["height"]) for rect in rects]
 
@@ -415,12 +439,21 @@ class FakePort:
         self.live[key]["selection"] = (bounds, data)
 
     def _state(self, key: int) -> Any:
-        return copy.deepcopy((self._tree(key), self.live[key].get("selection")))
+        tree = self._tree(key)
+        ids = {node["id"] for node in tree["nodes"]}
+        buffers = {node_id: bytes(data) for node_id, data in self.buffers.items() if node_id in ids}
+        canvas = self.canvas.get(key)
+        held = copy.deepcopy((tree, self.live[key].get("selection")))
+        return (*held, buffers, None if canvas is None else bytes(canvas))
 
     def _restore(self, key: int, state: Any) -> None:
-        tree, selection = copy.deepcopy(state)
-        self.live[key]["tree"] = tree
-        self.live[key]["selection"] = selection
+        tree, selection, buffers, canvas = state
+        self.live[key]["tree"] = copy.deepcopy(tree)
+        self.live[key]["selection"] = copy.deepcopy(selection)
+        for node_id, data in buffers.items():
+            self.buffers[node_id] = bytearray(data)
+        if canvas is not None:
+            self.canvas[key] = bytearray(canvas)
 
     def _push(self, key: int, label: str, before: Any, blend: Any = None) -> None:
         info = self.live[key]
@@ -486,6 +519,94 @@ class FakePort:
                 stream.write(b"a KRA, as far as the tests care")
         return self.export_works
 
+    def paintable(self, key: int, pixel: bytes = bytes(4)) -> None:
+        # Gives every paint layer of a document its own pixels, and the composite a buffer.
+        width, height = self.live[key]["size_px"]
+        for node in self._tree(key)["nodes"]:
+            if node["type"] == "paintlayer" and node["id"] not in self.buffers:
+                self.buffers[node["id"]] = bytearray(pixel * (width * height))
+        found = self.canvas.get(key)
+        if not isinstance(found, bytearray):
+            self.canvas[key] = bytearray(found or bgra(width, height))
+
+    def set_brush(self, document: Any, brush: dict[str, Any]) -> dict[str, Any]:
+        for key in BRUSH_ORDER:
+            self.brush_order.append(key)
+            if key in self.ignore_brush:
+                continue
+            if key == "preset":
+                # Activating a preset resets the composite op (K3).
+                self.brush_now["blend_mode"] = "normal"
+            self.brush_now[key] = copy.deepcopy(self.adjust.get(key, brush[key]))
+        return self._brush()
+
+    def brush(self, document: Any) -> dict[str, Any]:
+        self.brush_now.update(self.brush_drift)
+        self.brush_drift = {}
+        return self._brush()
+
+    def _brush(self) -> dict[str, Any]:
+        found = copy.deepcopy(self.brush_now)
+        found["preset_xml"] = self.preset_xml.get(found["preset"], "")
+        return found
+
+    def paint_ability(self, document: Any, layer_id: str) -> str:
+        self.calls.append("ability")
+        return self.ability.get(layer_id, "PAINT")
+
+    def cumulative_undo(self) -> bool:
+        return self.cumulative
+
+    def paint_path(self, document: Any, layer_id: str, path: dict[str, Any]) -> None:
+        self.calls.append("paint")
+        self._maybe_fail("paint_path")
+        key = document.key
+        node = self._layer(key, layer_id)
+        before = self._state(key)
+        self.paths.append(copy.deepcopy(path))
+        brush = self.brush_now
+        radius = brush["size_px"] / 2
+        points = [path["start"]] + [segment[-2:] for segment in path["segments"]]
+        boxes = [_around(x, y, radius) for x, y in points] + [dict(rect) for rect in self.stray]
+        if brush["eraser"]:
+            pixel = bytes(4)
+        else:
+            red, green, blue = (round(value * 255) for value in brush["color"][:3])
+            pixel = bytes([blue, green, red, 255])
+        size = self.live[key]["size_px"]
+        self.paintable(key)
+        composite = self.canvas[key]
+        assert isinstance(composite, bytearray)
+        for box in boxes:
+            _fill(self.buffers[layer_id], size, box, pixel)
+            # An eraser here leaves the composite alone, as it does over an empty layer.
+            if not brush["eraser"]:
+                _fill(composite, size, box, pixel)
+        if not brush["eraser"]:
+            node["bounds_px"] = _span([node["bounds_px"], *boxes])
+        for hook in self.on_paint:
+            hook(key)
+        self._push(key, history.LABELS["paint.stroke"], before)
+        self._maybe_fail("paint_path_after")
+
+    def view_state(self, document: Any) -> dict[str, Any]:
+        return copy.deepcopy(self.views.setdefault(document.key, dict(VIEW)))
+
+    def set_view(self, document: Any, view: dict[str, Any]) -> dict[str, Any]:
+        self.views.setdefault(document.key, dict(VIEW)).update(copy.deepcopy(view))
+        return self.view_state(document)
+
+    def brush_state(self, document: Any, preset_ids: list[str]) -> dict[str, Any]:
+        # Each preset's values by file id, as the adapter resolves them.
+        current = {key: value for key, value in self.brush_now.items()}
+        presets = {one: dict(self.preset_state.get(one, PRESET_STATE)) for one in preset_ids}
+        return copy.deepcopy({"current": current, "presets": presets})
+
+    def set_brush_state(self, document: Any, state: dict[str, Any]) -> None:
+        for preset_id, values in state["presets"].items():
+            self.preset_state[preset_id] = dict(values)
+        self.brush_now = copy.deepcopy(state["current"])
+
     def _maybe_fail(self, step: str) -> None:
         failure = self.fail.get(step)
         if failure is not None:
@@ -516,6 +637,31 @@ def _combine(mode: str, current: bytes | None, shape: bytearray) -> bytearray:
     return bytearray(min(a, b) for a, b in zip(current, shape, strict=True))
 
 
+def _around(x: float, y: float, radius: float) -> dict[str, int]:
+    # A dab's box: every pixel the brush can touch around an on-curve point.
+    left, top = math.floor(x - radius), math.floor(y - radius)
+    right, bottom = math.ceil(x + radius), math.ceil(y + radius)
+    return {"x": left, "y": top, "width": right - left, "height": bottom - top}
+
+
+def _fill(canvas: bytearray, size: list[int], box: dict[str, int], pixel: bytes) -> None:
+    left, top = max(0, box["x"]), max(0, box["y"])
+    right = min(size[0], box["x"] + box["width"])
+    bottom = min(size[1], box["y"] + box["height"])
+    for row in range(top, bottom):
+        start = (row * size[0] + left) * 4
+        canvas[start : start + (right - left) * 4] = pixel * max(0, right - left)
+
+
+def _span(rects: list[dict[str, int]]) -> dict[str, int]:
+    found = [rect for rect in rects if rect["width"] > 0 and rect["height"] > 0]
+    left = min(rect["x"] for rect in found)
+    top = min(rect["y"] for rect in found)
+    right = max(rect["x"] + rect["width"] for rect in found)
+    bottom = max(rect["y"] + rect["height"] for rect in found)
+    return {"x": left, "y": top, "width": right - left, "height": bottom - top}
+
+
 def crop(canvas: bytes, width: int, rect: dict[str, int], depth: int) -> bytes:
     rows = (
         canvas[((rect["y"] + row) * width + rect["x"]) * depth :][: rect["width"] * depth]
@@ -524,28 +670,106 @@ def crop(canvas: bytes, width: int, rect: dict[str, int], depth: int) -> bytes:
     return b"".join(rows)
 
 
-PRESET_XML = (
-    '<Preset paintopid="paintbrush" name="Basic Round">'
-    '<param type="string" name="EraserMode">false</param></Preset>'
+def preset_xml(
+    name: str,
+    engine: str = "paintbrush",
+    brush: str = '<Brush type="auto_brush" spacing="0.1"><MaskGenerator type="circle"/></Brush>',
+    scatter: dict[str, str] | None = None,
+) -> str:
+    # A preset as Preset.toXML() writes it: the tip's own XML escaped inside a param.
+    if scatter is None:
+        scatter = {"PressureScatter": "false", "ScatterValue": "1", "Scattering/AxisX": "true"}
+        scatter["Scattering/AxisY"] = "false"
+    params = {"brush_definition": brush, **scatter}
+    body = "".join(
+        f'<param type="string" name="{key}">{_escape(value)}</param>'
+        for key, value in params.items()
+    )
+    return f'<Preset paintopid="{engine}" name="{name}">{body}</Preset>'
+
+
+def _escape(text: str) -> str:
+    return (
+        text.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;").replace('"', "&quot;")
+    )
+
+
+# A round tip with its scatter off, as Krita's own basic preset is.
+PRESET_XML = preset_xml("Basic Round")
+SCATTERED = {
+    "PressureScatter": "true",
+    "ScatterValue": "2",
+    "Scattering/AxisX": "true",
+    "Scattering/AxisY": "false",
+}
+# Brush presets as (file, name, XML); after the first three, those the stroke tests add: a round,
+# a square and an image tip, a scattering one, one with its scatter keys missing, another engine.
+PRESETS = [
+    ("basic-round.kpp", "Basic Round", PRESET_XML),
+    ("airbrush-soft.kpp", "Soft Airbrush", '<Preset name="Soft Airbrush" paintopid="airbrush"/>'),
+    ("broken.kpp", "Broken", ""),
+    ("hard-round.kpp", "Hard Round", preset_xml("Hard Round")),
+    (
+        "hard-square.kpp",
+        "Hard Square",
+        preset_xml(
+            "Hard Square",
+            brush='<Brush type="auto_brush" spacing="0.2"><MaskGenerator type="rect"/></Brush>',
+        ),
+    ),
+    (
+        "bristles.kpp",
+        "Bristles",
+        preset_xml("Bristles", brush='<Brush type="png_brush" spacing="0.5" filename="b.png"/>'),
+    ),
+    ("scatter.kpp", "Scatter", preset_xml("Scatter", scatter=SCATTERED)),
+    ("no-scatter-keys.kpp", "No Scatter Keys", preset_xml("No Scatter Keys", scatter={})),
+    ("smudge.kpp", "Smudge", preset_xml("Smudge", engine="colorsmudge")),
+]
+# The window's brush as Krita starts, the order set_brush takes the fields in (K3), and a view.
+BRUSH: dict[str, Any] = {
+    "preset": "Basic Round",
+    "size_px": 10.0,
+    "opacity": 1.0,
+    "flow": 1.0,
+    "color": [0.0, 0.0, 0.0, 1.0],
+    "eraser": False,
+    "blend_mode": "normal",
+    "alpha_lock": False,
+    "rotation_deg": 0.0,
+}
+BRUSH_ORDER = (
+    "preset",
+    "size_px",
+    "opacity",
+    "flow",
+    "blend_mode",
+    "eraser",
+    "alpha_lock",
+    "rotation_deg",
+    "color",
 )
+VIEW: dict[str, Any] = {"zoom": 1.0, "rotation_deg": 0.0, "pan_px": [0, 0]}
+PRESET_STATE: dict[str, Any] = {
+    "size_px": 10.0,
+    "opacity": 1.0,
+    "flow": 1.0,
+    "blend_mode": "normal",
+    "eraser": False,
+}
 
 
 class FakeResources:
     # Krita's resources as resource.list sees them.
     def __init__(self) -> None:
-        self.preset_list = [
-            {"name": "Basic Round", "file": "basic-round.kpp"},
-            {"name": "Soft Airbrush", "file": "airbrush-soft.kpp"},
-            {"name": "Broken", "file": "broken.kpp"},
-        ]
-        self.xmls = {
-            "Basic Round": PRESET_XML,
-            "Soft Airbrush": '<Preset name="Soft Airbrush" paintopid="airbrush"/>',
-            "Broken": "",
-        }
+        self.preset_list = [{"name": name, "file": file} for file, name, _ in PRESETS[:3]]
+        self.xmls = {name: xml for _, name, xml in PRESETS}
         self.profile_names = ["sRGB-elle-V2-srgbtrc.icc", "sRGB built-in"]
         self.palette_list = [{"name": "Default", "file": "default.kpl"}]
         self.asked: list[list[str]] = []
+
+    def add_stroke_presets(self) -> None:
+        self.preset_list += [{"name": name, "file": file} for file, name, _ in PRESETS[3:]]
 
     def presets(self) -> list[dict[str, str]]:
         return list(self.preset_list)

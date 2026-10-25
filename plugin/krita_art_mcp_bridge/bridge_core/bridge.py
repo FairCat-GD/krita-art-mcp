@@ -44,7 +44,8 @@ class Bridge:
             **facts,
             "capabilities": capabilities.matrix(),
         }
-        self.jobs = Jobs({"server_info": self._server_info, **handlers}, wake, on_main_thread, log)
+        ops = {"server_info": self._server_info, "probe.retention": self._retention, **handlers}
+        self.jobs = Jobs(ops, wake, on_main_thread, log)
         self._httpd: BridgeHTTPServer | None = None
         self._thread: threading.Thread | None = None
         self._stopped = False
@@ -54,6 +55,10 @@ class Bridge:
         no_arguments(args)
         # Read on every call, so a root added while Krita runs shows at once.
         return {**self.health, "allowed_roots": roots.load(paths.config_file(self._data_dir))}
+
+    def _retention(self, args: dict[str, Any], call: Call) -> dict[str, Any]:
+        no_arguments(args)
+        return self.jobs.retention()
 
     def drain(self) -> None:
         self.jobs.drain()

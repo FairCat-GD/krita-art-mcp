@@ -7,7 +7,7 @@ from collections.abc import Iterator
 from pathlib import Path
 from typing import Any
 
-from bridge_core import documents, harness, resources
+from bridge_core import documents, harness, painting, resources
 from bridge_core.bridge import Bridge
 from bridge_core.jobs import Call
 from bridge_core.registry import Registry
@@ -109,6 +109,7 @@ def running_world(tmp_path: Path) -> Iterator[World]:
         handlers={
             **documents.handlers(registry, port, data),
             **harness.handlers(registry, port, data),
+            **painting.handlers(registry, port, resources_port, data),
             **resources.handlers(resources_port),
             "slow": slow,
         },

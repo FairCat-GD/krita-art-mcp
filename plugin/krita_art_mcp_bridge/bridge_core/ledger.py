@@ -9,6 +9,8 @@ from .port import DocumentsPort
 # the one node property an undo step changes.
 Nodes = tuple[tuple[str, str], ...]
 Fingerprint = tuple[Nodes, str | None]
+# A layer, a rect, and the SHA-256 of the layer's own BGRA bytes over it before and after.
+Witness = tuple[str, dict[str, int], str, str]
 
 
 class Step:
@@ -20,6 +22,7 @@ class Step:
         before: Fingerprint,
         after: Fingerprint,
         region: dict[str, int] | None = None,
+        witness: Witness | None = None,
     ) -> None:
         self.op = op
         self.operation_id = operation_id
@@ -28,6 +31,8 @@ class Step:
         self.after = after
         # The canvas rect whose pixels the step changed; None when it changed none.
         self.region = region
+        # The pixels that tell this step from another of the same label and node state.
+        self.witness = witness
 
 
 class Ledger:

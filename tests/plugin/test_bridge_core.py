@@ -39,8 +39,9 @@ def test_the_capability_matrix_has_every_entry_in_its_shape() -> None:
             assert entry["since"] is None
 
 
-def test_nothing_is_supported_before_it_is_built() -> None:
-    assert [name for name, entry in capabilities.matrix().items() if entry["supported"]] == []
+def test_only_what_is_built_is_supported() -> None:
+    supported = {name for name, entry in capabilities.matrix().items() if entry["supported"]}
+    assert supported == {"stroke.native_brush", "stroke.smoothing", "selection.enforced"}
 
 
 def test_the_source_hash_covers_python_sources_only(tmp_path: Path) -> None:
