@@ -12,6 +12,8 @@ from krita_art_mcp.transfer import Pixels
 # What a harness fixture holds is fictional: flat rectangles in colours whose red and blue
 # differ, so a missed B, G, R, A swap shows.
 WIDTH, HEIGHT = 64, 48
+PAINT_WIDTH, PAINT_HEIGHT = 160, 96
+BENCHMARK_SIDE = 96
 
 
 @dataclass(frozen=True)
@@ -93,6 +95,25 @@ def rim_stack() -> tuple[Layer, ...]:
     )
 
 
+def paint_stack() -> tuple[Layer, ...]:
+    # The paint checks' canvas: an opaque base under the strokes.
+    return (Layer("probe base", rect(PAINT_WIDTH, PAINT_HEIGHT, (30, 110, 200))),)
+
+
+def benchmark_stack(count: int, area: dict[str, int]) -> tuple[Layer, ...]:
+    # Small opaque squares inside the strokes' area, so every protected layer meets each
+    # stroke's region and is hashed; the rest of the canvas stays empty, so the file is small.
+    side = BENCHMARK_SIDE
+    columns = max(1, (area["width"] - side) // 8)
+    layers = []
+    for index in range(count):
+        x = area["x"] + (index * 8) % columns
+        y = area["y"] + (index * 13) % max(1, area["height"] - side)
+        colour = (40 + index * 7 % 200, 200 - index * 5 % 150, 90 + index * 3 % 120)
+        layers.append(Layer(f"probe bench {index}", rect(side, side, colour), x=x, y=y))
+    return tuple(reversed(layers))
+
+
 def composite(layers: tuple[Layer, ...], width: int = WIDTH, height: int = HEIGHT) -> Pixels:
     # Straight-alpha src-over and src-atop, rounded once; exact wherever alpha is 0 or 255.
     canvas = _stack(layers, width, height)
@@ -118,6 +139,32 @@ def write_ora(
         archive.writestr("mergedimage.png", _png(merged), compress_type=zipfile.ZIP_DEFLATED)
         archive.writestr("Thumbnails/thumbnail.png", _png(np.asarray(thumbnail)))
     return merged
+
+
+def write_sparse_ora(path: Path, layers: tuple[Layer, ...], width: int, height: int) -> None:
+    # For large canvases: each layer is stored at its own size and the merged image is built in
+    # 8 bits, never as a float canvas. Paint layers only, composited src-over.
+    if any(layer.pixels is None or layer.composite_op != "svg:src-over" for layer in layers):
+        raise ValueError("a sparse fixture holds src-over paint layers only")
+    merged = Image.new("RGBA", (width, height))
+    for layer in reversed(layers):
+        if layer.visible and layer.pixels is not None:
+            tile = Image.fromarray(layer.pixels)
+            box = (layer.x, layer.y, layer.x + tile.width, layer.y + tile.height)
+            merged.paste(Image.alpha_composite(merged.crop(box), tile), box)
+    image = ElementTree.Element("image", {"version": "0.0.3", "w": str(width), "h": str(height)})
+    files: dict[str, bytes] = {}
+    _xml(ElementTree.SubElement(image, "stack"), layers, files)
+    stack = ElementTree.tostring(image, encoding="UTF-8", xml_declaration=True)
+    thumbnail = merged.copy()
+    thumbnail.thumbnail((256, 256))
+    with zipfile.ZipFile(path, "x") as archive:
+        archive.writestr("mimetype", "image/openraster", compress_type=zipfile.ZIP_STORED)
+        archive.writestr("stack.xml", stack, compress_type=zipfile.ZIP_DEFLATED)
+        for name, data in files.items():
+            archive.writestr(name, data, compress_type=zipfile.ZIP_DEFLATED)
+        archive.writestr("mergedimage.png", _encode(merged), compress_type=zipfile.ZIP_STORED)
+        archive.writestr("Thumbnails/thumbnail.png", _encode(thumbnail))
 
 
 def write_png(path: Path, pixels: Pixels) -> None:
@@ -179,8 +226,12 @@ def _blend(backdrop: np.ndarray, source: np.ndarray, opacity: float, op: str) ->
 
 
 def _png(pixels: Pixels) -> bytes:
+    return _encode(Image.fromarray(pixels))
+
+
+def _encode(image: Image.Image) -> bytes:
     stream = io.BytesIO()
-    Image.fromarray(pixels).save(stream, "PNG")
+    image.save(stream, "PNG")
     return stream.getvalue()
 
 

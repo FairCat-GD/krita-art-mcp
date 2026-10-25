@@ -269,7 +269,7 @@ async def _samples(report: Report, a: Client, document_id: str, layers: dict[str
     )
 
 
-async def _brushes(a: Client) -> list[dict[str, Any]] | None:
+async def brushes(a: Client) -> list[dict[str, Any]] | None:
     entries: list[dict[str, Any]] = []
     cursor = None
     while True:
@@ -286,7 +286,7 @@ async def _brushes(a: Client) -> list[dict[str, Any]] | None:
 
 
 async def _resources(report: Report, a: Client, client: BridgeClient) -> None:
-    first, second = await _brushes(a), await _brushes(a)
+    first, second = await brushes(a), await brushes(a)
     hashed = [entry for entry in first or [] if entry["sha256"]]
     report.check(
         "every brush page through the cursor, each preset fingerprinted; two reads agree",
