@@ -1,6 +1,5 @@
-Read docs/spec/REVIEW-2026-10-25.md §3 (F1, F2, F4–F7, F9) and §6; docs/spec/SPEC.md §1
-(decision 2), §5 (invariants 5, 8); docs/spec/PDD.md Part 4 (`krita_history_step`), Part 8 (K43,
-K44); CLAUDE.md; your block (10a) in docs/spec/SESSIONS.md and block 10's done-note; then this
+Read docs/spec/REVIEW-2026-10-25.md §3 (F1, F2, F4–F7, F9) and §6; docs/spec/SPEC.md §5
+(invariants 5, 8); docs/spec/PDD.md Part 4 (`krita_history_step`), Part 8 (K43, K44); CLAUDE.md; your block (10a) in docs/spec/SESSIONS.md and block 10's done-note; then this
 file. Do Session 10a: review fixes — paint safely. The block is the one home of its items; in
 short, it closes the `BaseException` window in `layer.update` (F1), holds invariant 5 on every
 `history.step` path and makes its capture best-effort (F2), reports a LOST stop (F6), pins or
@@ -15,9 +14,9 @@ Release 0.10.0.
 - **Round 1 is the Phase 1 build.** Sessions 0 to 10 are done, 6a and 7a included. Session 10
   inserted 10a (this session); 11 to 15 remain, releasing 0.11.0 to 0.14.0.
 - **The push status.** `origin` is the private GitHub repository. `origin/main` holds everything
-  through session 9's review commit ("review: a stroke that changes nothing says history stops,
-  and 9 smaller"). Session 10's architecture-review commit and the review-fixes commit after it
-  are local only. List `origin/main..HEAD` before any push.
+  through session 10's review commit ("review: the REVIEW's layers.py citations name real lines,
+  and 5 smaller"), pushed with the owner's approval; nothing is local. List `origin/main..HEAD`
+  before any push.
 - **Session 10 changed no product code.** The REVIEW file, the 10a block, the shifted versions
   (11–15 now 0.11.0–0.14.0 in the table and in blocks 11, 12, 14, 15) and this file are its
   whole diff.

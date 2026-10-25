@@ -2914,6 +2914,21 @@ Placed at the owner's request, after the paint-safely milestone and before the d
   - 558 plugin-core tests passed, 0 skipped;
   - `probe`: 95 PASS, 0 FAIL, 32 MEASURED, 67.9 s;
   - 17 registered tools; 19 schema files; instructions 3,175 characters.
+- **Review (`/code-review high`), 6 findings, all fixed.** All in the documents this session
+  wrote.
+  - **The REVIEW's `layers.py` citations named lines past the file's end** (a concatenated read's
+    numbering); they now point at the create handler and its rollback, lines 17–65.
+  - **The method paragraph's counts were wrong:** the server is 31 modules, not 25, and the tests
+    are 638 functions in 38 files, not 686 in 30.
+  - **The settled close was attributed to 6a;** it landed in 0.7.0, as the backlog's crash entry
+    records.
+  - **The handoff's read order had drifted from block 10a's Read line** (an extra SPEC §1); the
+    handoff copies the block's line again.
+  - **Block 10a's Docs line hedged on a README version that exists;** README names 0.9.0, so the
+    line says so.
+  - **One spelling drift** ("journalling") joined the repo's "journaling".
+  - **Falsified:** nothing; no check was added.
+  - **Numbers after the review:** unchanged.
 
 ---
 
@@ -2954,7 +2969,7 @@ Inserted by review 10 (2026-10-25): the owner chose findings F1, F2, F5, F6, F7 
   or corrected.
 - **Docs.**
   - `CHANGELOG.md`: 0.10.0 — the hardened failure paths (F1, F2, F6) under Fixed.
-  - README: the version line, if it names one.
+  - README: the version line (it names 0.9.0 today).
 - **Ask at the start of 10a:** which stock preset carries F4's non-square image tip (the session
   proposes one from `krita_resource_list`), and whether any carries none, in which case the
   assumption is recorded as unmeasurable with stock presets.
