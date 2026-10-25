@@ -1,72 +1,82 @@
-Read docs/spec/SPEC.md §1 (decisions 20, 27) and §5 (invariants 5, 6), docs/spec/PDD.md Part 4
-(`krita_layer_update`; `krita_paint_stroke`, *Per-stroke verification*) and Part 8
-(*Verification*, K13, K22, K42, K43, K44), docs/spec/REVIEW-2026-10-24.md (F5, F19, F25),
-CLAUDE.md, then this file. Then do Session 8 of docs/spec/SESSIONS.md: the verification core, and
-layer_update, with review 6's amendments to its block. Release 0.8.0.
+Read docs/spec/SPEC.md §1 (decisions 6, 20) and §5 (invariants 1, 5, 6), docs/spec/PDD.md Part 4
+(`krita_paint_stroke`, *States & edge cases*), Part 5 (N-01, N-06 to N-09) and Part 8 (K2 to K5,
+K9, K10, K18, K21, K30, K37, K43, K44, K47), docs/spec/REVIEW-2026-10-24.md (F2, F3, F5, F10,
+F19), CLAUDE.md, then this file. Then do Session 9 of docs/spec/SESSIONS.md: paint_stroke,
+verified per stroke, with the N-01 and N-09 benchmarks and review 6's amendments to its block.
+Release 0.9.0.
 
 ## State you need that is not in the specs
 
-- **Round 1 is the Phase 1 build.** Sessions 0 to 7, 6a and 7a are done; 8 to 15 remain,
-  releasing 0.8.0 to 0.13.0. 7a, inserted at the owner's request, moved the hygiene stage and the
-  workflow to the updated kit and cut no version.
+- **Round 1 is the Phase 1 build.** Sessions 0 to 8, 6a and 7a are done; 9 to 15 remain,
+  releasing 0.9.0 to 0.13.0.
 - **The push status.** `origin` is the private GitHub repository `FairCat-GD/krita-art-mcp`.
-  `origin/main` holds everything through session 7a's review commit ("review: a test holds main
-  checking the draft, and 7 smaller"), pushed with the owner's approval; nothing is local. List
-  `origin/main..HEAD` before any push.
-- **What 7 built that 8 stands on** (block 7's done-note has the detail):
-  - **The ledger** (`bridge_core/ledger.py`): `Step{op, operation_id, label, before, after,
-    region}`, `Ledger.push(step, limit)`, `rolled_back()`, `seal()`, `undo_available()`, and
-    `fingerprint(port, document)` (node ids without the root's selection masks, plus the
-    selection's hash). `region` is the canvas rect a step changed; strokes are the first steps to
-    set it, and history already reads and hashes it.
-  - **The rollback primitive** (`bridge_core/history.py`): inside `in_front(port, document)`,
-    `move(port, handle, step, UNDO)` checks the top label and the fingerprint, undoes, and confirms
-    by the Redo label and the fingerprint; it reverses once, else marks the handle unsafe.
-    `layer.create` shows the whole pattern: push the step, `move` it back, `rolled_back()`, restore
-    `dirty` from `before_change()`'s return on a confirmed rollback, `ROLLBACK_FAILED` otherwise.
-    Block 8's F25 contract is built: a handler calls `handle.before_change()` right before its first
-    libkis mutation (it also stamps `changed_at` through `touched()`), and `guarded` has no
-    `dirties`.
-  - **Labels** (`history.LABELS`, measured on 5.3.4.1): "Add Layer" for `addChildNode`; `""` for
-    `setSelection`, which pushes an unnamed step. Krita keeps Redo enabled as "Redo " even with
-    nothing to redo, so an empty label confirms nothing by itself. Read a label only after
-    `_flush()` (`QCoreApplication.sendPostedEvents()`) with the document's view in front: straight
-    after a push it was stale in 1 of 7 reads. `harness.undo_labels` returns the raw action texts,
-    for measuring `setBlendingMode`'s label.
-  - **The allowed mask** is `Handle.allowed_mask`: bytes, one per canvas pixel, 255 where changes
-    are allowed, or None for the whole canvas; `allowed_summary`, `preserve_composite_alpha` and
-    `preserve_canvas` sit beside it. The core reads a region of it by row slices.
-  - **K46:** `nodes.unmasked_view(port, document)` wraps any composite read or export.
-  - **Masks from the server** are one per request (`mask-<request key>-<sha256>.a8`), taken by the
-    plugin before any refusal (`bridge_core/masks.py`) and discarded by the server after any final
-    outcome (`tools/changes.settle_masks`).
-  - **F2:** reads carry `ephemeral`, but only to a bridge whose `bridge.json` says
-    `ephemeral_reads: true`.
-- **What the specs said that turned out otherwise** (block 7's amendments):
-  - `addChildNode(node, None)` puts the node on top, so `above_id: null` means on top.
-  - `addChildNode` makes the new layer active.
-  - A script cannot make the global selection's own mask active (`setActiveNode` leaves the layer
-    active), so K46's global branch is held by unit tests.
-  - **Krita crashes when a document closes within about 0.5 s of a node change** (a selection
-    change, at least): `KisNodeModel::processUpdateQueue`, a null pointer from the layer docker's
-    update timer, at the first iteration of two loops. `bridge_core/closing.py` decides the wait:
-    `SETTLE_S` (0.5 s) for the document in front (the one the docker shows) or a failing op's
-    discard, else what is left of it since `changed_at`. The adapter's `_settle` lets Krita's
-    timers run with user input held back (the shim's `EXCLUDE_USER_INPUT` is the plugin's one Qt
-    enum). The probe checks five quick closes, and now takes about 38 s, since each close of a
-    document in front waits.
-- **Baseline** (session 8 moves it only by what it adds):
+  `origin/main` holds everything through session 7a's review commit; session 8's commits are
+  local until the owner approves a push. List `origin/main..HEAD` before any push.
+- **What 8 built that 9 stands on** (block 8's done-note has the detail):
+  - **The verification core** (`bridge_core/verification.py`), pure and tested on 3.10:
+    - `reach(tree, effects, target)` lists every node that can carry a change past the target's
+      bounds;
+    - `scope(mode, tree, target, size)` gives the region or the canvas; a stroke passes its own
+      R instead;
+    - `refuse_unverifiable(info, effects, rect)` refuses animated documents, another frame and
+      a scope over one read;
+    - `allowed_rows(handle, size, rect)` gives the allowed mask over a scope;
+    - `read(port, document, rect, target_id, hashed)` reads the composite (unmasked, K46), and
+      optionally the target's own pixels and a SHA-256 per hashed paint layer;
+    - `check(before, after, allowed, preserve_alpha)` gives a `Verdict` with flags, counts,
+      changed bounds, `protected_changed` and `leaked`;
+    - `same(before, again)` confirms a rollback byte for byte;
+    - `files(...)` writes before and after for a pass and before and the flags for a refusal,
+      never failing the call.
+  - **What a stroke must still wire.** `layer_update` passes no `target_id` and no `hashed`: the
+    target read, the protected hashes and the target's bounds check are built and unit-tested,
+    and first used by the stroke. `protected_pixels_changed` from protected layers' before and
+    after buffers is not built.
+  - **The rollback pattern** is `layer_update._roll_back` / `_restore`:
+    - refresh, then the before-read (a stale projection would otherwise read as the change);
+    - `before_change()` before the first write, and every failure after it rolled back and never
+      retryable (a retryable failure makes the bridge forget the request, so a retry would paint
+      again);
+    - native undo through `history.move(..., known=step.after)` and `ledger.rolled_back()`;
+    - a refresh, then `same()` with the before-read and the tree;
+    - confirmed: `dirty = was`; otherwise `handle.unsafe` and `ROLLBACK_FAILED`.
+  - **The server side** (`src/krita_art_mcp/verification.py`, `tools/changes.resolve_update`):
+    - `<op>.before.png`, `<op>.after.png` and `<op>.diff.png`, each found before made;
+    - the diff image of offending pixels, at most 1024 px, inline in the error result;
+    - images null when another server took the pixels, never a changed outcome;
+    - the plugin computes the counts, the server only the images (owner, at plan time).
+  - **The fingerprint carries each node's blend mode,** so history tells the bridge's blend step
+    from a hand-made one with the same label.
+  - **`harness.add_node`** adds a blur filter layer, a blur filter mask, a transform mask or a
+    clone; it seals the ledger.
+- **What the specs said that turned out otherwise** (block 8's amendments and measurements):
+  - **Region scope is refused for more than PDD Part 4 lists:** blends outside the whitelist,
+    derived-bounds layer types (clone, fill, file, vector, filter as a target), filter layers
+    nested in later siblings, animated documents. A stroke's R analysis should use `reach` as it
+    is.
+  - **Under `inherit_alpha`, Krita writes colour into fully transparent composite pixels** (1,728
+    px changed, 768 visible). The checks compare every byte, so an `inherit_alpha` recolour that
+    spills past a silhouette inside an allowed mask counts the invisible pixels. It is in
+    `docs/BACKLOG.md`; a stroke with a selection keeps inside it, but decide with the owner if the
+    N-08/H8 runs trip on it.
+  - **Krita was killed opening an 8192 × 8192 two-layer ORA through the bridge,** with no crash
+    report and no clean shutdown; 4096 × 4096 opened in 0.6 s. N-09 needs an 8k master with 30
+    layers: open it on its own first and watch Krita's memory (F10 asks for that too), and stop
+    and ask if Krita dies again.
+  - **4096 × 4096 costs:** a verified layer update 0.57–0.64 s, a leak with rollback 0.79 s.
+- **Baseline** (session 9 moves it only by what it adds):
   - `verify`: 6 stages, all PASS;
-  - 424 server tests passed, 0 skipped;
-  - 364 plugin-core tests passed, 0 skipped;
-  - `probe`: 66 PASS, 0 FAIL, 21 MEASURED, about 38 s;
-  - 15 registered tools; 19 schema files; instructions 2,620 characters (F5: session 8 adds at most
+  - 434 server tests passed, 0 skipped;
+  - 438 plugin-core tests passed, 0 skipped;
+  - `probe`: 75 PASS, 0 FAIL, 25 MEASURED, about 41 s;
+  - 16 registered tools; 19 schema files; instructions 2,920 characters (F5: session 9 adds at most
     300 net).
 - **Not done:**
   - **The owner's roots.** `doctor` step 6 FAILs with "no roots" until the owner runs
     `roots add`. No session runs it, and the probe needs no roots.
   - **By hand** (in `docs/BACKLOG.md`): N-03 in Activity Monitor; whether a K46 switch visibly
-    moves the tab; the overlay in the mask display mode; K46 with the global selection's mask.
+    moves the tab; the overlay in the mask display mode; K46 with the global selection's mask; a
+    layer style refusing region scope.
 
 ## Watch for
 
@@ -77,23 +87,21 @@ layer_update, with review 6's amendments to its block. Release 0.8.0.
     `/usr/bin/python3` is 3.9.6, never use it for the project.
   - **The owner's Krita is live.** No session touches their documents. Restart Krita only when
     `doctor` reports 0 unsaved documents, and ask the owner first; another agent may be working.
+    `osascript` quitting Krita reports "User canceled" yet Krita quits: wait for the process to go.
   - **Nothing private in any file or commit message.** Last before each commit: draft the
     message into `"$(git rev-parse --git-dir)/COMMIT_DRAFT"`, run `verify` with it
     (`--message`), commit with `git commit -F`, delete the draft.
-- **layer_update changes nodes, and a close straight after a node change crashed Krita.** Every
-  handler that changes a node calls `before_change()` (a harness op, `touched()`), so the close's
-  settle covers a document behind too. Watch for any other path that removes a document's view
-  soon after a change.
+- **A stroke is the first step whose pixels change.** History's region, capture and hash have been
+  unit-tested only until now (block 7's known debt): check them live.
+- **The probe's update checks** set opacity values in a fixed order; a new check on those
+  documents must use values no earlier call set, or a no-op will hide its break.
 - **The scan bans every `.apply` attribute,** not only `Filter.apply`: name no function `apply`.
-- **Krita's cumulative undo setting** (off by default) would merge steps; history would then refuse
-  them as steps the bridge did not make. Measure it if blend changes behave oddly.
 - **Every plugin change needs `install-plugin` and a Krita restart** before `probe` or `doctor`
   step 5 passes, a version bump included.
-- **Falsify each new check once.** The scratchpad driver of 6a and 7 works: break one line, run
-  only its test, count only a pytest exit of 1, copy the file back. A live check needs a server
-  break, or a plugin build and a restart; batch independent plugin breaks into one build, and
-  order probe checks so one check's side effects (a harness op that seals history) cannot mask
-  another's break.
+- **Falsify each new check once.** The scratchpad driver of 6a to 8 works: break one line, run
+  only its test, count only a pytest exit of 1, copy the file back, compare the tree's diff hash.
+  Live checks need a server break, or plugin builds with restarts: batch independent plugin breaks,
+  and split builds so no break makes another check fail for its own reason.
 - **The probe's export can answer `BUSY`** when Krita's autosave holds the harness document; a rerun
   passes.
 - **Comments state the present.** No session ids, no "used to", no review stories, no finding

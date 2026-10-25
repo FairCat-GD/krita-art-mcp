@@ -11,6 +11,9 @@ from .qt import EXCLUDE_USER_INPUT, QApplication, QCoreApplication
 
 INITIAL_LAYER = "Layer 1"
 PROBE_MASK = "krita-art-mcp probe mask"
+PROBE_NODE = "krita-art-mcp probe node"
+# A filter every Krita build has, which spreads a change past a layer's bounds.
+PROBE_FILTER = "blur"
 UNLIMITED = 1_000_000_000
 
 
@@ -203,6 +206,46 @@ class KritaDocuments:
     def set_selection(self, document: Any, recipe: list[tuple[Any, ...]]) -> None:
         selections.commit(document, recipe, _node)
 
+    def set_blend(self, document: Any, layer_id: str, mode: str) -> None:
+        # One undo step, which marks the node's old and new extent for a redraw (K22).
+        _node(document, layer_id).setBlendingMode(mode)
+        document.waitForDone()
+
+    def set_properties(self, document: Any, layer_id: str, values: dict[str, Any]) -> None:
+        # None of these is an undo step or redraws (K22, K42); refresh() redraws.
+        node = _node(document, layer_id)
+        if "name" in values:
+            node.setName(values["name"])
+        if "locked" in values:
+            node.setLocked(values["locked"])
+        if "alpha_locked" in values:
+            node.setAlphaLocked(values["alpha_locked"])
+        if "inherit_alpha" in values:
+            node.setInheritAlpha(values["inherit_alpha"])
+        if "visible" in values:
+            node.setVisible(values["visible"])
+        if "opacity" in values:
+            node.setOpacity(values["opacity"])
+        document.waitForDone()
+
+    def refresh(self, document: Any) -> None:
+        document.refreshProjection()
+        document.waitForDone()
+
+    def effects(self, document: Any) -> dict[str, Any]:
+        styled, clones, animated = [], {}, False
+        pending = list(document.rootNode().childNodes())
+        while pending:
+            node = pending.pop()
+            node_id = _layer_id(node)
+            if str(node.layerStyleToAsl()):
+                styled.append(node_id)
+            if str(node.type()) == "clonelayer":
+                clones[node_id] = _source_id(node)
+            animated = animated or bool(node.animated())
+            pending.extend(node.childNodes())
+        return {"styled": sorted(styled), "clones": clones, "animated": animated}
+
     def undo(self, document: Any) -> None:
         _trigger("edit_undo", document)
 
@@ -252,6 +295,28 @@ class KritaDocuments:
         if not self.mask_active(document):
             raise BridgeError("INTERNAL_ERROR", "Krita did not make the selection mask active.")
         return bytes(document.pixelData(*_xywh(rect))) != before
+
+    def add_fixture_node(self, document: Any, kind: str, layer_id: str) -> tuple[str, bool]:
+        layer = _node(document, layer_id)
+        width, height = int(document.width()), int(document.height())
+        document.waitForDone()
+        before = bytes(document.pixelData(0, 0, width, height))
+        if kind == "filter_layer":
+            node = document.createFilterLayer(PROBE_NODE, _filter(), _whole(width, height))
+            placed = layer.parentNode().addChildNode(node, layer)
+        elif kind == "filter_mask":
+            node = document.createFilterMask(PROBE_NODE, _filter(), _whole(width, height))
+            placed = layer.addChildNode(node, None)
+        elif kind == "transform_mask":
+            node = document.createTransformMask(PROBE_NODE)
+            placed = layer.addChildNode(node, None)
+        else:
+            node = document.createCloneLayer(PROBE_NODE, layer)
+            placed = document.rootNode().addChildNode(node, None)
+        if node is None or not placed:
+            raise BridgeError("INTERNAL_ERROR", f"Krita did not add the {kind}.")
+        document.waitForDone()
+        return _layer_id(node), bytes(document.pixelData(0, 0, width, height)) != before
 
     def export_kra(self, document: Any, target: str) -> bool:
         # exportImage, never saveAs: the document keeps pointing at its own file (K39).
@@ -327,6 +392,28 @@ def _node(document: Any, layer_id: str) -> Any:
             return node
         pending.extend(node.childNodes())
     raise BridgeError("LAYER_NOT_FOUND", "No layer has that id.", False, {"layer_id": layer_id})
+
+
+def _source_id(clone: Any) -> str | None:
+    # None when Krita names no source, which counts as reaching everything.
+    try:
+        source = clone.sourceNode()
+    except AttributeError:
+        return None
+    return None if source is None else _layer_id(source)
+
+
+def _filter() -> Any:
+    found = Krita.instance().filter(PROBE_FILTER)
+    if found is None:
+        raise BridgeError("INTERNAL_ERROR", f"Krita has no {PROBE_FILTER} filter.")
+    return found
+
+
+def _whole(width: int, height: int) -> Any:
+    selection = Selection()
+    selection.select(0, 0, width, height, 255)
+    return selection
 
 
 def _settle(seconds: float) -> None:

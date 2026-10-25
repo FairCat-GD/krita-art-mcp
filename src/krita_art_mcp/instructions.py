@@ -7,7 +7,7 @@ with accepted art protected.
 - Call krita_server_info first. Its capability matrix says what this build supports; do not \
 plan around a capability marked supported: false.
 - Every result has one envelope: api_version, status (completed, queued, running, failed or \
-cancelled), document_id, revision (null for now), operation_id, data and error.
+cancelled), document_id, revision (null), operation_id, data and error.
 - A failed call returns error.code, a message, retryable and details. Retry only when retryable \
 is true; otherwise act on the message.
 - status running means Krita was still busy when the server's {WAIT_BUDGET_S:.0f}-second wait \
@@ -24,11 +24,14 @@ it and refuses every change.
 - Every layer present at open is protected, on purpose: add a layer of your own \
 (krita_layer_create) before painting. To resume your earlier layers, reopen with \
 editable_layer_ids (KRA) or editable_layer_names (ORA, PNG).
-- krita_document_inspect shows the layers, protection, the selection and how far history goes.
+- krita_document_inspect shows layers, protection, the selection and how far history goes.
 - To repair several regions, allow their union once with krita_protection_set (it only \
 tightens), then confine each repair with krita_selection_set.
-- Undo steps include layer creation and selection commits; krita_history_step never goes below \
-the last protection change.
+- Undo steps: layer creation, selection commits and blend changes; other property changes \
+cannot be undone. krita_history_step never goes below the last protection change.
+- krita_layer_update checks appearance changes over the layer's bounds and undoes a leak; a \
+filter, transform mask, style or clone that may spread one needs verify full. To recolour a \
+silhouette under preserve_composite_alpha, paint on a new inherit_alpha layer.
 - krita_capture returns an image and its PNG's path. scale 1 is the native crop; other scales \
 resample with your filter onto a background, checker by default. max_px (1600, at most 4096) \
 bounds the long edge: capture tiles for more. A layer capture is the layer's own pixels, without \

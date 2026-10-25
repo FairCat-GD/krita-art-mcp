@@ -60,6 +60,18 @@ runs; after it closes, read it from git history at round 1's release commit.
   selection change). In another language every layer step reads as a step the bridge did not
   make, and history refuses it. Labels could be read from Krita's own translation, or measured at
   bridge start on a throwaway document.
+- **Region checks that know a filter's kind** (0.8.0). `krita_layer_update` refuses region scope
+  whenever a filter layer sits above the layer or a filter mask on it, whatever the filter. A
+  per-pixel filter (levels, curves, HSV) cannot spread a change, so knowing the filter's kind
+  would spare such documents `verify: "full"`.
+- **Opening an 8192 × 8192 document through the bridge** (0.8.0). Krita 5.3.4.1 was killed, with
+  no crash report and no clean shutdown, while the bridge opened a two-layer 8k ORA; the same open
+  at 4096 × 4096 took 0.6 s. Not reproduced; N-09 needs an 8k master.
+- **Changes under alpha 0** (0.8.0). The checks compare every composite byte, so a colour change
+  in fully transparent pixels counts. Showing an `inherit_alpha` layer over a silhouette changed
+  the colour bytes of every transparent pixel under it (1,728 px changed, 768 of them visible).
+  Under an allowed mask that would refuse an invisible change; whether alpha-0 pixels should count
+  is for `krita_paint_stroke` to decide.
 - **Composite reads in two Krita states** (0.5.0). "Isolate active layer" mode changes the
   composite a read sees, and a document with two views reports the first view's active node. Both
   are untested.
@@ -81,6 +93,10 @@ these are the parts only a person can see.
   local mask only, and the choice of the top-most layer for the global mask is held by unit tests.
   With *Show Global Selection Mask* on in the Layers docker, select that mask by hand, then capture
   the document: the capture should match, and the top-most layer become active.
+- **A layer style spreading a change** (0.8.0). No harness op can add a layer style, so unit
+  tests hold the `layer_style` reason. Add a drop shadow by hand to a layer of an agent's working
+  copy, then change its opacity with `krita_layer_update`: region scope should be refused, naming
+  `layer_style`, and `verify: "full"` should pass.
 - **N-03 in Activity Monitor** (0.2.0). With the plugin loaded and Krita idle, Krita's CPU should
   stay under 1%. `top` measured 0.0% in six samples 5 s apart. Look at Krita's row in Activity
   Monitor for a minute while it is idle.

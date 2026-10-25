@@ -25,7 +25,7 @@ ELLIPSE = {"x": 10, "y": 6, "width": 30, "height": 20}
 POLYGON: list[list[float]] = [[4.5, 3.25], [50, 8], [30.5, 40.75], [12, 30]]
 
 
-def _guard(document_id: str, request_id: str | None = None) -> dict[str, str]:
+def guard(document_id: str, request_id: str | None = None) -> dict[str, str]:
     return {"document_id": document_id, "request_id": request_id or str(uuid.uuid4())}
 
 
@@ -36,7 +36,7 @@ def _rect(x: int, y: int, width: int, height: int) -> dict[str, Any]:
 def _select(document_id: str, shape: dict[str, Any], **changes: Any) -> dict[str, Any]:
     request_id = changes.pop("request_id", None)
     return {
-        "guard": _guard(document_id, request_id),
+        "guard": guard(document_id, request_id),
         "combine": "replace",
         "shape": shape,
         "feather_px": 0,
@@ -47,7 +47,7 @@ def _select(document_id: str, shape: dict[str, Any], **changes: Any) -> dict[str
 
 def _layer(document_id: str, parent_id: str, above_id: str | None, **changes: Any) -> Any:
     return {
-        "guard": _guard(document_id),
+        "guard": guard(document_id),
         "parent_id": parent_id,
         "above_id": above_id,
         "type": "paint",
@@ -56,8 +56,8 @@ def _layer(document_id: str, parent_id: str, above_id: str | None, **changes: An
     }
 
 
-def _history(document_id: str, action: str, steps: int = 1) -> dict[str, Any]:
-    return {"guard": _guard(document_id), "action": action, "steps": steps}
+def history_args(document_id: str, action: str, steps: int = 1) -> dict[str, Any]:
+    return {"guard": guard(document_id), "action": action, "steps": steps}
 
 
 def _canvas(mask: masks.Mask) -> np.ndarray:
@@ -88,7 +88,7 @@ async def _selection(a: Client, document_id: str) -> np.ndarray | None:
         return np.asarray(image)
 
 
-async def _composite(a: Client, document_id: str) -> np.ndarray | None:
+async def capture_composite(a: Client, document_id: str) -> np.ndarray | None:
     arguments = {
         "source": {"document_id": document_id, "frame": 0},
         "target": "composite",
@@ -104,17 +104,17 @@ async def _composite(a: Client, document_id: str) -> np.ndarray | None:
         return np.asarray(image)
 
 
-async def _inspect(a: Client, document_id: str) -> dict[str, Any]:
+async def inspect_data(a: Client, document_id: str) -> dict[str, Any]:
     found = await tool(a, "krita_document_inspect", {"document_id": document_id, "frame": 0})
     data: dict[str, Any] = found.get("data") or {}
     return data
 
 
-def _by_name(layers: list[dict[str, Any]]) -> dict[str, dict[str, Any]]:
+def by_name(layers: list[dict[str, Any]]) -> dict[str, dict[str, Any]]:
     return {layer["name"]: layer for layer in layers}
 
 
-def _labels(client: BridgeClient, document_id: str) -> str:
+def undo_labels(client: BridgeClient, document_id: str) -> str:
     read = client.call(
         "harness.undo_labels", {"document_id": document_id}, request_id=str(uuid.uuid4())
     )
@@ -174,18 +174,23 @@ async def _read_only(report: Report, a: Client, ora: Path, raster: Path) -> None
             "krita_layer_create": _layer(document_id, root, None),
             "krita_selection_set": _select(document_id, {"type": "all"}),
             "krita_protection_set": {
-                "guard": _guard(document_id),
+                "guard": guard(document_id),
                 "protected_layer_ids": protected,
                 "allowed_change_mask": None,
                 "preserve_composite_alpha": True,
                 "preserve_canvas": False,
             },
-            "krita_history_step": _history(document_id, "undo"),
+            "krita_history_step": history_args(document_id, "undo"),
+            "krita_layer_update": {
+                "guard": guard(document_id),
+                "layer_id": protected[0],
+                "properties": {"opacity": 0.5},
+            },
         }
         found = {name: code(await tool(a, name, arguments)) for name, arguments in calls.items()}
         report.check(
-            "a read_only document refuses layer_create, selection_set, protection_set and "
-            "history_step",
+            "a read_only document refuses layer_create, selection_set, protection_set, "
+            "history_step and layer_update",
             set(found.values()) == {"DOCUMENT_READ_ONLY"},
             ", ".join(f"{name}: {found_code}" for name, found_code in found.items()),
         )
@@ -201,11 +206,11 @@ async def _layers(
     opened: dict[str, Any],
     composite: np.ndarray,
 ) -> list[str]:
-    layers = _by_name(opened["layers"])
+    layers = by_name(opened["layers"])
     root, base = opened["root_layer_id"], layers["probe base"]
     group, shape = layers["probe group"], layers["probe shape"]
     first = await tool(a, "krita_layer_create", _layer(document_id, root, base["id"]))
-    report.measured("the undo labels after layer_create", _labels(client, document_id))
+    report.measured("the undo labels after layer_create", undo_labels(client, document_id))
     second = await tool(
         a, "krita_layer_create", _layer(document_id, group["id"], shape["id"], type="group")
     )
@@ -213,10 +218,10 @@ async def _layers(
         str((first.get("data") or {}).get("layer_id")),
         str((second.get("data") or {}).get("layer_id")),
     ]
-    inspected = await _inspect(a, document_id)
+    inspected = await inspect_data(a, document_id)
     # Both new layers share a name, so they are found by id.
     entries = {layer["id"]: layer for layer in inspected.get("layers") or []}
-    seen = _by_name(inspected.get("layers") or [])
+    seen = by_name(inspected.get("layers") or [])
     report.measured(
         "the active layer after layer_create",
         "the new one"
@@ -243,7 +248,7 @@ async def _layers(
     unchanged = {key: value for key, value in group.items() if key != "order"}
     if {key: value for key, value in seen["probe group"].items() if key != "order"} != unchanged:
         problems.append("the protected group changed")
-    found = await _composite(a, document_id)
+    found = await capture_composite(a, document_id)
     if found is None or differs(found, composite):
         problems.append(f"composite: {differs(found, composite)}")
     listed = (await tool(a, "krita_document_list", {})).get("data") or {}
@@ -272,7 +277,7 @@ async def _selections(
     raster: Path,
     gradient: np.ndarray,
 ) -> None:
-    layers = _by_name((await _inspect(a, document_id)).get("layers") or [])
+    layers = by_name((await inspect_data(a, document_id)).get("layers") or [])
     shape = layers["probe shape"]
     expected_shape = _box(8, 12, 20, 16)
     cases: dict[str, tuple[dict[str, Any], np.ndarray]] = {
@@ -304,14 +309,16 @@ async def _selections(
             problems.append(f"{name}: {code(selected)}")
             continue
         if name == "rect":
-            report.measured("the undo labels after selection_set", _labels(client, document_id))
+            report.measured("the undo labels after selection_set", undo_labels(client, document_id))
         found = await _selection(a, document_id)
         if found is None or differs(found, expected):
             problems.append(f"{name}: {differs(found, expected)}")
     cleared = await tool(a, "krita_selection_set", _select(document_id, {"type": "none"}))
-    report.measured("the undo labels after clearing the selection", _labels(client, document_id))
+    report.measured(
+        "the undo labels after clearing the selection", undo_labels(client, document_id)
+    )
     if (cleared.get("data") or {}).get("bounds_px") is not None or (
-        await _inspect(a, document_id)
+        await inspect_data(a, document_id)
     ).get("selection") is not None:
         problems.append(f"none: {code(cleared)}")
     report.check(
@@ -370,21 +377,21 @@ async def _ledger(report: Report, a: Client, document_id: str, root: str) -> Non
     await tool(a, "krita_selection_set", _select(document_id, rect_x))
     second = await tool(a, "krita_selection_set", _select(document_id, rect_y))
     problems = []
-    undone = await tool(a, "krita_history_step", _history(document_id, "undo"))
+    undone = await tool(a, "krita_history_step", history_args(document_id, "undo"))
     steps = (undone.get("data") or {}).get("steps")
     if steps != [{"tool": "krita_selection_set", "operation_id": second.get("operation_id")}]:
         problems.append(f"undo: {code(undone) or steps}")
     found = await _selection(a, document_id)
     if found is None or differs(found, _box(2, 2, 10, 10)):
         problems.append(f"after undo: {differs(found, _box(2, 2, 10, 10))}")
-    await tool(a, "krita_history_step", _history(document_id, "redo"))
+    await tool(a, "krita_history_step", history_args(document_id, "redo"))
     found = await _selection(a, document_id)
     if found is None or differs(found, _box(30, 20, 12, 8)):
         problems.append(f"after redo: {differs(found, _box(30, 20, 12, 8))}")
     # Back over both selections and the layer, then forward again.
-    deep = await tool(a, "krita_history_step", _history(document_id, "undo", 3))
+    deep = await tool(a, "krita_history_step", history_args(document_id, "undo", 3))
     tools = [step["tool"] for step in (deep.get("data") or {}).get("steps", [])]
-    ids = {entry["id"] for entry in (await _inspect(a, document_id)).get("layers") or []}
+    ids = {entry["id"] for entry in (await inspect_data(a, document_id)).get("layers") or []}
     if (
         tools != ["krita_selection_set", "krita_selection_set", "krita_layer_create"]
         or layer_id in ids
@@ -392,8 +399,8 @@ async def _ledger(report: Report, a: Client, document_id: str, root: str) -> Non
         problems.append(
             f"undo 3: {code(deep) or tools}, the layer {'kept' if layer_id in ids else 'gone'}"
         )
-    redone = await tool(a, "krita_history_step", _history(document_id, "redo", 3))
-    ids = {entry["id"] for entry in (await _inspect(a, document_id)).get("layers") or []}
+    redone = await tool(a, "krita_history_step", history_args(document_id, "redo", 3))
+    ids = {entry["id"] for entry in (await inspect_data(a, document_id)).get("layers") or []}
     if (redone.get("data") or {}).get("steps_applied") != 3 or layer_id not in ids:
         problems.append(
             f"redo 3: {code(redone)}, the layer {'back' if layer_id in ids else 'missing'}"
@@ -411,10 +418,10 @@ async def _retries(report: Report, a: Client, b: Client, document_id: str) -> No
         document_id, {"type": "rect", "rect": _rect(1, 1, 5, 5)}, request_id=str(uuid.uuid4())
     )
     first = await tool(a, "krita_selection_set", arguments)
-    before = (await _inspect(a, document_id)).get("history")
+    before = (await inspect_data(a, document_id)).get("history")
     again = await tool(a, "krita_selection_set", arguments)
     from_b = await tool(b, "krita_selection_set", arguments)
-    after = (await _inspect(a, document_id)).get("history")
+    after = (await inspect_data(a, document_id)).get("history")
     same = {**(from_b.get("data") or {}), "mask": (first.get("data") or {}).get("mask")}
     report.check(
         "a retried selection_set returns the original receipt through the journal and the "
@@ -441,7 +448,7 @@ async def _k46(
         "krita_selection_set",
         _select(document_id, {"type": "rect", "rect": _rect(3, 3, 10, 10)}),
     )
-    seen = await _inspect(a, document_id)
+    seen = await inspect_data(a, document_id)
     layers = seen.get("layers") or []
     names = {layer["id"]: layer["name"] for layer in layers}
     global_masks = [
@@ -479,9 +486,9 @@ async def _k46(
     if not isinstance(made, Done):
         report.check(name, False, f"harness.select_mask: {made}")
         return
-    counted = ((await _inspect(a, document_id)).get("selection") or {}).get("selected_pixels")
-    found = await _composite(a, document_id)
-    active = (await _inspect(a, document_id)).get("active_layer_id")
+    counted = ((await inspect_data(a, document_id)).get("selection") or {}).get("selected_pixels")
+    found = await capture_composite(a, document_id)
+    active = (await inspect_data(a, document_id)).get("active_layer_id")
     problems = []
     if counted != 100:
         problems.append(f"inspect counted {counted} px")
@@ -493,14 +500,14 @@ async def _k46(
 
 
 async def _protection(report: Report, a: Client, document_id: str, made: list[str]) -> None:
-    seen = await _inspect(a, document_id)
+    seen = await inspect_data(a, document_id)
     protected = sorted(
         [layer["id"] for layer in seen.get("layers") or [] if layer["protected"]] + [made[0]]
     )
 
     def arguments(mask: Any, **changes: Any) -> dict[str, Any]:
         return {
-            "guard": _guard(document_id),
+            "guard": guard(document_id),
             "protected_layer_ids": protected,
             "allowed_change_mask": mask,
             "preserve_composite_alpha": True,
@@ -510,13 +517,13 @@ async def _protection(report: Report, a: Client, document_id: str, made: list[st
 
     allowed = {"rect": _rect(16, 8, 32, 24)}
     # An undo first, so there is a step to undo and one to redo when protection tightens.
-    await tool(a, "krita_history_step", _history(document_id, "undo"))
+    await tool(a, "krita_history_step", history_args(document_id, "undo"))
     set_ = await tool(a, "krita_protection_set", arguments(allowed))
-    summary = ((await _inspect(a, document_id)).get("protection") or {}).get(
+    summary = ((await inspect_data(a, document_id)).get("protection") or {}).get(
         "allowed_change_mask"
     ) or {}
-    floor = code(await tool(a, "krita_history_step", _history(document_id, "undo")))
-    redo = code(await tool(a, "krita_history_step", _history(document_id, "redo")))
+    floor = code(await tool(a, "krita_history_step", history_args(document_id, "undo")))
+    redo = code(await tool(a, "krita_history_step", history_args(document_id, "redo")))
     report.check(
         "protection_set tightens: the mask's summary shows in inspect; undo below it and the "
         "cleared redo are refused",

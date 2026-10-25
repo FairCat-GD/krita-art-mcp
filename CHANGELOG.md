@@ -6,6 +6,48 @@ All notable changes to krita-art-mcp are documented here. The format follows
 
 ## [Unreleased]
 
+## [0.8.0] — 2026-10-25
+
+Agents can now change a layer's properties, and every change that shows in the composite is
+checked against protection and undone if it reaches where protection forbids.
+
+### Added
+
+- **`krita_layer_update`.** It sets a layer's name, visibility, opacity, blend mode, Krita lock,
+  alpha lock, inherit-alpha, or makes it the active layer.
+  - Protected layers, and groups that hold one, are refused with `LOCKED_TARGET`. Masks and the
+    root are not layers it changes.
+  - Opacity is Krita's 0–255, rounded half up; the receipt reports each value as Krita now holds
+    it.
+  - Only a blend change is an undo step; the receipt names the changes history can undo. The
+    other properties cannot be undone.
+  - Making a layer active and nothing else leaves the document unchanged for closing.
+- **Verified appearance changes.** A change of visibility, opacity, blend mode or inherit-alpha
+  is checked inside Krita in the same call:
+  - The composite is compared before and after over the layer's bounds (`verify: "region"`, the
+    default) or the whole canvas (`verify: "full"`). Nothing may change where the allowed mask is
+    0, and under `preserve_composite_alpha` no alpha value may change.
+  - A filter layer above the layer, a filter, transform or colorize mask, a layer style, a clone
+    of the layer, or a blend mode outside the whitelist could carry the change past its bounds.
+    Region checks are then refused with `UNSUPPORTED_CAPABILITY`, naming every such node, and
+    `verify: "full"` works.
+  - A change that breaks protection is undone, Krita's native undo for a blend change and the
+    old values for the rest, and the undo is confirmed byte for byte. The call then fails with
+    `PROTECTED_REGION_CHANGED`, its counts, and an image of the offending pixels, inline and
+    saved. A rolled-back blend change is never redone.
+  - An undo that cannot be confirmed fails with `ROLLBACK_FAILED` and marks the document unsafe;
+    later changes to it answer `DOCUMENT_UNSAFE` until it is reopened.
+  - A passing change reports how many pixels changed and where, and keeps PNGs of the layer's
+    region before and after (up to 4096 × 4096).
+  - Animated documents are refused, since only frame 0 is checked.
+- **`krita_history_step`** undoes and redoes blend changes, told apart from a blend change made
+  by hand by the layers' blend modes.
+
+### Changed
+
+- **The server instructions** say which changes are undo steps, when to use `verify: "full"`,
+  and how to recolour inside a silhouette: paint on a new `inherit_alpha` layer.
+
 ## [0.7.0] — 2026-10-24
 
 Agents can now prepare a change: add a layer of their own, select where to work, tighten what is

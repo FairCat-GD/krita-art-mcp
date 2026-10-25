@@ -1,3 +1,4 @@
+import base64
 import hashlib
 import io
 import logging
@@ -6,21 +7,25 @@ from pathlib import Path
 from typing import Any
 
 import numpy as np
-from mcp.types import CallToolResult
+from mcp.types import CallToolResult, ImageContent
 from PIL import Image
 
-from krita_art_mcp import envelope, imaging, masks, roots, transfer
+from krita_art_mcp import envelope, imaging, masks, roots, transfer, verification
 from krita_art_mcp.bridge_client import BeforeSend, Done, Failed, Outcome, Pending
 from krita_art_mcp.errors import error_body
 from krita_art_mcp.paths import Places
 from krita_art_mcp.tools.dispatch import ToolCall, from_outcome, journaled
 from krita_art_mcp.tools.observe import LIMITS
-from krita_art_mcp.tools.pixels import discard, failed, operation_id_of, today
+from krita_art_mcp.tools.pixels import IMAGE_META, discard, failed, operation_id_of, today
 
 log = logging.getLogger(__name__)
 
 # Each op that pushes ledger steps, by the tool that sends it.
-STEP_TOOLS = {"layer.create": "krita_layer_create", "selection.set": "krita_selection_set"}
+STEP_TOOLS = {
+    "layer.create": "krita_layer_create",
+    "layer.update": "krita_layer_update",
+    "selection.set": "krita_selection_set",
+}
 
 
 def layer_create(call: ToolCall, arguments: dict[str, Any]) -> CallToolResult:
@@ -49,6 +54,96 @@ def layer_receipt(outcome: Outcome) -> CallToolResult:
         return f"Added {result['type']} layer {result['layer_id']} to {result['document_id']}."
 
     return from_outcome(outcome, _without_document, text, _document)
+
+
+def layer_update(call: ToolCall, arguments: dict[str, Any]) -> CallToolResult:
+    guard = arguments["guard"]
+    op_args = {
+        "document_id": guard["document_id"],
+        "layer_id": arguments["layer_id"],
+        "properties": arguments["properties"],
+        "verify": arguments.get("verify", "region"),
+    }
+
+    def send(before_send: BeforeSend) -> Outcome:
+        outcome = call.bridge.call(
+            "layer.update", op_args, request_id=guard["request_id"], before_send=before_send
+        )
+        return resolve_update(call.places, outcome)
+
+    return journaled(
+        call, "krita_layer_update", arguments, guard["request_id"], send, update_receipt
+    )
+
+
+def resolve_update(places: Places, outcome: Outcome) -> Outcome:
+    # The verification's files become PNGs before the receipt, wherever the outcome arrives;
+    # never raises, and never turns a change into a failure or a failure into another.
+    if isinstance(outcome, Done) and isinstance(outcome.result.get("verification"), dict):
+        sent = outcome.result["verification"]
+        try:
+            made = verification.receipt(places, operation_id_of(outcome), sent, today())
+        except Exception:
+            log.exception("the change %s was not made into images", outcome.operation_id)
+            made = _without_files(places, sent, ("before", "after"))
+        return replace(outcome, result={**outcome.result, "verification": made})
+    if isinstance(outcome, Failed) and isinstance(
+        outcome.error["details"].get("verification"), dict
+    ):
+        sent = outcome.error["details"]["verification"]
+        try:
+            made = verification.failure(places, operation_id_of(outcome), sent, today())
+        except Exception:
+            log.exception("the refusal %s was not made into a diff", outcome.operation_id)
+            made = _without_files(places, sent, ("diff",))
+        details = {**outcome.error["details"], "verification": made}
+        return replace(outcome, error={**outcome.error, "details": details})
+    return outcome
+
+
+def _without_files(places: Places, sent: dict[str, Any], kept: tuple[str, ...]) -> dict[str, Any]:
+    for name in ("before", "after", "diff"):
+        discard(places, sent.get(name))
+    counts = {key: sent.get(key) for key in ("mode", "rect", *verification.COUNTS)}
+    return {**counts, **dict.fromkeys(kept)}
+
+
+def update_receipt(outcome: Outcome) -> CallToolResult:
+    def text(result: dict[str, Any]) -> str:
+        names = ", ".join(sorted(result["effective_properties"]))
+        line = f"Set {names} on layer {result['layer_id']} of {result['document_id']}"
+        checked = result["verification"]
+        if checked is not None:
+            line += f"; {checked['changed_px']} px changed, verified over {checked['mode']}"
+        return line + "."
+
+    receipt = from_outcome(outcome, _without_document, text, _document)
+    if isinstance(outcome, Failed):
+        image = _diff_image(outcome.error["details"])
+        if image is not None:
+            receipt.content.append(image)
+    return receipt
+
+
+def _diff_image(details: dict[str, Any]) -> ImageContent | None:
+    # The refusal's diff, inline, as the call and krita_operation_get both show it.
+    checked = details.get("verification")
+    diff = checked.get("diff") if isinstance(checked, dict) else None
+    if not isinstance(diff, dict) or not str(diff.get("path", "")).endswith(".diff.png"):
+        return None
+    path = Path(diff["path"])
+    try:
+        png = path.read_bytes()
+    except OSError:
+        return None
+    return ImageContent.model_validate(
+        {
+            "type": "image",
+            "data": base64.b64encode(png).decode("ascii"),
+            "mimeType": "image/png",
+            "_meta": dict(IMAGE_META),
+        }
+    )
 
 
 def selection_set(call: ToolCall, arguments: dict[str, Any]) -> CallToolResult:

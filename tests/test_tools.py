@@ -61,6 +61,7 @@ def test_only_built_tools_are_registered_with_their_contract_schemas(tmp_path: P
             "krita_document_open",
             "krita_history_step",
             "krita_layer_create",
+            "krita_layer_update",
             "krita_operation_cancel",
             "krita_operation_get",
             "krita_protection_set",

@@ -14,6 +14,9 @@ EXPORT_FIELDS = {"document_id", "target_path"}
 MASK_FIELDS = {"document_id", "layer_id", "rect"}
 ACTIVATE_FIELDS = {"document_id", "node_id"}
 TIMING_FIELDS = {"document_id", "trials"}
+NODE_FIELDS = {"document_id", "kind", "layer_id"}
+# The nodes that spread a change past a layer's bounds (decision 20), as add_node makes them.
+NODE_KINDS = ("filter_layer", "filter_mask", "transform_mask", "clone_layer")
 MAX_TRIALS = 20
 
 
@@ -112,6 +115,24 @@ def handlers(registry: Registry, port: DocumentsPort, data: Path) -> dict[str, H
             handle.touched()
         return {"document_id": handle.document_id, "reads": reads}
 
+    def add_node(args: dict[str, Any], call: Call) -> dict[str, Any]:
+        # A fixture for the reach of a change; no lease, no dirt, and no pixel written.
+        exact(args, NODE_FIELDS)
+        handle = fixture(args["document_id"])
+        if args["kind"] not in NODE_KINDS:
+            raise BridgeError("INVALID_ARGUMENT", f"kind is one of {', '.join(NODE_KINDS)}.")
+        if not isinstance(args["layer_id"], str):
+            raise BridgeError("INVALID_ARGUMENT", "layer_id names a layer.")
+        try:
+            node_id, changed = port.add_fixture_node(
+                handle.document, args["kind"], args["layer_id"]
+            )
+        finally:
+            # Adding the node pushed an undo step the ledger cannot name.
+            handle.ledger.seal()
+            handle.touched()
+        return {"document_id": handle.document_id, "node_id": node_id, "composite_changed": changed}
+
     def front_document(args: dict[str, Any], call: Call) -> dict[str, Any]:
         # Which harness document is in front; never names one of the owner's.
         no_arguments(args)
@@ -135,4 +156,5 @@ def handlers(registry: Registry, port: DocumentsPort, data: Path) -> dict[str, H
         "harness.activate": activate,
         "harness.undo_labels": undo_labels,
         "harness.label_timing": label_timing,
+        "harness.add_node": add_node,
     }

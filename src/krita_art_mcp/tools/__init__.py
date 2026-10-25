@@ -38,6 +38,7 @@ TOOLS: dict[str, ToolFunction] = {
     "krita_capture": pixels.capture,
     "krita_sample": pixels.sample,
     "krita_layer_create": changes.layer_create,
+    "krita_layer_update": changes.layer_update,
     "krita_selection_set": changes.selection_set,
     "krita_protection_set": changes.protection_set,
     "krita_history_step": changes.history_step,

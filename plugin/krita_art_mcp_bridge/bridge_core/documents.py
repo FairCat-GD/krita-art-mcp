@@ -1,7 +1,17 @@
 from pathlib import Path
 from typing import Any
 
-from . import files, history, inspection, layers, opening, pixels, protection, selections
+from . import (
+    files,
+    history,
+    inspection,
+    layer_update,
+    layers,
+    opening,
+    pixels,
+    protection,
+    selections,
+)
 from .closing import settle_s, settled_close
 from .errors import BridgeError, exact, no_arguments
 from .jobs import Call, Handler
@@ -86,6 +96,7 @@ def handlers(registry: Registry, port: DocumentsPort, data: Path) -> dict[str, H
         **inspection.handlers(registry, port, data),
         **pixels.handlers(registry, port, data),
         **layers.handlers(registry, port),
+        **layer_update.handlers(registry, port, data),
         **selections.handlers(registry, port, data),
         **protection.handlers(registry, port, data),
         **history.handlers(registry, port, data),

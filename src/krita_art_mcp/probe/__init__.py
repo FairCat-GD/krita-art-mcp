@@ -16,7 +16,7 @@ from mcp import Client, StdioServerParameters
 from krita_art_mcp import __version__, paths, schemas, setup_checks
 from krita_art_mcp.bridge_client import BridgeClient, Done
 from krita_art_mcp.instructions import INSTRUCTIONS
-from krita_art_mcp.probe import changes, opening, pixels
+from krita_art_mcp.probe import changes, opening, pixels, updates
 from krita_art_mcp.probe.report import Report, close, code, tool
 from krita_art_mcp.tools import BUILT_TOOLS
 from krita_art_mcp.tools.documents import SRGB_PROFILE
@@ -227,6 +227,7 @@ async def _documents(report: Report, client: BridgeClient, serve: list[str], har
             await opening.run(report, a, b, client, harness)
             await pixels.run(report, a, client, harness)
             await changes.run(report, a, b, client, harness)
+            await updates.run(report, a, client, harness)
             await _no_leftovers(report, a, harness, before)
         finally:
             await _sweep_documents(a, harness)

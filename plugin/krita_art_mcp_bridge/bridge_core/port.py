@@ -74,6 +74,21 @@ class DocumentsPort(Protocol):
     # undo step); a recipe of ("clear",) commits None. Waits.
     def set_selection(self, document: Any, recipe: list[tuple[Any, ...]]) -> None: ...
 
+    # Sets a node's blend mode, a composite-op id, in one undo step that redraws it; waits.
+    def set_blend(self, document: Any, layer_id: str, mode: str) -> None: ...
+
+    # Writes a node's other properties, in Krita's terms, with no undo step and no redraw (K22,
+    # K42): name, locked, alpha_locked, inherit_alpha, visible, opacity (0-255), in that order.
+    def set_properties(self, document: Any, layer_id: str, values: dict[str, Any]) -> None: ...
+
+    # Recomposes the whole projection and waits (K42).
+    def refresh(self, document: Any) -> None: ...
+
+    # What the tree does not say about how far a change reaches: {styled: ids of nodes with a
+    # layer style, clones: {clone id: source id, or None when Krita names none}, animated: any
+    # node with keyframes}.
+    def effects(self, document: Any) -> dict[str, Any]: ...
+
     # Trigger Krita's Undo or Redo action on the document in front, wait, and let posted events
     # through, so the action's text names the new top step.
     def undo(self, document: Any) -> None: ...
@@ -97,6 +112,11 @@ class DocumentsPort(Protocol):
     # Harness only: adds a local selection mask over rect to a layer and makes it the active
     # node; whether the composite over rect changed with it.
     def add_active_mask(self, document: Any, layer_id: str, rect: dict[str, int]) -> bool: ...
+
+    # Harness only: a blur filter layer directly above a layer, a blur filter mask or a transform
+    # mask on it, or a clone of it on top of the root (kind as harness.add_node names it); its id,
+    # and whether the composite changed with it.
+    def add_fixture_node(self, document: Any, kind: str, layer_id: str) -> tuple[str, bool]: ...
 
     # Writes the document as KRA with Krita's own exporter; False while autosave holds it (K45).
     def export_kra(self, document: Any, target: str) -> bool: ...

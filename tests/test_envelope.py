@@ -12,11 +12,12 @@ from bridge_core import processes as bridge_processes
 from bridge_core import protection as bridge_protection
 from bridge_core import resources as bridge_resources
 from bridge_core import selections as bridge_selections
+from bridge_core import verification as bridge_verification
 from bridge_core.jobs import Jobs
 from bridge_core.source_hash import source_hash as plugin_source_hash
 from jsonschema import Draft202012Validator
 
-from krita_art_mcp import envelope, errors, paths, plugin_files, processes, schemas
+from krita_art_mcp import envelope, errors, paths, plugin_files, processes, schemas, verification
 from krita_art_mcp.bridge_client import WAIT_BUDGET_S
 from krita_art_mcp.instructions import INSTRUCTIONS
 from krita_art_mcp.tools import documents as tool_documents
@@ -59,6 +60,18 @@ def test_the_server_and_plugin_constants_agree() -> None:
         bridge_documents.DEPTH,
     )
     assert observe.BLEND_MODES == tuple(mode for mode, _ in bridge_resources.BLEND_MODES)
+    flags = (verification.CHANGED, verification.OUTSIDE, verification.ALPHA)
+    assert flags == (
+        bridge_verification.CHANGED,
+        bridge_verification.OUTSIDE,
+        bridge_verification.ALPHA,
+    )
+
+
+def test_the_blend_enum_agents_send_is_the_whitelist() -> None:
+    update = schemas.load("krita_layer_update")["inputSchema"]["properties"]
+    assert tuple(update["properties"]["properties"]["blend_mode"]["enum"]) == observe.BLEND_MODES
+    assert update["verify"]["enum"] == list(bridge_verification.MODES)
 
 
 def test_the_plugins_bounds_are_the_schemas_limits() -> None:
@@ -74,6 +87,7 @@ def test_the_plugins_bounds_are_the_schemas_limits() -> None:
     assert history["steps"]["maximum"] == bridge_history.MAX_STEPS
     protection = schemas.load("krita_protection_set")["inputSchema"]["properties"]
     assert protection["protected_layer_ids"]["maxItems"] == bridge_protection.MAX_PROTECTED
+    assert bridge_verification.MAX_IMAGE_PIXELS == observe.LIMITS["capture_pixels"]
 
 
 def test_a_cancelled_call_is_retryable_alike_on_both_sides() -> None:

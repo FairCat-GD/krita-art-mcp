@@ -3,7 +3,7 @@ from typing import Any
 from .errors import BridgeError, exact
 from .history import DONE, LABELS, UNDO, in_front, move
 from .jobs import Call, Handler
-from .ledger import Step, fingerprint, node_ids
+from .ledger import Step, fingerprint, node_states
 from .opening import LAYER_ID
 from .port import DocumentsPort
 from .registry import Handle, Registry
@@ -27,7 +27,7 @@ def handlers(registry: Registry, port: DocumentsPort) -> dict[str, Handler]:
             )
             after = port.tree(document)
             # Adding a layer leaves the selection alone, so its hash is not read again.
-            end = (node_ids(after), start[1])
+            end = (node_states(after), start[1])
         except BaseException:
             # Krita may hold a step the ledger cannot name; history stops below it.
             handle.ledger.seal()

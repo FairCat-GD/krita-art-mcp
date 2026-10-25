@@ -2345,6 +2345,179 @@ K13, K22, K42, K43, K44); `REVIEW-2026-10-24.md` F5, F19, F25.
 - **Byte masks are fast enough.** `int.from_bytes` takes about 40 ms for an 11 MB region (PDD
   Part 4).
 
+**Done (2026-10-25, 0.8.0).**
+- **Decided with the owner at the start:**
+  - **Restarts:** the session may quit and relaunch Krita after `install-plugin` whenever `doctor`
+    reports 0 unsaved documents.
+  - **`layer_update` checks the composite and the tree, not protected-layer hashes:** a property
+    write cannot move a layer's pixels, and hashing every protected layer over a canvas-wide
+    layer's bounds costs a read of each. The core builds and tests the hash check (paint layers
+    only, one buffer at a time); `paint_stroke` wires it.
+  - **The plugin computes the counts, the server makes the images,** so a second server that
+    shares a retry still gets the counts (as `selected_pixels` in 7).
+  - **The rim check shows a hidden recolour layer with `inherit_alpha` in the same call,** with a
+    contrast check refusing `visible` alone: toggling `inherit_alpha` alone on a layer with pixels
+    always changes alpha on a soft rim.
+- **Decided with the owner mid-session:** Krita was killed opening an 8k document (Measured), so
+  the cost was measured at 4096 × 4096 and the 8k kill went to `docs/BACKLOG.md`.
+- **A design check in plan mode** (one independent read of the plan against the code) found: an
+  exception after the first write left the change unverified, and a retryable one would have let
+  a retry make it again (`jobs.py` drops a request that fails retryably); a stale projection would
+  make a good restore look failed; region scope missed non-whitelist blends, filter layers nested
+  in later siblings, derived-bounds layer types and animation; the rollback's tree comparison had
+  to skip bounds; the fingerprint change had call sites and typed tests to follow, and a blend step
+  needed a region for history's capture; the PNG names would collide; the diff had to be built
+  before raw files went; failure details must never carry raw files or become a retryable
+  `IO_ERROR`; full scope needed cost bounds; the probe's documents and order had to keep each check
+  observable; K43's check had to show Krita's Redo naming the step; a failed activation should be
+  reported, not fail a verified change. The plan folded in a fix for each.
+- **The plugin core.**
+  - **`verification`** (pure, 3.10):
+    - `reach(tree, effects, target)` lists every node that can carry a change past the target's
+      bounds: on the target, inside it or on an ancestor, a filter, transform or colorize mask, a
+      filter layer, a layer style, a blend outside the whitelist, or a type whose bounds are
+      derived (`layer_type`: anything but paint and group layers and transparency and selection
+      masks); a filter layer anywhere in a later sibling's subtree, of the target or of an
+      ancestor; a clone of the target or an ancestor, or with no source Krita names.
+    - `scope` is the union of the exact bounds of the target and its descendants, clipped to the
+      canvas, or the canvas for `full`.
+    - `refuse_unverifiable` refuses an animated document, one showing another frame, and a scope
+      over `MAX_READ_PIXELS`. `allowed_rows` takes the mask's rows for the scope and refuses a
+      mask the canvas has outgrown.
+    - `read` takes the composite inside `unmasked_view` (K46), and optionally the target's pixels
+      and a SHA-256 per hashed layer.
+    - `check` works in bands of 2^20 pixels. Per pixel it makes a flags byte (1 changed, 2 outside
+      the mask, 4 alpha changed) from `int.from_bytes` XORs over the strided channel slices and
+      `translate` tables. It counts with `translate` and `count`, and bounds the changes row by
+      row with `find`/`rfind`.
+    - `same` compares two reads byte for byte. `files` writes before and after (BGRA8, up to
+      `MAX_IMAGE_PIXELS` = 4096²) for a pass, before and the flags (A8) for a refusal; a file it
+      cannot write is left out.
+  - **`layer_update`:**
+    - Exact arguments: `active` only `true`; opacity to 0–255 by `int(o * 255 + 0.5)`.
+    - Refusals: the root and masks `INVALID_ARGUMENT`; `alpha_locked` on a non-paint layer
+      `INVALID_ARGUMENT`; a protected layer or an ancestor of one `LOCKED_TARGET`.
+    - Only values that differ are written. An appearance change gets reach (region), scope, the
+      refusals, a refresh, then the before-read.
+    - `before_change()` marks dirty first, except for `active` alone, which only `touched()`.
+    - Writes: the blend first (its ledger step pushed, `after` reusing the selection hash), then
+      the other properties in a fixed order, then a refresh.
+    - Checks: the tree (the target as asked, every other node's watched fields unchanged, never
+      bounds), then the after-read and `check`.
+    - Rollback, on a leak, a tree mismatch or any exception: old values written back, the blend
+      undone through `history.move` with `rolled_back()`, a refresh, then the tree and the scope
+      confirmed. Confirmed: `dirty` back, the error non-retryable. Otherwise `ROLLBACK_FAILED`
+      and unsafe.
+    - A failed activation after a change is reported, not raised. The step's region is the
+      changed bounds.
+  - **`ledger`:** the fingerprint's nodes are `(id, blend mode)` pairs (`node_states`).
+    `history.LABELS["layer.update"]` is "Composition Mode Change".
+  - **`harness.add_node`:** a blur filter layer above a layer, a blur filter mask or a transform
+    mask on it, or a clone of it on top. Harness folder only; it seals the ledger and stamps
+    `touched()`.
+- **The adapter:** `set_blend`, `set_properties` (name, locked, alpha_locked, inherit_alpha,
+  visible, opacity), `refresh` (`refreshProjection`, `waitForDone`), `effects` (`layerStyleToAsl`,
+  `CloneLayer.sourceNode`, `animated`), `add_fixture_node`.
+- **The server.**
+  - **`krita_layer_update`** (`tools/changes.py`), journaled; `resolve_update`, also in
+    `operations.RECEIPTS`, makes `<op>.before.png` and `<op>.after.png`, or `<op>.diff.png`, found
+    before made. The images are null when another server took the pixels or a PNG cannot be
+    made; the code never changes. The receipt inlines the diff from `details.verification.diff`.
+    `STEP_TOOLS` names the blend step.
+  - **`verification.py`:** the PNGs, and the diff image (offending pixels red over the scope as
+    it was, faded toward white, at most 1024 px long, block-reduced so none vanishes; alpha
+    changes offend only under `preserve_composite_alpha`).
+  - **The schema** gains `active` (`const: true`), `verify`, the blend enum (F19, held by a test
+    against `observe.BLEND_MODES`), and the receipt's `undoable`, `undo_steps` and `verification`;
+    its example is new. `amend_schemas.py` ran.
+  - **Instructions (F5):** 2,920 characters (+300).
+- **The probe (`probe/updates.py`, fixtures `update_stack` and `rim_stack`):** three working
+  copies. A: `active` alone; the ledger and labels; `LOCKED_TARGET`; then the harness nodes. B: the
+  allowed rect, the opacity leak and K43. C: the rim under `preserve_composite_alpha`.
+  `krita_layer_update` joins the read-only refusals. The helpers it shares with `probe/changes.py`
+  are public there.
+- **Amendments:**
+  - **The three decisions above** are the owner's, at plan time.
+  - **Region scope refuses more than PDD Part 4 lists:** blends outside the whitelist, derived-bounds
+    layer types, filter layers inside later siblings, animated documents and scopes over one read
+    are each refused before any change. Design check, amended at plan time, with the owner.
+  - **The projection is refreshed before the before-read,** so a write elsewhere that Krita has not
+    drawn yet (K42) is not read as this change. Design check, amended at plan time, with the owner.
+  - **A refusal sends the before image and the flags, not the after image,** and the diff is drawn
+    over the scope as the rollback left it: the after buffer is dropped before the re-read. The
+    session's own finding.
+  - **The receipt's before and after images stop at 4096²,** the largest capture; the counts are
+    always there. Design check, amended at plan time, with the owner.
+  - **The 8k cost was measured at 4096 × 4096.** The owner's choice, mid-session.
+- **Measured** (Krita 5.3.4.1 on macOS, Apple Silicon):
+  - **Labels:** `setBlendingMode` pushes "Composition Mode Change". Two blend changes of one layer
+    are two steps. Name, opacity, visibility, inherit-alpha, alpha lock and lock push none: the Undo
+    label stays the blend's, and history then undoes both blends.
+  - **The creators:** `createFilterLayer`, `createFilterMask(name, filter, selection)`,
+    `createTransformMask` and `createCloneLayer` all work. Each add pushes "Add Layer". The
+    composite changed for the blur filter layer, the blur filter mask and the clone, not for the
+    identity transform mask. A filter layer and a filter mask report blend "copy".
+  - **A blur filter layer above** spread an opacity change of a 24 × 16 layer to a 34 × 26 rect
+    (`verify: "full"`).
+  - **A refused, restored and confirmed opacity change:** 21 ms on 64 × 48. The restored composite
+    matched the before-read byte for byte every time.
+  - **Under `inherit_alpha`** Krita kept every alpha byte of a soft rim, but changed the colour
+    bytes of every fully transparent pixel under the layer: 1,728 px changed, 768 of them visible
+    (in `docs/BACKLOG.md`).
+  - **4096 × 4096, one layer over a base:** a verified opacity change 0.57 s (region over the whole
+    layer) and 0.64 s (full); a leak with its rollback and confirmation 0.79 s; open 0.6 s.
+  - **8192 × 8192:** Krita was killed, with no crash report and no clean shutdown in
+    `plugin.log`, during the bridge's `document.open` of a two-layer ORA, before any update. Not
+    reproduced (in `docs/BACKLOG.md`).
+  - **`probe` on the 0.8.0 build:** 75 PASS, 0 FAIL, 25 MEASURED in 40.7 s; H4 p50 5.0 ms, p95
+    5.5 ms, max 39.4 ms; create and close mean 708 ms; `transfer/` and `harness/` empty,
+    `plugin.log` with no warning or error.
+- **Checked by hand:** `doctor` before and after each of the session's five Krita restarts and
+  its relaunch after the kill: 0 documents open, 0 unsaved, steps 1–5 PASS, step 6 FAIL "no
+  roots".
+- **Falsified:**
+  - **The method:** the scratchpad driver of 6a and 7, which checks the tree's diff hash before
+    and after.
+  - **65 unit breaks, each failing at its own test:**
+    - the core: each mark table, the preserve rule, bands, hashes, the empty-scope bound, `same`,
+      the mask rows, the hashed read, the unmasked read, the empty read, the clip, each reach
+      rule and the listing of every reason, the animated refusal, the files' flags, cap and
+      write failure;
+    - `layer_update`: the after image, rounding, the step's region, the fingerprint's blend,
+      active-only, appearance-only reads, unchanged values, the ancestor and mask rules, the
+      opacity bound, the reach and animated refusals, the dirty restore, the preserve flag,
+      `rolled_back`, the confirming re-read, an undo not taken, retryable errors, a rollback that
+      raises, a value Krita adjusted, the first refresh, the empty scope, the activation rule;
+    - the harness seal and kinds, the read-only refusal;
+    - the server: the flag constants, the blend enum, the image bound, the PNG names, `verify`
+      sent, the inline diff, a shared retry (its two guards broken together), the diff's
+      block-reduce, preserve rule and fade, an untouched refusal, images that cannot be made.
+  - **Two tests were strengthened** before their breaks failed:
+    - the band test used one colour everywhere, so a band read from the wrong place matched;
+    - the harness seal test had no ledger step to seal, so a dropped seal changed nothing.
+  - **Live:**
+    - **A server break** (`verify` always region) failed the filter-layer check. It also failed
+      the each-named check, whose opacity matched a value an earlier step had set; that check now
+      uses one no earlier call sets.
+    - **Plugin build 1** (six breaks) failed its six checks: active-only dirtying, a wrong blend
+      label, the ancestor rule off, the sibling filter scan off, the clone source unread, the
+      preserve flag dropped.
+    - **Plugin build 2** (four breaks) failed its four checks: the dirty restore, a rollback
+      granting a redo (K43), the inherit-alpha write ignored, read-only updates allowed. The
+      other failures in each build followed from a break the other build tested.
+- **Known debt:**
+  - **Layer styles** are held by unit tests only (in `docs/BACKLOG.md`).
+  - **Filters are classed by type,** so a per-pixel filter layer forces `verify: "full"` (in
+    `docs/BACKLOG.md`).
+  - **Colour changes under alpha 0 count** as changes (in `docs/BACKLOG.md`).
+  - **Labels are English** (in `docs/BACKLOG.md`, from 7).
+- **Numbers:**
+  - `verify`: 6 stages, all PASS;
+  - 434 server tests passed, 0 skipped (+10);
+  - 438 plugin-core tests passed, 0 skipped (+74);
+  - `probe`: 75 PASS, 0 FAIL, 25 MEASURED (+9 PASS, +4 MEASURED), 40.7 s;
+  - 16 registered tools (+1); 19 schema files; instructions 2,920 characters (+300).
+
 ---
 
 ## 9: paint_stroke

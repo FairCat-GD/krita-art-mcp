@@ -90,6 +90,13 @@ class FakePort:
         # A document's composite, by key, in place of bgra(); and hooks run at each read.
         self.canvas: dict[int, bytes] = {}
         self.on_read: list[Any] = []
+        # A document's composite as a function of its tree, by key: reads show it as of the last
+        # refresh or blend change, as Krita's projection does (K42).
+        self.render: dict[int, Any] = {}
+        self.projection: dict[int, bytes] = {}
+        # What effects() reports, by key; and hooks run after each property write.
+        self.reach: dict[int, dict[str, Any]] = {}
+        self.on_properties: list[Any] = []
 
     def open_by_hand(self, name: str) -> int:
         key = self._add(name, 640, 480)
@@ -200,8 +207,17 @@ class FakePort:
             hook()
         self.calls.append("read")
         width, height = self.live[document.key]["size_px"]
-        canvas = self.canvas.get(document.key) or bgra(width, height)
+        if document.key in self.render:
+            canvas = self.projection.setdefault(
+                document.key, self.render[document.key](self._tree(document.key))
+            )
+        else:
+            canvas = self.canvas.get(document.key) or bgra(width, height)
         return [crop(canvas, width, rect, 4) for rect in rects]
+
+    def _redraw(self, key: int) -> None:
+        if key in self.render:
+            self.projection[key] = self.render[key](self._tree(key))
 
     def layer_rects(self, document: Any, layer_id: str, rects: list[dict[str, int]]) -> list[bytes]:
         self.calls.append("read")
@@ -310,6 +326,64 @@ class FakePort:
         self._select(key, bytes(shape or b""))
         self._push(key, history.LABELS["selection.set"], before)
 
+    def set_blend(self, document: Any, layer_id: str, mode: str) -> None:
+        self._maybe_fail("set_blend")
+        self.calls.append("blend")
+        node = self._layer(document.key, layer_id)
+        # Krita's command undoes the blend alone; property writes around it stay (K22).
+        blend = (layer_id, node["blend_mode"], mode)
+        node["blend_mode"] = mode
+        self._push(document.key, history.LABELS["layer.update"], None, blend)
+        self._redraw(document.key)
+
+    def set_properties(self, document: Any, layer_id: str, values: dict[str, Any]) -> None:
+        self.calls.append("properties")
+        self._layer(document.key, layer_id).update(values)
+        self._maybe_fail("set_properties")
+        for hook in self.on_properties:
+            hook(self._tree(document.key))
+
+    def refresh(self, document: Any) -> None:
+        self._maybe_fail("refresh")
+        self.calls.append("refresh")
+        self._redraw(document.key)
+
+    def effects(self, document: Any) -> dict[str, Any]:
+        default = {"styled": [], "clones": {}, "animated": False}
+        return copy.deepcopy(self.reach.get(document.key, default))
+
+    def add_fixture_node(self, document: Any, kind: str, layer_id: str) -> tuple[str, bool]:
+        key = document.key
+        layer = self._layer(key, layer_id)
+        before = self._state(key)
+        tree = self._tree(key)
+        index = len(tree["nodes"]) + 700
+        if kind == "filter_layer":
+            parent, order, made = layer["parent_id"], layer["order"] + 1, "filterlayer"
+            for node in tree["nodes"]:
+                if node["parent_id"] == parent and node["order"] >= order:
+                    node["order"] += 1
+        elif kind == "clone_layer":
+            parent, made = tree["root_id"], "clonelayer"
+            order = sum(1 for node in tree["nodes"] if node["parent_id"] == parent)
+        else:
+            parent, made = layer_id, kind.replace("_", "")
+            order = sum(1 for node in tree["nodes"] if node["parent_id"] == parent)
+        node = fake_node(key, index, "probe node", parent, order, type=made)
+        tree["nodes"].append(node)
+        if made == "clonelayer":
+            facts = self.reach.setdefault(key, {"styled": [], "clones": {}, "animated": False})
+            facts["clones"][node["id"]] = layer_id
+        self._push(key, "Add Layer", before)
+        return str(node["id"]), True
+
+    def _layer(self, key: int, layer_id: str) -> dict[str, Any]:
+        node = next((n for n in self._tree(key)["nodes"] if n["id"] == layer_id), None)
+        if node is None:
+            raise BridgeError("LAYER_NOT_FOUND", "No layer has that id.")
+        found: dict[str, Any] = node
+        return found
+
     def _select(self, key: int, canvas: bytes | None) -> None:
         # Krita keeps the global selection in a selection mask under the root.
         tree = self._tree(key)
@@ -346,11 +420,12 @@ class FakePort:
         self.live[key]["tree"] = tree
         self.live[key]["selection"] = selection
 
-    def _push(self, key: int, label: str, before: Any) -> None:
+    def _push(self, key: int, label: str, before: Any, blend: Any = None) -> None:
         info = self.live[key]
         stack = info.setdefault("stack", [])
         del stack[info.get("index", 0) :]
-        stack.append({"label": label, "before": before, "after": self._state(key)})
+        after = None if blend is not None else self._state(key)
+        stack.append({"label": label, "before": before, "after": after, "blend": blend})
         if len(stack) > self.limit:
             del stack[0]
         info["index"] = len(stack)
@@ -360,14 +435,22 @@ class FakePort:
         info = self.live.get(self.front_key or -1)
         if self.undo_works and info is not None and info.get("index", 0) > 0:
             info["index"] -= 1
-            self._restore(self.front_key or -1, info["stack"][info["index"]]["before"])
+            self._step(self.front_key or -1, info["stack"][info["index"]], "before")
 
     def redo(self, document: Any) -> None:
         self.calls.append("redo")
         info = self.live.get(self.front_key or -1)
         if info is not None and info.get("index", 0) < len(info.get("stack", [])):
-            self._restore(self.front_key or -1, info["stack"][info["index"]]["after"])
+            self._step(self.front_key or -1, info["stack"][info["index"]], "after")
             info["index"] += 1
+
+    def _step(self, key: int, entry: dict[str, Any], side: str) -> None:
+        if entry["blend"] is not None:
+            node_id, old, new = entry["blend"]
+            self._layer(key, node_id)["blend_mode"] = old if side == "before" else new
+        else:
+            self._restore(key, entry[side])
+        self._redraw(key)
 
     def undo_labels(self, document: Any) -> tuple[str | None, str | None]:
         # The actions name the steps of the document in front.

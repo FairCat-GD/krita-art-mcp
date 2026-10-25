@@ -337,7 +337,7 @@ def _target(result: dict[str, Any]) -> str:
     )
 
 
-def operation_id_of(outcome: Done) -> str:
+def operation_id_of(outcome: Done | Failed) -> str:
     # It names files, so only the shape the server mints is accepted.
     operation_id = outcome.operation_id or ""
     if not imaging.OPERATION_ID.match(operation_id):

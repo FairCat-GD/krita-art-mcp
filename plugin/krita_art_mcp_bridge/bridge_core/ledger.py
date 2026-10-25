@@ -4,9 +4,11 @@ from typing import Any
 
 from .port import DocumentsPort
 
-# The node ids outside the root's selection masks, then the selection's hash or None. The root's
-# masks hold the global selection, which the hash already covers.
-Fingerprint = tuple[tuple[str, ...], str | None]
+# Each node outside the root's selection masks as (id, blend mode), then the selection's hash or
+# None. The root's masks hold the global selection, which the hash already covers; the blend is
+# the one node property an undo step changes.
+Nodes = tuple[tuple[str, str], ...]
+Fingerprint = tuple[Nodes, str | None]
 
 
 class Step:
@@ -93,19 +95,19 @@ def fingerprint(port: DocumentsPort, document: Any) -> Fingerprint:
 
 
 def fingerprint_of(tree: dict[str, Any], state: tuple[dict[str, int], Any] | None) -> Fingerprint:
-    ids = node_ids(tree)
+    states = node_states(tree)
     if state is None:
-        return ids, None
+        return states, None
     bounds, pixels = state
     digest = hashlib.sha256(json.dumps(bounds, sort_keys=True).encode("utf-8"))
     digest.update(pixels)
-    return ids, digest.hexdigest()
+    return states, digest.hexdigest()
 
 
-def node_ids(tree: dict[str, Any]) -> tuple[str, ...]:
+def node_states(tree: dict[str, Any]) -> Nodes:
     return tuple(
         sorted(
-            node["id"]
+            (node["id"], node["blend_mode"])
             for node in tree["nodes"]
             if not (node["type"] == "selectionmask" and node["parent_id"] == tree["root_id"])
         )

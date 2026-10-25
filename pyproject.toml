@@ -1,6 +1,6 @@
 [project]
 name = "krita-art-mcp"
-version = "0.7.0"
+version = "0.8.0"
 description = "MCP server that lets AI agents paint in Krita"
 readme = "README.md"
 license = "GPL-3.0-or-later"

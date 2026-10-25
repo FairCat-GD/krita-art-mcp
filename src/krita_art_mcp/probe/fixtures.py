@@ -70,6 +70,29 @@ def probe_stack() -> tuple[Layer, ...]:
     )
 
 
+def update_stack() -> tuple[Layer, ...]:
+    # Top first: a group holding a layer, an editable rect, and an opaque base, all flat.
+    return (
+        Layer(
+            "probe group", children=(Layer("probe inner", rect(6, 6, (90, 200, 40)), x=50, y=36),)
+        ),
+        Layer("probe paint", rect(24, 16, (200, 40, 90)), x=8, y=8),
+        Layer("probe base", rect(WIDTH, HEIGHT, (30, 110, 200))),
+    )
+
+
+def rim_stack() -> tuple[Layer, ...]:
+    # A silhouette whose edge fades through two rings of partial alpha, and a hidden recolour
+    # layer that covers it and spills past it, on a transparent canvas.
+    silhouette = np.zeros((HEIGHT, WIDTH, 4), dtype=np.uint8)
+    for inset, alpha in ((0, 64), (1, 160), (2, 255)):
+        silhouette[12 + inset : 36 - inset, 16 + inset : 48 - inset] = (40, 160, 90, alpha)
+    return (
+        Layer("probe recolour", rect(48, 36, (230, 60, 30)), x=8, y=6, visible=False),
+        Layer("probe silhouette", silhouette),
+    )
+
+
 def composite(layers: tuple[Layer, ...], width: int = WIDTH, height: int = HEIGHT) -> Pixels:
     # Straight-alpha src-over and src-atop, rounded once; exact wherever alpha is 0 or 255.
     canvas = _stack(layers, width, height)

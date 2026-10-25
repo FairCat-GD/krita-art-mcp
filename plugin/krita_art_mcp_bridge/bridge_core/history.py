@@ -19,6 +19,7 @@ REDO = "redo"
 # Krita 5.3.4 in English; any other name is a step the bridge did not make.
 LABELS = {
     "layer.create": "Add Layer",
+    "layer.update": "Composition Mode Change",
     "selection.set": "",
     "selection.clear": "",
 }
