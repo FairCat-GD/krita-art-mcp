@@ -10,9 +10,9 @@ Release 0.9.0.
 - **Round 1 is the Phase 1 build.** Sessions 0 to 8, 6a and 7a are done; 9 to 15 remain,
   releasing 0.9.0 to 0.13.0.
 - **The push status.** `origin` is the private GitHub repository `FairCat-GD/krita-art-mcp`.
-  `origin/main` holds everything through session 8's review commit ("review: only copy and
-  destination blends refuse region, and 9 smaller"), pushed with the owner's approval; nothing
-  is local. List `origin/main..HEAD` before any push.
+  `origin/main` holds everything through "docs: check only hygiene when pushing", after session
+  8's review commit, pushed with the owner's approval; nothing is local. List `origin/main..HEAD`
+  before any push.
 - **What 8 built that 9 stands on** (block 8's done-note has the detail):
   - **The verification core** (`bridge_core/verification.py`), pure and tested on 3.10:
     - `reach(tree, effects, target)` lists every node that can carry a change past the target's

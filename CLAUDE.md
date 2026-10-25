@@ -204,8 +204,10 @@ touches the owner's documents or `config.json`.
   `"$(git rev-parse --git-dir)/COMMIT_DRAFT"`, run `uv run scripts/verify.py --message` with it,
   commit with `git commit -F` from it, then delete it. The message is checked before it exists
   in history.
-  - The review commit goes the same way. A push note first puts the last commit's message
-    (`git log -1 --format=%B`) into the draft, then runs `verify` with it, then amends.
+  - The review commit goes the same way. A push note puts the last commit's message
+    (`git log -1 --format=%B`) into the draft, runs only
+    `uv run scripts/verify.py hygiene --message` with it, then amends: the note changes the
+    handoff alone, which only hygiene reads.
   - A message never quotes an attribution form, even to describe the rule; describe it in words.
 - **Subjects.** Typed (`feat:`, `fix:`, `refactor:`, `docs:`, `review:`), in plain words, at most
   72 characters, ending `(x.y.z)` when the commit cuts a version.
