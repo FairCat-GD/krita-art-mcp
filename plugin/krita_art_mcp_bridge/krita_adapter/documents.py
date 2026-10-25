@@ -340,8 +340,8 @@ class KritaDocuments:
     def set_view(self, document: Any, view: dict[str, Any]) -> dict[str, Any]:
         return painting.set_view(document, view)
 
-    def brush_state(self, document: Any, preset_names: list[str]) -> dict[str, Any]:
-        return painting.brush_state(document, preset_names)
+    def brush_state(self, document: Any, preset_ids: list[str]) -> dict[str, Any]:
+        return painting.brush_state(document, preset_ids)
 
     def set_brush_state(self, document: Any, state: dict[str, Any]) -> None:
         painting.set_brush_state(document, state)
