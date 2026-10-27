@@ -3,7 +3,7 @@ import hashlib
 from pathlib import Path
 from typing import Any
 
-from . import masks
+from . import masks, verification
 from .errors import BridgeError, exact
 from .jobs import Call, Handler
 from .opening import LAYER_ID
@@ -93,10 +93,7 @@ def handlers(registry: Registry, port: DocumentsPort, data: Path) -> dict[str, H
                 raise BridgeError("INVALID_ARGUMENT", message)
             new = masks.on_canvas(mask, rect, size)
         current = handle.allowed_mask
-        if current is not None and len(current) != size[0] * size[1]:
-            details = {"canvas_px": size}
-            message = "The canvas changed size since the allowed mask was set; reopen the document."
-            raise BridgeError("INVALID_ARGUMENT", message, False, details)
+        verification.check_mask_size(current, size)
         extra = loosened(current, new)
         if extra:
             details = {"loosened_px": extra}

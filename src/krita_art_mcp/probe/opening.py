@@ -127,7 +127,11 @@ async def _make_kra(report: Report, a: Client, client: BridgeClient, ora: Path, 
 
 def _harness_export(client: BridgeClient, document_id: str, target: Path) -> Any:
     arguments = {"document_id": document_id, "target_path": str(target)}
-    return client.call("harness.export_kra", arguments, request_id=str(uuid.uuid4()))
+    outcome = client.call("harness.export_kra", arguments, request_id=str(uuid.uuid4()))
+    if _failed_code(outcome) == "BUSY":
+        # Krita's autosave can hold the document for a moment; the export wrote nothing.
+        outcome = client.call("harness.export_kra", arguments, request_id=str(uuid.uuid4()))
+    return outcome
 
 
 def _failed_code(outcome: Any) -> str | None:

@@ -9,7 +9,7 @@ from typing import Any
 from . import brushes, log, verification
 from .documents import COLOR_MODEL, DEPTH, SRGB_PROFILE
 from .errors import BridgeError, exact, number
-from .history import DONE, LABELS, UNDO, in_front, move
+from .history import DONE, LABELS, UNDO, in_front, move, unconfirmed
 from .inspection import TYPES
 from .jobs import Call, Handler
 from .ledger import Fingerprint, Step, fingerprint
@@ -75,7 +75,7 @@ def handlers(
             raise BridgeError("UNSUPPORTED_CAPABILITY", message, False, details)
         effects = port.effects(document, mode == verification.REGION)
         if mode == verification.REGION:
-            _refuse_reach(verification.reach(tree, effects, layer_id), layer_id)
+            verification.refuse_reach(tree, effects, layer_id, "this stroke past its reach")
         with in_front(port, document):
             effective = port.set_brush(document, _krita_brush(asked, name))
             _taken(asked, name, effective)
@@ -126,7 +126,7 @@ def handlers(
                 raise BridgeError("INTERNAL_ERROR", message, False, {"layer_id": layer_id})
             start = fingerprint(port, document)
             was = handle.before_change()
-            try:
+            with unconfirmed(handle):
                 return painted(
                     handle,
                     args,
@@ -136,13 +136,6 @@ def handlers(
                     protected,
                     _effective(asked, listed, effective, reach, tip, scatter, margin),
                 )
-            except BridgeError:
-                raise
-            except BaseException:
-                # Krita may hold a stroke the bridge can neither name nor confirm.
-                handle.ledger.seal()
-                handle.unsafe = True
-                raise
 
     def painted(
         handle: Handle,
@@ -562,17 +555,6 @@ def _listed(
         message = "The preset changed since its hash was taken; list it again."
         raise BridgeError("RESOURCE_HASH_MISMATCH", message, False, details)
     return digest
-
-
-def _refuse_reach(reasons: list[dict[str, str]], layer_id: str) -> None:
-    if not reasons:
-        return
-    details = {"layer_id": layer_id, "verify": verification.REGION, "reasons": reasons}
-    message = (
-        f"A {reasons[0]['reason']} can carry this stroke past its reach, so region "
-        'verification cannot bound it; verify "full" checks the whole canvas.'
-    )
-    raise BridgeError("UNSUPPORTED_CAPABILITY", message, False, details)
 
 
 def _refuse_brush(reach: dict[str, Any], layer_id: str) -> None:

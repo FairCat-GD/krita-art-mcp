@@ -446,6 +446,42 @@ def test_a_rollback_that_raises_marks_the_document_unsafe(world: World) -> None:
     assert handle.unsafe and handle.dirty
 
 
+@pytest.mark.parametrize(
+    ("step", "raised"),
+    [
+        ("set_properties", KeyboardInterrupt()),
+        ("set_properties", SystemExit()),
+        ("set_blend", KeyboardInterrupt()),
+    ],
+)
+def test_an_interrupt_mid_change_seals_history_and_marks_the_document_unsafe(
+    world: World, step: str, raised: BaseException
+) -> None:
+    document_id, handle = world.document()
+    world.update(document_id, blend_mode="multiply")
+    world.port.fail[step] = raised
+    with pytest.raises(type(raised)):
+        world.update(document_id, opacity=0.5, blend_mode="screen")
+    assert handle.unsafe and handle.dirty and handle.ledger.undo_available() == 0
+    del world.port.fail[step]
+    assert world.update_refused(document_id, opacity=1)["code"] == "DOCUMENT_UNSAFE"
+
+
+def test_an_interrupt_in_the_rollback_marks_the_document_unsafe(world: World) -> None:
+    document_id, handle = world.document()
+    world.allow(document_id, _box(0, 0, 2, 4))
+    calls = itertools.count()
+
+    def restore_interrupted(tree: dict[str, Any]) -> None:
+        if next(calls) == 1:
+            raise KeyboardInterrupt
+
+    world.port.on_properties.append(restore_interrupted)
+    with pytest.raises(KeyboardInterrupt):
+        world.update(document_id, opacity=0.5)
+    assert handle.unsafe and handle.dirty
+
+
 def test_a_value_krita_applied_otherwise_is_rolled_back(world: World) -> None:
     document_id, handle = world.document()
 

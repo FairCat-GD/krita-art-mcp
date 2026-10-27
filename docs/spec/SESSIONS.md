@@ -2989,6 +2989,116 @@ Inserted by review 10 (2026-10-25): the owner chose findings F1, F2, F5, F6, F7 
 - **`amend_schemas.py` after any schema edit;** the `--check` test holds the files to it.
 - **Restart Krita only at 0 unsaved documents** (decision 21), as ever.
 
+**Done (2026-10-27, 0.10.0).**
+- **Decided with the owner at the start:**
+  - **F4's preset** is `y) Texture Wood Fiber`. Its tip, `rake_dotted.png`, is 7 × 32 px
+    (4.6:1, the most extreme tall tip in the stock set). It uses the pixel engine, has scatter
+    off, and turns with the drawing angle.
+  - **F9:** the measuring machine's kritarc sets `undoStackLimit`, and harnesses never touch
+    kritarc, so the built-in default could not be measured live. The owner chose:
+    - a live check that Krita keeps exactly what `undo_limit()` reads;
+    - the default cited from Krita's source;
+    - the fallback set to that default.
+  - **F6's value** is `stopped: "document_unsafe"`. `"unconfirmed"` stays for a step Krita did
+    not take, which was put back.
+- **F1: one guard around a change and its rollback.** `history.unconfirmed(handle)` is a context
+  manager: it lets the op's own `BridgeError` through, and on any other raise it seals the
+  ledger, marks the document unsafe and re-raises.
+  - `layer_update.update` runs its mutation, verdict and `_roll_back` inside it.
+  - The stroke uses it in place of its hand-written copy of the same handler.
+- **F2: history holds every step it moves.**
+  - `step_history` calls `move` through `_moved`. There, an `Exception` is logged, seals the
+    ledger, marks the document unsafe, and comes back as LOST with `{"raised": <type>}`. Any
+    other raise seals, marks unsafe and re-raises.
+  - The region capture writes through `verification.write` (formerly `_write`, now the one home
+    of the best-effort transfer write), so an `IO_ERROR` leaves `pixels: null` on a receipt
+    whose undos ran. The composite read and a failed undo still fail the op.
+- **F6:** `history.STOPPED` maps each stop to its receipt value:
+  - FOREIGN `not_the_bridges_step`, REVERSED `unconfirmed`, LOST `document_unsafe`;
+  - `krita_history_step.json`'s `stopped` enum gains the value (with `amend_schemas.py`);
+  - `history_receipt`'s text names the document unsafe and says to reopen it.
+- **F5:**
+  - The stroke bounds (`MAX_POINTS`, `MIN_SIZE_PX`, `MAX_SIZE_PX`) are pinned to the schema and
+    to `LIMITS["stroke_points"]`.
+  - The probe's `LABEL` and `BLEND_LABEL` are pinned to `history.LABELS`.
+  - The adapter imports `SRGB_PROFILE`, `COLOR_MODEL` and `DEPTH` from `bridge_core.documents`.
+  - `verification.check_mask_size` is the one home of the allowed-mask/canvas-size rule
+    (`allowed_rows` and `protection.protect`).
+  - `verification.refuse_reach(tree, effects, layer_id, carried)` is the one home of the reach
+    refusal, each caller's message kept word for word.
+- **F7:** `probe/opening._harness_export` retries one `BUSY` with a fresh request id; a second
+  BUSY is returned as it is.
+- **F9:** `undo_limit()` falls back to `UNDO_LIMIT_DEFAULT = 200` (was 30) when kritarc sets no
+  limit or an unreadable one.
+- **F4:** the probe's `_tall_tip` paints the tall preset on its own 480 × 480 working copy. It
+  paints three strokes (horizontal, vertical, diagonal) at 60 px with `verify: "full"`, each on
+  a fresh layer, and reports a MEASURED line: each stroke's reach past the path's box against R's
+  margin.
+- **Amendments:**
+  - **`_blend`'s guard stays seal-only;** the unsafe mark for a non-`Exception` raise comes from
+    the enclosing guard. An ordinary `Exception` from `set_blend` is rolled back and confirmed,
+    and marking it unsafe would contradict invariant 5's "confirmed, or unsafe". Amended at plan
+    time, with the owner.
+  - **An `Exception` escaping `move` is treated as LOST** (unsafe, then `document_unsafe` or the
+    existing non-retryable LOST refusal). Krita may have moved, and nothing confirmed it. Plan
+    time, with the owner.
+  - **F5(c) also pins `probe/updates.py` `BLEND_LABEL`,** the same copy as `LABEL`. Plan time.
+  - **F9 measures what Krita applies, not its default,** as decided above.
+  - **The stroke's `BaseException` handler moved into `history.unconfirmed`,** so the guard has
+    one home. The session's own finding.
+- **Measured** (Krita 5.3.4.1, build `bd6e8d0`, on macOS, Apple Silicon):
+  - **F4, the image tip's extent:** the 7 × 32 tip at 60 px reached 31 px past the path
+    horizontally and vertically, and 26 px diagonally (0.52 and 0.43 × size). All three stayed
+    inside R's 44.4 px margin.
+    - Krita sizes an image tip by its longer side, so the tip fits a size × size square and
+      `EXTENT[IMAGE] = √2⁄2` holds.
+    - The two assumptions for `ARCHITECTURE.md`:
+      - (a) the pixel engine displaces dabs by scatter alone. It is held by session 9's ~50
+        stock presets and by the ring, which caught one scatter underestimate.
+      - (b) an image tip fits a size × size square. It was measured here on the most
+        non-square stock tip.
+  - **F9, the undo stack:**
+    - 210 layer creations on a harness working copy;
+    - `krita_document_inspect` allowed 200 undos, so `undo_limit()` read 200;
+    - Krita's own Undo emptied after exactly 200 presses, so Krita keeps exactly the limit the
+      ledger reads;
+    - `KisConfig::undoStackLimit` defaults to 200 (`libs/ui/kis_config.cc:192-195` at
+      `bd6e8d0`, the running build);
+    - the measuring machine's kritarc sets the same value.
+  - **`probe` on 0.9.0, before the plugin changed:** 95 PASS, 0 FAIL, 33 MEASURED in 76.9 s, the
+    F4 line included.
+  - **`probe` on 0.10.0:**
+    - 95 PASS, 0 FAIL, 33 MEASURED in 74.3 s;
+    - H4 p50 4.8 ms, p95 6.7 ms;
+    - create and close mean 705 ms;
+    - N-01 p95 0.10 s of 1.5 s, N-09 p95 0.28 s of 3 s;
+    - `transfer/` and `harness/` empty after the run, `plugin.log` clean;
+    - three "pixels were taken" notes, the same three as the run on 0.9.0: two from the
+      retried stroke and one in the changes checks.
+  - **A live BUSY** was not forced; the retry is held by its unit test.
+- **Checked by hand:** Krita was quit and relaunched once, with the owner's approval, at 0 open
+  and 0 unsaved documents. `doctor` steps 1–5 PASS; step 6 is the owner's roots, as before.
+- **Falsified** (each broken once; each failed at its own test, and was restored byte for byte):
+  - **F1:** the guard replaced by `if True:` → the three interrupt cases and the rollback
+    interrupt failed.
+  - **F2:**
+    - `_moved`'s `Exception` branch without the unsafe mark → both raise tests failed;
+    - its `BaseException` branch without it → the interrupt test failed;
+    - `verification.write` not catching `BridgeError` → the capture test failed.
+  - **F6:**
+    - LOST mapped to `unconfirmed` → the LOST test failed;
+    - the schema enum without `document_unsafe` → the server receipt test failed;
+    - the receipt text branch disabled → the same test failed on its text.
+  - **F5:** `MAX_POINTS` 4095, `MAX_SIZE_PX` 999, and each probe label changed → each parity
+    test failed.
+  - **F7:** the retry disabled → the two BUSY cases failed.
+- **Numbers:**
+  - `verify`: 6 stages, all PASS;
+  - 490 server tests passed (+4), 0 skipped;
+  - 567 plugin-core tests passed (+9), 0 skipped;
+  - `probe`: 95 PASS, 0 FAIL, 33 MEASURED (+1), 74.3 s;
+  - 17 registered tools; 19 schema files; instructions 3,175 characters.
+
 ---
 
 ## 11: preview_render

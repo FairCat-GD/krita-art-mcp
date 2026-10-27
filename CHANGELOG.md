@@ -6,6 +6,28 @@ All notable changes to krita-art-mcp are documented here. The format follows
 
 ## [Unreleased]
 
+## [0.10.0] — 2026-10-27
+
+The paint-safely tools now either confirm every change or mark the document unsafe, however the
+call fails, and history's receipts say which.
+
+### Fixed
+
+- **An interrupt during `krita_layer_update`** (mid-change, or mid-rollback) marks the document
+  unsafe and stops history below the change, as a stroke's already did. Before, the half-applied
+  change was left unverified, and the document was not marked.
+- **`krita_history_step` holds every step it moves.**
+  - A step whose undo or redo raises in Krita marks the document unsafe and stops history.
+  - When that happens after the first step, the receipt reports the steps that ran with
+    `stopped: "document_unsafe"`. Its text says the document is unsafe and must be reopened.
+  - A step that moved Krita and could neither be confirmed nor put back was reported as
+    `stopped: "unconfirmed"`. It now says `"document_unsafe"`; `"unconfirmed"` is kept for a
+    step Krita did not take, which leaves the document as it was.
+- **A history step whose capture cannot be written** still returns its receipt, with `capture`
+  and `content_sha256` null. Before, it failed, though its undos had run.
+- **When Krita's settings name no undo limit,** history now offers Krita's own default of 200
+  steps instead of assuming 30.
+
 ## [0.9.0] — 2026-10-25
 
 Agents can now paint: one native Krita brush stroke per call, checked against protection inside

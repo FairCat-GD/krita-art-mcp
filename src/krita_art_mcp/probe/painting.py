@@ -30,6 +30,11 @@ LABEL = "Scripted Brush Stroke"
 HARD = ("b) Basic-2 Opacity", "d) Ink-3 Gpen")
 SOFT = ("b) Airbrush Soft",)
 SCATTER = ("y) Texture Spray", "v) Texture Impressionism")
+# A stock image tip far from square (7 x 32 px), against R's margin, which takes an image tip to
+# fit a size x size square; its canvas leaves room for a tip sized by its narrow side.
+TALL = ("y) Texture Wood Fiber",)
+TIP_CANVAS_PX = 480
+TIP_BRUSH_PX = 60
 # N-06's colours, #A7C284 among them, in red, green and blue bytes.
 COLOURS = (
     (167, 194, 132),
@@ -125,6 +130,7 @@ async def run(report: Report, a: Client, b: Client, client: BridgeClient, harnes
     found = await brushes(a) or []
     presets = {"hard": _pick(found, HARD), "soft": _pick(found, SOFT)}
     presets["scatter"] = _pick(found, SCATTER)
+    presets["tall"] = _pick(found, TALL)
     report.measured(
         "the stock presets the paint checks use",
         ", ".join(f"{role}: {(entry or {}).get('name')}" for role, entry in presets.items()),
@@ -154,6 +160,7 @@ async def run(report: Report, a: Client, b: Client, client: BridgeClient, harnes
         await _one_step(report, a, b, client, document_id, root, hard)
         await _view(report, a, client, document_id, root, hard)
         await _witness(report, a, client, document_id, root, hard)
+        await _tall_tip(report, a, folder, harness, presets["tall"])
         await _refusals(report, a, client, paint, harness, document_id, root, base, hard)
         await _masks(report, a, client, paint, harness, presets)
         await _rim(report, a, rim, harness, hard)
@@ -411,6 +418,67 @@ async def _witness(
         and under == LABEL
         and code(refused) == "INVALID_ARGUMENT",
         f"{code(done)}, Krita's undo now {under!r}, history {code(refused)}",
+    )
+
+
+async def _tall_tip(
+    report: Report, a: Client, folder: Path, harness: Path, tall: dict[str, Any] | None
+) -> None:
+    # Full scope, so nothing refuses a stroke that reaches past R: on an empty layer the
+    # receipt's changed bounds are the stroke's whole extent.
+    name = "a markedly non-square image tip's reach against R's margin"
+    if tall is None:
+        report.measured(name, f"none of {', '.join(TALL)} is listed")
+        return
+    source = folder / "tip.ora"
+    base = fixtures.Layer("probe base", fixtures.rect(TIP_CANVAS_PX, TIP_CANVAS_PX, (30, 110, 200)))
+    fixtures.write_ora(source, (base,), TIP_CANVAS_PX, TIP_CANVAS_PX)
+    opened = await _open(a, source, harness)
+    document_id = opened.get("document_id")
+    if opened.get("status") != "completed" or not document_id:
+        report.measured(name, f"its document did not open: {code(opened)}")
+        return
+    middle = TIP_CANVAS_PX / 2
+    paths = {
+        "horizontal": _line(middle - 80, middle, middle + 80, middle),
+        "vertical": _line(middle, middle - 80, middle, middle + 80),
+        "diagonal": _line(middle - 60, middle - 60, middle + 60, middle + 60),
+    }
+    found, margins = [], set()
+    try:
+        root = opened["data"]["root_layer_id"]
+        for label, points in paths.items():
+            layer_id = await _layer(a, document_id, root, f"tip {label}")
+            brush = _brush(tall, size_px=TIP_BRUSH_PX)
+            arguments = _stroke(document_id, layer_id or "", brush, points, verify="full")
+            data = (await tool(a, TOOL, arguments)).get("data") or {}
+            if not data.get("changed_bounds_px"):
+                found.append(f"{label}: not painted")
+                continue
+            margin = data["effective_brush"]["reach"]["margin_px"]
+            margins.add(margin)
+            past = _past(points, data["changed_bounds_px"])
+            inside = "inside R" if past <= margin else f"past R by {past - margin:.0f} px"
+            found.append(f"{label} {past:.0f} px ({past / TIP_BRUSH_PX:.2f} x size, {inside})")
+    finally:
+        await close(a, document_id)
+    report.measured(
+        name,
+        f"{tall['name']} at {TIP_BRUSH_PX} px, margin "
+        f"{', '.join(f'{margin:.1f}' for margin in sorted(margins)) or '-'} px; reached past the "
+        f"path {'; '.join(found)}",
+    )
+
+
+def _past(points: list[dict[str, Any]], bounds: dict[str, int]) -> float:
+    # How far the changed bounds reach past the path's box, on the side they reach furthest.
+    xs = [float(point["x"]) for point in points]
+    ys = [float(point["y"]) for point in points]
+    return max(
+        min(xs) - bounds["x"],
+        bounds["x"] + bounds["width"] - max(xs),
+        min(ys) - bounds["y"],
+        bounds["y"] + bounds["height"] - max(ys),
     )
 
 

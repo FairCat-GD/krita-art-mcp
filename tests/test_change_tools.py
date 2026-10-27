@@ -307,6 +307,43 @@ def test_history_undoes_and_redoes_the_bridges_steps(world: World) -> None:
     assert deeper["error"]["code"] == "INVALID_ARGUMENT"
 
 
+def test_a_history_step_lost_mid_batch_says_the_document_is_unsafe(world: World) -> None:
+    server = world.server()
+    document_id = _document(server)
+    for index in range(2):
+        server.content(
+            "krita_layer_create",
+            {
+                "guard": _guard(document_id, f"req-layer-{index}"),
+                "parent_id": "root-1",
+                "above_id": None,
+                "type": "paint",
+                "name": f"repair {index}",
+            },
+        )
+    undo, presses = world.port.undo, [0]
+
+    def second_raises(document: Any) -> None:
+        presses[0] += 1
+        if presses[0] == 2:
+            raise RuntimeError("Krita raised")
+        undo(document)
+
+    world.port.undo = second_raises  # type: ignore[method-assign]
+    result = server.call(
+        "krita_history_step", {"guard": _guard(document_id, "req-u"), "action": "undo", "steps": 2}
+    )
+    content = result.structured_content or {}
+    assert content["status"] == "completed", content
+    assert (content["data"]["steps_applied"], content["data"]["stopped"]) == (1, "document_unsafe")
+    text = result.content[0].text
+    assert "the document is unsafe" in text and "reopen" in text
+    again = server.content(
+        "krita_history_step", {"guard": _guard(document_id, "req-r"), "action": "redo", "steps": 1}
+    )
+    assert again["error"]["code"] == "DOCUMENT_UNSAFE"
+
+
 def test_operation_get_rebuilds_a_selection_receipt_and_settles_its_masks(world: World) -> None:
     server = world.server()
     document_id = _document(server)

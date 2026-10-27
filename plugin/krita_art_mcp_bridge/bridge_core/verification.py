@@ -160,6 +160,21 @@ def reach(tree: dict[str, Any], effects: dict[str, Any], target_id: str) -> list
     return found
 
 
+def refuse_reach(
+    tree: dict[str, Any], effects: dict[str, Any], target_id: str, carried: str
+) -> None:
+    # Region scope only; carried names what a spreading node would carry, and how far.
+    reasons = reach(tree, effects, target_id)
+    if not reasons:
+        return
+    details = {"layer_id": target_id, "verify": REGION, "reasons": reasons}
+    message = (
+        f"A {reasons[0]['reason']} can carry {carried}, so region verification cannot bound "
+        'it; verify "full" checks the whole canvas.'
+    )
+    raise BridgeError("UNSUPPORTED_CAPABILITY", message, False, details)
+
+
 def _subtree(
     children: dict[str, list[dict[str, Any]]], node: dict[str, Any]
 ) -> list[dict[str, Any]]:
@@ -213,16 +228,21 @@ def refuse_unverifiable(
         raise BridgeError("UNSUPPORTED_CAPABILITY", message, False, details)
 
 
-def allowed_rows(handle: Handle, size: list[int], rect: dict[str, int]) -> bytes | None:
-    # The allowed mask over the scope, one byte per pixel; None allows everything.
-    mask = handle.allowed_mask
-    if mask is None:
-        return None
-    width = size[0]
-    if len(mask) != width * size[1]:
+def check_mask_size(mask: bytes | None, size: list[int]) -> None:
+    # The allowed mask maps pixel for pixel onto the canvas it was set on.
+    if mask is not None and len(mask) != size[0] * size[1]:
         details = {"canvas_px": size}
         message = "The canvas changed size since the allowed mask was set; reopen the document."
         raise BridgeError("INVALID_ARGUMENT", message, False, details)
+
+
+def allowed_rows(handle: Handle, size: list[int], rect: dict[str, int]) -> bytes | None:
+    # The allowed mask over the scope, one byte per pixel; None allows everything.
+    mask = handle.allowed_mask
+    check_mask_size(mask, size)
+    if mask is None:
+        return None
+    width = size[0]
     return b"".join(
         mask[row * width + rect["x"] : row * width + rect["x"] + rect["width"]]
         for row in range(rect["y"], rect["y"] + rect["height"])
@@ -415,15 +435,16 @@ def files(
         "diff": None,
     }
     if pixels and pixels <= MAX_IMAGE_PIXELS:
-        out["before"] = _write(folder, before.composite, rect, "BGRA8")
+        out["before"] = write(folder, before.composite, rect, "BGRA8")
         if not failed and after is not None:
-            out["after"] = _write(folder, after.composite, rect, "BGRA8")
+            out["after"] = write(folder, after.composite, rect, "BGRA8")
     if failed and pixels:
-        out["diff"] = _write(folder, verdict.flags, rect, "A8")
+        out["diff"] = write(folder, verdict.flags, rect, "A8")
     return out
 
 
-def _write(folder: Path, data: Any, rect: dict[str, int], fmt: str) -> dict[str, Any] | None:
+def write(folder: Path, data: Any, rect: dict[str, int], fmt: str) -> dict[str, Any] | None:
+    # Best effort: a file that cannot be written is logged and left out.
     try:
         return transfer.write(folder, data, rect["width"], rect["height"], fmt)
     except BridgeError:

@@ -7,6 +7,7 @@ import pytest
 from bridge_core import documents as bridge_documents
 from bridge_core import errors as bridge_errors
 from bridge_core import history as bridge_history
+from bridge_core import painting as bridge_painting
 from bridge_core import pixels as bridge_pixels
 from bridge_core import processes as bridge_processes
 from bridge_core import protection as bridge_protection
@@ -20,6 +21,8 @@ from jsonschema import Draft202012Validator
 from krita_art_mcp import envelope, errors, paths, plugin_files, processes, schemas, verification
 from krita_art_mcp.bridge_client import WAIT_BUDGET_S
 from krita_art_mcp.instructions import INSTRUCTIONS
+from krita_art_mcp.probe import painting as probe_painting
+from krita_art_mcp.probe import updates as probe_updates
 from krita_art_mcp.tools import documents as tool_documents
 from krita_art_mcp.tools import observe
 
@@ -66,6 +69,9 @@ def test_the_server_and_plugin_constants_agree() -> None:
         bridge_verification.OUTSIDE,
         bridge_verification.ALPHA,
     )
+    # The undo labels the probe expects are the ones the plugin checks.
+    assert probe_painting.LABEL == bridge_history.LABELS["paint.stroke"]
+    assert probe_updates.BLEND_LABEL == bridge_history.LABELS["layer.update"]
 
 
 def test_the_blend_enum_agents_send_is_the_whitelist() -> None:
@@ -93,6 +99,12 @@ def test_the_plugins_bounds_are_the_schemas_limits() -> None:
     assert bridge_verification.MAX_IMAGE_PIXELS == verification.IMAGE_PIXELS
     stroke = schemas.load("krita_paint_stroke")["inputSchema"]["properties"]
     assert stroke["points"]["maxItems"] == observe.LIMITS["stroke_points"]
+    assert stroke["points"]["maxItems"] == bridge_painting.MAX_POINTS
+    size = stroke["brush"]["properties"]["size_px"]
+    assert (size["minimum"], size["maximum"]) == (
+        bridge_painting.MIN_SIZE_PX,
+        bridge_painting.MAX_SIZE_PX,
+    )
 
 
 def test_a_cancelled_call_is_retryable_alike_on_both_sides() -> None:

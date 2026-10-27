@@ -6,7 +6,16 @@ from pathlib import Path
 from typing import Any
 
 import pytest
-from bridge_core import closing, documents, harness, history, nodes, protection, selections
+from bridge_core import (
+    closing,
+    documents,
+    harness,
+    history,
+    nodes,
+    protection,
+    selections,
+    transfer,
+)
 from bridge_core.errors import BridgeError
 from bridge_core.jobs import Call
 from bridge_core.ledger import Ledger, Step, fingerprint
@@ -803,6 +812,87 @@ def test_an_undo_krita_did_not_take_is_put_back_and_retryable(world: World) -> N
     body = world.refused("history.step", _undo(document_id))
     assert (body["code"], body["retryable"]) == ("INTERNAL_ERROR", True)
     assert not handle.unsafe and handle.ledger.undo_available() == 1
+
+
+def _undo_raising(world: World, on_press: int, raised: BaseException) -> None:
+    undo, presses = world.port.undo, itertools.count(1)
+
+    def pressed(document: Any) -> None:
+        if next(presses) == on_press:
+            raise raised
+        undo(document)
+
+    world.port.undo = pressed  # type: ignore[method-assign]
+
+
+def test_a_step_that_raises_after_the_first_stops_history_and_the_document_is_unsafe(
+    world: World,
+) -> None:
+    document_id, handle = world.created()
+    world.layer(document_id)
+    world.layer(document_id)
+    _undo_raising(world, 2, RuntimeError("Krita raised"))
+    undone = world.history(document_id, "undo", 2)
+    assert (undone["steps_applied"], undone["verified"]) == (1, False)
+    assert undone["stopped"] == "document_unsafe" and undone["undo_available"] == 0
+    assert handle.unsafe and handle.dirty
+    assert world.refused("history.step", _undo(document_id))["code"] == "DOCUMENT_UNSAFE"
+
+
+def test_a_first_step_that_raises_is_refused_and_the_document_is_unsafe(world: World) -> None:
+    document_id, handle = world.created()
+    world.layer(document_id)
+    _undo_raising(world, 1, RuntimeError("Krita raised"))
+    body = world.refused("history.step", _undo(document_id))
+    assert (body["code"], body["retryable"]) == ("INTERNAL_ERROR", False)
+    assert body["details"]["raised"] == "RuntimeError"
+    assert handle.unsafe and handle.ledger.undo_available() == 0
+
+
+def test_an_interrupt_mid_step_seals_history_and_marks_the_document_unsafe(world: World) -> None:
+    document_id, handle = world.created()
+    world.layer(document_id)
+    _undo_raising(world, 1, KeyboardInterrupt())
+    with pytest.raises(KeyboardInterrupt):
+        world.history(document_id, "undo")
+    assert handle.unsafe and handle.ledger.undo_available() == 0
+
+
+def test_a_step_lost_after_the_first_says_the_document_is_unsafe(world: World) -> None:
+    document_id, handle = world.created()
+    world.layer(document_id)
+    world.layer(document_id)
+    undo, presses = world.port.undo, itertools.count(1)
+
+    def strays(document: Any) -> None:
+        undo(document)
+        if next(presses) == 2:
+            # Krita moved, but not to the state the step left.
+            world.port._tree(1)["nodes"].append(fake_node(1, 50, "stray", "root-1", 9))
+
+    world.port.undo = strays  # type: ignore[method-assign]
+    world.port.redo = lambda document: None  # type: ignore[method-assign]
+    undone = world.history(document_id, "undo", 2)
+    assert (undone["steps_applied"], undone["stopped"]) == (1, "document_unsafe")
+    assert handle.unsafe
+
+
+def test_a_capture_that_cannot_be_written_leaves_the_receipt_true(
+    world: World, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    document_id, handle = world.created()
+    world.layer(document_id)
+    world.layer(document_id)
+    handle.ledger.steps[0].region = {"x": 1, "y": 0, "width": 2, "height": 2}
+
+    def broken(*args: Any) -> dict[str, Any]:
+        raise BridgeError("IO_ERROR", "the disk is full")
+
+    monkeypatch.setattr(transfer, "write", broken)
+    undone = world.history(document_id, "undo", 2)
+    assert (undone["steps_applied"], undone["verified"], undone["stopped"]) == (2, True, None)
+    assert undone["region_px"] == {"x": 1, "y": 0, "width": 2, "height": 2}
+    assert undone["pixels"] is None and not handle.unsafe
 
 
 def test_history_acts_on_its_own_document_in_front(world: World) -> None:

@@ -5,11 +5,10 @@ from typing import Any
 from krita import Krita, ManagedColor, Preset
 
 from ..bridge_core import log
+from ..bridge_core.documents import COLOR_MODEL, DEPTH, SRGB_PROFILE
 from ..bridge_core.errors import BridgeError
 from .qt import QAbstractScrollArea, QMdiArea, QPainterPath, QPointF
 
-# The sRGB profile Phase 1 paints in; the core refuses any other document.
-SRGB_PROFILE = "sRGB-elle-V2-srgbtrc.icc"
 # Where each of R, G, B, A sits in ManagedColor's components for RGBA / U8 (K18).
 CHANNELS = (2, 1, 0, 3)
 MIRRORS = ("hmirror_action", "vmirror_action")
@@ -71,7 +70,8 @@ def _current(view: Any) -> dict[str, Any]:
 
 
 def _colour(rgba: list[float]) -> Any:
-    colour = ManagedColor("RGBA", "U8", SRGB_PROFILE)
+    # The core refuses any document not in this space.
+    colour = ManagedColor(COLOR_MODEL, DEPTH, SRGB_PROFILE)
     components = [0.0] * 4
     for channel, index in enumerate(CHANNELS):
         components[index] = float(rgba[channel])

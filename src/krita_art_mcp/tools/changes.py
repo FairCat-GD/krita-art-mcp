@@ -418,6 +418,11 @@ def history_receipt(outcome: Outcome) -> CallToolResult:
         done = f"{result['action'].capitalize()} of {result['steps_applied']} step(s)"
         if result["verified"]:
             return f"{done} in {result['document_id']}, verified."
+        if result["stopped"] == "document_unsafe":
+            return (
+                f"{done} in {result['document_id']}; the next step could not be confirmed or put "
+                "back, so the document is unsafe: reopen it."
+            )
         return f"{done} in {result['document_id']}; stopped: {result['stopped']}."
 
     return from_outcome(outcome, without_document, text, document_of)

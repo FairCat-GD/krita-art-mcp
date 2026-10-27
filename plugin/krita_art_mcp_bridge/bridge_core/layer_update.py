@@ -5,7 +5,7 @@ from typing import Any
 
 from . import log, verification
 from .errors import BridgeError, exact
-from .history import DONE, LABELS, UNDO, in_front, move
+from .history import DONE, LABELS, UNDO, in_front, move, unconfirmed
 from .jobs import Call, Handler
 from .ledger import Step, fingerprint, node_states
 from .opening import LAYER_ID
@@ -47,7 +47,9 @@ def handlers(registry: Registry, port: DocumentsPort, data: Path) -> dict[str, H
             info = port.describe(document)
             effects = port.effects(document, mode == verification.REGION)
             if mode == verification.REGION:
-                _refuse_reach(verification.reach(tree, effects, layer_id), layer_id)
+                verification.refuse_reach(
+                    tree, effects, layer_id, "this change past the layer's bounds"
+                )
             rect = verification.scope(mode, tree, layer_id, info["size_px"])
             verification.refuse_unverifiable(info, effects, rect)
             allowed = verification.allowed_rows(handle, info["size_px"], rect)
@@ -64,39 +66,40 @@ def handlers(registry: Registry, port: DocumentsPort, data: Path) -> dict[str, H
         step: Step | None = None
         after, verdict = None, None
         problem: BridgeError | None = None
-        try:
-            if "blend_mode" in changes:
-                applied["blend_mode"] = target["blend_mode"]
-                step = _blend(handle, layer_id, changes["blend_mode"], call)
-            rest = {key: value for key, value in changes.items() if key != "blend_mode"}
-            if rest:
-                applied.update({key: target[key] for key in rest})
-                port.set_properties(document, layer_id, rest)
-            if before is not None:
-                port.refresh(document)
-            moved = _moved(tree, port.tree(document), layer_id, changes)
-            if moved:
-                details: dict[str, Any] = {"layer_ids": moved}
-                message = "Krita changed more than the asked properties."
+        with unconfirmed(handle):
+            try:
+                if "blend_mode" in changes:
+                    applied["blend_mode"] = target["blend_mode"]
+                    step = _blend(handle, layer_id, changes["blend_mode"], call)
+                rest = {key: value for key, value in changes.items() if key != "blend_mode"}
+                if rest:
+                    applied.update({key: target[key] for key in rest})
+                    port.set_properties(document, layer_id, rest)
+                if before is not None:
+                    port.refresh(document)
+                moved = _moved(tree, port.tree(document), layer_id, changes)
+                if moved:
+                    details: dict[str, Any] = {"layer_ids": moved}
+                    message = "Krita changed more than the asked properties."
+                    problem = BridgeError("INTERNAL_ERROR", message, False, details)
+                elif before is not None and rect is not None:
+                    after = verification.read(port, document, rect)
+                    verdict = verification.check(
+                        before, after, allowed, handle.preserve_composite_alpha
+                    )
+                    if verdict.leaked:
+                        problem = _leak()
+            except BridgeError as raised:
+                problem = raised
+            except Exception as raised:
+                logging.getLogger(log.NAME).exception("layer.update raised mid-change")
+                details = {"op": "layer.update", "raised": type(raised).__name__}
+                message = "Krita raised during the change; see plugin.log."
                 problem = BridgeError("INTERNAL_ERROR", message, False, details)
-            elif before is not None and rect is not None:
-                after = verification.read(port, document, rect)
-                verdict = verification.check(
-                    before, after, allowed, handle.preserve_composite_alpha
-                )
-                if verdict.leaked:
-                    problem = _leak()
-        except BridgeError as raised:
-            problem = raised
-        except Exception as raised:
-            logging.getLogger(log.NAME).exception("layer.update raised mid-change")
-            details = {"op": "layer.update", "raised": type(raised).__name__}
-            message = "Krita raised during the change; see plugin.log."
-            problem = BridgeError("INTERNAL_ERROR", message, False, details)
-        if problem is not None:
-            # Dropped first, so the re-read never holds two copies of the scope.
-            after = None
-            _roll_back(handle, args, tree, applied, step, before, rect, was, problem, verdict)
+            if problem is not None:
+                # Dropped first, so the re-read never holds two copies of the scope.
+                after = None
+                _roll_back(handle, args, tree, applied, step, before, rect, was, problem, verdict)
         if step is not None:
             step.region = None if verdict is None else verdict.changed_bounds_px
         result = None
@@ -296,17 +299,6 @@ def _inside(nodes: dict[str, Any], node_id: str, ancestor_id: str) -> bool:
             return True
         parent = nodes[parent]["parent_id"]
     return False
-
-
-def _refuse_reach(reasons: list[dict[str, str]], layer_id: str) -> None:
-    if not reasons:
-        return
-    details = {"layer_id": layer_id, "verify": verification.REGION, "reasons": reasons}
-    message = (
-        f"A {reasons[0]['reason']} can carry this change past the layer's bounds, so region "
-        'verification cannot bound it; verify "full" checks the whole canvas.'
-    )
-    raise BridgeError("UNSUPPORTED_CAPABILITY", message, False, details)
 
 
 def _leak() -> BridgeError:

@@ -1,10 +1,11 @@
 import contextlib
 import hashlib
+import logging
 from collections.abc import Iterator
 from pathlib import Path
 from typing import Any
 
-from . import nodes, paths, transfer, verification
+from . import log, nodes, paths, verification
 from .errors import BridgeError, exact
 from .jobs import Call, Handler
 from .ledger import Fingerprint, Step, fingerprint
@@ -34,6 +35,12 @@ FOREIGN = "foreign"
 REVERSED = "reversed"
 # The step moved Krita and neither it nor its reversal could be confirmed.
 LOST = "lost"
+# What a receipt says stopped a batch after its first step.
+STOPPED = {
+    FOREIGN: "not_the_bridges_step",
+    REVERSED: "unconfirmed",
+    LOST: "document_unsafe",
+}
 
 
 @contextlib.contextmanager
@@ -45,6 +52,20 @@ def in_front(port: DocumentsPort, document: Any) -> Iterator[None]:
     finally:
         if previous is not None:
             port.restore_view(previous)
+
+
+@contextlib.contextmanager
+def unconfirmed(handle: Any) -> Iterator[None]:
+    # Around a change and its rollback: anything but the op's own error leaves Krita holding a
+    # change the bridge can neither name nor confirm.
+    try:
+        yield
+    except BridgeError:
+        raise
+    except BaseException:
+        handle.ledger.seal()
+        handle.unsafe = True
+        raise
 
 
 def move(
@@ -149,7 +170,7 @@ def handlers(registry: Registry, port: DocumentsPort, data: Path) -> dict[str, H
         with in_front(port, handle.document):
             for _ in range(count):
                 index = ledger.applied - 1 if action == UNDO else ledger.applied
-                outcome, seen, current = move(port, handle, ledger.steps[index], action, current)
+                outcome, seen, current = _moved(handle, ledger.steps[index], action, current)
                 if outcome == DONE:
                     (ledger.undone if action == UNDO else ledger.redone)()
                     applied.append(ledger.steps[index])
@@ -157,7 +178,7 @@ def handlers(registry: Registry, port: DocumentsPort, data: Path) -> dict[str, H
                 if outcome == FOREIGN:
                     # History cannot cross a step it cannot name, now or later.
                     ledger.seal()
-                stopped = "not_the_bridges_step" if outcome == FOREIGN else "unconfirmed"
+                stopped = STOPPED[outcome]
                 if not applied:
                     _refuse(handle, outcome, seen)
                 break
@@ -166,9 +187,8 @@ def handlers(registry: Registry, port: DocumentsPort, data: Path) -> dict[str, H
         if region is not None:
             with nodes.unmasked_view(port, handle.document):
                 [buffer] = port.composite_rects(handle.document, [region])
-            pixels = transfer.write(
-                paths.transfer_dir(data), buffer, region["width"], region["height"], "BGRA8"
-            )
+            # The steps ran, so a capture that cannot be written leaves the receipt true.
+            pixels = verification.write(paths.transfer_dir(data), buffer, region, "BGRA8")
         return {
             "document_id": handle.document_id,
             "action": action,
@@ -181,6 +201,22 @@ def handlers(registry: Registry, port: DocumentsPort, data: Path) -> dict[str, H
             "region_px": region,
             "pixels": pixels,
         }
+
+    def _moved(
+        handle: Handle, step: Step, action: str, known: Fingerprint | None
+    ) -> tuple[str, dict[str, Any], Fingerprint | None]:
+        # A move that raises may have moved Krita with nothing confirmed.
+        try:
+            return move(port, handle, step, action, known)
+        except Exception as raised:
+            logging.getLogger(log.NAME).exception("history.step raised mid-step")
+            handle.ledger.seal()
+            handle.unsafe = True
+            return LOST, {"raised": type(raised).__name__}, None
+        except BaseException:
+            handle.ledger.seal()
+            handle.unsafe = True
+            raise
 
     guarded = registry.guarded(step_history)
 

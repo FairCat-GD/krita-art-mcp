@@ -12,6 +12,7 @@ import pytest
 from krita_art_mcp import doctor, install, paths, plugin_files, probe, roots
 from krita_art_mcp.bridge_client import BeforeSend, BridgeClient, Done, Failed, Outcome
 from krita_art_mcp.errors import error_body
+from krita_art_mcp.probe import opening
 from krita_art_mcp.probe.report import Report
 from krita_art_mcp.setup_checks import Setup
 
@@ -264,6 +265,36 @@ def test_the_probe_fails_when_the_bridge_does_not_answer(tmp_path: Path) -> None
     status = probe.run(out, _Client(UNREACHABLE), tmp_path / "harness", ["/nonexistent"])
     assert status == 1
     assert out.getvalue().startswith("FAIL     the bridge answers its health check: no bridge")
+
+
+@pytest.mark.parametrize(
+    ("answers", "found"),
+    [(["BUSY", "done"], None), (["BUSY", "BUSY"], "BUSY"), (["FILE_EXISTS"], "FILE_EXISTS")],
+)
+def test_the_probe_s_export_retries_one_busy_with_a_fresh_request_id(
+    tmp_path: Path, answers: list[str], found: str | None
+) -> None:
+    sent: list[str | None] = []
+
+    class Exporting(_Client):
+        def call(
+            self,
+            op: str,
+            args: dict[str, Any] | None = None,
+            *,
+            request_id: str | None = None,
+            before_send: BeforeSend | None = None,
+        ) -> Outcome:
+            assert op == "harness.export_kra"
+            sent.append(request_id)
+            answer = answers[len(sent) - 1]
+            if answer == "done":
+                return Done({"sha256": "0" * 64}, "op-1")
+            return Failed(error_body(answer, "refused", retryable=answer == "BUSY"), "op-1", True)
+
+    outcome = opening._harness_export(Exporting(UNREACHABLE), "doc-1", tmp_path / "probe.kra")
+    assert len(sent) == len(answers) and len(set(sent)) == len(sent)
+    assert opening._failed_code(outcome) == found
 
 
 @pytest.mark.parametrize(

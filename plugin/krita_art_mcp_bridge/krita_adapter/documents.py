@@ -15,6 +15,8 @@ PROBE_NODE = "krita-art-mcp probe node"
 # A filter every Krita build has, which spreads a change past a layer's bounds.
 PROBE_FILTER = "blur"
 UNLIMITED = 1_000_000_000
+# KisConfig::undoStackLimit's own default when kritarc sets none (libs/ui/kis_config.cc).
+UNDO_LIMIT_DEFAULT = 200
 
 
 class KritaDocuments:
@@ -263,11 +265,11 @@ class KritaDocuments:
 
     def undo_limit(self) -> int:
         # Krita's own setting; 0 keeps every step.
-        text = str(Krita.instance().readSetting("", "undoStackLimit", "30"))
+        text = str(Krita.instance().readSetting("", "undoStackLimit", str(UNDO_LIMIT_DEFAULT)))
         try:
             limit = int(text)
         except ValueError:
-            return 30
+            return UNDO_LIMIT_DEFAULT
         return limit if limit > 0 else UNLIMITED
 
     def label_timing(self, document: Any, trials: int) -> list[list[str | None]]:
