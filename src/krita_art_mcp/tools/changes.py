@@ -420,8 +420,8 @@ def history_receipt(outcome: Outcome) -> CallToolResult:
             return f"{done} in {result['document_id']}, verified."
         if result["stopped"] == "document_unsafe":
             return (
-                f"{done} in {result['document_id']}; the next step could not be confirmed or put "
-                "back, so the document is unsafe: reopen it."
+                f"{done} in {result['document_id']}; nothing confirmed where the next step left "
+                "Krita, so the document is unsafe: reopen it."
             )
         return f"{done} in {result['document_id']}; stopped: {result['stopped']}."
 

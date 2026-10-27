@@ -53,6 +53,12 @@ class Handle:
         self.touched()
         return was
 
+    def lost(self) -> None:
+        # Krita may hold a change nothing confirmed: history stops below it, and the document
+        # takes no more changes until it is reopened.
+        self.ledger.seal()
+        self.unsafe = True
+
     def touched(self) -> None:
         # Its nodes changed: Krita's layer docker updates them a moment later (see the close).
         self.changed_at = time.monotonic()

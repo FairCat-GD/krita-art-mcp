@@ -66,7 +66,7 @@ def handlers(registry: Registry, port: DocumentsPort, data: Path) -> dict[str, H
         step: Step | None = None
         after, verdict = None, None
         problem: BridgeError | None = None
-        with unconfirmed(handle):
+        with unconfirmed(handle, bool(changes)):
             try:
                 if "blend_mode" in changes:
                     applied["blend_mode"] = target["blend_mode"]

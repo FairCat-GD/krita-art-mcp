@@ -3098,6 +3098,40 @@ Inserted by review 10 (2026-10-25): the owner chose findings F1, F2, F5, F6, F7 
   - 567 plugin-core tests passed (+9), 0 skipped;
   - `probe`: 95 PASS, 0 FAIL, 33 MEASURED (+1), 74.3 s;
   - 17 registered tools; 19 schema files; instructions 3,175 characters.
+- **Review (`/code-review high`), 7 findings, all fixed.**
+  - **A raise before Krita was asked to move made the document unsafe.** `move` now tells the
+    two apart:
+    - a raise in its pre-check propagates, and history answers REVERSED: the document is as it
+      was, retryable as the first step, `stopped: "unconfirmed"` after it;
+    - once Krita is asked, an `Exception` is LOST, and anything else marks it lost and
+      re-raises.
+
+    History's own `_moved` wrapper went.
+  - **History's capture read could still fail an op whose steps ran.** `_capture` makes the read
+    best-effort too; `pixels` is null when it raises.
+  - **A raised step's messages said it "could not be put back",** though no reversal was tried.
+    `_refuse` names the raise, and the `document_unsafe` text says nothing confirmed where the
+    step left Krita.
+  - **The guard marked an update that writes nothing unsafe** (only `active`, or every value
+    unchanged). `unconfirmed(handle, changing)` arms only when there are changes.
+  - **The seal-and-unsafe pair was written three times.** It is now `Handle.lost()`, used by the
+    guard and by `move`.
+  - **The two LOST sources left the ledger differently;** `move`'s LOST now seals as well.
+  - **`_tall_tip`'s local `paths` shadowed the module;** it is `lines`.
+  - **Falsified** (each broken once, failed at its own test, restored):
+    - a pre-check raise mapped to LOST → both pre-check tests failed;
+    - each raise message's wording → its test failed;
+    - LOST without the seal → the LOST test failed;
+    - the capture read not caught → its test failed;
+    - the guard armed regardless → the write-nothing test failed.
+  - **Measured:** `probe` 95 PASS, 0 FAIL, 33 MEASURED in 73.1 s on the reviewed build, after one
+    more Krita restart with the owner's approval (0 open, 0 unsaved). The F4 line is unchanged;
+    `transfer/` and `harness/` were empty after the run, and `plugin.log` was clean.
+  - **Numbers after the review:**
+    - `verify`: 6 stages, all PASS;
+    - 490 server tests passed, 0 skipped;
+    - 571 plugin-core tests passed (+4), 0 skipped;
+    - `probe`: 95 PASS, 0 FAIL, 33 MEASURED, 73.1 s.
 
 ---
 

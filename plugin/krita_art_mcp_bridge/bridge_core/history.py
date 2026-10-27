@@ -55,7 +55,7 @@ def in_front(port: DocumentsPort, document: Any) -> Iterator[None]:
 
 
 @contextlib.contextmanager
-def unconfirmed(handle: Any) -> Iterator[None]:
+def unconfirmed(handle: Any, changing: bool = True) -> Iterator[None]:
     # Around a change and its rollback: anything but the op's own error leaves Krita holding a
     # change the bridge can neither name nor confirm.
     try:
@@ -63,8 +63,8 @@ def unconfirmed(handle: Any) -> Iterator[None]:
     except BridgeError:
         raise
     except BaseException:
-        handle.ledger.seal()
-        handle.unsafe = True
+        if changing:
+            handle.lost()
         raise
 
 
@@ -79,7 +79,9 @@ def move(
     # its label, the document's state and any witness pixels, before and after; a move that
     # cannot be confirmed is reversed once, and the document is unsafe if that cannot be
     # confirmed either. known is the state the previous move confirmed in this job, so it is not
-    # read again (pixels always are); the state now confirmed comes back.
+    # read again (pixels always are); the state now confirmed comes back. A raise before Krita
+    # is asked to move leaves it as it was; once asked, a raise is LOST, or re-raised if it is
+    # not an Exception.
     document = handle.document
     back = direction == UNDO
     now, then = (step.after, step.before) if back else (step.before, step.after)
@@ -88,16 +90,23 @@ def move(
     if seen is not None:
         return FOREIGN, seen, None
     was = handle.before_change()
-    _act(port, document, back)
-    seen = _shows(port, document, step.label, REDO if back else UNDO, then, None, hidden)
-    if seen is None:
-        return DONE, {}, then
-    _act(port, document, not back)
-    if _shows(port, document, step.label, UNDO if back else REDO, now, None, shown) is None:
-        # Back as it was, so nothing changed.
-        handle.dirty = was
-        return REVERSED, seen, now
-    handle.unsafe = True
+    try:
+        _act(port, document, back)
+        seen = _shows(port, document, step.label, REDO if back else UNDO, then, None, hidden)
+        if seen is None:
+            return DONE, {}, then
+        _act(port, document, not back)
+        if _shows(port, document, step.label, UNDO if back else REDO, now, None, shown) is None:
+            # Back as it was, so nothing changed.
+            handle.dirty = was
+            return REVERSED, seen, now
+    except Exception as raised:
+        logging.getLogger(log.NAME).exception("Krita raised once asked to move a step")
+        seen = {"expected_label": step.label, "raised": type(raised).__name__}
+    except BaseException:
+        handle.lost()
+        raise
+    handle.lost()
     return LOST, seen, None
 
 
@@ -170,7 +179,14 @@ def handlers(registry: Registry, port: DocumentsPort, data: Path) -> dict[str, H
         with in_front(port, handle.document):
             for _ in range(count):
                 index = ledger.applied - 1 if action == UNDO else ledger.applied
-                outcome, seen, current = _moved(handle, ledger.steps[index], action, current)
+                try:
+                    outcome, seen, current = move(
+                        port, handle, ledger.steps[index], action, current
+                    )
+                except Exception as raised:
+                    # Before Krita was asked to move: the document is as it was.
+                    logging.getLogger(log.NAME).exception("history.step raised before a step")
+                    outcome, seen, current = REVERSED, {"raised": type(raised).__name__}, None
                 if outcome == DONE:
                     (ledger.undone if action == UNDO else ledger.redone)()
                     applied.append(ledger.steps[index])
@@ -185,10 +201,7 @@ def handlers(registry: Registry, port: DocumentsPort, data: Path) -> dict[str, H
         region = verification.union(step.region for step in applied)
         pixels = None
         if region is not None:
-            with nodes.unmasked_view(port, handle.document):
-                [buffer] = port.composite_rects(handle.document, [region])
-            # The steps ran, so a capture that cannot be written leaves the receipt true.
-            pixels = verification.write(paths.transfer_dir(data), buffer, region, "BGRA8")
+            pixels = _capture(handle, region)
         return {
             "document_id": handle.document_id,
             "action": action,
@@ -202,21 +215,15 @@ def handlers(registry: Registry, port: DocumentsPort, data: Path) -> dict[str, H
             "pixels": pixels,
         }
 
-    def _moved(
-        handle: Handle, step: Step, action: str, known: Fingerprint | None
-    ) -> tuple[str, dict[str, Any], Fingerprint | None]:
-        # A move that raises may have moved Krita with nothing confirmed.
+    def _capture(handle: Handle, region: dict[str, int]) -> dict[str, Any] | None:
+        # The steps ran, so a capture that cannot be read or written leaves the receipt true.
         try:
-            return move(port, handle, step, action, known)
-        except Exception as raised:
-            logging.getLogger(log.NAME).exception("history.step raised mid-step")
-            handle.ledger.seal()
-            handle.unsafe = True
-            return LOST, {"raised": type(raised).__name__}, None
-        except BaseException:
-            handle.ledger.seal()
-            handle.unsafe = True
-            raise
+            with nodes.unmasked_view(port, handle.document):
+                [buffer] = port.composite_rects(handle.document, [region])
+        except Exception:
+            logging.getLogger(log.NAME).exception("history.step's capture was not read")
+            return None
+        return verification.write(paths.transfer_dir(data), buffer, region, "BGRA8")
 
     guarded = registry.guarded(step_history)
 
@@ -234,15 +241,19 @@ def handlers(registry: Registry, port: DocumentsPort, data: Path) -> dict[str, H
 
 def _refuse(handle: Handle, outcome: str, seen: dict[str, Any]) -> None:
     details = {"document_id": handle.document_id, **seen}
+    raised = "raised" in seen
     if outcome == LOST:
         message = (
-            "Krita's history did not move as the bridge expected and could not be put back; the "
-            "document is unsafe. Inspect it, then reopen it."
+            "Krita raised once asked to move the step, so nothing confirmed where it is"
+            if raised
+            else "Krita's history did not move as the bridge expected and could not be put back"
         )
+        message += "; the document is unsafe. Inspect it, then reopen it."
         raise BridgeError("INTERNAL_ERROR", message, False, details)
     if outcome == REVERSED:
-        # Krita did not take the step, and the document was confirmed back as it was.
-        message = "Krita did not take the step; the document is as it was. Retry."
+        # Krita did not take the step, or raised before it was asked to; nothing changed.
+        message = "Krita raised before the step" if raised else "Krita did not take the step"
+        message += "; the document is as it was. Retry."
         raise BridgeError("INTERNAL_ERROR", message, True, details)
     message = (
         "The document's history holds a step the bridge did not make (an edit in Krita, or one "

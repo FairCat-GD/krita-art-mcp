@@ -11,18 +11,23 @@ Release 0.11.0.
 
 - **Round 1 is the Phase 1 build.** Sessions 0 to 10a are done, 6a and 7a included. 11 to 15
   remain, releasing 0.11.0 to 0.14.0.
-- **10a is committed locally, not pushed.** `origin/main` holds everything through `71548d5`
-  (session 10's review commit). 10a's commit and its review-fixes commit wait for the next
-  approved push. List `origin/main..HEAD` before any push.
+- **The push status.** `origin` is the private GitHub repository. `origin/main` holds
+  everything through 10a's review commit ("review: a raise before an undo leaves the document
+  safe, and 6 smaller"), pushed with the owner's approval; nothing is local. List
+  `origin/main..HEAD` before any push.
 - **What 10a left that 11 builds on:**
-  - **`history.unconfirmed(handle)`** is the one guard around a change and its rollback. It lets
-    the op's own `BridgeError` through, and on any other raise it seals, marks unsafe and
-    re-raises. The stroke and `layer_update` use it. A new mutating op uses it too; 11 adds
-    none.
+  - **`history.unconfirmed(handle, changing)`** is the one guard around a change and its
+    rollback. It lets the op's own `BridgeError` through, and on any other raise it calls
+    `Handle.lost()` (seal and unsafe) when the op writes, then re-raises. The stroke and
+    `layer_update` use it. A new mutating op uses it too; 11 adds none.
+  - **`history.move`** lets a raise before Krita is asked to move propagate (the document is as
+    it was). Once Krita is asked, an `Exception` is LOST, sealed and unsafe.
   - **`verification.write`** is the one home of the best-effort transfer write: a file that
-    cannot be written is logged and left out. History's capture and `verification.files` use it.
-  - **`krita_history_step`'s `stopped`** now takes `document_unsafe` (LOST, or a step whose
-    move raised); `unconfirmed` means Krita did not take the step and it was put back.
+    cannot be written is logged and left out. History's capture uses it, and also catches its
+    own composite read; `verification.files` uses it.
+  - **`krita_history_step`'s `stopped`** now takes `document_unsafe` (LOST, or a raise once
+    Krita was asked to move). `unconfirmed` means Krita did not take the step, or raised before
+    it was asked; either way the document is as it was.
   - **`undo_limit()` falls back to 200,** Krita's own default.
   - **The probe** has a tall-tip MEASURED line (`_tall_tip`, its own 480 × 480 working copy),
     and the KRA export retries one BUSY.
@@ -33,11 +38,11 @@ Release 0.11.0.
   - `KisConfig::undoStackLimit` defaults to 200 (`libs/ui/kis_config.cc:192-195` at the running
     build `bd6e8d0`).
 - **Decisions written down nowhere else:** none beyond 10a's done-note.
-- **Baseline** (10a, as committed; 11 moves these only by what it adds):
+- **Baseline** (10a after its review; 11 moves these only by what it adds):
   - `verify`: 6 stages, all PASS;
   - 490 server tests passed, 0 skipped;
-  - 567 plugin-core tests passed, 0 skipped;
-  - `probe`: 95 PASS, 0 FAIL, 33 MEASURED, 74.3 s;
+  - 571 plugin-core tests passed, 0 skipped;
+  - `probe`: 95 PASS, 0 FAIL, 33 MEASURED, 73.1 s;
   - 17 registered tools; 19 schema files; instructions 3,175 characters (11 may add at most 300
     net).
 - **Not done:**

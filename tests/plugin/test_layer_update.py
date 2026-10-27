@@ -467,6 +467,24 @@ def test_an_interrupt_mid_change_seals_history_and_marks_the_document_unsafe(
     assert world.update_refused(document_id, opacity=1)["code"] == "DOCUMENT_UNSAFE"
 
 
+def test_an_interrupt_in_an_update_that_writes_nothing_leaves_the_document_safe(
+    world: World,
+) -> None:
+    document_id, handle = world.document()
+    tree, reads = world.port.tree, itertools.count(1)
+
+    def read(document: Any) -> dict[str, Any]:
+        # The second read is the one after the (absent) write.
+        if next(reads) == 2:
+            raise KeyboardInterrupt
+        return tree(document)
+
+    world.port.tree = read  # type: ignore[method-assign]
+    with pytest.raises(KeyboardInterrupt):
+        world.update(document_id, active=True)
+    assert not handle.unsafe and handle.ledger.undo_available() == handle.ledger.applied
+
+
 def test_an_interrupt_in_the_rollback_marks_the_document_unsafe(world: World) -> None:
     document_id, handle = world.document()
     world.allow(document_id, _box(0, 0, 2, 4))

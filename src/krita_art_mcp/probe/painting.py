@@ -439,7 +439,7 @@ async def _tall_tip(
         report.measured(name, f"its document did not open: {code(opened)}")
         return
     middle = TIP_CANVAS_PX / 2
-    paths = {
+    lines = {
         "horizontal": _line(middle - 80, middle, middle + 80, middle),
         "vertical": _line(middle, middle - 80, middle, middle + 80),
         "diagonal": _line(middle - 60, middle - 60, middle + 60, middle + 60),
@@ -447,7 +447,7 @@ async def _tall_tip(
     found, margins = [], set()
     try:
         root = opened["data"]["root_layer_id"]
-        for label, points in paths.items():
+        for label, points in lines.items():
             layer_id = await _layer(a, document_id, root, f"tip {label}")
             brush = _brush(tall, size_px=TIP_BRUSH_PX)
             arguments = _stroke(document_id, layer_id or "", brush, points, verify="full")

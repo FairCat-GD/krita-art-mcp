@@ -846,7 +846,42 @@ def test_a_first_step_that_raises_is_refused_and_the_document_is_unsafe(world: W
     body = world.refused("history.step", _undo(document_id))
     assert (body["code"], body["retryable"]) == ("INTERNAL_ERROR", False)
     assert body["details"]["raised"] == "RuntimeError"
+    assert "raised once asked" in body["message"]
     assert handle.unsafe and handle.ledger.undo_available() == 0
+
+
+def _labels_raising(world: World, on_read: int) -> None:
+    labels, reads = world.port.undo_labels, itertools.count(1)
+
+    def read(document: Any) -> tuple[str | None, str | None]:
+        if next(reads) == on_read:
+            raise RuntimeError("Krita raised")
+        return labels(document)
+
+    world.port.undo_labels = read  # type: ignore[method-assign]
+
+
+def test_a_raise_before_krita_is_asked_to_move_leaves_the_document_as_it_was(
+    world: World,
+) -> None:
+    document_id, handle = world.created()
+    world.layer(document_id)
+    _labels_raising(world, 1)
+    body = world.refused("history.step", _undo(document_id))
+    assert (body["code"], body["retryable"]) == ("INTERNAL_ERROR", True)
+    assert "raised before the step" in body["message"]
+    assert not handle.unsafe and handle.ledger.undo_available() == 1
+
+
+def test_a_raise_before_the_second_step_stops_history_with_the_first_kept(world: World) -> None:
+    document_id, handle = world.created()
+    world.layer(document_id)
+    world.layer(document_id)
+    # Each step reads the labels before and after Krita moves.
+    _labels_raising(world, 3)
+    undone = world.history(document_id, "undo", 2)
+    assert (undone["steps_applied"], undone["stopped"]) == (1, "unconfirmed")
+    assert not handle.unsafe and handle.ledger.undo_available() == 1
 
 
 def test_an_interrupt_mid_step_seals_history_and_marks_the_document_unsafe(world: World) -> None:
@@ -874,7 +909,7 @@ def test_a_step_lost_after_the_first_says_the_document_is_unsafe(world: World) -
     world.port.redo = lambda document: None  # type: ignore[method-assign]
     undone = world.history(document_id, "undo", 2)
     assert (undone["steps_applied"], undone["stopped"]) == (1, "document_unsafe")
-    assert handle.unsafe
+    assert handle.unsafe and undone["undo_available"] == 0
 
 
 def test_a_capture_that_cannot_be_written_leaves_the_receipt_true(
@@ -892,6 +927,16 @@ def test_a_capture_that_cannot_be_written_leaves_the_receipt_true(
     undone = world.history(document_id, "undo", 2)
     assert (undone["steps_applied"], undone["verified"], undone["stopped"]) == (2, True, None)
     assert undone["region_px"] == {"x": 1, "y": 0, "width": 2, "height": 2}
+    assert undone["pixels"] is None and not handle.unsafe
+
+
+def test_a_capture_that_cannot_be_read_leaves_the_receipt_true(world: World) -> None:
+    document_id, handle = world.created()
+    world.layer(document_id)
+    handle.ledger.steps[0].region = {"x": 1, "y": 0, "width": 2, "height": 2}
+    world.port.fail["composite"] = RuntimeError("Krita raised")
+    undone = world.history(document_id, "undo")
+    assert (undone["steps_applied"], undone["verified"]) == (1, True)
     assert undone["pixels"] is None and not handle.unsafe
 
 
