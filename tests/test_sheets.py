@@ -157,6 +157,8 @@ def test_a_cell_is_the_native_crop_resampled_once_with_the_filter() -> None:
     expected = np.asarray(Image.fromarray(art).resize((240, 181), Image.Resampling.LANCZOS))
     assert (_cell(sheet) == expected).all()
     assert sheet.data["columns"][0]["filter"] == "lanczos"
+    # Without overlays the sheet is its own clean sheet.
+    assert sheet.clean is None
 
 
 def test_a_native_size_cell_keeps_the_crops_bytes_and_applies_no_filter() -> None:
@@ -264,8 +266,26 @@ def test_an_anchor_outside_its_crop_is_refused() -> None:
 
 
 def test_the_recipe_hash_names_everything_that_decides_a_sheet_but_its_pixels() -> None:
-    arguments = _arguments([_world(2.95)])
-    first = sheets.recipe_sha256(arguments["recipes"][0], arguments)
-    assert first == sheets.recipe_sha256(dict(arguments["recipes"][0]), dict(arguments))
-    other = {**arguments, "filter": "box"}
-    assert sheets.recipe_sha256(arguments["recipes"][0], other) != first
+    recipe = _world(2.95)
+    arguments = _arguments([recipe], master_to_export_scale=0.5, export_pixels_per_unit=4)
+    arguments["sources"] = [{"document_id": "doc-1", "frame": 0, "target": "composite"}]
+    first = sheets.recipe_sha256(recipe, arguments)
+    assert first == sheets.recipe_sha256(dict(recipe), dict(arguments))
+    crop = {"x": 0, "y": 0, "width": 8, "height": 8}
+    changed = [
+        {**arguments, "filter": "box"},
+        {**arguments, "master_to_export_scale": 1},
+        {**arguments, "export_pixels_per_unit": 2},
+        {**arguments, "sources": [{**arguments["sources"][0], "crop_rect": crop}]},
+        {**arguments, "sources": [{**arguments["sources"][0], "baseline_id": "baseline-1"}]},
+    ]
+    assert all(sheets.recipe_sha256(recipe, other) != first for other in changed)
+    # Which document it shows is not part of the recipe.
+    elsewhere = {**arguments, "sources": [{**arguments["sources"][0], "document_id": "doc-2"}]}
+    assert sheets.recipe_sha256(recipe, elsewhere) == first
+
+
+def test_a_reported_anchor_is_exact_like_the_transform_beside_it() -> None:
+    source = _source(100, 4, anchor=(100 / 3, 2), units=4, master=1)
+    [sheet] = sheets.render(_arguments([_world(4)]), [source], {(0, "current"): _art(4, 100)}, {})
+    assert sheet.data["columns"][0]["anchor_px"] == [100 / 3, 2]

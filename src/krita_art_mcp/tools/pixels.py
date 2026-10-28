@@ -1,6 +1,5 @@
 import base64
 import datetime
-import hashlib
 import json
 import logging
 from dataclasses import replace
@@ -130,17 +129,9 @@ def _capture_files(places: Places, outcome: Done) -> Outcome:
     else:
         message = "The capture's preview is missing; capture again."
         return failed(outcome, error_body("INTERNAL_ERROR", message, retryable=True))
-    path = str(found)
     native = (rect["width"], rect["height"])
     data = {
-        "image": {
-            "uri": path,
-            "path": path,
-            "mime_type": "image/png",
-            "sha256": hashlib.sha256(full).hexdigest(),
-            "size_bytes": len(full),
-            "retention_days": imaging.RETENTION_DAYS,
-        },
+        "image": imaging.artifact(found, full),
         "inline": {
             "preview": preview,
             "output_size_px": list(shown_size),

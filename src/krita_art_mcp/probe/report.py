@@ -4,6 +4,7 @@ from typing import Any, TextIO
 import numpy as np
 from mcp import Client
 from mcp.types import CallToolResult
+from PIL import Image
 
 
 class Report:
@@ -68,3 +69,12 @@ def differs(found: np.ndarray | None, expected: np.ndarray | None) -> str:
     different = int(np.any(found != expected, axis=-1).sum())
     worst = int(np.abs(found.astype(int) - expected.astype(int)).max())
     return "" if different == 0 else f"{different} pixels differ, by up to {worst}"
+
+
+def sheet_cell(sheet: dict[str, Any], column: int, row: int = 0, clean: bool = False) -> np.ndarray:
+    # One cell of a krita_preview_render sheet, read from its PNG, as RGBA.
+    with Image.open(sheet["clean_image" if clean else "image"]["path"]) as image:
+        pixels = np.asarray(image.convert("RGBA"))
+    x, y = sheet["columns"][column]["x_px"], sheet["rows"][row]["y_px"]
+    width, height = sheet["cell_px"]
+    return pixels[y : y + height, x : x + width]

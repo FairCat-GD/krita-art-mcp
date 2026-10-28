@@ -17,6 +17,8 @@ MAX_SHEET_PX = 4096
 # Drawn over the cells only, never into a clean sheet or the document.
 OVERLAY_RGB = {"selection": (255, 0, 255), "allowed_mask": (0, 255, 255)}
 AS_OPENED, CURRENT = "as_opened", "current"
+# A source's fields that name what it shows, not how; the recipe hash leaves them out.
+IDENTITY = ("document_id", "frame", "layer_id", "baseline_id")
 
 
 class Refused(Exception):
@@ -225,11 +227,19 @@ def document_to_cell(source: Source, placed: Placed, zoom: int) -> list[int | fl
         zoom * sy,
         zoom * (placed.offset[1] - sy * rect["y"]),
     ]
-    return [int(value) if float(value).is_integer() else value for value in values]
+    return [_exact(value) for value in values]
 
 
 def recipe_sha256(recipe: dict[str, Any], arguments: dict[str, Any]) -> str:
-    # Everything that decides a sheet beside its pixels.
+    # Everything that decides a sheet beside the pixels it shows: which documents, layers and
+    # baselines are not part of it, how each source is cropped, anchored and scaled is.
+    sources = [
+        {
+            **{key: value for key, value in given.items() if key not in IDENTITY},
+            "as_opened": "baseline_id" in given,
+        }
+        for given in arguments["sources"]
+    ]
     canonical = {
         "recipe": recipe,
         "filter": arguments["filter"],
@@ -237,6 +247,9 @@ def recipe_sha256(recipe: dict[str, Any], arguments: dict[str, Any]) -> str:
         "tints": arguments.get("tints", []),
         "greyscale": arguments.get("greyscale", False),
         "overlays": arguments["overlays"],
+        "export_pixels_per_unit": arguments.get("export_pixels_per_unit"),
+        "master_to_export_scale": arguments.get("master_to_export_scale"),
+        "sources": sources,
     }
     text = json.dumps(canonical, sort_keys=True, separators=(",", ":"))
     return hashlib.sha256(text.encode("utf-8")).hexdigest()
@@ -273,16 +286,17 @@ def _sheet(
     step_x, step_y = cell[0] * zoom + GUTTER_PX, cell[1] * zoom + GUTTER_PX
     sheet = np.empty((found.size[1], found.size[0], 4), dtype=np.uint8)
     sheet[...] = GUTTER
-    clean = sheet.copy()
     bases = [_base(row.background, cell) for row in found.rows]
     outlines = {
         index: {
-            name: _outline(mask, found.placed[index].size)
+            name: edge
             for name, mask in masks.get(index, {}).items()
+            if (edge := _outline(mask, found.placed[index].size)).any()
         }
         for index in range(len(sources))
     }
-    drawn = False
+    # A clean sheet only when some outline is drawn; otherwise the sheet is clean.
+    clean = sheet.copy() if any(outlines.values()) else None
     columns = []
     for column, (index, state) in enumerate(found.columns):
         source, placed = sources[index], found.placed[index]
@@ -290,14 +304,18 @@ def _sheet(
         x = GUTTER_PX + column * step_x
         for number, row in enumerate(found.rows):
             y = GUTTER_PX + number * step_y
+            box = (slice(y, y + cell[1] * zoom), slice(x, x + cell[0] * zoom))
             painted = _treated(bases[number], cell, art, placed.offset, row)
-            clean[y : y + cell[1] * zoom, x : x + cell[0] * zoom] = _zoomed(painted, zoom)
+            zoomed = _zoomed(painted, zoom)
+            if clean is not None:
+                clean[box] = zoomed
             for name, edge in outlines[index].items():
                 left, top = placed.offset
                 region = painted[top : top + placed.size[1], left : left + placed.size[0]]
                 region[edge] = (*OVERLAY_RGB[name], 255)
-                drawn = drawn or bool(edge.any())
-            sheet[y : y + cell[1] * zoom, x : x + cell[0] * zoom] = _zoomed(painted, zoom)
+            if outlines[index]:
+                zoomed = _zoomed(painted, zoom)
+            sheet[box] = zoomed
         columns.append(_column(x, index, state, source, placed, found, applied, outlines[index]))
     rows = [
         {
@@ -322,7 +340,7 @@ def _sheet(
         "columns": columns,
         "rows": rows,
     }
-    return Sheet(_image(sheet), _image(clean) if drawn else None, data)
+    return Sheet(_image(sheet), None if clean is None else _image(clean), data)
 
 
 def _column(
@@ -347,7 +365,7 @@ def _column(
         "baseline_id": source.baseline_id,
         "profile_id": source.profile_id,
         "source_rect": source.rect,
-        "anchor_px": [colour.number(source.anchor[0]), colour.number(source.anchor[1])],
+        "anchor_px": [_exact(source.anchor[0]), _exact(source.anchor[1])],
         "export_pixels_per_unit": source.export_pixels_per_unit if world else None,
         "master_to_export_scale": source.master_to_export_scale if world else None,
         "scale": placed.scale,
@@ -355,7 +373,7 @@ def _column(
         "offset_px": [placed.offset[0] * zoom, placed.offset[1] * zoom],
         "filter": applied,
         "document_to_cell": document_to_cell(source, placed, zoom),
-        "overlays": [name for name, edge in outlines.items() if edge.any()],
+        "overlays": list(outlines),
     }
 
 
@@ -417,6 +435,11 @@ def _zoomed(pixels: Pixels, zoom: int) -> Pixels:
 def _image(pixels: Pixels) -> Image.Image:
     image = Image.fromarray(pixels)
     return image.convert("RGB") if (pixels[..., 3] == 255).all() else image
+
+
+def _exact(value: float) -> int | float:
+    # Whole numbers as integers, the rest unrounded.
+    return int(value) if float(value).is_integer() else value
 
 
 def _half_up(numerator: int, denominator: int) -> int:

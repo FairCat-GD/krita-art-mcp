@@ -3290,6 +3290,49 @@ Inserted by review 10 (2026-10-25): the owner chose findings F1, F2, F5, F6, F7 
   - 586 plugin-core tests passed (+15), 0 skipped;
   - `probe`: 101 PASS (+6), 0 FAIL, 33 MEASURED, 79.0 s;
   - 18 registered tools (+1); 19 schema files; instructions 3,351 characters (+176 of 300).
+- **Review (`/code-review high`), 10 findings, all fixed.**
+  - **A baseline file that could not serve was never read again.** A mis-shaped or unreadable
+    `.npy` failed every render as retryable, yet the file stayed, so each retry sent
+    `read_baseline: false` and failed the same way. `_pixels` now removes it before failing, and
+    the retry reads the baseline from the working copy's file again.
+  - **`recipe_sha256` left out what scales a sheet.** It now covers:
+    - the top-level `export_pixels_per_unit` and `master_to_export_scale`;
+    - each source's crop, anchor, units and target, and whether it has a baseline.
+
+    Which document, layer or baseline a source shows stays out.
+  - **The read bound's refusal suggested a crop when only the baseline was too large.** A
+    baseline is read over its whole canvas. When that alone is over the bound, the message now
+    says to leave out `baseline_id`; the details split crop and baseline pixels.
+  - **The clean sheet was built for every render;** it is now allocated only when an outline is
+    drawn, and a cell is zoomed a second time only then.
+  - **The artifact dict had two homes;** `imaging.artifact` builds it for captures and previews.
+  - **A fresh render read its own PNGs back from disk;** `_write` returns the inline bytes it
+    has, and only a rebuilt receipt reads them.
+  - **The sheet-cell crop had four copies;** `probe.report.sheet_cell` serves the probe and the
+    tool tests. `test_sheets` keeps its own, which crops an in-memory sheet.
+  - **`anchor_px` was rounded to 4 decimals** beside exact transforms; both now report whole
+    numbers as integers and the rest unrounded (`sheets._exact`).
+  - **`previews.run` took an unused client.**
+  - **`resolve_preview`'s failure branches had no tests.** They now cover a baseline file that is
+    unreadable or mis-shaped, pixels already taken, and sheets another server made meanwhile.
+  - **Falsified** (each broken once, failed at its own test, restored from a copy):
+    - the bad file's removal, the load-error catch;
+    - the hash's units, sources and identity;
+    - the exact anchor, the clean sheet only with outlines;
+    - the baseline-too-large message;
+    - the taken pixels' retry, the shared server's sheets, the inline bytes.
+
+    The shared-server test first stubbed `find` so the real lookup ran on its first call and
+    never reached the branch; it now finds nothing on the first call.
+  - **Measured:** `probe` 101 PASS, 0 FAIL, 33 MEASURED in 79.3 s on the reviewed build, after one
+    more Krita restart with the owner's approval (0 open, 0 unsaved).
+    - N-02: first render 0.74 s, p95 0.31 s;
+    - `transfer/` and `harness/` empty, `plugin.log` clean.
+  - **Numbers after the review:**
+    - `verify`: 6 stages, all PASS;
+    - 528 server tests passed (+5), 0 skipped;
+    - 587 plugin-core tests passed (+1), 0 skipped;
+    - `probe`: 101 PASS, 0 FAIL, 33 MEASURED, 79.3 s.
 
 ---
 

@@ -9,12 +9,11 @@ from typing import Any
 
 import numpy as np
 from mcp import Client
-from PIL import Image
 
 from krita_art_mcp import baselines, paths, roots
 from krita_art_mcp.bridge_client import BridgeClient, Done, Failed
 from krita_art_mcp.probe import fixtures
-from krita_art_mcp.probe.report import Report, close, code, differs, tool
+from krita_art_mcp.probe.report import Report, close, code, differs, sheet_cell, tool
 
 COPY_NAME = re.compile(r"^\d{8}T\d{6}\.\d{3}Z-probe\.(ora|kra|png)$")
 # Never writable, so an escape that slipped through could still write nothing there.
@@ -215,13 +214,9 @@ def _as_opened_cell(rendered: dict[str, Any], baseline: np.ndarray) -> list[str]
     sheet = ((rendered.get("data") or {}).get("sheets") or [None])[0]
     if sheet is None:
         return [f"the render failed: {code(rendered)}"]
-    column, row = sheet["columns"][0], sheet["rows"][0]
-    width, height = sheet["cell_px"]
-    with Image.open(sheet["image"]["path"]) as image:
-        pixels = np.asarray(image.convert("RGBA"))
-    found = pixels[row["y_px"] : row["y_px"] + height, column["x_px"] : column["x_px"] + width]
-    problem = differs(found, baseline)
-    return [f"the as-opened cell: {problem}"] if problem or column["state"] != "as_opened" else []
+    problem = differs(sheet_cell(sheet, 0), baseline)
+    as_opened = sheet["columns"][0]["state"] == "as_opened"
+    return [f"the as-opened cell: {problem}"] if problem or not as_opened else []
 
 
 def _tree_problems(layers: list[dict[str, Any]], tree: list[dict[str, Any]]) -> list[str]:

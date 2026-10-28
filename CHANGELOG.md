@@ -28,6 +28,9 @@ opened, instead of judging a capture scaled to fit.
   - Every cell is resampled once from Krita's native pixels with the given filter. The receipt
     gives each column's exact document-to-cell transform after rounding, its scale, filter and
     source, and each row's background and treatment.
+  - Each sheet's `recipe_sha256` names everything that decides it beside its pixels: the recipe,
+    filter, backgrounds, tints, greyscale and overlays, the unit defaults, and each source's crop,
+    anchor and units.
   - Sheets are PNGs kept 7 days. Each one that fits is returned inline at full size, in recipe
     order; the rest are named by path, never shown scaled down.
   - Refused rather than shrunk or clipped: a sheet over 4096 px on its long edge, an image pushed
@@ -39,7 +42,8 @@ opened, instead of judging a capture scaled to fit.
 - **Opening no longer writes the `as_opened` baseline.** The first preview that asks for it
   reads it from the working copy's file, which no save overwrites, so an 8192 × 8192 master
   opens in about half a second instead of five, with no 268 MB file. If that file has changed
-  since the open, the preview answers `SOURCE_HASH_MISMATCH`.
+  since the open, the preview answers `SOURCE_HASH_MISMATCH`; a kept baseline the server cannot
+  read is dropped, and the next render reads it from the file again.
 
 ## [0.10.0] — 2026-10-27
 

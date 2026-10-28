@@ -182,9 +182,25 @@ def test_one_preview_reads_at_most_a_whole_8k_master_beside_its_baseline(world: 
     world.port.live[max(world.port.live)]["size_px"] = [8192, 8192]
     source = _source(opened["document_id"], baseline_id=handle.baseline_id, read_baseline=True)
     second = _source(opened["document_id"], rect={"x": 0, "y": 0, "width": 1, "height": 1})
-    assert world.code(source, second) == "INVALID_ARGUMENT"
+    with pytest.raises(BridgeError) as refused:
+        world.preview(source, second)
+    assert refused.value.body["code"] == "INVALID_ARGUMENT"
+    assert "crop_rects" in refused.value.body["message"]
     assert previews.MAX_PREVIEW_PIXELS == 2 * 8192 * 8192
     assert len(world.port.opened) == 1
+
+
+def test_a_baseline_too_large_to_read_says_a_crop_will_not_help(world: World) -> None:
+    opened = world.open()
+    world.port.live[max(world.port.live)]["size_px"] = [12000, 12000]
+    rect = {"x": 0, "y": 0, "width": 1, "height": 1}
+    source = _source(
+        opened["document_id"], rect=rect, baseline_id=opened["baseline_id"], read_baseline=True
+    )
+    with pytest.raises(BridgeError) as refused:
+        world.preview(source)
+    assert "leave out baseline_id" in refused.value.body["message"]
+    assert refused.value.body["details"]["baseline_pixels"] == 12000 * 12000
 
 
 def test_the_overlays_are_the_selection_and_the_allowed_masks_crops(world: World) -> None:

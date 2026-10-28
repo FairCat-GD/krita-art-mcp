@@ -12,9 +12,12 @@ from mcp.types import CallToolResult, ImageContent, TextContent
 from PIL import Image
 from worlds import World, running_world
 
-from krita_art_mcp import roots, sheets
+from krita_art_mcp import baselines, imaging, roots, sheets
+from krita_art_mcp.bridge_client import Done, Failed
 from krita_art_mcp.envelope import MAX_RESULT_BYTES
+from krita_art_mcp.probe.report import sheet_cell
 from krita_art_mcp.tools import preview
+from krita_art_mcp.tools.preview import resolve_preview
 
 SRGB = documents.SRGB_PROFILE
 RIVER = {"space": "srgb", "rgba": [0.2, 0.4, 0.6, 1]}
@@ -76,14 +79,6 @@ def _source(document_id: str, **changes: Any) -> dict[str, Any]:
     return {"document_id": document_id, "frame": 0, "target": "composite", **changes}
 
 
-def _cell(path: str, sheet: dict[str, Any], column: int, row: int = 0) -> np.ndarray:
-    with Image.open(path) as image:
-        pixels = np.asarray(image.convert("RGBA"))
-    x, y = sheet["columns"][column]["x_px"], sheet["rows"][row]["y_px"]
-    width, height = sheet["cell_px"]
-    return pixels[y : y + height, x : x + width]
-
-
 def _rgba(data: bytes, width: int, height: int) -> np.ndarray:
     return np.frombuffer(data, dtype=np.uint8).reshape(height, width, 4)[..., [2, 1, 0, 3]]
 
@@ -106,16 +101,15 @@ def test_the_first_render_reads_the_baseline_and_later_ones_keep_it(world: World
     assert first["status"] == "completed" and first["document_id"] == opened["document_id"]
     [sheet] = first["data"]["sheets"]
     assert [column["state"] for column in sheet["columns"]] == ["as_opened", "current"]
-    path = sheet["image"]["path"]
-    assert (_cell(path, sheet, 0) == _rgba(bgra(8, 4), 8, 4)).all()
-    assert (_cell(path, sheet, 1) == _rgba(BLUE * 32, 8, 4)).all()
+    assert (sheet_cell(sheet, 0) == _rgba(bgra(8, 4), 8, 4)).all()
+    assert (sheet_cell(sheet, 1) == _rgba(BLUE * 32, 8, 4)).all()
     # Read once from the working copy's file, opened without a view and closed again.
     assert world.port.opened == [copy, copy] and list(world.port.live) == [key]
     assert world.port.front_key == key
     again = world.server().content("krita_preview_render", _render([source]))
     [kept] = again["data"]["sheets"]
     assert world.port.opened == [copy, copy]
-    assert (_cell(kept["image"]["path"], kept, 0) == _rgba(bgra(8, 4), 8, 4)).all()
+    assert (sheet_cell(kept, 0) == _rgba(bgra(8, 4), 8, 4)).all()
     assert _transfer(world) == []
 
 
@@ -259,3 +253,76 @@ def test_siblings_from_two_documents_share_a_sheet_and_name_no_one_document(worl
     assert [column["offset_px"] for column in sheet["columns"]] == [[0, 4], [0, 0]]
     [line] = [item.text for item in result.content if isinstance(item, TextContent)]
     assert line.startswith("Rendered 1 sheet of 2 documents: icon, ")
+
+
+@pytest.mark.parametrize("kept", [b"not an array", "wrong shape"], ids=["unreadable", "mis-shaped"])
+def test_a_baseline_file_that_cannot_serve_is_read_anew_on_retry(world: World, kept: Any) -> None:
+    opened, _ = _opened(world)
+    baseline = opened["data"]["baseline_id"]
+    source = _source(opened["document_id"], baseline_id=baseline)
+    assert (
+        world.server().content("krita_preview_render", _render([source]))["status"] == "completed"
+    )
+    path = baselines.path_of(world.tmp_path / "a" / "baselines", baseline)
+    assert path is not None
+    if isinstance(kept, bytes):
+        path.write_bytes(kept)
+    else:
+        np.save(path, np.zeros((2, 2, 4), dtype=np.uint8))
+    refused = world.server().content("krita_preview_render", _render([source]))
+    assert refused["error"]["code"] == "INTERNAL_ERROR" and refused["error"]["retryable"]
+    assert not path.exists() and _transfer(world) == []
+    retried = world.server().content("krita_preview_render", _render([source]))
+    [sheet] = retried["data"]["sheets"]
+    assert (sheet_cell(sheet, 0) == _rgba(bgra(8, 4), 8, 4)).all()
+    # Read once for the first render and once again for the retry.
+    assert len(world.port.opened) == 3
+
+
+def _read(world: World, document_id: str) -> Done:
+    arguments = _render([_source(document_id)])
+    source = {
+        "document_id": document_id,
+        "frame": 0,
+        "target": "composite",
+        "layer_id": None,
+        "rect": None,
+        "baseline_id": None,
+        "read_baseline": False,
+        "overlays": [],
+    }
+    outcome = world.client().call("preview.read", {"sources": [source], "render": arguments})
+    assert isinstance(outcome, Done)
+    return outcome
+
+
+def test_pixels_already_taken_ask_for_another_render(world: World) -> None:
+    outcome = _read(world, _created(world))
+    Path(outcome.result["sources"][0]["pixels"]["path"]).unlink()
+    gone = resolve_preview(world.places(), outcome)
+    assert isinstance(gone, Failed)
+    assert gone.error["code"] == "INTERNAL_ERROR" and gone.error["retryable"] is True
+    assert "render again" in gone.error["message"]
+
+
+def test_sheets_another_server_made_meanwhile_are_used_as_they_are(
+    world: World, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    outcome = _read(world, _created(world))
+    made = resolve_preview(world.places("b"), outcome)
+    assert isinstance(made, Done) and _transfer(world) == []
+    # Server a shares server b's captures: it looks first and finds nothing, then the pixels
+    # are gone, and the sheets b made are there.
+    real = imaging.find
+    looked: list[str] = []
+
+    def first_finds_nothing(*args: Any) -> Any:
+        looked.append(args[2])
+        return None if len(looked) == 1 else real(*args)
+
+    monkeypatch.setattr(imaging, "find", first_finds_nothing)
+    shared = world.places("b")
+    again = resolve_preview(shared, outcome)
+    assert isinstance(again, Done) and again.result["sheets"] == made.result["sheets"]
+    assert again.result["inline_pngs"] == made.result["inline_pngs"]
+    assert looked == [".json", ".json"]

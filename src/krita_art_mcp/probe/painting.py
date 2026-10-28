@@ -21,7 +21,7 @@ from krita_art_mcp.probe import fixtures, previews
 from krita_art_mcp.probe.changes import by_name, guard, history_args
 from krita_art_mcp.probe.opening import open_args
 from krita_art_mcp.probe.pixels import brushes
-from krita_art_mcp.probe.report import Report, close, code, differs, tool
+from krita_art_mcp.probe.report import Report, close, code, differs, sheet_cell, tool
 
 TOOL = "krita_paint_stroke"
 LABEL = "Scripted Brush Stroke"
@@ -500,8 +500,8 @@ async def _beside(
         if was is None or now is None or painted.get("status") != "completed":
             report.check(name, False, f"{code(before)}, {code(painted)}, {code(after)}")
             return
-        as_opened, current = previews.cell(now, 0), previews.cell(now, 1)
-        problem = differs(as_opened, previews.cell(was, 0))
+        as_opened, current = sheet_cell(now, 0), sheet_cell(now, 1)
+        problem = differs(as_opened, sheet_cell(was, 0))
         changed = int((current != as_opened).any(axis=-1).sum())
         report.check(
             name,

@@ -9,11 +9,10 @@ from mcp import Client
 from PIL import Image
 
 from krita_art_mcp import sheets
-from krita_art_mcp.bridge_client import BridgeClient
 from krita_art_mcp.probe import fixtures
 from krita_art_mcp.probe.changes import guard
 from krita_art_mcp.probe.opening import open_args
-from krita_art_mcp.probe.report import Report, close, code, differs, tool
+from krita_art_mcp.probe.report import Report, close, code, differs, sheet_cell, tool
 
 TOOL = "krita_preview_render"
 RIVER = {"space": "srgb", "rgba": [0.19, 0.42, 0.55, 1]}
@@ -54,15 +53,6 @@ def source(document_id: str, **changes: Any) -> dict[str, Any]:
     return {"document_id": document_id, "frame": 0, "target": "composite", **changes}
 
 
-def cell(sheet: dict[str, Any], column: int, row: int = 0, clean: bool = False) -> np.ndarray:
-    path = sheet["clean_image" if clean else "image"]["path"]
-    with Image.open(path) as image:
-        pixels = np.asarray(image.convert("RGBA"))
-    x, y = sheet["columns"][column]["x_px"], sheet["rows"][row]["y_px"]
-    width, height = sheet["cell_px"]
-    return pixels[y : y + height, x : x + width]
-
-
 def master_stack() -> tuple[fixtures.Layer, ...]:
     width, height = MASTER_PX
     return (
@@ -72,7 +62,7 @@ def master_stack() -> tuple[fixtures.Layer, ...]:
     )
 
 
-async def run(report: Report, a: Client, client: BridgeClient, harness: Path) -> None:
+async def run(report: Report, a: Client, harness: Path) -> None:
     harness = Path(os.path.realpath(harness))
     folder = harness / "previews"
     folder.mkdir(exist_ok=True)
@@ -123,8 +113,10 @@ async def _game(report: Report, a: Client, master: Path, harness: Path) -> None:
             if column["document_to_cell"] != exact or column["filter"] != "lanczos":
                 problems.append(f"{sheet['recipe_id']}: transform {column['document_to_cell']}")
             # Deep inside the flat base, far from either shape and the filter's reach.
-            if tuple(cell(sheet, 0)[20, 20][:3]) != BASE:
-                problems.append(f"{sheet['recipe_id']}: the base reads {cell(sheet, 0)[20, 20]}")
+            if tuple(sheet_cell(sheet, 0)[20, 20][:3]) != BASE:
+                problems.append(
+                    f"{sheet['recipe_id']}: the base reads {sheet_cell(sheet, 0)[20, 20]}"
+                )
         report.check(
             name,
             not problems,
@@ -150,8 +142,8 @@ async def _icons(report: Report, a: Client, icon: Path, harness: Path) -> None:
             report.check(name, False, f"{code(rendered) or len(found)} sheets")
             return
         sizes = [sheet["cell_px"] for sheet in found]
-        replicated = np.repeat(np.repeat(cell(found[1], 0), 2, axis=0), 2, axis=1)
-        problem = differs(cell(found[2], 0), replicated)
+        replicated = np.repeat(np.repeat(sheet_cell(found[1], 0), 2, axis=0), 2, axis=1)
+        problem = differs(sheet_cell(found[2], 0), replicated)
         transforms = [sheet["columns"][0]["document_to_cell"][0] for sheet in found]
         report.check(
             name,
@@ -201,7 +193,7 @@ async def _overlays(report: Report, a: Client, master: Path, harness: Path) -> N
         if sheet is None or sheet["clean_image"] is None or selected.get("status") != "completed":
             report.check(name, False, f"{code(selected)} / {code(rendered)}")
             return
-        drawn, clean = cell(sheet, 0), cell(sheet, 0, clean=True)
+        drawn, clean = sheet_cell(sheet, 0), sheet_cell(sheet, 0, clean=True)
         changed = (drawn != clean).any(axis=-1)
         colours = {tuple(pixel[:3]) for pixel in drawn[changed]}
         unchanged = differs(after, before)

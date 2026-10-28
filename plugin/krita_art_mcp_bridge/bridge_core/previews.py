@@ -44,7 +44,7 @@ def handlers(registry: Registry, port: DocumentsPort, data: Path) -> dict[str, H
             raise BridgeError("INVALID_ARGUMENT", "render is an object.")
         registry.refuse_at_job_start()
         found = []
-        total = 0
+        cropped = whole = 0
         for source in sources:
             handle = registry.find(source["document_id"])
             info = port.describe(handle.document)
@@ -56,13 +56,11 @@ def handlers(registry: Registry, port: DocumentsPort, data: Path) -> dict[str, H
                 owned = {"document_id": handle.document_id, "baseline_id": handle.baseline_id}
                 message = "baseline_id is not this document's as_opened baseline."
                 raise BridgeError("INVALID_ARGUMENT", message, False, owned)
-            total += rect["width"] * rect["height"]
-            total += width * height if source["read_baseline"] else 0
+            cropped += rect["width"] * rect["height"]
+            whole += width * height if source["read_baseline"] else 0
             found.append((source, handle, info, rect))
-        if total > MAX_PREVIEW_PIXELS:
-            details = {"pixels": total, "max_preview_pixels": MAX_PREVIEW_PIXELS}
-            message = "The preview reads too many pixels at once; give crop_rects or fewer sources."
-            raise BridgeError("INVALID_ARGUMENT", message, False, details)
+        if cropped + whole > MAX_PREVIEW_PIXELS:
+            raise _too_many(cropped, whole)
         written: list[dict[str, Any]] = []
         try:
             read = [_read(written, *entry, call) for entry in found]
@@ -147,6 +145,20 @@ def handlers(registry: Registry, port: DocumentsPort, data: Path) -> dict[str, H
         return pixels
 
     return {"preview.read": preview}
+
+
+def _too_many(cropped: int, whole: int) -> BridgeError:
+    # A baseline is read over its whole canvas, so a crop cannot shrink that part.
+    details = {
+        "crop_pixels": cropped,
+        "baseline_pixels": whole,
+        "max_preview_pixels": MAX_PREVIEW_PIXELS,
+    }
+    if whole > MAX_PREVIEW_PIXELS:
+        message = "These baselines are too large to read in one preview; leave out baseline_id."
+    else:
+        message = "The preview reads too many pixels at once; give crop_rects or fewer sources."
+    return BridgeError("INVALID_ARGUMENT", message, False, details)
 
 
 def _overlay(

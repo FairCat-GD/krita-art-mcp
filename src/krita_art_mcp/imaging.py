@@ -1,4 +1,5 @@
 import datetime
+import hashlib
 import io
 import logging
 import math
@@ -144,6 +145,18 @@ def preview(
             return data, small, applied
         edge //= 2
     raise GeometryError("No preview of this image fits inline.")
+
+
+def artifact(path: Path, data: bytes) -> dict[str, Any]:
+    # The contract's artifact, plus its path and how long it is kept; the uri is the path.
+    return {
+        "uri": str(path),
+        "path": str(path),
+        "mime_type": "image/png",
+        "sha256": hashlib.sha256(data).hexdigest(),
+        "size_bytes": len(data),
+        "retention_days": RETENTION_DAYS,
+    }
 
 
 def find(captures: Path, operation_id: str, suffix: str) -> Path | None:

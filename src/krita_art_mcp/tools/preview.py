@@ -1,6 +1,5 @@
 import base64
 import functools
-import hashlib
 import json
 import logging
 import math
@@ -130,25 +129,28 @@ def resolve_preview(places: Places, outcome: Outcome) -> Outcome:
 def _preview_files(places: Places, outcome: Done) -> Outcome:
     operation_id = operation_id_of(outcome)
     found = imaging.find(places.captures_dir, operation_id, ".json")
-    if found is None:
-        made = _make(places, outcome)
-        if isinstance(made, Failed):
-            return made
-        found = made
-    data = json.loads(found.read_text(encoding="utf-8"))
-    shown = [
-        base64.b64encode(Path(sheet["image"]["path"]).read_bytes()).decode("ascii")
-        if sheet["inline"]
-        else None
-        for sheet in data["sheets"]
-    ]
+    made = _loaded(found) if found is not None else _make(places, outcome)
+    if isinstance(made, Failed):
+        return made
+    data, pngs = made
+    shown = [None if png is None else base64.b64encode(png).decode("ascii") for png in pngs]
     documents = {column["document_id"] for column in data["sheets"][0]["columns"]}
     one = next(iter(documents)) if len(documents) == 1 else None
     resolved = {"document_id": one, "documents": len(documents), **data, "inline_pngs": shown}
     return replace(outcome, result=resolved)
 
 
-def _make(places: Places, outcome: Done) -> Path | Failed:
+def _loaded(found: Path) -> tuple[dict[str, Any], list[bytes | None]]:
+    # Sheets an earlier resolve of this outcome made, with the PNGs it showed inline.
+    data = json.loads(found.read_text(encoding="utf-8"))
+    pngs = [
+        Path(sheet["image"]["path"]).read_bytes() if sheet["inline"] else None
+        for sheet in data["sheets"]
+    ]
+    return data, pngs
+
+
+def _make(places: Places, outcome: Done) -> tuple[dict[str, Any], list[bytes | None]] | Failed:
     # The receipt's JSON is written last, so finding it means every sheet is on disk.
     result = outcome.result
     operation_id = operation_id_of(outcome)
@@ -177,22 +179,22 @@ def _make(places: Places, outcome: Done) -> Path | Failed:
         # Another server sharing this data folder may have just made it.
         again = imaging.find(places.captures_dir, operation_id, ".json")
         if again is not None:
-            return again
+            return _loaded(again)
         message = "The preview's pixels were already taken; render again."
         return failed(outcome, error_body("INTERNAL_ERROR", message, retryable=True))
     except _BaselineGone:
         _discard_all(places, result)
-        message = "The as_opened baseline could not be kept; render again."
+        message = "The as_opened baseline could not be kept; render again to read it anew."
         return failed(outcome, error_body("INTERNAL_ERROR", message, retryable=True))
     folder = imaging.folder_for(places.captures_dir, today())
     try:
-        target = _write(folder, operation_id, made)
+        written = _write(folder, operation_id, made)
     except OSError as problem:
         message = f"The preview could not be written: {problem}"
         return failed(outcome, error_body("IO_ERROR", message, retryable=True))
     _discard_all(places, result)
     imaging.sweep(places.captures_dir, today())
-    return target
+    return written
 
 
 class _BaselineGone(Exception):
@@ -229,24 +231,33 @@ def _pixels(
             continue
         if baseline["pixels"] is not None:
             baselines.adopt(places, baseline["baseline_id"], baseline["pixels"])
-        kept = baselines.load(places.baselines_dir, baseline["baseline_id"])
+        try:
+            kept = baselines.load(places.baselines_dir, baseline["baseline_id"])
+        except (OSError, ValueError):
+            kept = None
         width, height = got["canvas_px"]
         if kept is None or kept.shape != (height, width, 4):
+            # A file that cannot serve goes, so the retry reads the baseline from the file again.
+            baselines.remove(places, baseline["baseline_id"])
             raise _BaselineGone
         crop = kept[rect["y"] : rect["y"] + rect["height"], rect["x"] : rect["x"] + rect["width"]]
         crops[(index, sheets.AS_OPENED)] = np.array(crop)
     return crops, masks
 
 
-def _write(folder: Path, operation_id: str, made: list[sheets.Sheet]) -> Path:
-    entries = []
+def _write(
+    folder: Path, operation_id: str, made: list[sheets.Sheet]
+) -> tuple[dict[str, Any], list[bytes | None]]:
+    entries, pngs = [], []
     for number, sheet in enumerate(made):
         name = f"{operation_id}-{number}"
         clean = None
         if sheet.clean is not None:
-            clean = _artifact(folder / f"{name}.clean.png", imaging.encode(sheet.clean))
-        image = _artifact(folder / f"{name}.png", imaging.encode(sheet.image))
+            clean = _written(folder / f"{name}.clean.png", imaging.encode(sheet.clean))
+        png = imaging.encode(sheet.image)
+        image = _written(folder / f"{name}.png", png)
         entries.append({**sheet.data, "image": image, "clean_image": clean, "inline": False})
+        pngs.append(png)
     data = {"sheets": entries, "static_only": True, "source_pixels_changed": 0}
     # Every sheet that fits goes inline at full size, in recipe order; the rest stay on disk.
     room = (MAX_RESULT_BYTES - RESERVED_BYTES - len(json.dumps(data))) * 3 // 4
@@ -254,21 +265,14 @@ def _write(folder: Path, operation_id: str, made: list[sheets.Sheet]) -> Path:
         if entry["image"]["size_bytes"] <= room:
             entry["inline"] = True
             room -= entry["image"]["size_bytes"]
-    target = folder / f"{operation_id}.json"
-    imaging.write(target, json.dumps(data, separators=(",", ":")).encode("utf-8"))
-    return target
+    imaging.write(folder / f"{operation_id}.json", json.dumps(data, separators=(",", ":")).encode())
+    shown = [png if entry["inline"] else None for entry, png in zip(entries, pngs, strict=True)]
+    return data, shown
 
 
-def _artifact(path: Path, data: bytes) -> dict[str, Any]:
+def _written(path: Path, data: bytes) -> dict[str, Any]:
     imaging.write(path, data)
-    return {
-        "uri": str(path),
-        "path": str(path),
-        "mime_type": "image/png",
-        "sha256": hashlib.sha256(data).hexdigest(),
-        "size_bytes": len(data),
-        "retention_days": imaging.RETENTION_DAYS,
-    }
+    return imaging.artifact(path, data)
 
 
 def _discard_all(places: Places, result: dict[str, Any]) -> None:

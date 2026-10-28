@@ -226,7 +226,7 @@ async def _documents(report: Report, client: BridgeClient, serve: list[str], har
             await _cycles(report, a)
             await opening.run(report, a, b, client, harness)
             await pixels.run(report, a, client, harness)
-            await previews.run(report, a, client, harness)
+            await previews.run(report, a, harness)
             await changes.run(report, a, b, client, harness)
             await updates.run(report, a, client, harness)
             await painting.run(report, a, b, client, harness)
