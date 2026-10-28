@@ -9,6 +9,7 @@ from typing import Any
 
 import numpy as np
 from mcp import Client
+from PIL import Image
 
 from krita_art_mcp import baselines, paths, roots
 from krita_art_mcp.bridge_client import BridgeClient, Done, Failed
@@ -148,7 +149,10 @@ async def _round_trip(
     tree: list[dict[str, Any]],
     harness: Path,
 ) -> Opened | None:
-    name = f"{label} {mode}: opens protected, matches the fixture, keeps a baseline until close"
+    name = (
+        f"{label} {mode}: opens protected, matches the fixture; a render reads its baseline, "
+        "kept until close"
+    )
     started = time.perf_counter()
     result = await tool(a, "krita_document_open", open_args(source, mode, work))
     seconds = time.perf_counter() - started
@@ -167,10 +171,16 @@ async def _round_trip(
     if not all(layer["protected"] for layer in data["layers"]):
         problems.append("a layer is unprotected")
     folder = harness / "server-a" / "baselines"
+    if baselines.load(folder, data["baseline_id"]) is not None:
+        problems.append("a baseline file at open, before any render asked for it")
+    # Native size, so the as-opened cell is the baseline's own bytes.
+    rendered = await tool(a, "krita_preview_render", _native_render(document_id, data))
     kept = baselines.load(folder, data["baseline_id"])
     baseline = None if kept is None else np.array(kept)
     if baseline is None:
-        problems.append("no baseline file while open")
+        problems.append(f"no baseline file after a render: {code(rendered)}")
+    else:
+        problems += _as_opened_cell(rendered, baseline)
     inspected = await tool(a, "krita_document_inspect", {"document_id": document_id, "frame": 0})
     seen = inspected.get("data") or {}
     if seen.get("layers") != data["layers"] or seen.get("baseline_id") != data["baseline_id"]:
@@ -183,6 +193,35 @@ async def _round_trip(
     detail = "; ".join(problems) or f"{len(data['layers'])} layers in {seconds * 1000:.0f} ms"
     report.check(name, not problems, detail)
     return Opened(data, seen, baseline, seconds)
+
+
+def _native_render(document_id: str, data: dict[str, Any]) -> dict[str, Any]:
+    source = {
+        "document_id": document_id,
+        "frame": 0,
+        "target": "composite",
+        "baseline_id": data["baseline_id"],
+    }
+    return {
+        "recipes": [{"id": "native", "target_size_px": data["canvas_px"]}],
+        "filter": "nearest",
+        "sources": [source],
+        "overlays": [],
+        "backgrounds": ["transparent"],
+    }
+
+
+def _as_opened_cell(rendered: dict[str, Any], baseline: np.ndarray) -> list[str]:
+    sheet = ((rendered.get("data") or {}).get("sheets") or [None])[0]
+    if sheet is None:
+        return [f"the render failed: {code(rendered)}"]
+    column, row = sheet["columns"][0], sheet["rows"][0]
+    width, height = sheet["cell_px"]
+    with Image.open(sheet["image"]["path"]) as image:
+        pixels = np.asarray(image.convert("RGBA"))
+    found = pixels[row["y_px"] : row["y_px"] + height, column["x_px"] : column["x_px"] + width]
+    problem = differs(found, baseline)
+    return [f"the as-opened cell: {problem}"] if problem or column["state"] != "as_opened" else []
 
 
 def _tree_problems(layers: list[dict[str, Any]], tree: list[dict[str, Any]]) -> list[str]:

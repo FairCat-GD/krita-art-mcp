@@ -789,7 +789,26 @@ def _baselines(world: World, name: str = "a") -> list[str]:
     return sorted(path.name for path in folder.iterdir()) if folder.exists() else []
 
 
-def test_open_inspect_and_close_keep_and_drop_the_baseline(world: World) -> None:
+def _render(world: World, opened: dict[str, Any]) -> dict[str, Any]:
+    # The first render that needs the baseline reads it.
+    source = {
+        "document_id": opened["document_id"],
+        "frame": 0,
+        "target": "composite",
+        "baseline_id": opened["data"]["baseline_id"],
+    }
+    arguments = {
+        "recipes": [{"id": "native", "target_size_px": [8, 4]}],
+        "filter": "nearest",
+        "sources": [source],
+        "overlays": [],
+        "backgrounds": ["transparent"],
+    }
+    rendered: dict[str, Any] = world.server().content("krita_preview_render", arguments)
+    return rendered
+
+
+def test_open_names_a_baseline_that_a_render_keeps_and_close_drops(world: World) -> None:
     server = world.server()
     opened = server.content("krita_document_open", _open(world))
     assert opened["status"] == "completed"
@@ -797,16 +816,18 @@ def test_open_inspect_and_close_keep_and_drop_the_baseline(world: World) -> None
     assert data["working_copy"] is True and data["mode"] == "working_copy"
     assert set(data) == set(documents_tools.OPEN_DATA)
     document_id = opened["document_id"]
-    # The composite is kept as RGBA, and its transfer file is gone.
+    # Lazily: the open writes nothing, and a render keeps the composite as RGBA.
+    assert _baselines(world) == [] and list((world.data / "transfer").iterdir()) == []
+    seen = server.content("krita_document_inspect", {"document_id": document_id, "frame": 0})
+    assert seen["status"] == "completed" and seen["data"]["layers"] == data["layers"]
+    assert seen["data"]["baseline_id"] == data["baseline_id"]
+    assert _render(world, opened)["status"] == "completed"
     assert _baselines(world) == [f"{data['baseline_id']}.npy"]
     kept = baselines.load(world.tmp_path / "a" / "baselines", data["baseline_id"])
     assert kept is not None
     raw = np.frombuffer(bgra(8, 4), dtype=np.uint8).reshape(4, 8, 4)
     assert (kept == raw[..., [2, 1, 0, 3]]).all()
     assert list((world.data / "transfer").iterdir()) == []
-    seen = server.content("krita_document_inspect", {"document_id": document_id, "frame": 0})
-    assert seen["status"] == "completed" and seen["data"]["layers"] == data["layers"]
-    assert seen["data"]["baseline_id"] == data["baseline_id"]
     guard = {"document_id": document_id, "request_id": "req-close"}
     closed = server.content("krita_document_close", {"guard": guard, "dirty_policy": "refuse"})
     assert closed["data"] == {"closed": True, "baseline_untouched": True}
@@ -887,9 +908,7 @@ def test_a_root_removed_after_the_send_never_refuses_the_call_that_ran(world: Wo
     assert len(world.port.opened) == 1
 
 
-def test_operation_get_keeps_the_baseline_of_an_open_that_came_back_running(
-    world: World,
-) -> None:
+def test_operation_get_finishes_an_open_that_came_back_running(world: World) -> None:
     world.gate.clear()
     world.port.on_open.append(lambda: world.gate.wait(10))
     running = world.server(budget_s=0.6).content("krita_document_open", _open(world))
@@ -898,7 +917,7 @@ def test_operation_get_keeps_the_baseline_of_an_open_that_came_back_running(
     got = world.server().content("krita_operation_get", {"operation_id": running["operation_id"]})
     receipt = got["data"]["receipt"]
     assert receipt["status"] == "completed" and got["data"]["tool"] == "krita_document_open"
-    assert _baselines(world) == [f"{receipt['data']['baseline_id']}.npy"]
+    assert _baselines(world) == []
 
 
 def test_inspect_counts_the_selection_and_reads_frame_0_only(world: World) -> None:
@@ -943,6 +962,7 @@ def test_server_info_reports_the_roots_the_plugin_enforces(world: World) -> None
 
 def test_the_sweep_at_server_start_keeps_only_live_baselines(world: World) -> None:
     opened = world.server().content("krita_document_open", _open(world))
+    assert _render(world, opened)["status"] == "completed"
     orphan = world.tmp_path / "a" / "baselines" / "baseline-ffffffffffff.npy"
     orphan.write_bytes(b"from an ended Krita session")
     assert baselines.sweep(world.client(), world.tmp_path / "a" / "baselines") == 1

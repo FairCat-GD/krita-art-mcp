@@ -9,7 +9,7 @@ from krita_art_mcp import envelope, schemas
 from krita_art_mcp.bridge_client import BeforeSend, Done, Failed, Outcome
 from krita_art_mcp.journal import JournalError
 from krita_art_mcp.paths import Places
-from krita_art_mcp.tools import changes, documents, observe, painting, pixels
+from krita_art_mcp.tools import changes, documents, observe, painting, pixels, preview
 from krita_art_mcp.tools.dispatch import Receipt, ToolCall, journaled, record
 
 Resolver = Callable[[Places, Outcome], Outcome]
@@ -28,7 +28,7 @@ RECEIPTS: dict[str, Known] = {
     "server_info": Known("krita_server_info", observe.server_info_receipt),
     "document.list": Known("krita_document_list", documents.list_receipt),
     "document.create": Known("krita_document_create", documents.create_receipt),
-    "document.open": Known("krita_document_open", documents.open_receipt, documents.resolve_open),
+    "document.open": Known("krita_document_open", documents.open_receipt),
     "document.inspect": Known(
         "krita_document_inspect", documents.inspect_receipt, documents.resolve_inspect
     ),
@@ -46,6 +46,7 @@ RECEIPTS: dict[str, Known] = {
     "protection.set": Known("krita_protection_set", changes.protection_receipt),
     "history.step": Known("krita_history_step", changes.history_receipt, changes.resolve_history),
     "paint.stroke": Known("krita_paint_stroke", painting.paint_receipt, changes.resolve_update),
+    "preview.read": Known("krita_preview_render", preview.preview_receipt, preview.resolve_preview),
 }
 
 

@@ -1,57 +1,56 @@
-Read `SPEC.md` §1 (decisions 6, 31); `PDD.md` Part 1 (pillar 4), Part 4 (`krita_preview_render`),
-Part 5 (N-02); `REVIEW-2026-10-24.md` F5; CLAUDE.md; your block (11) in docs/spec/SESSIONS.md and
-block 10a's done-note; then this file. Do Session 11: `krita_preview_render`, with:
-- the lazy `as_opened` baseline (block 11's F10 amendment);
-- the sheet composed on the server from native captures;
-- the N-02 benchmark.
+Read `SPEC.md` §1 (decisions 27, 29), §5 (invariant 2); `PDD.md` Part 4 (`krita_document_save`),
+Part 6 (*Formats*), Part 8 (K14, K39, K45, K46), Part 12 (H4); CLAUDE.md; your block (12) in
+docs/spec/SESSIONS.md and block 11's done-note; then this file. Do Session 12:
+`krita_document_save`, verified by reopening, with H4's long save.
 
-Release 0.11.0.
+Release 0.12.0.
 
 ## State you need that is not in the specs
 
-- **Round 1 is the Phase 1 build.** Sessions 0 to 10a are done, 6a and 7a included. 11 to 15
-  remain, releasing 0.11.0 to 0.14.0.
+- **Round 1 is the Phase 1 build.** Sessions 0 to 11 are done, 6a, 7a and 10a included. 12 to 15
+  remain, releasing 0.12.0 to 0.14.0.
 - **The push status.** `origin` is the private GitHub repository. `origin/main` holds
-  everything through 10a's review commit ("review: a raise before an undo leaves the document
-  safe, and 6 smaller"), pushed with the owner's approval; nothing is local. List
-  `origin/main..HEAD` before any push.
-- **What 10a left that 11 builds on:**
-  - **`history.unconfirmed(handle, changing)`** is the one guard around a change and its
-    rollback. It lets the op's own `BridgeError` through, and on any other raise it calls
-    `Handle.lost()` (seal and unsafe) when the op writes, then re-raises. The stroke and
-    `layer_update` use it. A new mutating op uses it too; 11 adds none.
-  - **`history.move`** lets a raise before Krita is asked to move propagate (the document is as
-    it was). Once Krita is asked, an `Exception` is LOST, sealed and unsafe.
-  - **`verification.write`** is the one home of the best-effort transfer write: a file that
-    cannot be written is logged and left out. History's capture uses it, and also catches its
-    own composite read; `verification.files` uses it.
-  - **`krita_history_step`'s `stopped`** now takes `document_unsafe` (LOST, or a raise once
-    Krita was asked to move). `unconfirmed` means Krita did not take the step, or raised before
-    it was asked; either way the document is as it was.
-  - **`undo_limit()` falls back to 200,** Krita's own default.
-  - **The probe** has a tall-tip MEASURED line (`_tall_tip`, its own 480 × 480 working copy),
-    and the KRA export retries one BUSY.
-- **Measured in 10a, for `ARCHITECTURE.md` at session 15** (details in 10a's done-note):
-  - Krita sizes an image tip by its longer side: the 7 × 32 Wood Fiber tip reached 0.52 × size
-    past the path, inside R's margin, so `EXTENT[IMAGE] = √2⁄2` holds.
-  - Krita keeps exactly the undo limit the ledger reads.
-  - `KisConfig::undoStackLimit` defaults to 200 (`libs/ui/kis_config.cc:192-195` at the running
-    build `bd6e8d0`).
-- **Decisions written down nowhere else:** none beyond 10a's done-note.
-- **Baseline** (10a after its review; 11 moves these only by what it adds):
+  everything through 10a's review commit. Session 11's commits are local until the owner approves
+  a push. List `origin/main..HEAD` before any push.
+- **What 11 left that 12 builds on:**
+  - **Reopening a file inside a job works.** `previews._as_opened` opens a working copy's file a
+    second time with `port.open` (batch mode, no view), reads it, and closes it in the same job
+    through `registry.discard`. A file Krita keeps open is registered owned, read-only and
+    unsafe, and the op fails naming it.
+    - Measured live on Krita 5.3.4.1: a second open of an open file is allowed, and nothing is
+      left in `documents()`.
+    - The save's verify-by-reopen can follow the same path.
+    - The probe's fixtures never save a KRA with a selection mask active; that case is in the
+      backlog's *Not yet checked by hand*.
+  - **The baseline is lazy.**
+    - The open mints `baseline_id` and writes nothing.
+    - The first `krita_preview_render` that names it reads it from the file, after checking the
+      file still hashes to `source_sha256`. That holds because no save overwrites the working
+      copy: `document_save` must keep it so.
+    - `baseline_untouched` at close still hashes the source.
+  - **`pixels.read_rects`, `check_read_space`, `check_target` and `inside`** are module-level in
+    `bridge_core/pixels.py`, shared by capture, sample and the preview.
+  - **`imaging.background` and `imaging.lightness`** are public; `sheets.py` uses them.
+  - **`FakePort.open` adds no view;** only `show` brings a document to the front, as Krita does
+    (K6).
+- **Measured in 11, for `ARCHITECTURE.md` at session 15** (details in 11's done-note):
+  - N-02: the first render, which reads the baseline, 0.74 s; p95 of 20 after it 0.32 s.
+  - Opening the 8192² N-09 master takes 0.5 s without the baseline write (4.7–5.2 s before).
+- **Decisions written down nowhere else:** none beyond 11's done-note.
+- **Baseline** (11 before its review; 12 moves these only by what it adds):
   - `verify`: 6 stages, all PASS;
-  - 490 server tests passed, 0 skipped;
-  - 571 plugin-core tests passed, 0 skipped;
-  - `probe`: 95 PASS, 0 FAIL, 33 MEASURED, 73.1 s;
-  - 17 registered tools; 19 schema files; instructions 3,175 characters (11 may add at most 300
-    net).
+  - 523 server tests passed, 0 skipped;
+  - 586 plugin-core tests passed, 0 skipped;
+  - `probe`: 101 PASS, 0 FAIL, 33 MEASURED, 79.0 s;
+  - 18 registered tools; 19 schema files; instructions 3,351 characters (session 14 finalises
+    them under 4,096).
 - **Not done:**
   - **The owner's roots.** `doctor` step 6 FAILs with "no roots" until the owner runs
     `roots add`. No session runs it, and the probe needs no roots.
   - **By hand** (in `docs/BACKLOG.md`): N-03 in Activity Monitor; mirror painting and
     wrap-around put back after a stroke; whether a K46 switch visibly moves the tab; the overlay
     in the mask display mode; K46 with the global selection's mask; a layer style refusing
-    region scope.
+    region scope; a lazy baseline from a file saved with a selection mask active.
   - **A live BUSY export** was never forced; the probe's retry is held by its unit test.
 
 ## Watch for
@@ -68,15 +67,16 @@ Release 0.11.0.
     message into `"$(git rev-parse --git-dir)/COMMIT_DRAFT"`, run `verify` with it
     (`--message`), commit with `git commit -F`, delete the draft.
 - **Every plugin change needs `install-plugin` and a Krita restart** before `probe` or `doctor`
-  step 5 passes. A probe-only change runs against the installed plugin, since its hash is
+  step 5 passes. That includes the version bump, which changes the plugin's hash, so bump before
+  the first live run. A probe-only change runs against the installed plugin, since its hash is
   unchanged.
 - **Before the probe's paint checks, the stock presets must be listed in Krita:**
   `b) Basic-2 Opacity`, `b) Airbrush Soft`, `y) Texture Spray`, `y) Texture Wood Fiber`.
 - **Brush state is window-wide (K3).** Any live run that paints changes the owner's current
   brush and Krita's preset history. The probe saves and writes back the brush state; a
   scratchpad driver must do the same (`harness.brush_state` read first, written back after).
-- **A fit-to-window image is not evidence of game size** (block 11): the cell transform must be
-  exact after rounding.
+- **A save never overwrites the working copy.** The lazy baseline is read from that file;
+  `exportImage` to a new path keeps it (K39).
 - **Comments state the present.** No session ids, no "used to", no review stories, no finding
   numbers in code.
 - **Every push needs its own approval.** List `origin/main..HEAD` first.

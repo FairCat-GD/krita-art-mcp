@@ -7,7 +7,7 @@ from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
-from . import files, nodes, paths, roots, transfer
+from . import files, nodes, roots
 from .closing import settled_close
 from .errors import BridgeError, exact
 from .inspection import check_shown_frame, layer_entries
@@ -43,12 +43,10 @@ class _Made:
     def __init__(self, copy: str | None) -> None:
         self.copy = copy
         self.document: Any = None
-        self.baseline: dict[str, Any] | None = None
 
     def undo(
         self, registry: Registry, port: DocumentsPort, mode: str, call: Call, raised: BaseException
     ) -> None:
-        transfer.remove(self.baseline)
         kept = None
         if self.document is not None:
             kept = registry.discard(self.document, settled_close(port), mode, call.client)
@@ -104,7 +102,7 @@ def handlers(
             details = {key: info[key] for key in ("color_model", "depth", "profile_id")}
             message = "Phase 1 opens RGBA / U8 documents only."
             raise BridgeError("COLOR_PROFILE_MISMATCH", message, False, details)
-        # The baseline must be frame 0, as every read is.
+        # Every read is of frame 0, the baseline read later from this file included.
         check_shown_frame(info)
         nodes.unmask(port, document)
         tree = port.tree(document)
@@ -115,9 +113,7 @@ def handlers(
         protected = {node["id"] for node in tree["nodes"]} - editable
         layers = layer_entries(tree, protected)
         width, height = info["size_px"]
-        made.baseline = transfer.write(
-            paths.transfer_dir(data), port.composite(document), width, height, "BGRA8"
-        )
+        # Its pixels are the file's, read by the first preview that needs them.
         baseline_id = new_id()
         # Registered last, so nothing can fail once the registry holds the document.
         handle = registry.add(document, args["mode"], call.client)
@@ -134,7 +130,6 @@ def handlers(
             "source_path": source,
             "source_sha256": handle.source_sha256,
             "baseline_id": baseline_id,
-            "baseline": made.baseline,
             "canvas_px": [width, height],
             "color_model": info["color_model"],
             "depth": info["depth"],

@@ -83,8 +83,8 @@ runs; after it closes, read it from git history at round 1's release commit.
   could be measured and allowed as its reach is shown.
 - **Not-finite numbers in other tools' inputs** (0.9.0). The MCP server accepts `NaN`, `Infinity`
   and `1e400`, and a `number` schema's `minimum` and `maximum` let NaN through. Only
-  `krita_paint_stroke` refuses them on the server; `krita_layer_update`'s `opacity` and the other
-  number inputs reach the plugin with them.
+  `krita_paint_stroke` and `krita_preview_render` refuse them on the server;
+  `krita_layer_update`'s `opacity` and the other number inputs reach the plugin with them.
 - **Krita's preset history** (0.9.0). Activating a preset, through the bridge or the probe, makes
   Krita record it in `kritarc` (`LastPreset`, `presethistory`). The probe puts the owner's current
   preset back; the history keeps the presets it used. Accepted by the owner and recorded; a
@@ -123,6 +123,11 @@ these are the parts only a person can see.
   stay under 1%. `top` measured 0.0% in six samples 5 s apart. Look at Krita's row in Activity
   Monitor for a minute while it is idle.
 
+- **A lazy baseline from a file saved with a selection mask active** (0.11.0). The baseline is
+  read from the working copy's file, opened again without a view, so Krita should draw no mask
+  overlay into it (K46); the probe's fixtures never save one. Save a KRA by hand with a local
+  selection mask as the active node, open it as a working copy, and render it with its
+  `baseline_id`: the as-opened cell should match the current one.
 - **Mirror painting and wrap-around put back after a stroke** (0.9.0). The adapter switches both
   off for the stroke and back on in a `finally`; no harness op turns them on, so the probe never
   sees the restore. With either on in Krita, paint one stroke and check both are on afterwards.

@@ -150,7 +150,10 @@ class FakePort:
         self._maybe_fail("open")
         spec = self.files.get(path, {})
         width, height = spec.get("size_px", [8, 4])
+        # openDocument adds no view (K6), so the document in front stays until show().
+        front = self.front_key
         key = self._add(os.path.basename(path), width, height)
+        self.front_key = front
         names = spec.get("names", ["Layer"])
         root = f"root-{key}"
         nodes = [fake_node(key, i, name, root, i) for i, name in enumerate(names)]
@@ -182,6 +185,7 @@ class FakePort:
 
     def show(self, document: Any) -> None:
         self._maybe_fail("show")
+        self.front_key = document.key
 
     def describe(self, document: Any) -> dict[str, Any]:
         info = self.live[document.key]

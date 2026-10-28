@@ -87,7 +87,7 @@ def render(pixels: Pixels, size: tuple[int, int], how: Render) -> tuple[Image.Im
         image = image.resize(size, FILTERS[applied])
     backed = how.background not in (None, "transparent")
     if backed:
-        image = Image.alpha_composite(_background(how.background, size), image)
+        image = Image.alpha_composite(background(how.background, size), image)
     if how.greyscale:
         image = _greyscale(np.asarray(image))
     elif backed and image.getchannel("A").getextrema() == (255, 255):
@@ -95,24 +95,29 @@ def render(pixels: Pixels, size: tuple[int, int], how: Render) -> tuple[Image.Im
     return image, applied
 
 
-def _background(background: Any, size: tuple[int, int]) -> Image.Image:
-    if background == "checker":
+def background(fill: Any, size: tuple[int, int]) -> Image.Image:
+    if fill == "checker":
         ys, xs = np.indices((size[1], size[0]))
         cells = ((xs // CHECKER_CELL + ys // CHECKER_CELL) % 2).astype(bool)
         pixels = np.where(cells[..., None], CHECKER[1], CHECKER[0]).astype(np.uint8)
         alpha = np.full((size[1], size[0], 1), 255, dtype=np.uint8)
         return Image.fromarray(np.concatenate([pixels, alpha], axis=-1))
-    rgba = tuple(colour.half_up(channel * 255) for channel in background["rgba"])
+    rgba = tuple(colour.half_up(channel * 255) for channel in fill["rgba"])
     return Image.new("RGBA", size, rgba)
 
 
 def _greyscale(pixels: Pixels) -> Image.Image:
-    # CIE L*, so a grey value reads back as a sample's L* (value = L* x 2.55); alpha is kept.
-    lightness = colour.lab(pixels[..., :3])[..., 0]
-    grey = np.clip(np.floor(lightness * 255 / 100 + 0.5), 0, 255).astype(np.uint8)
+    grey = lightness(pixels)
     if pixels.shape[2] == 4 and (pixels[..., 3] != 255).any():
         return Image.fromarray(np.stack([grey, pixels[..., 3]], axis=-1))
     return Image.fromarray(grey)
+
+
+def lightness(pixels: Pixels) -> Pixels:
+    # CIE L*, so a grey value reads back as a sample's L* (value = L* x 2.55).
+    values = colour.lab(pixels[..., :3])[..., 0]
+    grey: Pixels = np.clip(np.floor(values * 255 / 100 + 0.5), 0, 255).astype(np.uint8)
+    return grey
 
 
 def encode(image: Image.Image) -> bytes:

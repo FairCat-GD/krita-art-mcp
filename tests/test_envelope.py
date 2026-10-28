@@ -9,6 +9,7 @@ from bridge_core import errors as bridge_errors
 from bridge_core import history as bridge_history
 from bridge_core import painting as bridge_painting
 from bridge_core import pixels as bridge_pixels
+from bridge_core import previews as bridge_previews
 from bridge_core import processes as bridge_processes
 from bridge_core import protection as bridge_protection
 from bridge_core import resources as bridge_resources
@@ -18,13 +19,23 @@ from bridge_core.jobs import Jobs
 from bridge_core.source_hash import source_hash as plugin_source_hash
 from jsonschema import Draft202012Validator
 
-from krita_art_mcp import envelope, errors, paths, plugin_files, processes, schemas, verification
+from krita_art_mcp import (
+    envelope,
+    errors,
+    paths,
+    plugin_files,
+    processes,
+    schemas,
+    sheets,
+    verification,
+)
 from krita_art_mcp.bridge_client import WAIT_BUDGET_S
 from krita_art_mcp.instructions import INSTRUCTIONS
 from krita_art_mcp.probe import painting as probe_painting
 from krita_art_mcp.probe import updates as probe_updates
 from krita_art_mcp.tools import documents as tool_documents
 from krita_art_mcp.tools import observe
+from krita_art_mcp.tools import preview as tool_preview
 
 ENVELOPE_FIELDS = ["api_version", "status", "document_id", "revision", "operation_id", "error"]
 
@@ -105,6 +116,11 @@ def test_the_plugins_bounds_are_the_schemas_limits() -> None:
         bridge_painting.MIN_SIZE_PX,
         bridge_painting.MAX_SIZE_PX,
     )
+    render = schemas.load("krita_preview_render")["inputSchema"]["properties"]
+    assert render["sources"]["maxItems"] == bridge_previews.MAX_SOURCES
+    assert tuple(render["overlays"]["items"]["enum"]) == bridge_previews.OVERLAYS
+    assert tuple(sheets.OVERLAY_RGB) == bridge_previews.OVERLAYS
+    assert tool_preview.MAX_PREVIEW_PIXELS == bridge_previews.MAX_PREVIEW_PIXELS
 
 
 def test_a_cancelled_call_is_retryable_alike_on_both_sides() -> None:

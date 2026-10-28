@@ -25,7 +25,7 @@ def handlers(registry: Registry, port: DocumentsPort, data: Path) -> dict[str, H
         # A read: no lease, and the view is touched only when K46 demands it.
         exact(args, CAPTURE_FIELDS)
         check_frame(args["frame"])
-        target = _target(args, ("composite", "layer", "selection"))
+        target = check_target(args, ("composite", "layer", "selection"))
         rect = check_rect(args["rect"])
         if not isinstance(args["render"], dict):
             raise BridgeError("INVALID_ARGUMENT", "render is an object.")
@@ -38,7 +38,7 @@ def handlers(registry: Registry, port: DocumentsPort, data: Path) -> dict[str, H
         handle = registry.find(args["document_id"])
         info = port.describe(handle.document)
         check_shown_frame(info)
-        _inside(rect, info["size_px"])
+        inside(rect, info["size_px"])
         width, height = rect["width"], rect["height"]
         if target == "selection":
             pixels = port.selection_rect(handle.document, rect)
@@ -49,7 +49,7 @@ def handlers(registry: Registry, port: DocumentsPort, data: Path) -> dict[str, H
             profile = None
             spec = transfer.write(paths.transfer_dir(data), pixels, width, height, "A8")
         else:
-            [pixels], profile = _read(handle, info, target, args["layer_id"], [rect])
+            [pixels], profile = read_rects(port, handle, info, target, args["layer_id"], [rect])
             spec = transfer.write(paths.transfer_dir(data), pixels, width, height, "BGRA8")
         return {
             "document_id": handle.document_id,
@@ -65,7 +65,7 @@ def handlers(registry: Registry, port: DocumentsPort, data: Path) -> dict[str, H
     def sample(args: dict[str, Any], call: Call) -> dict[str, Any]:
         exact(args, SAMPLE_FIELDS)
         check_frame(args["frame"])
-        target = _target(args, ("composite", "layer"))
+        target = check_target(args, ("composite", "layer"))
         points = _points(args["points"])
         radius = _radius(args["radius"])
         registry.refuse_at_job_start()
@@ -80,7 +80,7 @@ def handlers(registry: Registry, port: DocumentsPort, data: Path) -> dict[str, H
                 "INVALID_ARGUMENT", "A point lies outside the canvas.", False, details
             )
         squares = [_square(point, radius, width, height) for point in points]
-        buffers, profile = _read(handle, info, target, args["layer_id"], squares)
+        buffers, profile = read_rects(port, handle, info, target, args["layer_id"], squares)
         total = sum(square["width"] * square["height"] for square in squares)
         # Every point's square in one row, so one file carries them all.
         spec = transfer.write(paths.transfer_dir(data), b"".join(buffers), total, 1, "BGRA8")
@@ -95,34 +95,40 @@ def handlers(registry: Registry, port: DocumentsPort, data: Path) -> dict[str, H
             "pixels": spec,
         }
 
-    def _read(
-        handle: Handle,
-        info: dict[str, Any],
-        target: str,
-        layer_id: Any,
-        rects: list[dict[str, int]],
-    ) -> tuple[list[Any], str]:
-        if target == "layer":
-            node = paint_layer(port.tree(handle.document), layer_id)
-            return port.layer_rects(handle.document, layer_id, rects), node["profile_id"]
-        if (info["color_model"], info["depth"]) != READ_SPACE:
-            details = {key: info[key] for key in ("color_model", "depth", "profile_id")}
-            message = "Phase 1 reads RGBA / U8 documents only."
-            raise BridgeError("COLOR_PROFILE_MISMATCH", message, False, details)
-        # K46: a selection mask's overlay would enter the read, and an owner's document is never
-        # changed, not even its active node.
-        if not handle.owned and port.mask_active(handle.document):
-            details = {"document_id": handle.document_id, "reason": "selection_mask_active"}
-            message = (
-                "A selection mask is active in this document, and its overlay would enter the "
-                "read; ask the owner to select a layer."
-            )
-            raise BridgeError("DOCUMENT_READ_ONLY", message, False, details)
-        with nodes.unmasked_view(port, handle.document):
-            buffers = port.composite_rects(handle.document, rects)
-        return buffers, info["profile_id"]
-
     return {"capture.read": capture, "sample.read": sample}
+
+
+def read_rects(
+    port: DocumentsPort,
+    handle: Handle,
+    info: dict[str, Any],
+    target: str,
+    layer_id: Any,
+    rects: list[dict[str, int]],
+) -> tuple[list[Any], str]:
+    if target == "layer":
+        node = paint_layer(port.tree(handle.document), layer_id)
+        return port.layer_rects(handle.document, layer_id, rects), node["profile_id"]
+    check_read_space(info)
+    # K46: a selection mask's overlay would enter the read, and an owner's document is never
+    # changed, not even its active node.
+    if not handle.owned and port.mask_active(handle.document):
+        details = {"document_id": handle.document_id, "reason": "selection_mask_active"}
+        message = (
+            "A selection mask is active in this document, and its overlay would enter the "
+            "read; ask the owner to select a layer."
+        )
+        raise BridgeError("DOCUMENT_READ_ONLY", message, False, details)
+    with nodes.unmasked_view(port, handle.document):
+        buffers = port.composite_rects(handle.document, rects)
+    return buffers, info["profile_id"]
+
+
+def check_read_space(info: dict[str, Any]) -> None:
+    if (info["color_model"], info["depth"]) != READ_SPACE:
+        details = {key: info[key] for key in ("color_model", "depth", "profile_id")}
+        message = "Phase 1 reads RGBA / U8 documents only."
+        raise BridgeError("COLOR_PROFILE_MISMATCH", message, False, details)
 
 
 def check_rect(rect: Any) -> dict[str, int]:
@@ -143,7 +149,7 @@ def _integer(value: Any) -> bool:
     return isinstance(value, int) and not isinstance(value, bool)
 
 
-def _target(args: dict[str, Any], targets: tuple[str, ...]) -> str:
+def check_target(args: dict[str, Any], targets: tuple[str, ...]) -> str:
     target, layer_id = args["target"], args["layer_id"]
     if target not in targets:
         raise BridgeError("INVALID_ARGUMENT", f"target is one of {', '.join(targets)}.")
@@ -152,7 +158,7 @@ def _target(args: dict[str, Any], targets: tuple[str, ...]) -> str:
     return str(target)
 
 
-def _inside(rect: dict[str, int], size: list[int]) -> None:
+def inside(rect: dict[str, int], size: list[int]) -> None:
     if rect["x"] + rect["width"] > size[0] or rect["y"] + rect["height"] > size[1]:
         details = {"rect": rect, "canvas_px": size}
         raise BridgeError(

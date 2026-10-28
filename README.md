@@ -6,7 +6,7 @@ size, and undo or keep it. It is for painted (non-pixel) 2D game art.
 
 ## Status
 
-Phase 1 is being built. Version 0.10.0 connects the server to a running Krita through the plugin
+Phase 1 is being built. Version 0.11.0 connects the server to a running Krita through the plugin
 and offers these tools:
 
 - `krita_server_info`: Krita's version, what this build can do, and the folders agents may use;
@@ -32,12 +32,14 @@ and offers these tools:
   leaks;
 - `krita_history_step`: undoing and redoing the steps the agent made, never past the last
   protection change;
+- `krita_preview_render`: comparison sheets at the asset's game sizes, the document as opened
+  beside its current state, over review backgrounds, tinted, in greyscale and with selection and
+  allowed-mask outlines;
 - `krita_operation_get` and `krita_operation_cancel`: following a long call to its receipt, and
   cancelling one still queued.
 
 Every change is journaled before it is sent and is safe to retry with the same `request_id`.
-Previews at game size and saving arrive in the coming releases; `CHANGELOG.md` lists what each
-one adds.
+Saving arrives in the coming releases; `CHANGELOG.md` lists what each one adds.
 
 ## Requirements
 

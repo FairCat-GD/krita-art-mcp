@@ -3183,6 +3183,114 @@ Inserted by review 10 (2026-10-25): the owner chose findings F1, F2, F5, F6, F7 
 - **A fit-to-window image is not evidence of game size.** The cell transform must be exact after
   rounding.
 
+**Done (2026-10-28, 0.11.0).**
+- **Decided with the owner at the start:**
+  - **`integer_zoom` magnifies after.** The cell is rendered at the recipe's scale with the
+    filter, then enlarged z times by pixel replication; the transform includes z, and 1 changes
+    nothing. The owner left the reading to the session: replication adds no values, so nothing
+    resampled is resampled, and painted art is filtered as the game draws it.
+  - **Inline:** each sheet that fits goes inline at full size, in recipe order; the rest are
+    path-only, named in the text line. No preview is ever returned scaled down.
+  - **Tints** apply to the whole cell (art over its background), alpha kept.
+  - **N-02 is gated twice:** the first render, which reads the baseline from the file, under
+    2.0 s on its own, and the p95 of 20 renders after it under 2.0 s.
+- **The lazy baseline.**
+  - The open mints `baseline_id` and writes nothing; `resolve_open` and the open's transfer file
+    went.
+  - The server sends `read_baseline: true` only when it holds no `baselines/<id>.npy`. The
+    plugin then checks the working copy's file still hashes to `source_sha256`, else
+    `SOURCE_HASH_MISMATCH`. It opens the file again without a view (`port.open`, batch mode),
+    reads its composite and closes it in the same job, through `registry.discard`: a file Krita
+    keeps open is registered owned, read-only and unsafe, and the op fails naming it.
+  - The server adopts the transfer file as the `.npy`, as the open did before, and crops it for
+    every later render. Close and the start sweep still remove it.
+- **`krita_preview_render`.**
+  - Plugin op `preview.read` (`bridge_core/previews.py`): a read, with no guard or lease. Per
+    source it returns the crop, the baseline when asked, and the overlays' masks (the selection
+    via `selection_rect`, the allowed mask sliced from the handle), and it echoes the tool's
+    arguments. `pixels._read` became the shared `read_rects`.
+  - `sheets.py` (pure) holds the scale, placement, grid and composition. The tool's module is
+    `tools/preview.py`, and `preview.read` is in `RECEIPTS`.
+  - Order in a cell:
+    1. one resample from the native crop;
+    2. composite over the background (a transparent cell takes the art's bytes);
+    3. tint;
+    4. greyscale;
+    5. a snapshot for the clean sheet;
+    6. the overlays' 1-game-pixel outlines (selection magenta, allowed mask cyan);
+    7. the zoom.
+  - Files: `<op>-<n>.png`, `<op>-<n>.clean.png` and `<op>.json` (written last) in
+    `captures/<day>/`, found before they are made, so `krita_operation_get` rebuilds the receipt.
+  - The instructions gained one line (+176 characters).
+- **Amendments:**
+  - **One sheet per recipe; the contract's `images` and `clean_images` became `sheets[]`,** each
+    with `image`, `clean_image` (null when no overlay was drawn), `inline`, the grid's `columns`
+    and `rows`, and its own `recipe_sha256`. `static_only` and `source_pixels_changed` stay, as
+    constants. Plan time, the session's.
+  - **No text is drawn into a sheet;** the receipt's columns and rows describe the grid. Plan
+    time, the session's.
+  - **"Fit" keeps the aspect:** an exact-size recipe scales the crop to fit its box, and the cell
+    is the box. An anchor that pushes the image out of the box is refused, never clipped.
+  - **A world-unit cell is the union of the anchored images;** each anchor lands within half a
+    pixel of one shared whole-pixel point, in [C − 0.5, C + 0.5).
+  - **Bounds:** 8 recipes, 8 sources, 4 backgrounds, 4 tints, `integer_zoom` up to 16, a sheet at
+    most 4096 px on its long edge, and at most 2 × 8192² pixels read per call (a whole 8k master
+    beside its baseline). Plan time, the session's.
+  - **Overlays are outlined on both columns of a source,** at game size; a mask with nothing to
+    outline draws nothing.
+  - **`FakePort.open` no longer brings its document to the front;** `show` does (K6), so the
+    tests see the reopen leave the owner's view alone.
+- **Measured** (Krita 5.3.4.1, build `bd6e8d0`, macOS, Apple Silicon):
+  - **A second open of an open file** works in Krita 5.3.4.1. It opened without a view, read,
+    and closed, leaving nothing in `documents()`. The lazy baseline equals the composite as
+    opened, byte for byte, for PNG, ORA and KRA in both modes.
+  - **N-02:**
+    - the first render, with the file reopened for the baseline, 0.74 s;
+    - 20 renders after it: p95 0.32 s, mean 0.31 s, max 0.32 s;
+    - sheets of 2974 × 1491 and 1824 × 916, both inline.
+  - **Opens without the baseline write:** the 8192² N-09 master in 0.5 s (4.7–5.2 s with its
+    268 MB baseline before), the 2000² N-01 master in 0.2 s, 0 MB written to `baselines/`.
+  - **`probe` on 0.11.0:**
+    - 101 PASS, 0 FAIL, 33 MEASURED in 79.0 s;
+    - H4 p95 5.6 ms; create and close mean 695 ms;
+    - N-01 p95 0.10 s, N-09 p95 0.24 s; the F4 line unchanged;
+    - `transfer/` and `harness/` empty, `plugin.log` clean;
+    - the same three "pixels were taken" notes as before.
+- **Checked by hand:**
+  - Krita was not running at the start, and the session started it.
+  - For the version bump it quit and relaunched it once, with the owner's approval, at 0 open
+    and 0 unsaved documents.
+  - `doctor` steps 1–5 PASS; step 6 is the owner's roots, as before.
+  - An offline sheet, looked at by eye: the grid in order, and each outline whole on all four
+    edges.
+- **Falsified** (each broken once; each failed at its own test, and was restored from a copy):
+  - **Sheets, 20 mutations:**
+    - the scale formula, half-up rounding, the missing-units refusal;
+    - the fit and the box overflow, the transform's zoom, the anchors' meeting;
+    - the filter and the native pass-through, replication;
+    - the row and column order, the tint and greyscale order, the whole-cell tint;
+    - the clean sheet, the edge-only outline, the empty outline's clean sheet;
+    - the sheet cap, the anchor range, the recipe hash.
+  - **The tool, 14 mutations:**
+    - the lazy read, the as-opened crop, the bridge's baseline match, the file hash;
+    - each of the six rules before Krita;
+    - `RECEIPTS`, the inline split, greyscale's sRGB check, the single document.
+  - **The plugin op, 13 mutations:**
+    - the crop, the reopen's close, the unclosable reopen, the failed reopen's close;
+    - four source rules, the read bound, the mask slice, the cleanup part way;
+    - the open writing no baseline, and the parity pin.
+  - **Two checks first passed under their mutation and were fixed:**
+    - the failed-reopen test set the composite failure before the current read, so the reopen
+      was never reached; it now fails the reopen only;
+    - the layer-baseline case was refused by the id mismatch first; it now uses the document's
+      own id.
+- **Numbers:**
+  - `verify`: 6 stages, all PASS;
+  - 523 server tests passed (+33), 0 skipped;
+  - 586 plugin-core tests passed (+15), 0 skipped;
+  - `probe`: 101 PASS (+6), 0 FAIL, 33 MEASURED, 79.0 s;
+  - 18 registered tools (+1); 19 schema files; instructions 3,351 characters (+176 of 300).
+
 ---
 
 ## 12: document_save

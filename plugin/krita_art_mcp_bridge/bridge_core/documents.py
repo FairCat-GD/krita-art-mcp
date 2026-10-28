@@ -9,6 +9,7 @@ from . import (
     layers,
     opening,
     pixels,
+    previews,
     protection,
     selections,
 )
@@ -95,6 +96,7 @@ def handlers(registry: Registry, port: DocumentsPort, data: Path) -> dict[str, H
         **opening.handlers(registry, port, data),
         **inspection.handlers(registry, port, data),
         **pixels.handlers(registry, port, data),
+        **previews.handlers(registry, port, data),
         **layers.handlers(registry, port),
         **layer_update.handlers(registry, port, data),
         **selections.handlers(registry, port, data),

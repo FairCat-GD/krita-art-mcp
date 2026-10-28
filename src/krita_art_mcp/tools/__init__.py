@@ -15,7 +15,15 @@ from krita_art_mcp.bridge_client import BridgeClient
 from krita_art_mcp.envelope import MAX_RESULT_BYTES
 from krita_art_mcp.journal import Journal
 from krita_art_mcp.paths import Places
-from krita_art_mcp.tools import changes, documents, observe, operations, painting, pixels
+from krita_art_mcp.tools import (
+    changes,
+    documents,
+    observe,
+    operations,
+    painting,
+    pixels,
+    preview,
+)
 from krita_art_mcp.tools.dispatch import ToolCall
 
 MAX_REPORTED_PROBLEMS = 20
@@ -43,6 +51,7 @@ TOOLS: dict[str, ToolFunction] = {
     "krita_protection_set": changes.protection_set,
     "krita_history_step": changes.history_step,
     "krita_paint_stroke": painting.paint_stroke,
+    "krita_preview_render": preview.preview_render,
     "krita_operation_get": operations.operation_get,
     "krita_operation_cancel": operations.operation_cancel,
 }

@@ -6,6 +6,41 @@ All notable changes to krita-art-mcp are documented here. The format follows
 
 ## [Unreleased]
 
+## [0.11.0] — 2026-10-28
+
+Agents can now see their work at the size the game shows it, beside the document as it was
+opened, instead of judging a capture scaled to fit.
+
+### Added
+
+- **`krita_preview_render`.** Comparison sheets at explicit review recipes, one sheet per recipe.
+  - A recipe is world units (`target_pixels_per_unit`, scaled by each source's
+    `export_pixels_per_unit` and `master_to_export_scale`, given on the source or as a default)
+    or an exact box (`target_size_px`, which the image fits inside). `integer_zoom` enlarges the
+    finished cell by whole pixels, adding no new values.
+  - Each source is a document's composite or one paint layer, optionally cropped. A
+    `baseline_id` puts the document as it was opened beside its current state. `anchor_px`
+    lines siblings up.
+  - Rows cover each review background (a colour, `checker` or `transparent`), each tint (a
+    per-channel multiply and add over the whole cell), and greyscale (CIE L\*).
+  - The `selection` and `allowed_mask` overlays are outlined in the sheet only. A clean sheet
+    without them is written beside it, and nothing is drawn into the document.
+  - Every cell is resampled once from Krita's native pixels with the given filter. The receipt
+    gives each column's exact document-to-cell transform after rounding, its scale, filter and
+    source, and each row's background and treatment.
+  - Sheets are PNGs kept 7 days. Each one that fits is returned inline at full size, in recipe
+    order; the rest are named by path, never shown scaled down.
+  - Refused rather than shrunk or clipped: a sheet over 4096 px on its long edge, an image pushed
+    out of its box by its anchor, a world-unit recipe without both units, a layer source with a
+    baseline, and greyscale on a document that is not sRGB.
+
+### Changed
+
+- **Opening no longer writes the `as_opened` baseline.** The first preview that asks for it
+  reads it from the working copy's file, which no save overwrites, so an 8192 × 8192 master
+  opens in about half a second instead of five, with no 268 MB file. If that file has changed
+  since the open, the preview answers `SOURCE_HASH_MISMATCH`.
+
 ## [0.10.0] — 2026-10-27
 
 The paint-safely tools now either confirm every change or mark the document unsafe, however the

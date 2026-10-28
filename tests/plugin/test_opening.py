@@ -10,7 +10,7 @@ from bridge_core import documents, files, opening
 from bridge_core.errors import BridgeError
 from bridge_core.jobs import Call
 from bridge_core.registry import Registry
-from fake_krita import FakePort, bgra, layer_id
+from fake_krita import FakePort, layer_id
 
 A: dict[str, Any] = {"pid": 101, "started_at": "Sat Oct 24 10:00:00 2026"}
 NOW = datetime.datetime(2026, 10, 24, 12, 30, 5, 123456, tzinfo=datetime.timezone.utc)
@@ -85,9 +85,8 @@ def test_a_working_copy_is_a_timestamped_copy_beside_no_source(world: World) -> 
     assert handle.source_sha256 == hashlib.sha256(b"accepted art").hexdigest()
     assert handle.baseline_id == opened["baseline_id"]
     assert opened["baseline_id"].startswith("baseline-") and len(opened["baseline_id"]) == 21
-    # The as_opened composite waits in transfer/ for the server, as B, G, R, A.
-    assert Path(opened["baseline"]["path"]).read_bytes() == bgra(8, 4)
-    assert opened["baseline"]["format"] == "BGRA8"
+    # The as_opened pixels stay in the working copy's file until a preview reads them.
+    assert "baseline" not in opened and world.transfer_files() == []
 
 
 def test_a_read_only_open_opens_the_source_itself_and_copies_nothing(world: World) -> None:
@@ -251,9 +250,7 @@ def test_the_editable_lists_and_the_mode_are_exact(
     assert world.transfer_files() == []
 
 
-@pytest.mark.parametrize(
-    "step", ["open", "show", "tree", "composite", "colour space", "another frame"]
-)
+@pytest.mark.parametrize("step", ["open", "show", "tree", "colour space", "another frame"])
 def test_a_failure_after_the_copy_undoes_everything_in_the_same_job(
     world: World, step: str
 ) -> None:
@@ -263,7 +260,7 @@ def test_a_failure_after_the_copy_undoes_everything_in_the_same_job(
         }
         code = "COLOR_PROFILE_MISMATCH"
     elif step == "another frame":
-        # The baseline is frame 0, as every read is.
+        # Every read is of frame 0.
         world.port.files[str(world.work / f"{COPY}hero.kra")] = {
             "current_time": 5,
             "animated": True,
@@ -279,7 +276,7 @@ def test_a_failure_after_the_copy_undoes_everything_in_the_same_job(
     assert world.port.closed == ([] if step == "open" else [1])
 
 
-def test_a_failure_once_the_composite_is_out_removes_its_transfer_file(world: World) -> None:
+def test_a_failure_minting_the_baseline_id_undoes_everything(world: World) -> None:
     def failing() -> str:
         raise BridgeError("INTERNAL_ERROR", "no id")
 
@@ -289,7 +286,7 @@ def test_a_failure_once_the_composite_is_out_removes_its_transfer_file(world: Wo
     assert world.registry.sync() == [] and world.port.closed == [1]
 
 
-@pytest.mark.parametrize("step", ["show", "composite"])
+@pytest.mark.parametrize("step", ["show", "tree"])
 def test_a_document_krita_will_not_close_stays_owned_and_unsafe(world: World, step: str) -> None:
     world.port.close_works = False
     world.port.fail[step] = BridgeError("IO_ERROR", f"{step} failed")

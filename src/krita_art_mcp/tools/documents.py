@@ -117,21 +117,13 @@ def document_open(call: ToolCall, arguments: dict[str, Any]) -> CallToolResult:
         return _open_roots(call.places, arguments)
 
     def send(before_send: BeforeSend) -> Outcome:
-        outcome = call.bridge.call(
+        return call.bridge.call(
             "document.open", op_args, request_id=request_id, before_send=before_send
         )
-        return resolve_open(call.places, outcome)
 
     return journaled(
         call, "krita_document_open", arguments, request_id, send, open_receipt, precheck
     )
-
-
-def resolve_open(places: Places, outcome: Outcome) -> Outcome:
-    # The as_opened composite is kept before the receipt, wherever the outcome arrives.
-    if isinstance(outcome, Done):
-        baselines.adopt(places, outcome.result.get("baseline_id"), outcome.result.get("baseline"))
-    return outcome
 
 
 def open_receipt(outcome: Outcome) -> CallToolResult:

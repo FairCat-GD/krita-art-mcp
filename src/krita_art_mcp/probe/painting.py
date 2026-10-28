@@ -17,7 +17,7 @@ from PIL import Image
 from krita_art_mcp import paths
 from krita_art_mcp.bridge_client import BridgeClient, Done
 from krita_art_mcp.journal import Journal
-from krita_art_mcp.probe import fixtures
+from krita_art_mcp.probe import fixtures, previews
 from krita_art_mcp.probe.changes import by_name, guard, history_args
 from krita_art_mcp.probe.opening import open_args
 from krita_art_mcp.probe.pixels import brushes
@@ -161,6 +161,7 @@ async def run(report: Report, a: Client, b: Client, client: BridgeClient, harnes
         await _view(report, a, client, document_id, root, hard)
         await _witness(report, a, client, document_id, root, hard)
         await _tall_tip(report, a, folder, harness, presets["tall"])
+        await _beside(report, a, folder, harness, hard)
         await _refusals(report, a, client, paint, harness, document_id, root, base, hard)
         await _masks(report, a, client, paint, harness, presets)
         await _rim(report, a, rim, harness, hard)
@@ -468,6 +469,47 @@ async def _tall_tip(
         f"{', '.join(f'{margin:.1f}' for margin in sorted(margins)) or '-'} px; reached past the "
         f"path {'; '.join(found)}",
     )
+
+
+async def _beside(
+    report: Report, a: Client, folder: Path, harness: Path, hard: dict[str, Any]
+) -> None:
+    # The baseline is read after the stroke, so only the working copy's file can hold it.
+    name = "a baseline rendered beside the current state after a stroke is the document as opened"
+    source = folder / "beside.ora"
+    fixtures.write_ora(source, fixtures.paint_stack(), fixtures.PAINT_WIDTH, fixtures.PAINT_HEIGHT)
+    opened = await _open(a, source, harness)
+    document_id = opened.get("document_id")
+    if opened.get("status") != "completed" or not document_id:
+        report.check(name, False, str(opened.get("error")))
+        return
+    try:
+        data = opened["data"]
+        units = {"export_pixels_per_unit": previews.EXPORT_PER_UNIT, "master_to_export_scale": 0.5}
+        alone = previews.arguments([previews.source(document_id)], previews.GAME[:1], **units)
+        before = await tool(a, previews.TOOL, alone)
+        layer_id = await _layer(a, document_id, data["root_layer_id"], "beside")
+        line = _line(20, 48, fixtures.PAINT_WIDTH - 20, 48)
+        painted = await tool(a, TOOL, _stroke(document_id, layer_id or "", _brush(hard), line))
+        paired = previews.source(document_id, baseline_id=data["baseline_id"])
+        after = await tool(
+            a, previews.TOOL, previews.arguments([paired], previews.GAME[:1], **units)
+        )
+        sheets = [(r.get("data") or {}).get("sheets") or [None] for r in (before, after)]
+        was, now = sheets[0][0], sheets[1][0]
+        if was is None or now is None or painted.get("status") != "completed":
+            report.check(name, False, f"{code(before)}, {code(painted)}, {code(after)}")
+            return
+        as_opened, current = previews.cell(now, 0), previews.cell(now, 1)
+        problem = differs(as_opened, previews.cell(was, 0))
+        changed = int((current != as_opened).any(axis=-1).sum())
+        report.check(
+            name,
+            not problem and changed > 0,
+            problem or f"the stroke changed {changed} of the current cell's pixels",
+        )
+    finally:
+        await close(a, document_id)
 
 
 def _past(points: list[dict[str, Any]], bounds: dict[str, int]) -> float:
@@ -857,7 +899,8 @@ async def _benchmark(
     document_id = opened.get("document_id")
     report.measured(
         f"{name}: opening the {size} x {size} master with {spec['layers']} layers",
-        f"{opened_s:.1f} s, baseline {(_size(baselines) - held) / 1e6:.0f} MB on disk, Krita "
+        f"{opened_s:.1f} s, {(_size(baselines) - held) / 1e6:.0f} MB of baseline written (read "
+        "lazily), Krita "
         f"{_megabytes(rss_before)} before and {_megabytes(_krita_rss_kb())} after",
     )
     if opened.get("status") != "completed" or not document_id:
