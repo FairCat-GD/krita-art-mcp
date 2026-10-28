@@ -245,6 +245,46 @@ def test_a_missing_folder_inside_the_root_is_made(world: World) -> None:
     assert world.files() == ["hero-r02.kra"]
 
 
+def test_a_canvas_too_large_to_read_is_refused_before_anything_is_written(world: World) -> None:
+    document_id = world.open()
+    world.port.live[world.key(document_id)]["size_px"] = [8193, 8192]
+    world.port.calls.clear()
+    body = world.refused("save", document_id)
+    assert body["code"] == "UNSUPPORTED_CAPABILITY" and body["details"]["max_pixels"] == 8192**2
+    assert "export" not in world.port.calls and not world.saves.exists()
+
+
+def test_a_failed_save_removes_the_folders_it_made(world: World) -> None:
+    document_id = world.open()
+    world.saves = world.saves / "deeper" / "deepest"
+    world.port.export_works = False
+    assert world.code("save", document_id) == "BUSY"
+    assert not (world.art / "revisions").exists()
+    world.port.export_works = True
+    saved = world.save(document_id)
+    assert world.code("finish", saved, "0" * 64) == "SAVE_VERIFY_FAILED"
+    assert not (world.art / "revisions").exists()
+
+
+def test_a_folder_that_cannot_be_written_is_io_error_not_busy(world: World) -> None:
+    document_id = world.open()
+    world.saves.mkdir()
+    world.saves.chmod(0o555)
+    try:
+        world.port.calls.clear()
+        assert world.code("save", document_id) == "IO_ERROR"
+        assert "export" not in world.port.calls
+    finally:
+        world.saves.chmod(0o755)
+
+
+def test_a_name_too_long_to_save_beside_is_refused(world: World) -> None:
+    document_id = world.open()
+    body = world.refused("save", document_id, "h" * 240 + ".kra")
+    assert body["code"] == "INVALID_ARGUMENT" and body["details"]["max_name_bytes"] < 244
+    assert world.files() == []
+
+
 def test_read_only_and_unsafe_documents_are_refused(world: World) -> None:
     read_only = world.open("read_only")
     assert world.code("save", read_only) == "DOCUMENT_READ_ONLY"

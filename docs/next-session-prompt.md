@@ -8,17 +8,20 @@ no version. The owner then picks, in plan mode, which findings become scope.
 - **Round 1 is the Phase 1 build.** Sessions 0 to 12 are done, 6a, 7a and 10a included. 13 to 15
   remain: 13 (this review, no version), 14 (0.13.0) and 15 (0.14.0, the round's close).
 - **The push status.** `origin` is the private GitHub repository. `origin/main` holds
-  everything through 11's review commit ("review: a bad baseline file is read anew, and 9
-  smaller"). 12's session commit is local, not pushed, and its review commit follows it. List
-  `origin/main..HEAD` before any push.
+  everything through 12's review commit ("review: a poll of a failed save tells its own outcome,
+  and 8 smaller"), pushed with the owner's approval; nothing is local. List `origin/main..HEAD`
+  before any push.
 - **What 12 built that 13 reads:**
   - **The save is two plugin ops** (`bridge_core/saving.py`):
     - `document.save` exports to a hidden `.<stem>.<token>.saving<ext>` beside the path,
       reopens it with `reopening.read_file` (shared with the preview's baseline read), compares,
       and keeps a `Pending` save on the handle.
     - The server (`tools/saving.py`) decodes `mergedimage.png` and sends `document.save_finish`
-      under `<request_id>:finish`. The finish links the file into place, or removes it, and clears
-      dirt only if `Handle.changes` has not moved.
+      under `<request_id>:finish` and an operation id derived from the save's, so any poll or
+      retry gets the finish's own outcome. The finish links the file into place, or removes it,
+      and clears dirt only if `Handle.changes` has not moved.
+    - A save refuses canvases over 8192 × 8192, a name too long for its hidden file and a folder
+      it cannot write before exporting, and removes any folder it made when it fails.
     - `Known.finish` lets `krita_operation_get` finish a save that came back `running`.
   - **The projection is recomposed (`port.refresh`) before every export:** after a stroke it
     differed from its layers' own composite.
@@ -42,11 +45,11 @@ no version. The owner then picks, in plan mode, which findings become scope.
   - **Decision 29's two unit-only cases both happened live:** an unforced `BUSY`, once, and
     "outcome uncertain" each time Krita died mid-call.
 - **Decisions written down nowhere else:** none beyond 12's done-note.
-- **Baseline** (12; 12's review moves these only by what it adds):
+- **Baseline** (12 after its review; 13 changes no code, so none of these moves):
   - `verify`: 6 stages, all PASS;
-  - 546 server tests passed, 0 skipped;
-  - 632 plugin-core tests passed, 0 skipped;
-  - `probe`: 113 PASS, 0 FAIL, 34 MEASURED, 95.2 s;
+  - 549 server tests passed, 0 skipped;
+  - 636 plugin-core tests passed, 0 skipped;
+  - `probe`: 113 PASS, 0 FAIL, 34 MEASURED, 95.6 s;
   - 19 registered tools; 19 schema files; instructions 3,524 characters (session 14 finalises
     them under 4,096).
 - **Not done:**

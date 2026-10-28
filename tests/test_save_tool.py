@@ -130,6 +130,29 @@ def test_a_mergedimage_that_differs_fails_and_leaves_nothing(world: World) -> No
     assert _saves(world) == [] and _dirty(world, document_id)
 
 
+def test_a_poll_of_a_save_that_failed_its_mergedimage_check_says_so(world: World) -> None:
+    document_id = _opened(world)
+
+    def darken(merged: bytearray) -> None:
+        merged[0] ^= 1
+
+    world.port.merged_change = darken
+    target = world.tmp_path / "art" / "revisions" / "hero-r02.kra"
+    failed = world.server().content("krita_document_save", _save(document_id, target))
+    assert failed["error"]["code"] == "SAVE_VERIFY_FAILED"
+    # Another server has no journal line; the file is gone, so only the finish's outcome tells.
+    polled = world.server(B, "b").content(
+        "krita_operation_get", {"operation_id": failed["operation_id"]}
+    )
+    assert polled["data"]["receipt"] == failed
+
+
+def test_a_finish_has_an_operation_id_a_poll_can_derive() -> None:
+    derived = saving.finish_operation_id("op-" + "1" * 32)
+    assert imaging.OPERATION_ID.match(derived) and derived != "op-" + "1" * 32
+    assert derived == saving.finish_operation_id("op-" + "1" * 32)
+
+
 def test_a_retry_returns_the_receipt_and_saves_once(world: World) -> None:
     document_id = _opened(world)
     target = world.tmp_path / "art" / "revisions" / "hero-r02.kra"
@@ -141,15 +164,15 @@ def test_a_retry_returns_the_receipt_and_saves_once(world: World) -> None:
     assert world.port.calls.count("export") == 1 and _saves(world) == ["hero-r02.kra"]
 
 
-def test_a_retry_after_the_file_went_says_so(world: World) -> None:
+def test_a_retry_after_the_file_went_returns_the_original_receipt(world: World) -> None:
     document_id = _opened(world)
     target = world.tmp_path / "art" / "revisions" / "hero-r02.kra"
     first = world.server().content("krita_document_save", _save(document_id, target))
     assert first["status"] == "completed"
     target.unlink()
+    # Its finish ran; the bridge still holds that outcome, so the receipt is the original one.
     from_b = world.server(B, "b").content("krita_document_save", _save(document_id, target))
-    assert from_b["status"] == "failed" and from_b["error"]["code"] == "INTERNAL_ERROR"
-    assert "no longer where it was written" in from_b["error"]["message"]
+    assert from_b == first and world.port.calls.count("export") == 1
 
 
 def test_a_save_that_runs_past_the_wait_is_finished_by_operation_get(world: World) -> None:
@@ -254,7 +277,7 @@ def test_mergedimage_is_decoded_with_no_colour_conversion(tmp_path: Path) -> Non
     info.add(b"gAMA", (100000).to_bytes(4, "big"))
     profile = imaging.MERGED.encode()
     data = _png(Image.fromarray(rgba, "RGBA"), pnginfo=info, icc_profile=profile)
-    decoded = imaging.merged_image(_zip(tmp_path / "a.kra", data))
+    decoded = imaging.merged_image(_zip(tmp_path / "a.kra", data), [8, 4])
     assert (decoded == rgba).all()
     expected = hashlib.sha256(np.ascontiguousarray(rgba[..., [2, 1, 0, 3]]).tobytes()).hexdigest()
     assert imaging.bgra_sha256(decoded) == expected
@@ -263,7 +286,9 @@ def test_mergedimage_is_decoded_with_no_colour_conversion(tmp_path: Path) -> Non
 def test_the_bgra_hash_matches_the_plugins_over_many_bands(tmp_path: Path) -> None:
     width, height = 3, imaging.HASH_ROWS * 2 + 5
     composite = bgra(width, height)
-    decoded = imaging.merged_image(_zip(tmp_path / "a.ora", png(width, height, composite)))
+    decoded = imaging.merged_image(
+        _zip(tmp_path / "a.ora", png(width, height, composite)), [width, height]
+    )
     assert imaging.bgra_sha256(decoded) == hashlib.sha256(composite).hexdigest()
 
 
@@ -277,7 +302,7 @@ def test_the_bgra_hash_matches_the_plugins_over_many_bands(tmp_path: Path) -> No
 )
 def test_mergedimage_must_be_8_bit_rgba(tmp_path: Path, data: bytes) -> None:
     with pytest.raises(imaging.MergedError):
-        imaging.merged_image(_zip(tmp_path / "a.kra", data))
+        imaging.merged_image(_zip(tmp_path / "a.kra", data), [8, 4])
 
 
 def test_a_16_bit_mergedimage_is_refused(tmp_path: Path) -> None:
@@ -285,7 +310,12 @@ def test_a_16_bit_mergedimage_is_refused(tmp_path: Path) -> None:
     # The IHDR's bit depth, at byte 24, made 16.
     sixteen = header[:24] + b"\x10" + header[25:]
     with pytest.raises(imaging.MergedError, match="8-bit RGBA"):
-        imaging.merged_image(_zip(tmp_path / "a.kra", sixteen))
+        imaging.merged_image(_zip(tmp_path / "a.kra", sixteen), [8, 4])
+
+
+def test_a_mergedimage_of_another_size_is_refused_before_it_is_decoded(tmp_path: Path) -> None:
+    with pytest.raises(imaging.MergedError, match="8 x 4 px; the document is 9 x 4"):
+        imaging.merged_image(_zip(tmp_path / "a.kra", png(8, 4, bgra(8, 4))), [9, 4])
 
 
 def test_a_file_without_mergedimage_is_refused(tmp_path: Path) -> None:
@@ -293,4 +323,4 @@ def test_a_file_without_mergedimage_is_refused(tmp_path: Path) -> None:
     with zipfile.ZipFile(path, "x") as archive:
         archive.writestr("maindoc.xml", "<DOC/>")
     with pytest.raises(imaging.MergedError, match="cannot be read"):
-        imaging.merged_image(path)
+        imaging.merged_image(path, [8, 4])

@@ -33,7 +33,12 @@ counts only once that file, reopened, matches the document.
   - Before writing, the projection is recomposed and no selection mask is left active, so the
     file and its `mergedimage.png` show the layers, with no selection overlay.
   - `BUSY`, retryable, when an autosave holds the document. A save that runs past the server's
-    wait is finished by `krita_operation_get`.
+    wait is finished by `krita_operation_get`, which also gives a finished save's own receipt,
+    failed or not, even once its file has moved.
+  - Refused before anything is written: a canvas over 8192 × 8192 pixels
+    (`UNSUPPORTED_CAPABILITY`), a file name too long for the save's hidden file beside it
+    (`INVALID_ARGUMENT`), and a folder that cannot be written (`IO_ERROR`). A failed save removes
+    any folder it made for its path.
 
 ### Fixed
 

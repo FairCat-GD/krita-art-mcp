@@ -16,7 +16,15 @@ from krita_art_mcp.paths import Places
 from krita_art_mcp.probe import fixtures
 from krita_art_mcp.probe.changes import by_name, guard
 from krita_art_mcp.probe.opening import UNWRITABLE, open_args, sha
-from krita_art_mcp.probe.painting import _brush, _krita_rss_kb, _line, _megabytes, _stroke
+from krita_art_mcp.probe.painting import (
+    _brush,
+    _finished,
+    _harness,
+    _krita_rss_kb,
+    _line,
+    _megabytes,
+    _stroke,
+)
 from krita_art_mcp.probe.report import Report, close, code, tool
 from krita_art_mcp.tools.changes import resolve_update
 from krita_art_mcp.tools.documents import SRGB_PROFILE
@@ -72,18 +80,6 @@ def _hidden(folder: Path) -> list[str]:
     return sorted(name for name in os.listdir(folder) if name.startswith("."))
 
 
-async def _finished(a: Client, content: dict[str, Any], limit_s: float) -> dict[str, Any]:
-    # A save that ran past the server's wait is followed to its receipt.
-    deadline = time.monotonic() + limit_s
-    while content.get("status") in ("queued", "running") and time.monotonic() < deadline:
-        await asyncio.sleep(1.0)
-        got = await tool(a, "krita_operation_get", {"operation_id": content["operation_id"]})
-        receipt = (got.get("data") or {}).get("receipt")
-        if receipt is not None:
-            return dict(receipt)
-    return content
-
-
 async def _save(a: Client, document_id: str, path: Path) -> dict[str, Any]:
     arguments = save_args(document_id, path)
     saved = await _finished(a, await tool(a, "krita_document_save", arguments), SAVE_LIMIT_S)
@@ -105,10 +101,6 @@ async def _layers(a: Client, document_id: str) -> dict[str, Any]:
     seen = await tool(a, "krita_document_inspect", {"document_id": document_id, "frame": 0})
     data: dict[str, Any] = seen.get("data") or {}
     return data
-
-
-def _harness(client: BridgeClient, op: str, **args: Any) -> Outcome:
-    return client.call(op, args, request_id=str(uuid.uuid4()))
 
 
 async def run(

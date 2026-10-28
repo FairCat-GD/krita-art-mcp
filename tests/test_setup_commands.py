@@ -101,6 +101,7 @@ class _Client(BridgeClient):
         request_id: str | None = None,
         before_send: BeforeSend | None = None,
         budget_s: float | None = None,
+        operation_id: str | None = None,
     ) -> Outcome:
         assert op == "bridge.unsaved_documents"
         return self._documents
@@ -286,6 +287,7 @@ def test_the_probe_s_export_retries_one_busy_with_a_fresh_request_id(
             request_id: str | None = None,
             before_send: BeforeSend | None = None,
             budget_s: float | None = None,
+            operation_id: str | None = None,
         ) -> Outcome:
             assert op == "harness.export_kra"
             sent.append(request_id)

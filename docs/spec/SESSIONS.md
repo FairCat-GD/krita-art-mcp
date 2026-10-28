@@ -3544,6 +3544,43 @@ finding the handoff assigns here.
   - 632 plugin-core tests passed (+45), 0 skipped;
   - `probe`: 113 PASS (+12), 0 FAIL, 34 MEASURED (+1), 95.2 s;
   - 19 registered tools (+1); 19 schema files; instructions 3,524 characters (+173).
+- **Review (`/code-review high`), 9 findings, all fixed at the owner's request.**
+  - **A poll of a save that failed on `mergedimage.png` misreported it.** Once the finish had
+    removed the file, a poll or another server re-sent the finish with other arguments and was
+    told the file had moved. The finish now runs under an operation id derived from the save's
+    (`finish_operation_id`), and the bridge answers a known operation id before it compares
+    arguments, so every poll and retry gets the finish's own outcome. The `REQUEST_ID_CONFLICT`
+    rewording went with it.
+  - **A save read the whole canvas with no bound.** Canvases over 8192 × 8192
+    (`MAX_READ_PIXELS`) are `UNSUPPORTED_CAPABILITY` before anything is written, and
+    `imaging.merged_image` checks the PNG's size in its header before decoding.
+  - **Every export failure was `BUSY`.** A file name too long for the hidden file beside it is
+    `INVALID_ARGUMENT` (with the bytes left), and a folder that cannot be written is `IO_ERROR`,
+    both before the export.
+  - **A failed save left the folders it made.** They are made just before the export and removed,
+    deepest first and only while empty, by any failure, a `mergedimage.png` mismatch, a failed
+    move, or a dropped pending save.
+  - **The decoded image was copied twice;** `np.asarray` already copies.
+  - **The written file was hashed again by the finish;** the finish and the drop now compare its
+    inode, size and modification time, taken when the save hashed it.
+  - **The probe had its own `_finished` and `_harness`;** it imports painting's.
+  - **The server's root check had two copies;** `documents.inside_roots` serves the open and the
+    save, and `tools.saving.file_sha256` serves the probe's `sha`.
+  - **A test comment told what had happened;** it now says why the code is shaped so.
+  - **Falsified** (each broken once, failed at its own test, restored from a copy): the canvas
+    bound, the folders removed on failure and on a mismatch, the writable check, the name length,
+    the finish's stat check, the derived finish id (for a poll and for a retry), its shape, the
+    header size, and the shared root check. An explicit lookup of the finish when the file was
+    gone first survived its break: the derived id alone already gets the original outcome, so the
+    lookup was removed.
+  - **Measured:** `probe` 113 PASS, 0 FAIL, 34 MEASURED in 95.6 s on the reviewed build, after a
+    Krita restart at 0 open and 0 unsaved; H4's save 4.6 s, longest silence 2.60 s;
+    `transfer/` and `harness/` empty, `plugin.log` clean.
+  - **Numbers after the review:**
+    - `verify`: 6 stages, all PASS;
+    - 549 server tests passed (+3), 0 skipped;
+    - 636 plugin-core tests passed (+4), 0 skipped;
+    - `probe`: 113 PASS, 0 FAIL, 34 MEASURED, 95.6 s.
 
 ---
 

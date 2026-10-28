@@ -227,25 +227,30 @@ def _open_rules(arguments: dict[str, Any]) -> CallToolResult | None:
     return None
 
 
-def _open_roots(places: Places, arguments: dict[str, Any]) -> CallToolResult | None:
-    # Invariant 3, on the server's side; the plugin checks again.
+def inside_roots(places: Places, field: str, path: str) -> str | CallToolResult:
+    # Invariant 3, on the server's side; the plugin checks again. The real path, or the refusal.
     try:
         allowed = roots.allowed(places.config_file, places.harness_dir)
     except roots.ConfigError as problem:
         return envelope.failure("INTERNAL_ERROR", str(problem))
+    resolved = roots.resolve(path)
+    if resolved is None:
+        message = f"{field} must be an absolute path."
+        return envelope.failure("INVALID_ARGUMENT", message, details={"field": field})
+    if not roots.inside(resolved, allowed):
+        message = f"{field} is outside every allowed root."
+        return envelope.failure("PATH_NOT_ALLOWED", message, details={"field": field})
+    return resolved
+
+
+def _open_roots(places: Places, arguments: dict[str, Any]) -> CallToolResult | None:
     real: dict[str, str] = {}
     for field in ("source_path", "working_dir"):
         if field not in arguments:
             continue
-        resolved = roots.resolve(arguments[field])
-        if resolved is None:
-            details = {"field": field}
-            message = f"{field} must be an absolute path."
-            return envelope.failure("INVALID_ARGUMENT", message, details=details)
-        if not roots.inside(resolved, allowed):
-            details = {"field": field}
-            message = f"{field} is outside every allowed root."
-            return envelope.failure("PATH_NOT_ALLOWED", message, details=details)
+        resolved = inside_roots(places, field, arguments[field])
+        if isinstance(resolved, CallToolResult):
+            return resolved
         real[field] = resolved
     if real.get("working_dir") == os.path.dirname(real["source_path"]):
         details = {"field": "working_dir"}

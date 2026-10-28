@@ -1,4 +1,3 @@
-import hashlib
 import os
 import re
 import time
@@ -14,6 +13,7 @@ from krita_art_mcp import baselines, paths, roots
 from krita_art_mcp.bridge_client import BridgeClient, Done, Failed
 from krita_art_mcp.probe import fixtures
 from krita_art_mcp.probe.report import Report, close, code, differs, sheet_cell, tool
+from krita_art_mcp.tools.saving import file_sha256
 
 COPY_NAME = re.compile(r"^\d{8}T\d{6}\.\d{3}Z-probe\.(ora|kra|png)$")
 # Never writable, so an escape that slipped through could still write nothing there.
@@ -39,7 +39,7 @@ class Opened:
 
 
 def sha(path: Path) -> str:
-    return hashlib.sha256(path.read_bytes()).hexdigest()
+    return file_sha256(path)
 
 
 def open_args(source: Path, mode: str, work: Path | None = None, **extra: Any) -> dict[str, Any]:

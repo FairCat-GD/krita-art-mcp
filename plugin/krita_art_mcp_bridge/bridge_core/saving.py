@@ -9,6 +9,7 @@ from . import files, nodes, reopening, roots
 from .errors import BridgeError, exact
 from .inspection import TYPES, check_shown_frame
 from .jobs import Call, Handler
+from .pixels import MAX_READ_PIXELS
 from .port import DocumentsPort
 from .registry import Handle, Registry
 
@@ -43,6 +44,8 @@ ORA_FIELDS = ("name", "visible", "blend_mode", "locked", "inherit_alpha")
 # Layer properties ORA has no place for; a layer that had one is listed as losing it.
 ORA_DROPS = ("alpha_locked",)
 MAX_MISMATCHES = 20
+# A file name's limit where the filesystem does not say.
+NAME_MAX = 255
 # Errors that mean the folder's filesystem has no hard links.
 NO_LINKS = {errno.EPERM, errno.ENOTSUP, errno.EOPNOTSUPP, errno.EMLINK, errno.EXDEV}
 
@@ -54,16 +57,18 @@ class Pending:
         self,
         save_id: str,
         written: str,
-        target: str,
-        sha256: str,
+        made: list[str],
         composite_sha256: str,
         changes: int,
         receipt: dict[str, Any],
     ) -> None:
         self.save_id = save_id
         self.written = written
-        self.target = target
-        self.sha256 = sha256
+        # The folders the save made for its path, deepest first.
+        self.made = made
+        # Checked again by the finish; hashed once already, so its stat is enough.
+        self.stat = _stat(written)
+        self.target = receipt["path"]
         self.composite_sha256 = composite_sha256
         self.changes = changes
         self.receipt = receipt
@@ -74,10 +79,13 @@ def handlers(registry: Registry, port: DocumentsPort, data: Path) -> dict[str, H
         target, kind = _target(data, args["path"])
         info = port.describe(handle.document)
         _check_space(info)
+        _check_size(info)
         check_shown_frame(info)
         drop(handle)
+        made = _make_folder(os.path.dirname(target))
         written = _written_name(target)
         try:
+            _check_writable(written, target)
             # K46: no selection mask's overlay may enter the file or the reads. The projection is
             # recomposed first: after a stroke it can differ from its layers' own composite, which
             # is what the file holds and its reopening shows.
@@ -117,6 +125,7 @@ def handlers(registry: Registry, port: DocumentsPort, data: Path) -> dict[str, H
             sha = files.sha256_of(written)
         except BaseException:
             _remove(written)
+            _unmake(made)
             raise
         untouched = None
         if handle.source_path is not None and handle.source_sha256 is not None:
@@ -133,7 +142,7 @@ def handlers(registry: Registry, port: DocumentsPort, data: Path) -> dict[str, H
             "expected_losses": losses,
         }
         handle.pending_save = Pending(
-            call.operation_id, written, target, sha, composite, handle.changes, receipt
+            call.operation_id, written, made, composite, handle.changes, receipt
         )
         return {
             **receipt,
@@ -151,11 +160,12 @@ def handlers(registry: Registry, port: DocumentsPort, data: Path) -> dict[str, H
             raise BridgeError("INVALID_ARGUMENT", message, False, details)
         handle.pending_save = None
         details = {"document_id": handle.document_id, "path": pending.target}
-        if not files.unchanged(pending.written, pending.sha256):
+        if _stat(pending.written) != pending.stat:
             message = "The saved file changed or went before its mergedimage.png was checked."
             raise BridgeError("SAVE_VERIFY_FAILED", message, False, details)
         if args["merged_problem"] is not None or args["merged_sha256"] != pending.composite_sha256:
             _remove(pending.written)
+            _unmake(pending.made)
             details["mismatches"] = [
                 {
                     "field": "mergedimage",
@@ -166,7 +176,11 @@ def handlers(registry: Registry, port: DocumentsPort, data: Path) -> dict[str, H
             ]
             message = "The saved file's mergedimage.png differs from the document."
             raise BridgeError("SAVE_VERIFY_FAILED", message, False, details)
-        _place(pending.written, pending.target)
+        try:
+            _place(pending.written, pending.target)
+        except BaseException:
+            _unmake(pending.made)
+            raise
         # A change since the save read the document keeps its dirt (decision 27).
         cleared = handle.changes == pending.changes
         if cleared:
@@ -197,8 +211,9 @@ def drop(handle: Handle) -> None:
     # A save never finished leaves nothing beside its target that is still as it was written.
     pending = handle.pending_save
     handle.pending_save = None
-    if isinstance(pending, Pending) and files.unchanged(pending.written, pending.sha256):
+    if isinstance(pending, Pending) and _stat(pending.written) == pending.stat:
         _remove(pending.written)
+        _unmake(pending.made)
 
 
 def _target(data: Path, path: Any) -> tuple[str, str]:
@@ -212,11 +227,48 @@ def _target(data: Path, path: Any) -> tuple[str, str]:
     if os.path.lexists(path) or os.path.lexists(target):
         message = "path exists; nothing is overwritten."
         raise BridgeError("FILE_EXISTS", message, False, {"path": target})
-    try:
-        os.makedirs(os.path.dirname(target), exist_ok=True)
-    except OSError as problem:
-        raise BridgeError("IO_ERROR", f"path's folder cannot be made: {problem}") from problem
     return target, kind
+
+
+def _make_folder(folder: str) -> list[str]:
+    # Made only once the document can be saved; a failure removes what it made.
+    missing = []
+    while not os.path.isdir(folder):
+        missing.append(folder)
+        folder = os.path.dirname(folder)
+    if not missing:
+        return missing
+    try:
+        os.makedirs(missing[0], exist_ok=True)
+    except OSError as problem:
+        _unmake(missing)
+        raise BridgeError("IO_ERROR", f"path's folder cannot be made: {problem}") from problem
+    return missing
+
+
+def _unmake(made: list[str]) -> None:
+    # Deepest first; a folder something else has filled since stays.
+    for folder in made:
+        try:
+            os.rmdir(folder)
+        except OSError:
+            return
+
+
+def _check_writable(written: str, target: str) -> None:
+    # Krita's export says only that it failed, which is BUSY; these failures it would hide.
+    folder, name = os.path.split(written)
+    try:
+        limit = os.pathconf(folder, "PC_NAME_MAX")
+    except (OSError, ValueError):
+        limit = NAME_MAX
+    if len(name.encode("utf-8")) > limit:
+        spare = limit - (len(name.encode("utf-8")) - len(os.path.basename(target).encode("utf-8")))
+        details = {"max_name_bytes": spare}
+        message = f"path's file name is too long; the save needs it at most {spare} bytes."
+        raise BridgeError("INVALID_ARGUMENT", message, False, details)
+    if not os.access(folder, os.W_OK):
+        raise BridgeError("IO_ERROR", "path's folder cannot be written.", False, {"path": target})
 
 
 def _written_name(target: str) -> str:
@@ -224,6 +276,15 @@ def _written_name(target: str) -> str:
     folder, name = os.path.split(target)
     stem, extension = os.path.splitext(name)
     return os.path.join(folder, f".{stem}.{secrets.token_hex(4)}.saving{extension}")
+
+
+def _check_size(info: dict[str, Any]) -> None:
+    # The save reads the whole canvas, live and reopened, and the server decodes it once more.
+    width, height = info["size_px"]
+    if width * height > MAX_READ_PIXELS:
+        details = {"size_px": info["size_px"], "max_pixels": MAX_READ_PIXELS}
+        message = "Phase 1 saves documents of at most 8192 x 8192 pixels."
+        raise BridgeError("UNSUPPORTED_CAPABILITY", message, False, details)
 
 
 def _check_space(info: dict[str, Any]) -> None:
@@ -470,6 +531,14 @@ def _pixels_sha256(
     if rect["width"] <= 0 or rect["height"] <= 0:
         return _sha256(b"")
     return _sha256(port.node_pixels(document, node_id, rect, projection))
+
+
+def _stat(path: str) -> tuple[int, int, int] | None:
+    try:
+        found = os.stat(path)
+    except OSError:
+        return None
+    return found.st_ino, found.st_size, found.st_mtime_ns
 
 
 def _sha256(buffer: Any) -> str:

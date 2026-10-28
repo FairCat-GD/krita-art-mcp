@@ -227,9 +227,10 @@ PNG_SIGNATURE = b"\x89PNG\r\n\x1a\n"
 HASH_ROWS = 256
 
 
-def merged_image(path: Path) -> Pixels:
+def merged_image(path: Path, size: list[int]) -> Pixels:
     # A KRA's or ORA's mergedimage.png as the downstream pipeline reads it: straight RGBA, with
-    # no ICC profile or gamma applied. Only 8-bit RGBA is accepted, as Krita writes it for U8.
+    # no ICC profile or gamma applied. Only 8-bit RGBA of the document's size is decoded, as
+    # Krita writes it for U8.
     try:
         with zipfile.ZipFile(path) as archive:
             data = archive.read(MERGED)
@@ -238,10 +239,15 @@ def merged_image(path: Path) -> Pixels:
     # IHDR comes first: bit depth at byte 24, colour type at 25 (6 is RGBA).
     if data[:8] != PNG_SIGNATURE or data[12:16] != b"IHDR" or data[24:26] != b"\x08\x06":
         raise MergedError(f"{MERGED} is not an 8-bit RGBA PNG.")
+    found = [int.from_bytes(data[16:20], "big"), int.from_bytes(data[20:24], "big")]
+    if found != size:
+        width, height = size
+        message = f"{MERGED} is {found[0]} x {found[1]} px; the document is {width} x {height}."
+        raise MergedError(message)
     try:
         with Image.open(io.BytesIO(data), formats=["PNG"]) as image:
             image.load()
-            return np.asarray(image).copy()
+            return np.asarray(image)
     except (OSError, ValueError, Image.DecompressionBombError) as problem:
         raise MergedError(f"{MERGED} cannot be decoded: {problem}") from problem
 

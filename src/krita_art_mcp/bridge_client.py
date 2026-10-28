@@ -121,10 +121,12 @@ class BridgeClient:
         request_id: str | None = None,
         before_send: BeforeSend | None = None,
         budget_s: float | None = None,
+        operation_id: str | None = None,
     ) -> Outcome:
-        # budget_s lets a call that follows another in one tool call share its budget.
+        # budget_s lets a call that follows another in one tool call share its budget; an
+        # operation_id derived from another call's lets a later poll find it.
         deadline = time.monotonic() + (self._budget_s if budget_s is None else budget_s)
-        operation_id = f"op-{uuid.uuid4().hex}"
+        operation_id = operation_id or f"op-{uuid.uuid4().hex}"
         bridge = self._open()
         if isinstance(bridge, Failed):
             return bridge

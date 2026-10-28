@@ -9,9 +9,9 @@ from mcp.types import CallToolResult
 
 from krita_art_mcp import envelope, imaging, roots
 from krita_art_mcp.bridge_client import BeforeSend, Done, Outcome, Pending
-from krita_art_mcp.errors import error_body
 from krita_art_mcp.paths import Places
 from krita_art_mcp.tools.dispatch import ToolCall, from_outcome, journaled
+from krita_art_mcp.tools.documents import inside_roots
 
 TOOL = "krita_document_save"
 FORMATS = (".kra", ".ora")
@@ -40,7 +40,8 @@ def document_save(call: ToolCall, arguments: dict[str, Any]) -> CallToolResult:
     started = time.monotonic()
 
     def precheck() -> CallToolResult | None:
-        return _path_refusal(call.places, arguments["path"])
+        refused = inside_roots(call.places, "path", arguments["path"])
+        return refused if isinstance(refused, CallToolResult) else None
 
     def send(before_send: BeforeSend) -> Outcome:
         outcome = call.bridge.call(
@@ -54,7 +55,7 @@ def document_save(call: ToolCall, arguments: dict[str, Any]) -> CallToolResult:
 def finish_save(call: ToolCall, outcome: Outcome, left_s: float) -> Outcome:
     # A save's second half: its mergedimage.png is checked here, then the plugin puts the file
     # in place, or removes it. Retries and polls send the same finish, which the bridge dedups.
-    if not isinstance(outcome, Done) or outcome.request_id is None:
+    if not isinstance(outcome, Done) or outcome.request_id is None or outcome.operation_id is None:
         return outcome
     result = outcome.result
     merged, problem = _merged(call.places, result)
@@ -64,15 +65,18 @@ def finish_save(call: ToolCall, outcome: Outcome, left_s: float) -> Outcome:
         "merged_sha256": merged,
         "merged_problem": problem,
     }
+    # Under the id derived from the save's, a finish that already ran answers with its own
+    # outcome, even when the file it moved or removed makes these arguments differ.
     finished = call.bridge.call(
         "document.save_finish",
         args,
         request_id=f"{outcome.request_id}:finish",
         budget_s=max(left_s, min(MIN_FINISH_S, call.bridge.budget_s)),
+        operation_id=finish_operation_id(outcome.operation_id),
     )
     if isinstance(finished, Pending):
         # Followed by the save's own operation id, which finishes the same way.
-        return Pending(finished.status, str(outcome.operation_id), outcome.op)
+        return Pending(finished.status, outcome.operation_id, outcome.op)
     # The receipt and the journal name the save's own operation and request.
     operation_id, request_id, session_id = (
         outcome.operation_id,
@@ -83,23 +87,19 @@ def finish_save(call: ToolCall, outcome: Outcome, left_s: float) -> Outcome:
         return replace(
             finished, operation_id=operation_id, request_id=request_id, session_id=session_id
         )
-    error = finished.error
-    if error["code"] == "REQUEST_ID_CONFLICT":
-        details = {"path": result["path"]}
-        message = (
-            "This save finished earlier, but its file is no longer where it was written; "
-            "look in the folder before saving again."
-        )
-        error = error_body("INTERNAL_ERROR", message, details=details)
     # The save itself reached Krita, whatever became of the finish.
     return replace(
         finished,
-        error=error,
         submitted=True,
         operation_id=operation_id,
         request_id=request_id,
         session_id=session_id,
     )
+
+
+def finish_operation_id(save_id: str) -> str:
+    # Derived from the save's, so any poll or retry can ask the bridge for the finish.
+    return "op-" + hashlib.sha256(f"{save_id}:finish".encode()).hexdigest()[:32]
 
 
 def _merged(places: Places, result: dict[str, Any]) -> tuple[str | None, str | None]:
@@ -114,43 +114,23 @@ def _merged(places: Places, result: dict[str, Any]) -> tuple[str | None, str | N
         return None, "The saved file is outside every allowed root."
     if written.exists():
         source = written
-    elif target.exists() and _file_sha256(target) == result["sha256"]:
+    elif target.exists() and file_sha256(target) == result["sha256"]:
         source = target
     else:
         return None, "The saved file is gone from where it was written."
     try:
-        pixels = imaging.merged_image(source)
+        pixels = imaging.merged_image(source, result["size_px"])
     except imaging.MergedError as problem:
         return None, str(problem)
-    width, height = result["size_px"]
-    if pixels.shape[:2] != (height, width):
-        found = f"{pixels.shape[1]} x {pixels.shape[0]}"
-        return None, f"{imaging.MERGED} is {found} px; the document is {width} x {height}."
     return imaging.bgra_sha256(pixels), None
 
 
-def _file_sha256(path: Path) -> str:
+def file_sha256(path: Path) -> str:
     digest = hashlib.sha256()
     with path.open("rb") as stream:
         for chunk in iter(lambda: stream.read(CHUNK), b""):
             digest.update(chunk)
     return digest.hexdigest()
-
-
-def _path_refusal(places: Places, path: str) -> CallToolResult | None:
-    # Invariant 3, on the server's side; the plugin checks again.
-    try:
-        allowed = roots.allowed(places.config_file, places.harness_dir)
-    except roots.ConfigError as problem:
-        return envelope.failure("INTERNAL_ERROR", str(problem))
-    resolved = roots.resolve(path)
-    if resolved is None:
-        message = "path must be an absolute path."
-        return envelope.failure("INVALID_ARGUMENT", message, details={"field": "path"})
-    if not roots.inside(resolved, allowed):
-        message = "path is outside every allowed root."
-        return envelope.failure("PATH_NOT_ALLOWED", message, details={"field": "path"})
-    return None
 
 
 def save_receipt(outcome: Outcome) -> CallToolResult:

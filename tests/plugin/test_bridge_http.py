@@ -274,8 +274,8 @@ def test_a_client_that_left_is_not_logged_as_a_failure(live: Live) -> None:
 
 @pytest.mark.skipif(sys.platform != "darwin", reason="SO_NOSIGPIPE is Darwin's")
 def test_a_client_that_hangs_up_before_its_reply_cannot_kill_the_process(live: Live) -> None:
-    # Krita's embedded Python leaves SIGPIPE at its default, as this test does; the bridge's
-    # reply to a client that had reset its connection killed Krita that way.
+    # Krita's embedded Python leaves SIGPIPE at its default, as this test does, so a reply to a
+    # client that has reset its connection would kill the process.
     body = json.dumps(
         {
             "op": "hold",
