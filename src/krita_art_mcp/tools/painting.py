@@ -18,6 +18,24 @@ MIN_LENGTH_PX = 0.5
 
 
 def paint_stroke(call: ToolCall, arguments: dict[str, Any]) -> CallToolResult:
+    op_args = stroke_op(arguments)
+    if isinstance(op_args, CallToolResult):
+        return op_args
+    guard = arguments["guard"]
+
+    def send(before_send: BeforeSend) -> Outcome:
+        outcome = call.bridge.call(
+            "paint.stroke", op_args, request_id=guard["request_id"], before_send=before_send
+        )
+        return changes.resolve_update(call.places, outcome)
+
+    return journaled(
+        call, "krita_paint_stroke", arguments, guard["request_id"], send, paint_receipt
+    )
+
+
+def stroke_op(arguments: dict[str, Any]) -> dict[str, Any] | CallToolResult:
+    # The bridge op's arguments for a stroke, or the refusal; the probe sends them itself too.
     refused = _refusal(arguments)
     if refused is not None:
         return refused
@@ -59,16 +77,7 @@ def paint_stroke(call: ToolCall, arguments: dict[str, Any]) -> CallToolResult:
         details = {"length_px": length, "minimum_length_px": MIN_LENGTH_PX}
         return envelope.failure("UNSUPPORTED_CAPABILITY", message, details=details)
     op_args["path"] = path
-
-    def send(before_send: BeforeSend) -> Outcome:
-        outcome = call.bridge.call(
-            "paint.stroke", op_args, request_id=guard["request_id"], before_send=before_send
-        )
-        return changes.resolve_update(call.places, outcome)
-
-    return journaled(
-        call, "krita_paint_stroke", arguments, guard["request_id"], send, paint_receipt
-    )
+    return op_args
 
 
 def _refusal(arguments: dict[str, Any]) -> CallToolResult | None:

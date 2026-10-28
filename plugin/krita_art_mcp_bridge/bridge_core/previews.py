@@ -1,8 +1,7 @@
-import functools
 from pathlib import Path
 from typing import Any
 
-from . import files, paths, transfer
+from . import files, paths, reopening, transfer
 from .errors import BridgeError, exact
 from .inspection import check_frame, check_shown_frame
 from .jobs import Call, Handler
@@ -15,7 +14,7 @@ from .pixels import (
     read_rects,
 )
 from .port import DocumentsPort
-from .registry import READ_ONLY, Handle, Registry
+from .registry import Handle, Registry
 
 PREVIEW_FIELDS = {"sources", "render"}
 SOURCE_FIELDS = {
@@ -112,18 +111,15 @@ def handlers(registry: Registry, port: DocumentsPort, data: Path) -> dict[str, H
         return result
 
     def _as_opened(handle: Handle, info: dict[str, Any], call: Call) -> Any:
-        # The file Krita opened holds the document as it was opened: no save overwrites it. It is
-        # opened again without a view, read and closed, all inside this job.
+        # The file Krita opened holds the document as it was opened: no save overwrites it.
         if handle.path is None or handle.source_sha256 is None:
             raise BridgeError("INTERNAL_ERROR", "The document has no file to read its baseline.")
         if not files.unchanged(handle.path, handle.source_sha256):
             details = {"document_id": handle.document_id, "path": handle.path}
             message = "The file this document was opened from has changed; its baseline is gone."
             raise BridgeError("SOURCE_HASH_MISMATCH", message, False, details)
-        document = port.open(handle.path)
-        # Never in front, so Krita's layer docker owes it no update.
-        close = functools.partial(port.close, settle_s=0.0)
-        try:
+
+        def read(document: Any) -> Any:
             opened = port.describe(document)
             check_shown_frame(opened)
             check_read_space(opened)
@@ -131,18 +127,10 @@ def handlers(registry: Registry, port: DocumentsPort, data: Path) -> dict[str, H
                 details = {"file_px": opened["size_px"], "canvas_px": info["size_px"]}
                 message = "The file opens at another size than the document."
                 raise BridgeError("INTERNAL_ERROR", message, False, details)
-            pixels = port.composite(document)
-        except BaseException as raised:
-            kept = registry.discard(document, close, READ_ONLY, call.client)
-            if kept is not None and isinstance(raised, BridgeError):
-                raised.body["details"]["left_open"] = kept
-            raise
-        kept = registry.discard(document, close, READ_ONLY, call.client)
-        if kept is not None:
-            details = {"document_id": kept}
-            message = "Krita kept open the file read for the baseline; close it with discard."
-            raise BridgeError("INTERNAL_ERROR", message, False, details)
-        return pixels
+            return port.composite(document)
+
+        message = "Krita kept open the file read for the baseline; close it with discard."
+        return reopening.read_file(registry, port, handle.path, call.client, read, message)
 
     return {"preview.read": preview}
 

@@ -7,6 +7,7 @@ import os
 import re
 import shutil
 import tempfile
+import zipfile
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -40,6 +41,10 @@ log = logging.getLogger(__name__)
 
 
 class GeometryError(Exception):
+    pass
+
+
+class MergedError(Exception):
     pass
 
 
@@ -214,3 +219,36 @@ def size_of(path: Path) -> tuple[int, int]:
 def filter_for(native: tuple[int, int], size: tuple[int, int], how: Render) -> str | None:
     # The filter render() applies, and receipts report: none when the size does not change.
     return None if size == native else how.filter
+
+
+MERGED = "mergedimage.png"
+PNG_SIGNATURE = b"\x89PNG\r\n\x1a\n"
+# Rows hashed at a time, so an 8k composite is never copied whole.
+HASH_ROWS = 256
+
+
+def merged_image(path: Path) -> Pixels:
+    # A KRA's or ORA's mergedimage.png as the downstream pipeline reads it: straight RGBA, with
+    # no ICC profile or gamma applied. Only 8-bit RGBA is accepted, as Krita writes it for U8.
+    try:
+        with zipfile.ZipFile(path) as archive:
+            data = archive.read(MERGED)
+    except (OSError, KeyError, zipfile.BadZipFile) as problem:
+        raise MergedError(f"{MERGED} cannot be read: {problem}") from problem
+    # IHDR comes first: bit depth at byte 24, colour type at 25 (6 is RGBA).
+    if data[:8] != PNG_SIGNATURE or data[12:16] != b"IHDR" or data[24:26] != b"\x08\x06":
+        raise MergedError(f"{MERGED} is not an 8-bit RGBA PNG.")
+    try:
+        with Image.open(io.BytesIO(data), formats=["PNG"]) as image:
+            image.load()
+            return np.asarray(image).copy()
+    except (OSError, ValueError, Image.DecompressionBombError) as problem:
+        raise MergedError(f"{MERGED} cannot be decoded: {problem}") from problem
+
+
+def bgra_sha256(pixels: Pixels) -> str:
+    # The plugin hashes Krita's composite as B, G, R, A (K12).
+    digest = hashlib.sha256()
+    for top in range(0, pixels.shape[0], HASH_ROWS):
+        digest.update(np.ascontiguousarray(pixels[top : top + HASH_ROWS][..., [2, 1, 0, 3]]))
+    return digest.hexdigest()

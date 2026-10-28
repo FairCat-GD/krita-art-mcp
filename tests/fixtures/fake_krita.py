@@ -1,10 +1,14 @@
+import binascii
 import copy
 import math
 import os
+import struct
 import threading
+import zipfile
+import zlib
 from typing import Any
 
-from bridge_core import documents, history
+from bridge_core import documents, history, saving
 from bridge_core.bridge import Bridge
 from bridge_core.errors import BridgeError
 
@@ -83,6 +87,13 @@ class FakePort:
         # Changes a create makes beside adding the layer, to test the verification.
         self.on_layer: list[Any] = []
         self.export_works = True
+        # What each export wrote, by path: an open of that path reads it back. Hooks change what
+        # is written, as a format or a fault would; merged_change alters only mergedimage.png.
+        self.saved: dict[str, dict[str, Any]] = {}
+        self.on_export: list[Any] = []
+        self.merged_change: Any = None
+        # A reopened document's node pixels, canvas-sized, by (key, node id).
+        self.node_canvas: dict[tuple[int, str], bytes] = {}
         # The document whose view is active; a new or opened document comes to the front.
         self.front_key: int | None = None
         # The order of the K46 steps and reads.
@@ -148,6 +159,8 @@ class FakePort:
         for hook in self.on_open:
             hook()
         self._maybe_fail("open")
+        if path in self.saved:
+            return self._reopen(path)
         spec = self.files.get(path, {})
         width, height = spec.get("size_px", [8, 4])
         # openDocument adds no view (K6), so the document in front stays until show().
@@ -221,8 +234,13 @@ class FakePort:
 
     def composite(self, document: Any) -> bytes:
         self._maybe_fail("composite")
-        width, height = self.live[document.key]["size_px"]
-        return bgra(width, height)
+        return self._composite(document.key)
+
+    def _composite(self, key: int) -> bytes:
+        width, height = self.live[key]["size_px"]
+        if key in self.render:
+            return self.projection.setdefault(key, self.render[key](self._tree(key)))
+        return bytes(self.canvas.get(key) or bgra(width, height))
 
     def selection_bounds(self, document: Any) -> dict[str, int] | None:
         found = self.live[document.key].get("selection")
@@ -233,13 +251,8 @@ class FakePort:
         for hook in self.on_read:
             hook()
         self.calls.append("read")
-        width, height = self.live[document.key]["size_px"]
-        if document.key in self.render:
-            canvas = self.projection.setdefault(
-                document.key, self.render[document.key](self._tree(document.key))
-            )
-        else:
-            canvas = bytes(self.canvas.get(document.key) or bgra(width, height))
+        width = self.live[document.key]["size_px"][0]
+        canvas = self._composite(document.key)
         return [crop(canvas, width, rect, 4) for rect in rects]
 
     def _redraw(self, key: int) -> None:
@@ -519,11 +532,114 @@ class FakePort:
             reads.append([None, self.undo_labels(document)[0]])
         return reads
 
-    def export_kra(self, document: Any, target: str) -> bool:
-        if self.export_works:
-            with open(target, "wb") as stream:
-                stream.write(b"a KRA, as far as the tests care")
-        return self.export_works
+    def export(self, document: Any, target: str) -> bool:
+        # Writes a zip with the document's mergedimage.png, and keeps what an open reads back.
+        self.calls.append("export")
+        if not self.export_works:
+            return False
+        key = document.key
+        width, height = self.live[key]["size_px"]
+        tree = copy.deepcopy(self._tree(key))
+        whole = _whole(width, height)
+        kind = os.path.splitext(target)[1].lower()
+        saved: dict[str, Any] = {
+            "kind": kind,
+            "size_px": [width, height],
+            "space": self.live[key].get("space", self.space),
+            "tree": tree,
+            # An ORA layer holds its projection.
+            "pixels": {
+                node["id"]: self._node_bytes(key, node, whole, kind == ".ora")
+                for node in tree["nodes"]
+            },
+            "composite": self._composite(key),
+        }
+        for hook in self.on_export:
+            hook(saved)
+        merged = bytearray(saved["composite"])
+        if self.merged_change is not None:
+            self.merged_change(merged)
+        with zipfile.ZipFile(target, "x") as archive:
+            archive.writestr("mimetype", "application/x-krita")
+            archive.writestr("mergedimage.png", png(width, height, merged))
+        self.saved[target] = saved
+        return True
+
+    def _reopen(self, path: str) -> Any:
+        # The file as an open reads it: an ORA keeps no ids, masks or adjustment layers, and
+        # brings every layer but a group back as a paint layer without alpha lock, its opacity
+        # rounded as Krita's ORA writer and loader round it.
+        saved = self.saved[path]
+        width, height = saved["size_px"]
+        front = self.front_key
+        key = self._add(os.path.basename(path), width, height)
+        self.front_key = front
+        tree = copy.deepcopy(saved["tree"])
+        root = f"root-{key}"
+        nodes = []
+        renamed = {tree["root_id"]: root}
+        for index, node in enumerate(tree["nodes"]):
+            if saved["kind"] == ".ora":
+                if node["type"] not in ORA_TYPES or node["parent_id"] not in renamed:
+                    continue
+                renamed[node["id"]] = layer_id(key, index)
+                kind = "grouplayer" if node["type"] == "grouplayer" else "paintlayer"
+                node = {
+                    **node,
+                    "id": renamed[node["id"]],
+                    "type": kind,
+                    "alpha_locked": False,
+                    "opacity": saving.ora_opacity(node["opacity"]),
+                }
+            else:
+                renamed[node["id"]] = node["id"]
+            nodes.append({**node, "parent_id": renamed[node["parent_id"]]})
+        if saved["kind"] == ".ora":
+            for parent in {node["parent_id"] for node in nodes}:
+                siblings = sorted(
+                    (node for node in nodes if node["parent_id"] == parent),
+                    key=lambda node: node["order"],
+                )
+                for order, node in enumerate(siblings):
+                    node["order"] = order
+        for old, new in renamed.items():
+            if old in saved["pixels"]:
+                self.node_canvas[(key, new)] = saved["pixels"][old]
+        active = nodes[-1]["id"] if nodes else None
+        self.live[key].update(
+            path=path,
+            space=saved["space"],
+            tree={"root_id": root, "active_id": active, "nodes": nodes},
+        )
+        self.canvas[key] = bytearray(saved["composite"])
+        self.opened.append(path)
+        return FakeDocument(key)
+
+    def node_pixels(
+        self, document: Any, node_id: str, rect: dict[str, int], projection: bool
+    ) -> bytes:
+        self.calls.append("node")
+        node = self._layer(document.key, node_id)
+        return self._node_bytes(document.key, node, rect, projection)
+
+    def _node_bytes(
+        self, key: int, node: dict[str, Any], rect: dict[str, int], projection: bool
+    ) -> bytes:
+        # A group has no pixels of its own; a mask reads one byte a pixel; a layer reads its
+        # buffer, or its layer_pixels everywhere. The fake applies no mask, so a projection
+        # reads as the layer.
+        width = self.live[key]["size_px"][0]
+        found = self.node_canvas.get((key, node["id"]))
+        if found is not None:
+            return crop(found, width, rect, 1 if node["type"].endswith("mask") else 4)
+        area = rect["width"] * rect["height"]
+        if node["type"] == "grouplayer":
+            return b""
+        if node["type"].endswith("mask"):
+            return b"\xff" * area
+        if node["id"] in self.buffers:
+            return crop(bytes(self.buffers[node["id"]]), width, rect, 4)
+        return self.layer_pixels.get(node["id"], UNREAD) * area
 
     def paintable(self, key: int, pixel: bytes | None = bytes(4)) -> None:
         # Gives every paint layer of a document its own pixels, and the composite a buffer; with
@@ -634,6 +750,31 @@ class FakePort:
 
 def _whole(width: int, height: int) -> dict[str, int]:
     return {"x": 0, "y": 0, "width": width, "height": height}
+
+
+# The node types Krita's ORA exporter writes as layers (PDD Part 6).
+ORA_TYPES = {"paintlayer", "grouplayer", "filllayer", "clonelayer", "filelayer", "vectorlayer"}
+
+
+def png(width: int, height: int, composite: bytes | bytearray) -> bytes:
+    # An 8-bit RGBA PNG of a B, G, R, A composite, as Krita's mergedimage.png is.
+    rows = []
+    for row in range(height):
+        line = bytearray(composite[row * width * 4 : (row + 1) * width * 4])
+        line[0::4], line[2::4] = line[2::4], line[0::4]
+        rows.append(b"\x00" + bytes(line))
+
+    def chunk(kind: bytes, data: bytes) -> bytes:
+        body = kind + data
+        return struct.pack(">I", len(data)) + body + struct.pack(">I", binascii.crc32(body))
+
+    header = struct.pack(">IIBBBBB", width, height, 8, 6, 0, 0, 0)
+    return (
+        b"\x89PNG\r\n\x1a\n"
+        + chunk(b"IHDR", header)
+        + chunk(b"IDAT", zlib.compress(b"".join(rows)))
+        + chunk(b"IEND", b"")
+    )
 
 
 def _combine(mode: str, current: bytes | None, shape: bytearray) -> bytearray:

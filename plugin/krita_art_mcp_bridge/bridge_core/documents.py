@@ -11,6 +11,7 @@ from . import (
     pixels,
     previews,
     protection,
+    saving,
     selections,
 )
 from .closing import settle_s, settled_close
@@ -67,6 +68,7 @@ def handlers(registry: Registry, port: DocumentsPort, data: Path) -> dict[str, H
         untouched = None
         if handle.source_path is not None and handle.source_sha256 is not None:
             untouched = files.unchanged(handle.source_path, handle.source_sha256)
+        saving.drop(handle)
         closed = port.close(handle.document, settle_s(handle, port.front() == handle.document))
         still_open = any(h is handle for h in registry.sync())
         if not closed or still_open:
@@ -102,6 +104,7 @@ def handlers(registry: Registry, port: DocumentsPort, data: Path) -> dict[str, H
         **selections.handlers(registry, port, data),
         **protection.handlers(registry, port, data),
         **history.handlers(registry, port, data),
+        **saving.handlers(registry, port, data),
     }
 
 

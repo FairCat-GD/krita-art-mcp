@@ -144,6 +144,8 @@ The why for each is in `docs/spec/SPEC.md` §5.
   `Krita.getAppDataLocation()`, not `QStandardPaths`.
 - **The main thread.** The `krita` bindings never release the GIL, so the HTTP thread is silent
   during any long libkis call. The server owns the wait budget.
+- **Signals.** Krita's embedded Python leaves SIGPIPE at its default, so a write to a socket whose
+  client has gone kills Krita. Every bridge connection sets `SO_NOSIGPIPE`.
 - **Restarts.** A changed plugin loads only after a Krita restart: run `install-plugin`, then
   restart. A session may restart Krita itself only when the bridge reports no unsaved
   documents; with no bridge answering, or any unsaved document, it asks the owner. The harness

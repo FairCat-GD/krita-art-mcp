@@ -7,6 +7,7 @@ import statistics
 import subprocess
 import time
 import uuid
+from collections.abc import Awaitable, Callable
 from pathlib import Path
 from typing import Any
 
@@ -123,7 +124,13 @@ def _pick(found: list[dict[str, Any]], names: tuple[str, ...]) -> dict[str, Any]
     return next((by[name] for name in names if name in by), None)
 
 
-async def run(report: Report, a: Client, b: Client, client: BridgeClient, harness: Path) -> None:
+# Checks that paint inside the window whose brush state run() writes back.
+Then = Callable[[Report, Client, BridgeClient, Path, dict[str, Any]], Awaitable[None]]
+
+
+async def run(
+    report: Report, a: Client, b: Client, client: BridgeClient, harness: Path, then: Then
+) -> None:
     harness = Path(os.path.realpath(harness))
     folder = harness / "painting"
     folder.mkdir(exist_ok=True)
@@ -167,6 +174,7 @@ async def run(report: Report, a: Client, b: Client, client: BridgeClient, harnes
         await _rim(report, a, rim, harness, hard)
         for spec in BENCHMARKS:
             await _benchmark(report, a, client, harness, folder, spec, hard)
+        await then(report, a, client, harness, hard)
     finally:
         if isinstance(saved, Done):
             put_back = _harness(

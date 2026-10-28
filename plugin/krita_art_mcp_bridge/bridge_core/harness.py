@@ -56,7 +56,7 @@ def handlers(registry: Registry, port: DocumentsPort, data: Path) -> dict[str, H
         if os.path.lexists(target):
             raise BridgeError("FILE_EXISTS", "target_path exists; nothing is overwritten.")
         with nodes.unmasked_view(port, handle.document):
-            exported = port.export_kra(handle.document, target)
+            exported = port.export(handle.document, target)
         if not exported:
             message = "Krita did not export; an autosave may hold the document. Retry."
             raise BridgeError("BUSY", message, True)

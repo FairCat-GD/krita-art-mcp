@@ -23,6 +23,7 @@ from krita_art_mcp.tools import (
     painting,
     pixels,
     preview,
+    saving,
 )
 from krita_art_mcp.tools.dispatch import ToolCall
 
@@ -42,6 +43,7 @@ TOOLS: dict[str, ToolFunction] = {
     "krita_document_create": documents.document_create,
     "krita_document_inspect": documents.document_inspect,
     "krita_document_close": documents.document_close,
+    "krita_document_save": saving.document_save,
     "krita_resource_list": observe.resource_list,
     "krita_capture": pixels.capture,
     "krita_sample": pixels.sample,

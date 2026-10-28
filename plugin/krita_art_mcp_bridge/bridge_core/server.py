@@ -3,6 +3,7 @@ import hmac
 import json
 import logging
 import math
+import socket
 import sys
 import threading
 import time
@@ -23,6 +24,8 @@ FINAL = ("done", "error")
 OPERATIONS = "/v1/operations/"
 
 Reply = tuple[int, dict[str, Any]]
+# Darwin's SO_NOSIGPIPE (sys/socket.h), which Python does not name.
+NO_SIGPIPE = getattr(socket, "SO_NOSIGPIPE", 0x1022 if sys.platform == "darwin" else None)
 
 
 class BridgeHTTPServer(ThreadingHTTPServer):
@@ -66,6 +69,15 @@ class BridgeHTTPServer(ThreadingHTTPServer):
                     return False
                 self._idle.wait(remaining)
             return True
+
+    def get_request(self) -> tuple[socket.socket, Any]:
+        connection, address = super().get_request()
+        # A client that gave up mid-call has closed its end before the reply is written. Krita's
+        # embedded Python leaves SIGPIPE at its default, so that write would kill Krita; with this
+        # it fails as BrokenPipeError instead.
+        if NO_SIGPIPE is not None:
+            connection.setsockopt(socket.SOL_SOCKET, NO_SIGPIPE, 1)
+        return connection, address
 
     def handle_error(self, request: Any, client_address: Any) -> None:
         # A client whose poll timed out during a long Krita call has gone; that is routine.

@@ -93,12 +93,16 @@ class BridgeClient:
         # call still on its way from one the bridge never heard of.
         self._sent: dict[str, str] = {}
 
-    def health(self) -> Done | Failed:
+    @property
+    def budget_s(self) -> float:
+        return self._budget_s
+
+    def health(self, timeout_s: float = HEALTH_TIMEOUT_S) -> Done | Failed:
         bridge = self._open()
         if isinstance(bridge, Failed):
             return bridge
         try:
-            status, reply = self._request(bridge, "GET", "/v1/health", None, HEALTH_TIMEOUT_S)
+            status, reply = self._request(bridge, "GET", "/v1/health", None, timeout_s)
         except ConnectionRefusedError:
             return self._refused()
         except (OSError, _Malformed) as problem:
@@ -116,8 +120,10 @@ class BridgeClient:
         *,
         request_id: str | None = None,
         before_send: BeforeSend | None = None,
+        budget_s: float | None = None,
     ) -> Outcome:
-        deadline = time.monotonic() + self._budget_s
+        # budget_s lets a call that follows another in one tool call share its budget.
+        deadline = time.monotonic() + (self._budget_s if budget_s is None else budget_s)
         operation_id = f"op-{uuid.uuid4().hex}"
         bridge = self._open()
         if isinstance(bridge, Failed):

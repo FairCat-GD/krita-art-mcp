@@ -44,12 +44,17 @@ class Handle:
         self.ledger = Ledger()
         # When a bridge op last changed the document, by the monotonic clock.
         self.changed_at: float | None = None
+        # Counts bridge changes, so a save clears dirt only if none came after it read the document.
+        self.changes = 0
+        # A save written and verified in Krita, waiting for the server's mergedimage.png check.
+        self.pending_save: Any = None
 
     def before_change(self) -> bool:
         # Called before a handler's first libkis mutation, so an exception after it leaves the
         # document dirty (PDD Part 4: a bridge mutation since the last verified save).
         was = self.dirty
         self.dirty = True
+        self.changes += 1
         self.touched()
         return was
 
@@ -58,6 +63,7 @@ class Handle:
         # takes no more changes until it is reopened.
         self.ledger.seal()
         self.unsafe = True
+        self.changes += 1
 
     def touched(self) -> None:
         # Its nodes changed: Krita's layer docker updates them a moment later (see the close).

@@ -1,53 +1,53 @@
-Read `SPEC.md` §1 (decisions 27, 29), §5 (invariant 2); `PDD.md` Part 4 (`krita_document_save`),
-Part 6 (*Formats*), Part 8 (K14, K39, K45, K46), Part 12 (H4); CLAUDE.md; your block (12) in
-docs/spec/SESSIONS.md and block 11's done-note; then this file. Do Session 12:
-`krita_document_save`, verified by reopening, with H4's long save.
-
-Release 0.12.0.
+Read all of `SPEC.md`; `PDD.md`; `CLAUDE.md`; `REVIEW` 6 and 10; all the code; your block (13) in
+docs/spec/SESSIONS.md and block 12's done-note; then this file. Do Session 13: the architecture
+review, every tool built. It writes `docs/spec/REVIEW-<date>.md`: findings only, no product code,
+no version. The owner then picks, in plan mode, which findings become scope.
 
 ## State you need that is not in the specs
 
-- **Round 1 is the Phase 1 build.** Sessions 0 to 11 are done, 6a, 7a and 10a included. 12 to 15
-  remain, releasing 0.12.0 to 0.14.0.
+- **Round 1 is the Phase 1 build.** Sessions 0 to 12 are done, 6a, 7a and 10a included. 13 to 15
+  remain: 13 (this review, no version), 14 (0.13.0) and 15 (0.14.0, the round's close).
 - **The push status.** `origin` is the private GitHub repository. `origin/main` holds
   everything through 11's review commit ("review: a bad baseline file is read anew, and 9
-  smaller"), pushed with the owner's approval; nothing is local. List `origin/main..HEAD` before
-  any push.
-- **What 11 left that 12 builds on:**
-  - **Reopening a file inside a job works.** `previews._as_opened` opens a working copy's file a
-    second time with `port.open` (batch mode, no view), reads it, and closes it in the same job
-    through `registry.discard`. A file Krita keeps open is registered owned, read-only and
-    unsafe, and the op fails naming it.
-    - Measured live on Krita 5.3.4.1: a second open of an open file is allowed, and nothing is
-      left in `documents()`.
-    - The save's verify-by-reopen can follow the same path.
-    - The probe's fixtures never save a KRA with a selection mask active; that case is in the
-      backlog's *Not yet checked by hand*.
-  - **The baseline is lazy.**
-    - The open mints `baseline_id` and writes nothing.
-    - The first `krita_preview_render` that names it reads it from the file, after checking the
-      file still hashes to `source_sha256`. That holds because no save overwrites the working
-      copy: `document_save` must keep it so.
-    - `baseline_untouched` at close still hashes the source.
-  - **`pixels.read_rects`, `check_read_space`, `check_target` and `inside`** are module-level in
-    `bridge_core/pixels.py`, shared by capture, sample and the preview.
-  - **`imaging.background`, `imaging.lightness` and `imaging.artifact`** are public;
-    `sheets.py` and the capture and preview receipts use them.
-  - **`probe.report.sheet_cell`** crops one cell out of a sheet's PNG, for probe checks.
-  - **A kept baseline that cannot be read** is removed by the render that finds it, so the next
-    render reads it from the file again.
-  - **`FakePort.open` adds no view;** only `show` brings a document to the front, as Krita does
-    (K6).
-- **Measured in 11, for `ARCHITECTURE.md` at session 15** (details in 11's done-note):
-  - N-02: the first render, which reads the baseline, 0.74 s; p95 of 20 after it 0.32 s.
-  - Opening the 8192² N-09 master takes 0.5 s without the baseline write (4.7–5.2 s before).
-- **Decisions written down nowhere else:** none beyond 11's done-note.
-- **Baseline** (11 after its review; 12 moves these only by what it adds):
+  smaller"). 12's session commit is local, not pushed, and its review commit follows it. List
+  `origin/main..HEAD` before any push.
+- **What 12 built that 13 reads:**
+  - **The save is two plugin ops** (`bridge_core/saving.py`):
+    - `document.save` exports to a hidden `.<stem>.<token>.saving<ext>` beside the path,
+      reopens it with `reopening.read_file` (shared with the preview's baseline read), compares,
+      and keeps a `Pending` save on the handle.
+    - The server (`tools/saving.py`) decodes `mergedimage.png` and sends `document.save_finish`
+      under `<request_id>:finish`. The finish links the file into place, or removes it, and clears
+      dirt only if `Handle.changes` has not moved.
+    - `Known.finish` lets `krita_operation_get` finish a save that came back `running`.
+  - **The projection is recomposed (`port.refresh`) before every export:** after a stroke it
+    differed from its layers' own composite.
+  - **`BridgeHTTPServer.get_request` sets `SO_NOSIGPIPE`.** A reply to a client that had given
+    up used to kill Krita. That bug dates from session 2, and H4 found it.
+  - **Smaller seams:**
+    - `BridgeClient.call(budget_s=…)`, so the finish shares the save's 45 s;
+    - `BridgeClient.health(timeout_s=…)`;
+    - `tools.painting.stroke_op`, which the probe uses;
+    - `painting.run(…, then)`, which runs `saving.run` inside its brush window.
+  - **ORA's rules as measured:** losses for masks and adjustment layers, rasterised types, alpha
+    lock, and opacity Krita's ORA writer lowers (`saving.ora_opacity`); a loss never excuses a
+    composite difference.
+- **What the spec said that turned out wrong or harder:**
+  - **H4's "20 s save"** is not what this machine gives: gradient layers save an 8k canvas in
+    about 5 s, noise layers in about 12 s, and long saves need not mean long silences. The owner
+    kept the 5 s gradient save; the 20 s target is recorded as measured, not met.
+  - **Part 6's ORA notes:** inherit-alpha with multiply keeps its blend, and about half of all
+    opacities come back one step lower. A blur filter mask's spread is cropped to its layer, so the
+    composite fails.
+  - **Decision 29's two unit-only cases both happened live:** an unforced `BUSY`, once, and
+    "outcome uncertain" each time Krita died mid-call.
+- **Decisions written down nowhere else:** none beyond 12's done-note.
+- **Baseline** (12; 12's review moves these only by what it adds):
   - `verify`: 6 stages, all PASS;
-  - 528 server tests passed, 0 skipped;
-  - 587 plugin-core tests passed, 0 skipped;
-  - `probe`: 101 PASS, 0 FAIL, 33 MEASURED, 79.3 s;
-  - 18 registered tools; 19 schema files; instructions 3,351 characters (session 14 finalises
+  - 546 server tests passed, 0 skipped;
+  - 632 plugin-core tests passed, 0 skipped;
+  - `probe`: 113 PASS, 0 FAIL, 34 MEASURED, 95.2 s;
+  - 19 registered tools; 19 schema files; instructions 3,524 characters (session 14 finalises
     them under 4,096).
 - **Not done:**
   - **The owner's roots.** `doctor` step 6 FAILs with "no roots" until the owner runs
@@ -55,8 +55,10 @@ Release 0.12.0.
   - **By hand** (in `docs/BACKLOG.md`): N-03 in Activity Monitor; mirror painting and
     wrap-around put back after a stroke; whether a K46 switch visibly moves the tab; the overlay
     in the mask display mode; K46 with the global selection's mask; a layer style refusing
-    region scope; a lazy baseline from a file saved with a selection mask active.
-  - **A live BUSY export** was never forced; the probe's retry is held by its unit test.
+    region scope; a lazy baseline from a file saved with a selection mask active; an autosave
+    holding a document during a save.
+  - **In the backlog:** sweeping a hidden save file a Krita crash left; SIGPIPE on Linux, where
+    `SO_NOSIGPIPE` does not exist.
 
 ## Watch for
 
@@ -78,10 +80,16 @@ Release 0.12.0.
 - **Before the probe's paint checks, the stock presets must be listed in Krita:**
   `b) Basic-2 Opacity`, `b) Airbrush Soft`, `y) Texture Spray`, `y) Texture Wood Fiber`.
 - **Brush state is window-wide (K3).** Any live run that paints changes the owner's current
-  brush and Krita's preset history. The probe saves and writes back the brush state; a
-  scratchpad driver must do the same (`harness.brush_state` read first, written back after).
-- **A save never overwrites the working copy.** The lazy baseline is read from that file;
-  `exportImage` to a new path keeps it (K39).
+  brush and Krita's preset history. The probe saves and writes back the brush state. A scratchpad
+  driver must do the same: `harness.brush_state` read first, from a document in the harness
+  folder (a created document has no path, so the read fails), and stop if the read fails.
+- **If Krita dies silently about 5 s into a call,** suspect a socket before Krita: a client that
+  gives up closes its connection, and only `SO_NOSIGPIPE` keeps the bridge's reply from killing
+  Krita.
+- **Krita's memory grows across large opens and saves** (3.6 GB after many 8k runs). Restart it,
+  at 0 unsaved, before measuring.
+- **A save never overwrites the working copy.** The lazy baseline is read from that file; the save
+  writes only beside its own path.
 - **Comments state the present.** No session ids, no "used to", no review stories, no finding
   numbers in code.
 - **Every push needs its own approval.** List `origin/main..HEAD` first.

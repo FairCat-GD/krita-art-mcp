@@ -1,0 +1,35 @@
+import functools
+from collections.abc import Callable
+from typing import Any, TypeVar
+
+from .errors import BridgeError
+from .port import DocumentsPort
+from .registry import READ_ONLY, Registry
+
+T = TypeVar("T")
+
+
+def read_file(
+    registry: Registry,
+    port: DocumentsPort,
+    path: str,
+    client: dict[str, Any],
+    read: Callable[[Any], T],
+    kept_message: str,
+) -> T:
+    # Opens a file a second time without a view, reads it and closes it, all inside one job. A
+    # file Krita keeps open is registered owned, read-only and unsafe, and the job fails naming it.
+    document = port.open(path)
+    # Never in front, so Krita's layer docker owes it no update.
+    close = functools.partial(port.close, settle_s=0.0)
+    try:
+        found = read(document)
+    except BaseException as raised:
+        kept = registry.discard(document, close, READ_ONLY, client)
+        if kept is not None and isinstance(raised, BridgeError):
+            raised.body["details"]["left_open"] = kept
+        raise
+    kept = registry.discard(document, close, READ_ONLY, client)
+    if kept is not None:
+        raise BridgeError("INTERNAL_ERROR", kept_message, False, {"document_id": kept})
+    return found

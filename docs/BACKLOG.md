@@ -43,7 +43,12 @@ runs; after it closes, read it from git history at round 1's release commit.
 - **The H2 sheet with sensors toggled.** Round 1 uses stock presets as shipped; turning Fade or
   Distance on and off needs preset editing (Phase 2). Left out at the round 1 intake.
 - **Windows and Linux.** The code stays portable, but nothing is tested there. Left out at the
-  round 1 intake.
+  round 1 intake. On Linux the bridge needs its own guard against SIGPIPE: `SO_NOSIGPIPE` is
+  Darwin's, so a reply to a client that has gone would still kill Krita there (0.12.0).
+- **Sweeping a save a Krita crash interrupted** (0.12.0). `krita_document_save` writes a hidden
+  `.<name>.<token>.saving.kra` (or `.ora`) beside its path and moves it into place once verified.
+  A new save or a close of the document removes one never finished, but a Krita crash between
+  the export and the finish leaves it, and nothing sweeps the owner's folders.
 - **A plugin zip for other users,** importable through Krita's *Import Python Plugin from File*.
   Left out at the round 1 intake; round 1 installs with `install-plugin`.
 - **Layer reads of groups and masks** (0.5.0). `krita_capture` and `krita_sample` read paint
@@ -128,6 +133,12 @@ these are the parts only a person can see.
   overlay into it (K46); the probe's fixtures never save one. Save a KRA by hand with a local
   selection mask as the active node, open it as a working copy, and render it with its
   `baseline_id`: the as-opened cell should match the current one.
+- **An autosave holding a document during a save** (0.12.0). Krita's `exportImage` returns false
+  while an autosave holds the document, and the save answers `BUSY`, retryable, leaving nothing on
+  disk; unit tests hold that (decision 29). One unforced `BUSY` came during a measurement, on a
+  fresh working copy, and did not repeat. Set Krita's autosave to every minute, change a working
+  copy by hand, and save it through the tool as the autosave starts: expect `BUSY`, nothing beside
+  the path, and a retry that succeeds.
 - **Mirror painting and wrap-around put back after a stroke** (0.9.0). The adapter switches both
   off for the stroke and back on in a `finally`; no harness op turns them on, so the probe never
   sees the restore. With either on in Krita, paint one stroke and check both are on afterwards.

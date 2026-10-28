@@ -3384,6 +3384,167 @@ finding the handoff assigns here.
 - **Verification reopens and closes internally**, so session 3's close measurements apply here
   too.
 
+**Done (2026-10-28, 0.12.0).**
+- **Decided with the owner at the start:**
+  - **Nothing lands unverified.** Krita writes a hidden file beside the path and verifies it by
+    reopening; the server decodes its `mergedimage.png`; a second plugin op then puts it in place
+    without overwriting and clears dirty, or removes it.
+  - **Krita restarts:** whenever `doctor` reports 0 unsaved documents, as often as needed.
+- **Decided with the owner mid-session:**
+  - **ORA's opacity drift is a loss, and the composite decides.** A layer whose opacity comes back
+    lower by Krita's ORA rounding is listed as lost `opacity`; a visible one changes the
+    composite, so that save fails.
+  - **H4's long save is the gradient one, about 5 s;** the 20 s target is recorded as measured,
+    not met. Asked twice: first on the session's claim that layers of noise crashed Krita's
+    exporter, then again once that claim proved wrong (the crashes were SIGPIPE, below). The owner
+    kept the gradient save both times.
+- **Decided by the session:** a `read_only` or unsafe document is refused, as every guarded call
+  is; a missing folder inside the root is made, as the open makes `working_dir`; any other
+  extension is `UNSUPPORTED_CAPABILITY` (PNG export is Phase 4).
+- **`krita_document_save`.**
+  - **`bridge_core/saving.py`**, two ops, guarded with the lease:
+    - `document.save` checks the path (format, roots on `realpath`, `FILE_EXISTS`) and the space
+      (RGBA, U8, an sRGB profile). Inside `nodes.unmasked_view` it recomposes the projection, then
+      `port.export`s to `<dir>/.<stem>.<token>.saving<ext>`: `False` is `BUSY`, nothing left.
+    - It checks the document still points at its own file, reopens the written file with
+      `reopening.read_file` (shared with the preview's baseline read), and compares. A mismatch
+      removes the file and is `SAVE_VERIFY_FAILED` with up to 20 mismatches. Otherwise the handle
+      keeps a `Pending` save (its id, file, hashes, receipt and change count).
+    - `document.save_finish {save_id, merged_sha256, merged_problem}` checks the file still
+      hashes as written and the server's `mergedimage.png` hash equals the live composite's. It
+      then `os.link`s the file into place and unlinks it, or removes it. Where links fail it
+      checks `lexists` and renames. It clears dirt only if `Handle.changes` (bumped by
+      `before_change` and `lost`) is unchanged. A new save or a close drops a save never finished.
+  - **The comparisons:**
+    - **Both formats:** size, colour space and the composite.
+    - **KRA:** nodes by id, every `tree` field (the root's own id changes), and each node's
+      own pixels over the union of both bounds.
+    - **ORA:** nodes by their rank among stored siblings and by name. Compared: name, visibility,
+      blend, edit lock, inherit-alpha, and each layer's pixels against the live projection.
+      Losses: masks and adjustment layers (`node`), clone/file/vector/fill types (`type`),
+      `alpha_locked`, and an opacity equal to `ora_opacity` of the live one.
+  - **Port:** `export_kra` became `export` (the harness export uses it); `node_pixels` reads a
+    node's own pixels or its projection. `FakePort.export` writes a real zip with a
+    `mergedimage.png` and `open` reads it back, ORA rules applied.
+  - **The server** (`tools/saving.py`): the path refused first (format, roots), then `journaled`.
+    `finish_save` decodes `mergedimage.png` from the written file, or from the target once a
+    finish moved it (same bytes, so a retry sends the same arguments). It sends the finish under
+    `<request_id>:finish` with the budget left (`BridgeClient.call(budget_s=…)`), and reports a
+    `REQUEST_ID_CONFLICT` as "the file is no longer where it was written". A finish still pending
+    comes back as the save's own operation id. `imaging.merged_image` takes 8-bit RGBA only, by
+    its IHDR, with no ICC or gamma; `imaging.bgra_sha256` hashes in bands of 256 rows.
+  - **`krita_operation_get`:** `Known` gains a `finish` hook, so a save that came back `running`
+    is finished by the poll. `save_receipt` refuses a result the finish did not make.
+  - **Schema:** `data` gains `composite_preserved` and `expected_losses` (`{layer_id, name, type,
+    lost}`, `lost` in node, type, alpha_locked, opacity). `reopened_verified` and
+    `composite_preserved` are `const: true`, `sha256` is 64 hex digits, and
+    `baseline_untouched` may be null for a created document, as close's is. Input and
+    description unchanged.
+  - Instructions: one line (+173 characters).
+- **The bridge no longer kills Krita through SIGPIPE.** `BridgeHTTPServer.get_request` sets
+  `SO_NOSIGPIPE` (Darwin's 0x1022, which Python does not name) on every connection. Before, a
+  client whose POST timed out during a call over 5 s closed its socket, and the bridge's later
+  reply raised SIGPIPE. Krita's embedded Python leaves that at its default, so Krita quit with no
+  crash report. `handle_error` already treated the broken pipe as routine; the signal came
+  first.
+- **The probe** (`probe/saving.py`, run inside `painting.run`'s brush window through a `then`
+  hook): an ORA round trip (losses, inherit-alpha read back), a KRA round trip of a dirty copy
+  (flags, nothing beside it, dirt cleared, working copy untouched, a retry, the reopened tree), a
+  read-only refusal, path refusals, a filter layer failing an ORA save, close with `refuse`, and
+  H4. H4's paint call is sent twice by the probe's own client, with 1 s and 0.3 s waits, as
+  `tools.painting.stroke_op` builds it; `health(timeout_s=…)` serves its poller.
+- **Amendments:**
+  - **The save is two plugin ops with a hidden file.** Amended at plan time, with the owner.
+  - **The SIGPIPE fix is in this session.** A bridge bug since session 2; H4 found it, and H4
+    cannot pass without it. The session's finding.
+  - **The projection is recomposed before every save.** The probe found a KRA save failing on its
+    composite alone right after a stroke. The session's finding.
+  - **H4's save is about 5 s, not 20 s.** Decided with the owner (above).
+  - **ORA opacity drift is a listed loss.** Decided with the owner (above).
+  - **The block's ORA losses grew:** alpha lock, rasterised types and opacity, as measured.
+  - **A wake-coalescing change to `jobs.py`** was tried while chasing the crash, did not help,
+    and was reverted.
+- **Measured** (Krita 5.3.4.1, build `bd6e8d0`, macOS, Apple Silicon):
+  - **A KRA round trip keeps everything compared:** every layer id and field (the root gets a new
+    id) and every node's pixels. That covers a filter mask, a transform mask, a clone, alpha lock,
+    inherit-alpha, an active local selection mask (unmasked first) and the global selection mask
+    with its id. `mergedimage.png` equals the composite.
+  - **An ORA round trip:**
+    - **Kept:** groups, names, visibility, edit lock and blend, inherit-alpha even with multiply.
+      Part 6 expected `alpha-preserve` to stand in for the blend there.
+    - **Dropped:** masks and the global selection.
+    - **Changed:** clones come back as paint layers, alpha lock is lost, and opacity is written
+      to six significant digits and truncated on load. 127 of the 256 values come back one lower:
+      3, 127 and 254 were measured lost, 1, 2, 100, 128 and 200 kept.
+  - **A blur filter mask:** KRA keeps it. ORA crops the blur's spread to the layer's bounds, so
+    the composite differs and the save fails; the layer's own hash over its bounds did not see it,
+    the composite did.
+  - **After a stroke, the projection differed from a fresh recomposite** of the same layers: every
+    layer hashed equal, the composite did not. After `refreshProjection` the save verified.
+  - **Saves of an 8192² working copy,** with verification:
+    - flat layers: 8 × 2048² in 3.5 s, 30 × 592² in 3.1 s;
+    - gradient layers: 8 × 4096² in 4.4–4.8 s, the longest bridge silence 2.6 s (the export),
+      Krita 2.9 GB;
+    - noise layers: 8 × 2048² in 8.1 s (silence 6.3 s), 5 × 4096² in 11.8 s (431 MB, silence
+      0.45 s).
+  - **SIGPIPE:** Krita died about ten times, always about 5.2 s into a call (the client's POST
+    timeout), with no crash report or log line. With the fix, the cases that had died 4 of 4
+    times save, and H4's queued retries pass.
+  - **One unforced `BUSY`,** on a fresh working copy's export, did not repeat.
+  - **The uncertain outcome, seen live:** each death mid-call came back `INTERNAL_ERROR` with
+    `outcome: uncertain`.
+  - **Krita's memory** grows across large opens and saves (3.6 GB after many runs); a restart
+    resets it.
+  - **`probe` on 0.12.0:**
+    - 113 PASS, 0 FAIL, 34 MEASURED in 95.2 s;
+    - H4 idle p95 5.9 ms; create and close mean 715 ms;
+    - N-01 p95 0.10 s, N-09 p95 0.24 s; N-02 first render 0.73 s, p95 0.32 s;
+    - H4 long save 4.6 s, longest silence 2.56 s, Krita 1996 MB before and 2548 MB after;
+    - `transfer/` and `harness/` empty, `plugin.log` clean, the same three "pixels were taken"
+      notes.
+- **Checked by hand:**
+  - Krita was restarted many times, each at 0 open and 0 unsaved documents, and relaunched after
+    each death; no document was open when it died.
+  - `doctor` steps 1–5 PASS; step 6 is the owner's roots.
+  - **The brush:** one scratch driver painted after its brush-state read failed (its holding
+    document was outside the harness folder). It did not stop, so the window's brush (the stock
+    hard round, 4 px, a pink colour) was left changed until the next restart dropped those
+    in-memory values. Later drivers read the state from a harness document and stopped if they
+    could not.
+- **Falsified** (each broken once; each failed at its own test, and was restored from a copy):
+  - **Unit, 52 breaks:**
+    - the plugin save's path, format, folder, space, `BUSY`, removal on failure, KRA fields,
+      pixels, composite, document fields, missing and extra nodes, mask fields;
+    - ORA's dropped nodes, ranks, types, alpha lock, opacity rounding and its limit, stored
+      fields;
+    - the finish's pending check, file check, `mergedimage.png` check, dirt kept and cleared,
+      `lost` counting, the no-overwrite link and its fallback;
+    - the drop on a new save and on close, the refresh, K46, the document's own path, the
+      reopen's kept-open and failure paths, the source hash, the read-only refusal;
+    - the IHDR check, BGRA order, bands, the server's roots on the read, the target fallback, the
+      conflict's meaning, `operation_get`'s finish, the server's path and format refusals, the
+      finish sent, the merged hash and size, the unfinished receipt;
+    - SIGPIPE: without the option, pytest itself died (exit 141).
+
+    Four first survived and their tests were strengthened: a missing node (the rename also made
+    an extra one), both server refusals (the plugin refused too; the test now checks nothing
+    reached the bridge), and the merged size.
+  - **Live, every new probe check failed at least once:**
+    - a server run with four breaks failed the ORA losses, the KRA flags, the retry and H4's
+      save;
+    - plugin build X, nine breaks, failed inherit-alpha, the reopened KRA's fields, the path
+      refusals, the filter layer, H4's recovery and H4's single run;
+    - plugin build Z failed the KRA dirt, the read-only refusal and close with `refuse`.
+
+    In X the read-only check held, because the finish's own guard refused too; Z opened both.
+    Close with `refuse` held in X through an interaction with two other breaks; Z broke it alone.
+- **Numbers:**
+  - `verify`: 6 stages, all PASS;
+  - 546 server tests passed (+18), 0 skipped;
+  - 632 plugin-core tests passed (+45), 0 skipped;
+  - `probe`: 113 PASS (+12), 0 FAIL, 34 MEASURED (+1), 95.2 s;
+  - 19 registered tools (+1); 19 schema files; instructions 3,524 characters (+173).
+
 ---
 
 ## 13: Architecture review: every tool built

@@ -115,6 +115,30 @@ def benchmark_stack(count: int, area: dict[str, int]) -> tuple[Layer, ...]:
     return tuple(reversed(layers))
 
 
+def gradient(side: int, shift: int) -> Pixels:
+    # Smooth ramps, which Krita compresses as it does painted art.
+    ramp = np.arange(side, dtype=np.uint32)
+    pixels = np.empty((side, side, 4), dtype=np.uint8)
+    pixels[..., 0] = (ramp[None, :] * 255 // side).astype(np.uint8)
+    pixels[..., 1] = (ramp[:, None] * 255 // side).astype(np.uint8)
+    pixels[..., 2] = ((ramp[None, :] + ramp[:, None] + shift) % 256).astype(np.uint8)
+    pixels[..., 3] = 255
+    return pixels
+
+
+def long_save_stack(count: int, side: int, size: int) -> tuple[Layer, ...]:
+    # Opaque gradient squares spread over a large canvas, overlapping in part.
+    return tuple(
+        Layer(
+            f"probe long {index}",
+            gradient(side, index * 40),
+            x=(index * 997) % (size - side),
+            y=(index * 1531) % (size - side),
+        )
+        for index in reversed(range(count))
+    )
+
+
 def composite(layers: tuple[Layer, ...], width: int = WIDTH, height: int = HEIGHT) -> Pixels:
     # Straight-alpha src-over and src-atop, rounded once; exact wherever alpha is 0 or 255.
     canvas = _stack(layers, width, height)

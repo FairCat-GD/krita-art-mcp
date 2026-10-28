@@ -6,6 +6,42 @@ All notable changes to krita-art-mcp are documented here. The format follows
 
 ## [Unreleased]
 
+## [0.12.0] — 2026-10-28
+
+Agents can now keep their work. A save is written by Krita's own exporter to a new file, and it
+counts only once that file, reopened, matches the document.
+
+### Added
+
+- **`krita_document_save`.** Saves the document to a new `.kra` or `.ora` path inside an allowed
+  root, never over an existing file.
+  - Krita writes a hidden file beside the path. It is reopened in Krita and compared with the
+    document: the size, profile and composite for both formats, and for a KRA every layer's id,
+    fields and pixels, masks and the selection included. Its `mergedimage.png` is decoded without
+    colour conversion and compared with the composite too. Only then is it put at the path; any
+    difference is `SAVE_VERIFY_FAILED`, and nothing is left behind.
+  - A KRA keeps everything. An ORA lists what it cannot keep in `expected_losses`: masks,
+    adjustment layers, alpha lock, the type of clone, file and vector layers, and an opacity
+    Krita's ORA writer brings back one step lower (127 of the 256 values, 50% among them). A loss
+    never excuses a composite difference, so a visible layer whose opacity drifts fails the save.
+  - A verified save clears the document's `dirty`, so `krita_document_close` with `refuse`
+    succeeds; a change made while the save ran keeps it dirty. The document keeps pointing at its
+    own file, and neither the working copy nor the source is written.
+  - The receipt gives the path, the file's SHA-256, `reopened_verified`, `layers_preserved`,
+    `baseline_untouched` (null for a document that was created, not opened),
+    `composite_preserved` and `expected_losses`.
+  - Before writing, the projection is recomposed and no selection mask is left active, so the
+    file and its `mergedimage.png` show the layers, with no selection overlay.
+  - `BUSY`, retryable, when an autosave holds the document. A save that runs past the server's
+    wait is finished by `krita_operation_get`.
+
+### Fixed
+
+- **A client that gave up on a long call could make Krita quit.** When a call ran past a
+  client's wait, the bridge's later reply to the closed connection raised SIGPIPE, which Krita's
+  embedded Python does not ignore, and Krita quit with no crash report, losing any unsaved work.
+  The bridge's connections now let such a write fail quietly instead.
+
 ## [0.11.0] — 2026-10-28
 
 Agents can now see their work at the size the game shows it, beside the document as it was
@@ -444,6 +480,8 @@ The first release is the scaffold that the Phase 1 tools are built on.
   reports its version to the client; it offers no tools yet.
 - **`krita-art-mcp --version`.** It prints the installed version.
 
+[0.11.0]: https://github.com/FairCat-GD/krita-art-mcp/commit/0611f50b9f2a180e531c7152ab46dfa91eb777ab
+[0.10.0]: https://github.com/FairCat-GD/krita-art-mcp/commit/ffbad0e6e39d2bea0be68001183dcddcc2f9c971
 [0.9.0]: https://github.com/FairCat-GD/krita-art-mcp/commit/04a86abd869aae2deea4326f17acbaf159efef3b
 [0.8.0]: https://github.com/FairCat-GD/krita-art-mcp/commit/16ca9eaff39736ed752f9c03577cbe6fefdaaa3f
 [0.7.0]: https://github.com/FairCat-GD/krita-art-mcp/commit/d188986373e1e4975dcfc5d1412e862f12566b14

@@ -1,3 +1,4 @@
+import time
 from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Any
@@ -9,10 +10,12 @@ from krita_art_mcp import envelope, schemas
 from krita_art_mcp.bridge_client import BeforeSend, Done, Failed, Outcome
 from krita_art_mcp.journal import JournalError
 from krita_art_mcp.paths import Places
-from krita_art_mcp.tools import changes, documents, observe, painting, pixels, preview
+from krita_art_mcp.tools import changes, documents, observe, painting, pixels, preview, saving
 from krita_art_mcp.tools.dispatch import Receipt, ToolCall, journaled, record
 
 Resolver = Callable[[Places, Outcome], Outcome]
+# Sends what an op's tool sends after it, with the budget left; a save's second half.
+Finisher = Callable[[ToolCall, Outcome, float], Outcome]
 
 
 @dataclass(frozen=True)
@@ -21,6 +24,7 @@ class Known:
     receipt: Receipt
     # For an op whose result names files the server keeps, reads or removes before the receipt.
     resolve: Resolver | None = None
+    finish: Finisher | None = None
 
 
 # Each bridge op an agent can be handed an operation_id for, with its tool's receipt.
@@ -47,11 +51,13 @@ RECEIPTS: dict[str, Known] = {
     "history.step": Known("krita_history_step", changes.history_receipt, changes.resolve_history),
     "paint.stroke": Known("krita_paint_stroke", painting.paint_receipt, changes.resolve_update),
     "preview.read": Known("krita_preview_render", preview.preview_receipt, preview.resolve_preview),
+    "document.save": Known("krita_document_save", saving.save_receipt, finish=saving.finish_save),
 }
 
 
 def operation_get(call: ToolCall, arguments: dict[str, Any]) -> CallToolResult:
     operation_id = arguments["operation_id"]
+    started = time.monotonic()
     try:
         sent_in = call.journal.session_of(operation_id)
     except (JournalError, OSError) as problem:
@@ -67,6 +73,8 @@ def operation_get(call: ToolCall, arguments: dict[str, Any]) -> CallToolResult:
         return envelope.failure("INVALID_ARGUMENT", message, details=details)
     if isinstance(outcome, Done | Failed):
         changes.settle_masks(call.places, outcome.request_id)
+    if known is not None and known.finish is not None:
+        outcome = known.finish(call, outcome, call.bridge.budget_s - (time.monotonic() - started))
     if known is not None and known.resolve is not None:
         outcome = known.resolve(call.places, outcome)
     tool = None if known is None else known.tool

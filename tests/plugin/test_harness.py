@@ -71,7 +71,7 @@ def test_a_harness_document_is_exported_as_a_kra_by_another_process(world: World
         "target_path": str(target),
         "sha256": hashlib.sha256(target.read_bytes()).hexdigest(),
     }
-    assert world.port.calls == []
+    assert world.port.calls == ["export"]
 
 
 def test_an_export_makes_a_layer_active_in_place_of_a_selection_mask(world: World) -> None:
@@ -81,7 +81,8 @@ def test_an_export_makes_a_layer_active_in_place_of_a_selection_mask(world: Worl
     world.open(world.harness, "other.ora")
     world.export(document_id, world.harness / "fixture.kra")
     assert not world.port.is_masked(1)
-    assert world.port.calls == ["forward", "activate", "restore"] and world.port.front_key == 2
+    expected = ["forward", "activate", "export", "restore"]
+    assert world.port.calls == expected and world.port.front_key == 2
 
 
 def test_the_folder_gate_refuses_anything_outside_the_harness(world: World) -> None:

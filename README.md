@@ -6,7 +6,7 @@ size, and undo or keep it. It is for painted (non-pixel) 2D game art.
 
 ## Status
 
-Phase 1 is being built. Version 0.11.0 connects the server to a running Krita through the plugin
+Phase 1 is being built. Version 0.12.0 connects the server to a running Krita through the plugin
 and offers these tools:
 
 - `krita_server_info`: Krita's version, what this build can do, and the folders agents may use;
@@ -35,6 +35,9 @@ and offers these tools:
 - `krita_preview_render`: comparison sheets at the asset's game sizes, the document as opened
   beside its current state, over review backgrounds, tinted, in greyscale and with selection and
   allowed-mask outlines;
+- `krita_document_save`: the document saved to a new KRA or ORA inside an allowed root, never
+  over a file, and counted only once the file, reopened in Krita, matches it; an ORA lists what it
+  cannot keep;
 - `krita_operation_get` and `krita_operation_cancel`: following a long call to its receipt, and
   cancelling one still queued.
 

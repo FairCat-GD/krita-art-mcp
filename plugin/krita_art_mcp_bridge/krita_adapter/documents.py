@@ -348,7 +348,7 @@ class KritaDocuments:
     def set_brush_state(self, document: Any, state: dict[str, Any]) -> None:
         painting.set_brush_state(document, state)
 
-    def export_kra(self, document: Any, target: str) -> bool:
+    def export(self, document: Any, target: str) -> bool:
         # exportImage, never saveAs: the document keeps pointing at its own file (K39).
         batch = bool(document.batchmode())
         document.setBatchmode(True)
@@ -358,6 +358,15 @@ class KritaDocuments:
             document.setBatchmode(batch)
         document.waitForDone()
         return exported
+
+    def node_pixels(
+        self, document: Any, node_id: str, rect: dict[str, int], projection: bool
+    ) -> Any:
+        document.waitForDone()
+        node = _node(document, node_id)
+        if projection:
+            return _buffer(node.projectionPixelData(*_xywh(rect)))
+        return _buffer(node.pixelData(*_xywh(rect)))
 
     def close(self, document: Any, settle_s: float = 0.0) -> bool:
         document.waitForDone()

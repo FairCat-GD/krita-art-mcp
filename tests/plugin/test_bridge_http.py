@@ -1,7 +1,12 @@
 import http.client
 import json
 import logging
+import signal
+import socket
+import struct
+import sys
 import threading
+import time
 from collections.abc import Iterator
 from pathlib import Path
 from typing import Any
@@ -265,6 +270,42 @@ def test_a_client_that_left_is_not_logged_as_a_failure(live: Live) -> None:
         assert len(warnings.records) == 1
     finally:
         httpd.log.removeHandler(warnings)
+
+
+@pytest.mark.skipif(sys.platform != "darwin", reason="SO_NOSIGPIPE is Darwin's")
+def test_a_client_that_hangs_up_before_its_reply_cannot_kill_the_process(live: Live) -> None:
+    # Krita's embedded Python leaves SIGPIPE at its default, as this test does; the bridge's
+    # reply to a client that had reset its connection killed Krita that way.
+    body = json.dumps(
+        {
+            "op": "hold",
+            "args": {},
+            "request_id": "req-gone",
+            "operation_id": "op-gone",
+            "client": {"pid": 1, "started_at": "test"},
+            "wait_s": 1.0,
+        }
+    ).encode()
+    head = (
+        f"POST /v1/call HTTP/1.1\r\nHost: 127.0.0.1:{live.port}\r\n"
+        f"Authorization: Bearer {live.token}\r\nContent-Length: {len(body)}\r\n\r\n"
+    ).encode()
+    previous = signal.signal(signal.SIGPIPE, signal.SIG_DFL)
+    try:
+        client = socket.create_connection(("127.0.0.1", live.port))
+        client.sendall(head + body)
+        # Once the call is registered the bridge has read the request, so its reply is next.
+        deadline = time.monotonic() + 5
+        while live.request("GET", "/v1/operations/op-gone?wait_s=0")[0] != 200:
+            assert time.monotonic() < deadline
+        # A zero linger resets the connection rather than closing it.
+        client.setsockopt(socket.SOL_SOCKET, socket.SO_LINGER, struct.pack("ii", 1, 0))
+        client.close()
+        time.sleep(1.5)
+        status, _ = live.request("GET", "/v1/health")
+    finally:
+        signal.signal(signal.SIGPIPE, previous)
+    assert status == 200
 
 
 def test_a_stopping_bridge_answers_503(live: Live) -> None:

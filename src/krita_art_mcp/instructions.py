@@ -42,6 +42,8 @@ bounds the long edge: capture tiles for more. A layer capture is the layer's own
 its opacity, masks or inherit-alpha clip.
 - After every one to three strokes, check krita_preview_render at the asset's game sizes, from \
 explicit recipes; a source's baseline_id shows the document as opened beside it.
+- Keep work with krita_document_save to a new .kra path (it never overwrites); it reopens the \
+file to verify it and clears dirty. An .ora drops masks and adjustment layers.
 - Use krita_sample for exact colours (RGBA 0-255, hex, L*a*b*, L*C*h); a radius averages a disc, \
 weighted by alpha. Never judge a colour from a capture.
 - krita_resource_list lists brush presets (their id and sha256 are what paint calls take), \

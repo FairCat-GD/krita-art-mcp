@@ -149,8 +149,15 @@ class DocumentsPort(Protocol):
 
     def set_brush_state(self, document: Any, state: dict[str, Any]) -> None: ...
 
-    # Writes the document as KRA with Krita's own exporter; False while autosave holds it (K45).
-    def export_kra(self, document: Any, target: str) -> bool: ...
+    # Writes the document with Krita's own exporter, which the target's extension picks; False
+    # while autosave holds it (K45). The document keeps pointing at its own file (K39).
+    def export(self, document: Any, target: str) -> bool: ...
+
+    # A node's own pixels over a rect, as pixelData reads them (a mask's are one byte each), or
+    # its projection, masks applied; in document coordinates. LAYER_NOT_FOUND for an unknown id.
+    def node_pixels(
+        self, document: Any, node_id: str, rect: dict[str, int], projection: bool
+    ) -> Any: ...
 
     # Waits, lets Krita's own timers run for settle_s with user input held back, clears the
     # modified flag so Krita never asks to save, then closes.

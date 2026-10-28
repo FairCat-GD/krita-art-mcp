@@ -90,7 +90,7 @@ class _Client(BridgeClient):
         self._health = health
         self._documents = documents or Done({"open": 2, "unsaved": 1}, "op-1")
 
-    def health(self) -> Done | Failed:
+    def health(self, timeout_s: float = 5.0) -> Done | Failed:
         return self._health
 
     def call(
@@ -100,6 +100,7 @@ class _Client(BridgeClient):
         *,
         request_id: str | None = None,
         before_send: BeforeSend | None = None,
+        budget_s: float | None = None,
     ) -> Outcome:
         assert op == "bridge.unsaved_documents"
         return self._documents
@@ -242,7 +243,7 @@ def test_the_probe_stops_at_a_stale_plugin_and_sweeps_its_folder(tmp_path: Path)
     seen_at_start: list[list[Path]] = []
 
     class Watching(_Client):
-        def health(self) -> Done | Failed:
+        def health(self, timeout_s: float = 5.0) -> Done | Failed:
             seen_at_start.append(list(harness.iterdir()))
             (harness / "made-by-this-run.ora").write_bytes(b"new")
             return super().health()
@@ -284,6 +285,7 @@ def test_the_probe_s_export_retries_one_busy_with_a_fresh_request_id(
             *,
             request_id: str | None = None,
             before_send: BeforeSend | None = None,
+            budget_s: float | None = None,
         ) -> Outcome:
             assert op == "harness.export_kra"
             sent.append(request_id)

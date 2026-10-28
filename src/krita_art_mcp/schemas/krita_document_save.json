@@ -88,19 +88,66 @@
             "type": "object",
             "properties": {
               "path": {
-                "type": "string"
+                "type": "string",
+                "minLength": 1
               },
               "sha256": {
-                "type": "string"
+                "type": "string",
+                "pattern": "^[0-9a-f]{64}$"
               },
               "reopened_verified": {
-                "type": "boolean"
+                "const": true
               },
               "layers_preserved": {
                 "type": "boolean"
               },
               "baseline_untouched": {
-                "type": "boolean"
+                "anyOf": [
+                  {
+                    "type": "boolean"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "composite_preserved": {
+                "const": true
+              },
+              "expected_losses": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "layer_id": {
+                      "type": "string",
+                      "minLength": 1
+                    },
+                    "name": {
+                      "type": "string"
+                    },
+                    "type": {
+                      "type": "string",
+                      "minLength": 1
+                    },
+                    "lost": {
+                      "type": "string",
+                      "enum": [
+                        "node",
+                        "type",
+                        "alpha_locked",
+                        "opacity"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "layer_id",
+                    "name",
+                    "type",
+                    "lost"
+                  ],
+                  "additionalProperties": false
+                }
               }
             },
             "required": [
@@ -108,7 +155,9 @@
               "sha256",
               "reopened_verified",
               "layers_preserved",
-              "baseline_untouched"
+              "baseline_untouched",
+              "composite_preserved",
+              "expected_losses"
             ],
             "additionalProperties": false
           },
@@ -207,19 +256,66 @@
               "type": "object",
               "properties": {
                 "path": {
-                  "type": "string"
+                  "type": "string",
+                  "minLength": 1
                 },
                 "sha256": {
-                  "type": "string"
+                  "type": "string",
+                  "pattern": "^[0-9a-f]{64}$"
                 },
                 "reopened_verified": {
-                  "type": "boolean"
+                  "const": true
                 },
                 "layers_preserved": {
                   "type": "boolean"
                 },
                 "baseline_untouched": {
-                  "type": "boolean"
+                  "anyOf": [
+                    {
+                      "type": "boolean"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "composite_preserved": {
+                  "const": true
+                },
+                "expected_losses": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "layer_id": {
+                        "type": "string",
+                        "minLength": 1
+                      },
+                      "name": {
+                        "type": "string"
+                      },
+                      "type": {
+                        "type": "string",
+                        "minLength": 1
+                      },
+                      "lost": {
+                        "type": "string",
+                        "enum": [
+                          "node",
+                          "type",
+                          "alpha_locked",
+                          "opacity"
+                        ]
+                      }
+                    },
+                    "required": [
+                      "layer_id",
+                      "name",
+                      "type",
+                      "lost"
+                    ],
+                    "additionalProperties": false
+                  }
                 }
               },
               "required": [
@@ -227,7 +323,9 @@
                 "sha256",
                 "reopened_verified",
                 "layers_preserved",
-                "baseline_untouched"
+                "baseline_untouched",
+                "composite_preserved",
+                "expected_losses"
               ],
               "additionalProperties": false
             },
@@ -317,7 +415,9 @@
         "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
         "reopened_verified": true,
         "layers_preserved": true,
-        "baseline_untouched": true
+        "baseline_untouched": true,
+        "composite_preserved": true,
+        "expected_losses": []
       },
       "error": null
     }
