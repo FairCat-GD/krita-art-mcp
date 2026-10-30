@@ -220,7 +220,8 @@ harness's own; swept at its start), working copies in each open's `working_dir`.
 
 **Evolution.** No database. File formats carry a version (`v`) and evolve forward-only
 (decision 18). The bridge protocol changes only with a new number, and a mismatch is
-`PROTOCOL_MISMATCH`.
+`PROTOCOL_MISMATCH`. **Amended 2026-10-30 by the owner, in review 13:** see decision 23's note:
+the number stays `1` while `serve` refuses a plugin whose version is not the server's.
 
 **Formats:** KRA (full fidelity), ORA (exchange; masks and adjustment layers are lost and
 reported as `expected_losses`), PNG (read as one layer). Saves never write PNG in Phase 1.

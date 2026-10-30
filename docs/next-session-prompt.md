@@ -4,7 +4,7 @@ Read `REVIEW-2026-10-30.md` §3 (the findings block 13a names), §6 and §8.3; `
 Do Session 13a: the review fixes after the every-tool-built milestone. 13a has these parts:
 - `serve` refuses a plugin of another version, and `ephemeral` becomes a required call field
   (F1, F10);
-- the wait-before-read scan covers every `…PixelData` name (F2);
+- the wait-before-read scan covers the three read names (F2);
 - inspect counts its selection in the plugin, with no transfer file (F3);
 - `baseline_untouched` by stat first, a hash only when the stat moved (F9);
 - no hidden save file is left on the finish's stat-mismatch path or when the owner closes the
@@ -27,65 +27,31 @@ Release 0.13.0.
   and 15 remain: 13a (0.13.0), 14 (0.14.0) and 15 (0.15.0, the round's close). Review 13 inserted
   13a on 2026-10-30, so 14 and 15 moved from 0.13.0–0.14.0.
 - **The push status.** `origin` is the private GitHub repository. `origin/main` holds everything
-  through 12's review commit ("review: a poll of a failed save tells its own outcome, and 8
-  smaller"). Session 13's commit and its review commit are local, not pushed. List
+  through 13's review-fixes commit ("review: the scan remedy would have flagged the allowed
+  write, and 6 smaller"), pushed with the owner's approval; nothing is local. List
   `origin/main..HEAD` before any push.
-- **What 13 found that 13a builds on** (every pointer in `REVIEW-2026-10-30.md` is to `f61c7f2`,
-  which is still the code):
-  - **`bridge_client._open`** (`src/krita_art_mcp/bridge_client.py:263-279`) reads only `pid`,
-    `protocol`, `port`, `token`, `session_id` and `ephemeral_reads`; `plugin_version` and
-    `plugin_hash` are in `bridge.json` already (`bridge_core/bridge.py:93-110`). `doctor` already
-    turns a `PROTOCOL_MISMATCH` health into step 5 (`doctor.py:38-48`); the probe's first check
-    (`probe/__init__.py:68-71`) does not, and must.
-  - **`ephemeral`** is optional on the bridge (`bridge_core/server.py:20-22, 204-211`) and sent
-    only when `bridge.ephemeral_reads` (`bridge_client.py:145-147`); the test world writes
-    `bridge.json` without the flag (`tests/test_bridge_client.py:203-218`), and
-    `test_bridge_lifecycle.py:40-52` lists the file's keys.
-  - **The wait scan** is `tests/plugin/test_source_scans.py:213-229`, matching the names
-    `pixelData` and `waitForDone`; the one `projectionPixelData` read is
-    `krita_adapter/documents.py:368`, waited for at `:365`.
-  - **Inspect's selection** crosses as an `A8` transfer file (`bridge_core/inspection.py:119-130`)
-    that `tools/documents.resolve_inspect` (`:164-186`) counts and deletes; `selection.set`
-    counts in the plugin at `selections.py:99-103` (`selected_pixels = len(pixels) -
-    pixels.count(0)`; coverage is `sum / 255`). The output schema's `selection` object is
-    `{bounds_px, selected_pixels, coverage_px}` and stays.
-  - **`baseline_untouched`** is `files.unchanged(source_path, source_sha256)` at
-    `bridge_core/saving.py:130-132` and `documents.py:69-70`; `Pending.stat` and `_stat`
-    (`saving.py:70, 163, 536-541`) are the inode-size-mtime pattern to reuse; the open sets the
-    handle's fields at `opening.py:119-124`.
-  - **The hidden save file's two leaks:** `saving.py:161-165` (the stat-mismatch branch returns
-    without `_remove`/`_unmake`) and `registry.py:117-120` (`sync` drops a handle and its
-    `Pending`).
-  - **The `probe.*` ops:** `krita_adapter/ops.py:21-47` (two of them) and `bridge.py:47, 59-61`
-    (`probe.retention`); their callers are `probe/pixels.py:318` and `probe/painting.py:962`.
-    `harness.*` handlers live in `bridge_core/harness.py`; the retention op needs the `Jobs`
-    object, which only `Bridge` holds, so it may stay in `bridge.py` under its new name.
-  - **The stroke's preset work:** `bridge_core/painting.py:67-68` (`_preset`, `_listed`), `:80`
-    (`set_brush`, whose adapter reads the brush back with a `toXML`), `:82`, `:124`;
-    `FakeResources.asked` (`tests/fixtures/fake_krita.py:919, 927-929`) counts the `preset_xmls`
-    calls, so the tests can hold the new count. `layer_update`'s tree reads: `layer_update.py:40,
-    80, 117` and `:131, 135` inside `_blend`.
-  - **The probe's copies:** `probe/painting.py:231-250`, `probe/changes.py:75-104`,
-    `probe/previews.py:213-226` (captures); `probe/updates.py:65-71` and `probe/saving.py:92-97`
-    (`_dirty`); `probe/saving.py:100-103` (`_layers`) against `probe/changes.py:107-110`;
-    `_open` at `probe/updates.py:56-62`, `probe/previews.py:81-84`, `probe/painting.py:209-211`;
-    `probe/changes.py:158-161` (`_png`) against `fixtures.py:253-254`; `probe/opening.py:41-42`
-    (`sha`); the private imports at `probe/saving.py:19-27`.
-  - **The small ones:** `strokes.py:10-11`; `masks.py:46` and `envelope.py:50`; `saving.py:368-376`
-    against `verification.py:308-317`, `pixels.py:148, 161-166` against `masks.py:41-53` and
-    `painting.py:457`; `tools/__init__.py:97-99` against `operations.py:145-151`;
-    `tools/__init__.py:168` and `bridge_client.py:149, 286`.
-  - **The copies to pin:** `probe/saving.py:34-47` against `bridge_core/saving.py:23-39`;
-    `bridge_core/saving.py:21` against `colour.py:17`; `tools/saving.py:17` against
-    `bridge_core/saving.py:18`; `probe/pixels.py:23`. The constants test is
-    `tests/test_envelope.py:68-85`.
-  - **The lines:** `probe/painting.py:965, 982`; `README.md:45`; `CHANGELOG.md:488` (the
-    references stop at `[0.11.0]`; 0.12.0's manifest bump is `7d18a6a`); `probe/report.py:32-37`
-    prints the summary, and `bridge.unsaved_documents` answers `{open, unsaved}`.
+- **What 13 found that 13a builds on:** block 13a holds every item with its `file:line` pointer,
+  and the REVIEW's §3 the evidence; both point at `f61c7f2`, which is still the code. Beyond
+  the block:
+  - **`doctor` already turns a `PROTOCOL_MISMATCH` health into step 5** (`doctor.py:38-48`),
+    reading the protocol numbers from the error's details; the probe's first check
+    (`probe/__init__.py:68-71`) treats any failed health as "no bridge" and must learn the
+    mismatch too.
+  - **The test fixtures write `plugin_version: "0.2.0"`** (`tests/test_bridge_client.py:203-218`)
+    and list `bridge.json`'s keys (`test_bridge_lifecycle.py:40-52`); the test world in
+    `tests/support/worlds.py` runs a real `Bridge`, whose version is the package's.
+  - **`FakeResources.asked`** (`tests/fixtures/fake_krita.py:919, 927-929`) counts the
+    `preset_xmls` calls a stroke makes, so F7's new count can be held by a test.
+  - **`harness.retention` needs the `Jobs` object,** which only `Bridge` holds
+    (`bridge_core/bridge.py:47, 59-61`); it may stay in `bridge.py` under its new name.
+  - **`Pending.stat` and `_stat`** (`bridge_core/saving.py:70, 163, 536-541`) are the
+    inode-size-mtime pattern F9 reuses at the open (`opening.py:119-124`).
+  - **The hash's cold cost is unmeasured:** the REVIEW's 0.07 s per 200 MB is a warm floor on
+    CPython 3.12; 13a measures the cold case once inside Krita before changing the hash.
 - **What the spec said that turned out wrong or harder:** nothing new in 13; the handoff's
   earlier notes (H4's 5 s save, ORA's opacity drift, decision 29's cases seen live) stand.
 - **Decisions written down nowhere else:** the owner's choice of landings is in the REVIEW's §6
-  and block 13's done-note; the protocol choice is decision 23's note.
+  and block 13's done-note; the protocol choice is decision 23's note, with a pointer in §4.
 - **Baseline** (13 as found; 13a changes code, so the test counts move by what it adds and the
   probe gains one line):
   - `verify`: 6 stages, all PASS;
@@ -128,6 +94,8 @@ Release 0.13.0.
 - **The version check meets the probe first.** The probe's "the bridge answers its health check"
   goes through `_open`; make it report a `PROTOCOL_MISMATCH` the way `doctor` step 5 does (the
   install fix), or the first live run after the bump reads as a dead bridge.
+- **The wait scan must never match `setPixelData`.** Its one allowed site writes a selection
+  without a wait; the scan names the three read names, not a suffix.
 - **Before the probe's paint checks, the stock presets must be listed in Krita:**
   `b) Basic-2 Opacity`, `b) Airbrush Soft`, `y) Texture Spray`, `y) Texture Wood Fiber`.
 - **Brush state is window-wide (K3).** Any live run that paints changes the owner's current

@@ -3665,6 +3665,26 @@ Placed at the owner's request, after the last tool and before acceptance.
   - `probe`: 113 PASS, 0 FAIL, 34 MEASURED, 145.6 s (87 documents open);
   - 19 registered tools; 19 schema files; instructions 3,524 characters; 30 error codes; 33
     bridge ops.
+- **Review (`/code-review high`), 8 findings: 7 fixed and 1 no change needed.** All in the
+  documents this session wrote.
+  - **F2's remedy would have flagged the allowed selection write:** a scan of every name ending
+    in `PixelData` matches `setPixelData`, whose one site writes without a wait. The remedy and
+    block 13a name the three read names instead.
+  - **Block 13a gains two traps:** the bridge-client test fixtures write an old
+    `plugin_version`, which the version gate would fail wholesale, and `doctor`'s step 5 detail
+    reads protocol numbers only.
+  - **The handoff reported a review commit before it existed,** and restated ninety lines of
+    block 13a's pointers; it now points at the block and carries only what the block does not.
+  - **SPEC §4's protocol sentence carries a pointer** to decision 23's note, beside what the note
+    changes.
+  - **F9's measurement is called a warm floor** on CPython 3.12, and 13a measures the cold case
+    once before changing the hash.
+  - **Block 13a says what becomes of `resolve_inspect`:** it goes with its `TransferError`
+    branch, and inspect's `RECEIPTS` entry keeps its receipt without a resolver.
+  - **No change needed:** F34's landing reads the same in §6 and in this note (13a's probe line,
+    block 15's baseline condition).
+  - **Falsified:** nothing; no check was added.
+  - **Numbers after the review:** unchanged.
 
 ---
 
@@ -3685,14 +3705,20 @@ to 0.14.0–0.15.0. The pointers are to the code as the review saw it (`f61c7f2`
   call field (`bridge_core/server.py:20-22, 204-211`), and the server sends it on every read.
   The protocol stays 1 (decision 23's note).
 - **F2: the wait scan covers every pixel read.** `tests/plugin/test_source_scans.py:213-229`
-  matches every call whose name ends in `PixelData`.
+  matches the read names `pixelData`, `projectionPixelData` and `pixelDataAtTime`; not
+  `setPixelData`, whose one allowed site (`krita_adapter/selections.py:44-49`) writes a
+  selection it has just built and needs no wait.
 - **F3: inspect counts the selection in the plugin.** `bridge_core/inspection.py:119-130`
   returns `selected_pixels` and `coverage_px` as `selection.set` computes them
-  (`selections.py:99-103`); `tools/documents.resolve_inspect` (`:164-186`) takes the numbers;
-  no transfer file. The output schema is unchanged.
+  (`selections.py:99-103`); the plugin's result carries them, so `tools/documents.resolve_inspect`
+  (`:164-186`) and its `TransferError` branch go, and `RECEIPTS`'s `document.inspect` entry
+  keeps its receipt with no resolver (`tools/operations.py:36-38`). The output schema is
+  unchanged.
 - **F9: `baseline_untouched` by stat first.** The open records the source's inode, size and
   modification time beside its hash (`bridge_core/opening.py:119-124`, `Handle`);
   `files.unchanged` hashes only when the stat moved (`saving.py:130-132`, `documents.py:69-70`).
+  Before the change, the whole-file hash of a large file cold from disk is measured once and
+  recorded (the review's 0.07 s is a warm floor on CPython 3.12).
 - **F17: no hidden save file is left.** The finish's stat-mismatch branch (`saving.py:163-165`)
   removes the written file and unmakes the folders; a handle `Registry.sync` discards
   (`registry.py:117-120`) drops its pending save the same way.
@@ -3744,6 +3770,11 @@ to 0.14.0–0.15.0. The pointers are to the code as the review saw it (`f61c7f2`
 - **The version check meets the probe and `doctor` first.** Both call `health()`, which goes
   through `_open`; `doctor` already turns a `PROTOCOL_MISMATCH` health into its step 5 (the
   install fix), and the probe's first check must do the same rather than fail as "no bridge".
+  `doctor`'s step 5 detail reads the protocol numbers from the error's details
+  (`doctor.py:41-44`); a version mismatch needs its own detail.
+- **The test fixtures write an old plugin version.** `tests/test_bridge_client.py:203-218`
+  writes `bridge.json` with `plugin_version: "0.2.0"`, which every scripted and timeline test
+  reads; they must write `__version__` (or the check fails them all) before the gate is added.
 - **A review fix must not loosen a refusal.** F3 changes who counts, not what inspect reports;
   F9 changes when the hash runs, not whether a changed source is reported.
 - **No schema changes**, so `amend_schemas.py` is not needed; its `--check` test runs anyway.
