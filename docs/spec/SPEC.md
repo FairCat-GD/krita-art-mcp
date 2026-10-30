@@ -106,6 +106,12 @@ the decision as an **Amended <date> by the owner** note.
 23. **Three version numbers, kept apart:** the package version (`0.N.0`, `pyproject.toml`, the
     plugin's copy held equal by a test); the tool contract's `api_version` (`"0.2.0"` for the
     amended Phase 1 contract; the package's was `"0.1.0"`); the bridge protocol (`1`).
+    **Amended 2026-10-30 by the owner, in review 13:** the bridge protocol stays `1` while the
+    server and the plugin are released together. From 13a, `serve` refuses a plugin whose
+    version is not the server's (`PROTOCOL_MISMATCH`, with the install step as the fix), so an
+    op or a field added under one number can never meet a plugin that lacks it; `ephemeral`,
+    optional since 6a, becomes a required call field without a new number
+    (`REVIEW-2026-10-30.md` F1, F10).
 24. **Commands:** `verify` is `uv run scripts/verify.py`; the live harness is
     `uv run krita-art-mcp probe`. The harness drives `serve` over stdio as a real MCP client and
     uses `harness.*` only to build fixtures.

@@ -45,6 +45,28 @@ runs; after it closes, read it from git history at round 1's release commit.
 - **Windows and Linux.** The code stays portable, but nothing is tested there. Left out at the
   round 1 intake. On Linux the bridge needs its own guard against SIGPIPE: `SO_NOSIGPIPE` is
   Darwin's, so a reply to a client that has gone would still kill Krita there (0.12.0).
+- **Saving a document over 8192 × 8192 pixels** (review 13, F4). The save verifies by reading
+  the whole live composite, the whole reopened composite and every node's pixels unbanded, so
+  `krita_document_save` refuses a larger canvas with `UNSUPPORTED_CAPABILITY` while open, paint
+  and preview take it. Banding the save's reads and hashes, as the stroke's compares are banded,
+  lifts the bound; Phase 2's whole-canvas filters need the same banded reads (review 10, F13).
+- **One validator of argument shape, or parity tests** (review 13, F19 and §8.8 item 6). Six
+  argument rules are written on both sides with hand-copied messages and nothing holds the two
+  sides to the same code; Phase 2 adds about nineteen tools of such pairs. The intake decides
+  whether the plugin keeps its own checks (each pair then gets a parity test, as the roots have)
+  or the server becomes the one validator of shape while the plugin checks only what Krita's
+  state decides.
+- **Schemas that advertise what refuses** (review 13, F23 and §8.8 item 7). Phase 1's schemas
+  admit `transparency_mask`, `smooth: basic` and `stabilizer`, `antialias: false` and `eraser`,
+  and refuse each with a typed reason, as the contract's shape and PDD Part 7 want. The Phase 2
+  intake decides for the schemas it amends whether a refused value stays advertised.
+- **One verified-mutation frame** (review 10, F3; review 13, §8.8 item 8). The stroke,
+  `layer_update` and `layer_create` each hand-roll invariant 5's sequence, and the save has a
+  ladder of its own; Phase 2's filters, transforms and fills would each be another copy. The
+  intake extracts one guarded-mutation frame in `bridge_core` before the first new mutating op.
+- **A retention rule for the journal** (review 13, §8.8 item 9). The journal is permanent and
+  unbounded (PDD Part 6): about 44 MB a heavy week of strokes, read in full by the first lookup
+  of each server process (3 ms today). Fine for round 1; a painting year wants a rule.
 - **Sweeping a save a Krita crash interrupted** (0.12.0). `krita_document_save` writes a hidden
   `.<name>.<token>.saving.kra` (or `.ora`) beside its path and moves it into place once verified.
   A new save or a close of the document removes one never finished, but a Krita crash between

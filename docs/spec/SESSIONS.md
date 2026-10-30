@@ -49,14 +49,16 @@ Never push without being asked.
 | 11 | `preview_render`; N-02 benchmark | 6, 31 | **0.11.0** |
 | 12 | `document_save`, verified by reopening; H4 long save | 27, 29 | **0.12.0** |
 | 13 | Architecture review: every tool built | 2 | — |
-| 14 | Acceptance: the full harness, the contract's exercises, H2, H3, final server instructions | 28, 30, 31 | **0.13.0** |
-| 15 | Docs, changelog, manual runs; close the round | 2, 32 | **0.14.0** |
+| 13a | Review fixes: every tool built (inserted by review 13) | 2 | **0.13.0** |
+| 14 | Acceptance: the full harness, the contract's exercises, H2, H3, final server instructions | 28, 30, 31 | **0.14.0** |
+| 15 | Docs, changelog, manual runs; close the round | 2, 32 | **0.15.0** |
 
 A review session (6, 10, 13) changes no product code and cuts no version. A session it inserts
 takes the next version, and every later version shifts by one; the handoff says so. Review 6
 inserted 6a on 2026-10-24, so sessions 7–15 moved from 0.6.0–0.12.0 to 0.7.0–0.13.0. The owner
 inserted 7a on 2026-10-24 with no version, so no version moved. Review 10 inserted 10a on
-2026-10-25, so sessions 11–15 moved from 0.10.0–0.13.0 to 0.11.0–0.14.0.
+2026-10-25, so sessions 11–15 moved from 0.10.0–0.13.0 to 0.11.0–0.14.0. Review 13 inserted 13a
+on 2026-10-30, so sessions 14–15 moved from 0.13.0–0.14.0 to 0.14.0–0.15.0.
 
 ---
 
@@ -3597,6 +3599,19 @@ Placed at the owner's request, after the last tool and before acceptance.
   - the deliberate decisions and the debt that session 15 will write into `ARCHITECTURE.md`;
   - the counts that will form its baseline.
 - **`docs/spec/REVIEW-<date>.md`**, and the owner's choice of scope, as in session 6.
+- **A full review of the whole application** (added by the owner before the session; amended at
+  plan time, with the owner), also covering:
+  1. dead code: unused functions, modules, variables, imports and dependencies; MCP tools, bridge
+     ops, harness ops, CLI commands or fixtures that nothing reaches;
+  2. duplicate logic that should be consolidated, between the server, the plugin and the probe;
+  3. implementations more complex or wasteful than they need to be, including repeated Krita
+     round trips, whole-canvas reads and file hashes;
+  4. code kept for behaviour that has since changed or been replaced;
+  5. files disconnected from the application or its tests;
+  6. technical debt worth paying down before the round closes;
+  7. what the server, plugin and probe leave on the owner's computer: the data folder, Krita's
+     folders, temp folders, and anything beside a saved file, listed only, nothing deleted;
+  8. architectural decisions that should be revisited.
 - **Docs.** The REVIEW file and the handoff.
 
 **Gates:**
@@ -3606,6 +3621,133 @@ Placed at the owner's request, after the last tool and before acceptance.
 
 **Watch for:**
 - **Evidence, not scope**, as in session 6.
+
+**Done (2026-10-30, no version).**
+- **Decided with the owner in plan mode:**
+  - **The owner's eight questions** (above) joined the review; amended at plan time, with the
+    owner.
+  - **The probe measured the Krita as found**, holding 87 of the owner's documents, none
+    unsaved, rather than after a restart.
+  - **Over the 35 findings of `REVIEW-2026-10-30.md`** (0 High, 4 Medium, 18 Low, 13 Info):
+    F1–F3, F5–F7, F9, F10, F12–F18, F20–F22 and F34's probe line become one inserted session,
+    **13a** at 0.13.0; sessions 14–15 shift to 0.14.0–0.15.0. F4 and F8 amend block 14; F4,
+    F11, F23, F25, F27, F31 and F34 amend block 15; F4's banding, F19 and §8.8's items 6–9 go to
+    `docs/BACKLOG.md` for the Phase 2 intake; F10's protocol choice is the owner's dated note on
+    SPEC decision 23; the rest are recorded.
+- **The review.** `REVIEW-2026-10-30.md`: method, the baseline as found, what holds (the
+  layering, every invariant traced to its enforcement, tests and probe checks, what became of
+  reviews 6 and 10, the instructions against the tools, the pinned constants), 35 findings with
+  `file:line` evidence on `f61c7f2`, the drift inventory, the system against sessions 14–15 and
+  Phases 2–6, where each finding landed, the measurements, and §8: the eight questions each
+  answered with an inventory (every top-level name's references, the ops against their callers,
+  the reads and hashes per op, what the system leaves on the owner's computer). A second,
+  independent cold read ran as a fresh agent on the product code without the first read's notes;
+  its findings were verified on the code path before they were kept: it added eleven (F1, F2, F8,
+  F13, F16, F19, F20, F25, F26, F27, F31), the second path of F17 and the closing window of F11,
+  and confirmed fourteen.
+- **The plan.** The 13a block below; the table and the shift note above; the amendment lines in
+  blocks 14 and 15, marked "amended by review 13"; their version lines shifted; SPEC decision 23's
+  note; the backlog's Phase 2 items.
+- **Amendments:** the eight questions (above). None to the method.
+- **Measured** (Krita 5.3.4.1 on macOS, Apple Silicon; details in the REVIEW's §7): `probe` 113
+  PASS, 0 FAIL, 34 MEASURED in 145.6 s on a Krita holding 87 documents (95.6 s on session 12's
+  empty one: document ops about three times slower, the benchmarks unmoved); H4 idle p95 5.9 ms;
+  N-01 p95 0.20 s, N-09 p95 0.30 s, N-02 p95 0.32 s; H4 long save 4.6 s; the tall tip 0.52 ×
+  size inside the margin; the bridge held 1,324 operations after N-01; the journal does not bite;
+  a 200 MB SHA-256 in the plugin's code 0.07 s warm; `transfer/` and `harness/` empty after the
+  run, `plugin.log` unchanged, nothing of the owner's touched.
+- **Checked by hand:** nothing was restarted; `doctor` steps 1–5 PASS, step 6 the owner's roots.
+- **Falsified:** nothing; the review adds no check (13a falsifies the checks its fixes add).
+- **Numbers** (unchanged, as found):
+  - `verify`: 6 stages, all PASS;
+  - 549 server tests passed, 0 skipped;
+  - 636 plugin-core tests passed, 0 skipped;
+  - `probe`: 113 PASS, 0 FAIL, 34 MEASURED, 145.6 s (87 documents open);
+  - 19 registered tools; 19 schema files; instructions 3,524 characters; 30 error codes; 33
+    bridge ops.
+
+---
+
+## 13a: Review fixes — every tool built
+
+Inserted by review 13 (2026-10-30): the owner chose findings F1–F3, F5–F7, F9, F10, F12–F18,
+F20–F22 and F34's probe line of `REVIEW-2026-10-30.md` as one fix session. Sessions 14–15 shift
+to 0.14.0–0.15.0. The pointers are to the code as the review saw it (`f61c7f2`).
+
+**Read:** `REVIEW-2026-10-30.md` §3 (the findings named here), §6 and §8.3; `SPEC.md` §4, §5
+(invariants 6, 9, 11), decision 23 with its note; `PDD.md` Part 8 (*Bridge protocol*, K12, K45).
+
+- **F1, F10: `serve` refuses a plugin of another version, and `ephemeral` is required.**
+  `bridge_client._open` (`src/krita_art_mcp/bridge_client.py:263-279`) reads `plugin_version`
+  from `bridge.json` and refuses one other than `__version__` with `PROTOCOL_MISMATCH`, its
+  message naming `setup_checks.INSTALL`; the `ephemeral_reads` flag (`bridge_core/bridge.py:107-109`,
+  `_Bridge.ephemeral_reads`, `bridge_client.py:145-147`) goes, `ephemeral` becomes a required
+  call field (`bridge_core/server.py:20-22, 204-211`), and the server sends it on every read.
+  The protocol stays 1 (decision 23's note).
+- **F2: the wait scan covers every pixel read.** `tests/plugin/test_source_scans.py:213-229`
+  matches every call whose name ends in `PixelData`.
+- **F3: inspect counts the selection in the plugin.** `bridge_core/inspection.py:119-130`
+  returns `selected_pixels` and `coverage_px` as `selection.set` computes them
+  (`selections.py:99-103`); `tools/documents.resolve_inspect` (`:164-186`) takes the numbers;
+  no transfer file. The output schema is unchanged.
+- **F9: `baseline_untouched` by stat first.** The open records the source's inode, size and
+  modification time beside its hash (`bridge_core/opening.py:119-124`, `Handle`);
+  `files.unchanged` hashes only when the stat moved (`saving.py:130-132`, `documents.py:69-70`).
+- **F17: no hidden save file is left.** The finish's stat-mismatch branch (`saving.py:163-165`)
+  removes the written file and unmakes the folders; a handle `Registry.sync` discards
+  (`registry.py:117-120`) drops its pending save the same way.
+- **F6: one harness namespace.** `probe.preset_xml` (`krita_adapter/ops.py:36-40`) goes;
+  `probe.preset_digests` and `probe.retention` become `harness.preset_digests` and
+  `harness.retention`, taking no document and no folder gate as before, with the probe's calls
+  renamed (`probe/pixels.py:318`, `probe/painting.py:962`).
+- **F7: one preset lookup and one serialisation per stroke; one tree per update phase.**
+  `bridge_core/painting.py:67-68, 80-82, 124` and `krita_adapter/painting.py:43-53`;
+  `layer_update.py:40, 80, 117, 131, 135`. The checks stay: the post-activation digest, the
+  read-back equality, the moved-nodes comparison.
+- **F5: the probe's shared helpers get one public home.** One module with the composite and
+  selection capture, `dirty`, `open`, `png`, `brush`, `stroke`, `line`, `harness`, `finished`,
+  `krita_rss_kb` and `megabytes`; the copies the finding names go, and `probe/saving.py:19-27`
+  imports public names.
+- **F12, F13, F20, F21, F22: the small ones.** The single-point branch of `strokes.path`
+  (`strokes.py:10-11`); `masks.ellipse`'s `binary` and `envelope.pending`'s `document_id`
+  parameters; one home for `_union`/`union`, `inside` and `_integer` (`saving.py:368-376`,
+  `verification.py:308-317`, `pixels.py:148, 161-166`, `masks.py:41-53`, `painting.py:457`); the
+  registration's validators reused by `operation_get` (`tools/__init__.py:97-99`,
+  `operations.py:145-151`); the result measured without a second dump and the call body encoded
+  once (`tools/__init__.py:168`, `bridge_client.py:149, 286`).
+- **F18: the four copies pinned.** `probe/saving.KRA_FIELDS`, the two `SRGB_PROFILES` and the
+  two save `FORMATS` in `test_envelope.py`'s constants test; `probe/pixels.py:23` imports
+  `SRGB_PROFILE`.
+- **F14, F15, F16, F34: the lines.** The probe's measured names without finding numbers
+  (`probe/painting.py:965, 982`); README's "Saving arrives" line (`README.md:45`) gone;
+  `CHANGELOG.md` gets the `[0.12.0]` link reference (the commit that bumped the manifest,
+  `7d18a6a`) with 0.13.0's; the probe prints Krita's open-document count beside its wall time
+  (`probe/report.py:32-37`, from `bridge.unsaved_documents`).
+- **Docs.**
+  - `CHANGELOG.md`: 0.13.0 — F1 (a stale plugin is named as such), F3 and F9 (a lighter
+    inspect, save and close), F17 under Fixed; the two link references.
+  - README: the version line; the handoff's standing trap on stale plugins now says `serve`
+    refuses one.
+
+**Gates:**
+- `uv run scripts/verify.py`, with these tests: the version refusal in `_open`; `ephemeral`
+  required on the bridge and sent on every read; the scan refusing a `projectionPixelData` read
+  before a wait; inspect's counts from the plugin with no transfer file; the stat-first
+  `baseline_untouched` (an unchanged source: no hash; a moved stat: a hash, and `false` when it
+  differs); the two hidden-file paths cleaned; the renamed harness ops; the pinned copies; the
+  dropped parameters and branch.
+- Each new check falsified once.
+- `install-plugin`, a Krita restart at 0 unsaved documents (the plugin changes), then `probe`
+  green with its new open-document line.
+
+**Watch for:**
+- **The version check meets the probe and `doctor` first.** Both call `health()`, which goes
+  through `_open`; `doctor` already turns a `PROTOCOL_MISMATCH` health into its step 5 (the
+  install fix), and the probe's first check must do the same rather than fail as "no bridge".
+- **A review fix must not loosen a refusal.** F3 changes who counts, not what inspect reports;
+  F9 changes when the hash runs, not whether a changed source is reported.
+- **No schema changes**, so `amend_schemas.py` is not needed; its `--check` test runs anyway.
+- **Restart Krita only at 0 unsaved documents** (decision 21).
 
 ---
 
@@ -3635,8 +3777,15 @@ handoff assigns here.
 - **F-24** (a floating message while a job runs), if time allows (decision 31).
 - **N-04 in the harness:** nothing is written outside the roots, the data directory, and Krita's
   own temp and autosave files.
+- **Amended by review 13 (2026-10-30):**
+  - **F4:** the finalised instructions name the save's bound: a document up to 8192 × 8192
+    pixels can be saved; a larger one can be opened, painted and previewed.
+  - **F8:** N-01 gains a selected-canvas variant, with a canvas-wide selection active, measured
+    and recorded; gated at the same budget if the owner chooses once it is measured.
+  - **N-04's list of writes** is `REVIEW-2026-10-30.md` §5 and §8.7.
 - **Docs.**
-  - `CHANGELOG.md`: 0.13.0 (0.11.0 before 6a, 0.12.0 before review 10 inserted 10a).
+  - `CHANGELOG.md`: 0.14.0 (0.11.0 before 6a, 0.12.0 before 10a, 0.13.0 before review 13
+    inserted 13a).
   - README: registration, checked by hand in both clients.
 - **Ask at the start of 14:** which six stock presets the H2 sheet uses. The session proposes
   them from `krita_resource_list`, and the owner confirms.
@@ -3667,8 +3816,21 @@ handoff assigns here.
 - **A truthful README**, and **`CLAUDE.md`** repointed with the as-built paragraph.
 - **`docs/BACKLOG.md`**: everything still open, including *Not yet checked by hand* (decision 29's
   two items among them), and the REVIEW findings the owner did not take.
+- **Amended by review 13 (2026-10-30):**
+  - **F4:** `USER-GUIDE.md` names the save's 8192 × 8192 bound among Phase 1's limits.
+  - **F11:** the journal's version-1 branch, `journal.arguments` and their tests go (no
+    version-1 line can be read after 2026-11-01); the reader accepts version 2 only.
+  - **F23, F25, F27, §8.8 item 10:** `ARCHITECTURE.md` carries a table of the contract's
+    placeholders (inputs that refuse, outputs with one value) and when each becomes live;
+    `TIMEOUT` as reserved in the error table; one sentence on the harness ops' reach and one on
+    the server-wide call lock.
+  - **F31:** the session decides which measurements stay in the probe (those that gate) and
+    retires or documents the rest.
+  - **F34, §8.8 item 11:** the baseline table names the condition its numbers were taken under
+    (an empty Krita, or the open-document count the probe prints from 13a).
 - **Docs.**
-  - `CHANGELOG.md`: 0.14.0 (0.12.0 before 6a, 0.13.0 before review 10 inserted 10a).
+  - `CHANGELOG.md`: 0.15.0 (0.12.0 before 6a, 0.13.0 before 10a, 0.14.0 before review 13
+    inserted 13a).
   - The release commit carries the last done-note.
   - Then a separate `docs: close round 1` commit deletes `docs/spec/` and rewrites the handoff
     from the between-rounds template, naming the release commit.
