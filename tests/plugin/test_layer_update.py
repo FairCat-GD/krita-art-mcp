@@ -254,9 +254,9 @@ def test_an_unchanged_value_writes_nothing_and_still_counts_as_a_change(world: W
     ("properties", "reads"),
     [
         ({"name": "renamed"}, 2),
-        ({"blend_mode": "multiply"}, 2),
+        ({"blend_mode": "multiply"}, 3),
         ({"blend_mode": "multiply", "name": "renamed"}, 3),
-        ({"blend_mode": "multiply", "active": True}, 3),
+        ({"blend_mode": "multiply", "active": True}, 4),
     ],
 )
 def test_an_update_reads_the_tree_once_per_phase(
@@ -275,6 +275,24 @@ def test_an_update_reads_the_tree_once_per_phase(
     # Each composite read checks the tree for K46 on its own, before and after an appearance.
     appearance = 2 if "blend_mode" in properties else 0
     assert len(seen) == reads + appearance
+
+
+def test_a_blend_change_is_checked_for_what_the_recompose_moved(world: World) -> None:
+    document_id, _ = world.document()
+    real = world.port.refresh
+    refreshes: list[Any] = []
+
+    def moving(document: Any) -> None:
+        real(document)
+        refreshes.append(document)
+        # The first recompose comes before the change, the second after it.
+        if len(refreshes) == 2:
+            world.port._tree(1)["nodes"][-1]["offset_px"] = [5, 5]
+
+    world.port.refresh = moving  # type: ignore[method-assign]
+    body = world.update_refused(document_id, blend_mode="multiply")
+    assert body["code"] == "ROLLBACK_FAILED" and body["details"]["cause"] == "INTERNAL_ERROR"
+    assert body["details"]["layer_ids"]
 
 
 # Refusals, before anything changes.

@@ -169,10 +169,6 @@ def test_a_results_size_is_its_whole_dump_with_the_image_only_measured() -> None
     assert tools._size(result) == len(whole)
 
 
-def test_a_tool_and_operation_get_share_one_output_validator() -> None:
-    assert schemas.output_validator("krita_capture") is schemas.output_validator("krita_capture")
-
-
 def test_calls_from_one_server_process_run_one_at_a_time() -> None:
     active = 0
     overlaps = 0

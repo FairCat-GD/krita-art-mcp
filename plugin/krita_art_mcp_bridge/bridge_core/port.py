@@ -143,7 +143,7 @@ class DocumentsPort(Protocol):
 
     def set_view(self, document: Any, view: dict[str, Any]) -> dict[str, Any]: ...
 
-    # Harness only: brush() without preset_xml as "current", and under "presets", by file id,
+    # Harness only: brush() as "current", and under "presets", by file id,
     # each preset's {size_px, opacity, flow, blend_mode, eraser} as Krita holds them; JSON-able.
     # set_brush_state writes those presets' values back, then "current".
     def brush_state(self, document: Any, preset_ids: list[str]) -> dict[str, Any]: ...

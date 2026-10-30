@@ -274,11 +274,12 @@ class BridgeClient:
         pid = info.get("pid")
         if not isinstance(pid, int) or isinstance(pid, bool) or not self._is_live_krita(pid):
             return self._not_running()
-        if info.get("protocol") != PROTOCOL:
-            details = {"bridge_protocol": info.get("protocol"), "server_protocol": PROTOCOL}
-            return Failed(error_body("PROTOCOL_MISMATCH", details=details))
-        if not self._any_plugin and info.get("plugin_version") != __version__:
-            return _other_version(info.get("plugin_version"))
+        if not self._any_plugin:
+            if info.get("protocol") != PROTOCOL:
+                details = {"bridge_protocol": info.get("protocol"), "server_protocol": PROTOCOL}
+                return Failed(error_body("PROTOCOL_MISMATCH", details=details))
+            if info.get("plugin_version") != __version__:
+                return _other_version(info.get("plugin_version"))
         port, token, session_id = info.get("port"), info.get("token"), info.get("session_id")
         if not (isinstance(port, int) and isinstance(token, str) and isinstance(session_id, str)):
             return Failed(error_body("INTERNAL_ERROR", "bridge.json is malformed; restart Krita."))

@@ -4,7 +4,7 @@ import xml.etree.ElementTree as ElementTree
 from collections.abc import Callable
 from typing import Any
 
-from .errors import BridgeError, exact
+from .errors import BridgeError, exact, integer
 from .jobs import Call, Handler
 from .port import ResourcesPort
 
@@ -96,7 +96,7 @@ def handlers(port: ResourcesPort) -> dict[str, Handler]:
         kind, cursor, limit = args["kind"], args["cursor"], args["limit"]
         if not isinstance(kind, str) or kind not in listers:
             raise BridgeError("INVALID_ARGUMENT", f"kind is one of {', '.join(listers)}.")
-        if not isinstance(limit, int) or isinstance(limit, bool) or not 1 <= limit <= MAX_LIMIT:
+        if not integer(limit) or not 1 <= limit <= MAX_LIMIT:
             raise BridgeError("INVALID_ARGUMENT", f"limit is 1 to {MAX_LIMIT}.")
         if cursor is not None and (not isinstance(cursor, str) or not CURSOR.match(cursor)):
             raise BridgeError("INVALID_ARGUMENT", "cursor is a next_cursor this op returned.")

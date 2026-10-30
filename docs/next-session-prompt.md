@@ -22,18 +22,18 @@ Release 0.14.0.
 
 - **Round 1 is the Phase 1 build.** Sessions 0 to 13a are done, 6a, 7a and 10a included. 14
   (0.14.0) and 15 (0.15.0, the round's close) remain.
-- **The push status.** `origin` is the private GitHub repository. 13a's commits are local;
-  `origin/main` holds everything through review 13's "review: the scan remedy would have flagged
-  the allowed write, and 6 smaller". List `origin/main..HEAD` before any push.
+- **The push status.** `origin` is the private GitHub repository. `origin/main` holds everything
+  through 13a's "review: a blend's moved check reads after the refresh, and 7 smaller". List
+  `origin/main..HEAD` before any push.
 - **What 13a left that 14 builds on:**
-  - **`probe/common.py`** is the one home of the probe's shared helpers, public: `guard`,
+  - **`probe/common.py`** is the one home of the probe's shared helpers, public: `guard`, `close`,
     `by_name`, `history_args`, `harness_call`, `open_args`, `open_working`, `inspect_data`,
     `document_dirty`, `capture`, `capture_composite`, `capture_selection`, `brush_colour`,
     `brush_args`, `stroke_args`, `line_points`, `finished`, `krita_rss_kb`, `megabytes`. The
-    acceptance exercises should import from it. `report.py` keeps `tool`, `close`, `code`,
-    `differs` and `sheet_cell`.
-  - **`BridgeClient(any_plugin=True)`** is what `doctor` and the probe use; a default client,
-    `serve`'s, refuses a plugin of another version.
+    acceptance exercises should import from it. `report.py` keeps `tool`, `code`, `differs` and
+    `sheet_cell`. `painting.run` calls `saving.run` directly, inside its brush-state window.
+  - **`BridgeClient(any_plugin=True)`** is what `doctor` and the probe use, and it skips both the
+    version and the protocol check; a default client, `serve`'s, refuses either.
   - **`Report.open_documents`** prints beside the wall time.
   - **`harness.retention` and `harness.preset_digests`** replaced the `probe.*` ops; they take no
     document and no folder gate.
@@ -47,8 +47,8 @@ Release 0.14.0.
 - **Baseline** (13a, 0.13.0):
   - `verify`: 6 stages, all PASS;
   - 553 server tests passed, 0 skipped;
-  - 657 plugin-core tests passed, 0 skipped;
-  - `probe`: 113 PASS, 0 FAIL, 34 MEASURED; 92.4 s with 0 documents open;
+  - 658 plugin-core tests passed, 0 skipped;
+  - `probe`: 113 PASS, 0 FAIL, 34 MEASURED; 93.5 s with 0 documents open;
   - 19 registered tools; 19 schema files; instructions 3,524 characters (572 to spare); 30 error
     codes; 32 bridge ops.
 - **Not done:**

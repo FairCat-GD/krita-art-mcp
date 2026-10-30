@@ -35,17 +35,6 @@ def _steps(setup: Setup, client: BridgeClient) -> list[Step]:
         if not steps[-1].passed:
             return steps
     health = client.health()
-    if isinstance(health, Failed) and health.error["code"] == "PROTOCOL_MISMATCH":
-        # The bridge is there; it speaks another protocol, which a reinstall fixes.
-        steps.append(Step(REACHABLE, True, "Krita runs a bridge"))
-        details = health.error["details"]
-        detail = (
-            f"protocol {details.get('bridge_protocol')}, server {details.get('server_protocol')}"
-        )
-        steps.append(
-            Step("the protocol and plugin hash match", False, detail, setup_checks.INSTALL)
-        )
-        return steps
     if not isinstance(health, Done):
         fix = health.error["details"].get("fix") or setup_checks.bridge_missing().fix
         steps.append(Step(REACHABLE, False, health.error["message"], fix))

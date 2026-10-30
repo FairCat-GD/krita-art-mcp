@@ -67,21 +67,20 @@ def handlers(registry: Registry, port: DocumentsPort, data: Path) -> dict[str, H
         after, verdict = None, None
         problem: BridgeError | None = None
         # The tree as the change left it; tree stays the one the rollback must get back to.
-        now: dict[str, Any] | None = None
+        final = tree
         with unconfirmed(handle, bool(changes)):
             try:
                 if "blend_mode" in changes:
                     applied["blend_mode"] = target["blend_mode"]
-                    step, now = _blend(handle, tree, layer_id, changes["blend_mode"], call)
+                    step = _blend(handle, tree, layer_id, changes["blend_mode"], call)
                 rest = {key: value for key, value in changes.items() if key != "blend_mode"}
                 if rest:
                     applied.update({key: target[key] for key in rest})
                     port.set_properties(document, layer_id, rest)
-                    now = None
                 if before is not None:
                     port.refresh(document)
-                now = now or port.tree(document)
-                moved = _moved(tree, now, layer_id, changes)
+                final = port.tree(document)
+                moved = _moved(tree, final, layer_id, changes)
                 if moved:
                     details: dict[str, Any] = {"layer_ids": moved}
                     message = "Krita changed more than the asked properties."
@@ -118,8 +117,7 @@ def handlers(registry: Registry, port: DocumentsPort, data: Path) -> dict[str, H
                     raise
                 # Reported as it is: a verified change never fails over the selected layer.
                 logging.getLogger(log.NAME).exception("the layer was not made active")
-            now = None
-        final = now or port.tree(document)
+            final = port.tree(document)
         node = next(node for node in final["nodes"] if node["id"] == layer_id)
         return {
             "document_id": handle.document_id,
@@ -132,22 +130,19 @@ def handlers(registry: Registry, port: DocumentsPort, data: Path) -> dict[str, H
             "verification": result,
         }
 
-    def _blend(
-        handle: Handle, tree: dict[str, Any], layer_id: str, mode: str, call: Call
-    ) -> tuple[Step, dict[str, Any]]:
+    def _blend(handle: Handle, tree: dict[str, Any], layer_id: str, mode: str, call: Call) -> Step:
         start = fingerprint(port, handle.document, tree)
         try:
             port.set_blend(handle.document, layer_id, mode)
-            after = port.tree(handle.document)
             # A blend change leaves the selection alone, so its hash is not read again.
-            end = (node_states(after), start[1])
+            end = (node_states(port.tree(handle.document)), start[1])
         except BaseException:
             # Krita may hold a step the ledger cannot name; history stops below it.
             handle.ledger.seal()
             raise
         step = Step("layer.update", call.operation_id, LABELS["layer.update"], start, end)
         handle.ledger.push(step, port.undo_limit())
-        return step, after
+        return step
 
     def _roll_back(
         handle: Handle,

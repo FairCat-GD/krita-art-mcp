@@ -16,7 +16,7 @@ from bridge_core.errors import BridgeError
 from fake_krita import bgra
 from worlds import NOT_RUNNING, NOW, A, B, Server, World, running_world
 
-from krita_art_mcp import baselines, journal, paths, roots
+from krita_art_mcp import baselines, journal, paths, roots, schemas
 from krita_art_mcp.bridge_client import BridgeClient, Done, Failed
 from krita_art_mcp.journal import Journal
 from krita_art_mcp.server import build_server
@@ -937,6 +937,26 @@ def test_inspect_counts_the_selection_and_reads_frame_0_only(world: World) -> No
     assert not transfer.exists() or list(transfer.iterdir()) == []
     later = server.content("krita_document_inspect", {**arguments, "frame": 1})
     assert later["error"]["code"] == "UNSUPPORTED_CAPABILITY" and later["operation_id"] is None
+
+
+def test_registration_and_operation_get_take_the_one_output_validator(
+    world: World, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    real = schemas.output_validator
+    asked: list[str] = []
+
+    def spying(name: str) -> Any:
+        asked.append(name)
+        return real(name)
+
+    monkeypatch.setattr(schemas, "output_validator", spying)
+    server = world.server()
+    assert "krita_document_create" in asked
+    created = server.content("krita_document_create", _create())
+    asked.clear()
+    server.content("krita_operation_get", {"operation_id": created["operation_id"]})
+    assert asked == ["krita_document_create"]
+    assert real("krita_document_create") is real("krita_document_create")
 
 
 def test_server_info_reports_the_roots_the_plugin_enforces(world: World) -> None:

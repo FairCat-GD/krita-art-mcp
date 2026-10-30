@@ -4,7 +4,6 @@ import os
 import statistics
 import time
 import uuid
-from collections.abc import Awaitable, Callable
 from pathlib import Path
 from typing import Any
 
@@ -13,13 +12,14 @@ from mcp import Client
 
 from krita_art_mcp.bridge_client import BridgeClient, Done
 from krita_art_mcp.journal import Journal
-from krita_art_mcp.probe import fixtures, previews
+from krita_art_mcp.probe import fixtures, previews, saving
 from krita_art_mcp.probe.common import (
     brush_args,
     brush_colour,
     by_name,
     capture,
     capture_composite,
+    close,
     finished,
     guard,
     harness_call,
@@ -32,7 +32,7 @@ from krita_art_mcp.probe.common import (
     stroke_args,
 )
 from krita_art_mcp.probe.pixels import brushes
-from krita_art_mcp.probe.report import Report, close, code, differs, sheet_cell, tool
+from krita_art_mcp.probe.report import Report, code, differs, sheet_cell, tool
 
 TOOL = "krita_paint_stroke"
 LABEL = "Scripted Brush Stroke"
@@ -93,13 +93,7 @@ def _pick(found: list[dict[str, Any]], names: tuple[str, ...]) -> dict[str, Any]
     return next((by[name] for name in names if name in by), None)
 
 
-# Checks that paint inside the window whose brush state run() writes back.
-Then = Callable[[Report, Client, BridgeClient, Path, dict[str, Any]], Awaitable[None]]
-
-
-async def run(
-    report: Report, a: Client, b: Client, client: BridgeClient, harness: Path, then: Then
-) -> None:
+async def run(report: Report, a: Client, b: Client, client: BridgeClient, harness: Path) -> None:
     harness = Path(os.path.realpath(harness))
     folder = harness / "painting"
     folder.mkdir(exist_ok=True)
@@ -143,7 +137,8 @@ async def run(
         await _rim(report, a, rim, harness, hard)
         for spec in BENCHMARKS:
             await _benchmark(report, a, client, harness, folder, spec, hard)
-        await then(report, a, client, harness, hard)
+        # Inside the window whose brush state this function writes back.
+        await saving.run(report, a, client, harness, hard)
     finally:
         if isinstance(saved, Done):
             put_back = harness_call(

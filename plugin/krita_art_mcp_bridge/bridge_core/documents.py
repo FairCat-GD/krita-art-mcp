@@ -15,7 +15,7 @@ from . import (
     selections,
 )
 from .closing import settle_s, settled_close
-from .errors import BridgeError, exact, no_arguments
+from .errors import BridgeError, exact, integer, no_arguments
 from .jobs import Call, Handler
 from .port import DocumentsPort
 from .registry import NEW, Handle, Registry
@@ -119,7 +119,7 @@ def _create_args(args: dict[str, Any]) -> tuple[int, int]:
         or not args["name"]
         or not isinstance(size, list)
         or len(size) != 2
-        or any(isinstance(side, bool) or not isinstance(side, int) or side < 1 for side in size)
+        or not all(integer(side) and side >= 1 for side in size)
     ):
         raise BridgeError("INVALID_ARGUMENT", "name and size_px are malformed.")
     wanted = (args["color_model"], args["depth"], args["profile_id"], args["background"])

@@ -1,6 +1,6 @@
 from typing import Any
 
-from .errors import BridgeError, exact
+from .errors import BridgeError, exact, integer
 from .jobs import Call, Handler
 from .ledger import selection_state
 from .port import DocumentsPort
@@ -25,7 +25,7 @@ TYPES = {
 
 
 def check_frame(frame: Any) -> None:
-    if not isinstance(frame, int) or isinstance(frame, bool) or frame < 0:
+    if not integer(frame) or frame < 0:
         raise BridgeError("INVALID_ARGUMENT", "frame is an integer of 0 or more.")
     if frame != 0:
         details = {"frame": frame, "supported": [0]}

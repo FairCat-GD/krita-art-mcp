@@ -1,6 +1,5 @@
 import os
 import time
-import uuid
 from pathlib import Path
 from typing import Any
 
@@ -13,13 +12,15 @@ from krita_art_mcp.probe.changes import undo_labels
 from krita_art_mcp.probe.common import (
     by_name,
     capture_composite,
+    close,
     document_dirty,
     guard,
+    harness_call,
     history_args,
     inspect_data,
     open_working,
 )
-from krita_art_mcp.probe.report import Report, close, code, differs, tool
+from krita_art_mcp.probe.report import Report, code, differs, tool
 
 BLEND_LABEL = "Composition Mode Change"
 # The property changes that push no undo step, in the order the ledger check makes them.
@@ -148,10 +149,8 @@ async def _reach(
 ) -> None:
     made, changed = {}, {}
     for kind in SPREADERS:
-        added = client.call(
-            "harness.add_node",
-            {"document_id": document_id, "kind": kind, "layer_id": paint},
-            request_id=str(uuid.uuid4()),
+        added = harness_call(
+            client, "harness.add_node", document_id=document_id, kind=kind, layer_id=paint
         )
         if not isinstance(added, Done):
             report.check(f"harness.add_node makes a {kind}", False, str(added))
@@ -235,9 +234,7 @@ async def _leaks(report: Report, a: Client, client: BridgeClient, ora: Path, har
         blend = await tool(
             a, "krita_layer_update", _update(document_id, paint, blend_mode="multiply")
         )
-        labels = client.call(
-            "harness.undo_labels", {"document_id": document_id}, request_id=str(uuid.uuid4())
-        )
+        labels = harness_call(client, "harness.undo_labels", document_id=document_id)
         redo_label = labels.result.get("redo") if isinstance(labels, Done) else None
         redo = await tool(a, "krita_history_step", history_args(document_id, "redo"))
         again = await capture_composite(a, document_id)

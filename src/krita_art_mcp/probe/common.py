@@ -25,6 +25,11 @@ def by_name(layers: list[dict[str, Any]]) -> dict[str, dict[str, Any]]:
     return {layer["name"]: layer for layer in layers}
 
 
+async def close(mcp: Client, document_id: str, policy: str = "discard") -> dict[str, Any]:
+    arguments = {"guard": guard(document_id), "dirty_policy": policy}
+    return await tool(mcp, "krita_document_close", arguments)
+
+
 def history_args(document_id: str, action: str, steps: int = 1) -> dict[str, Any]:
     return {"guard": guard(document_id), "action": action, "steps": steps}
 

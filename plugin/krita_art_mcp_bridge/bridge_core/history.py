@@ -6,7 +6,7 @@ from pathlib import Path
 from typing import Any
 
 from . import log, nodes, paths, verification
-from .errors import BridgeError, exact
+from .errors import BridgeError, exact, integer
 from .jobs import Call, Handler
 from .ledger import Fingerprint, Step, fingerprint
 from .port import DocumentsPort
@@ -233,7 +233,7 @@ def handlers(registry: Registry, port: DocumentsPort, data: Path) -> dict[str, H
         steps = args["steps"]
         if args["action"] not in (UNDO, REDO):
             raise BridgeError("INVALID_ARGUMENT", "action is undo or redo.")
-        if not isinstance(steps, int) or isinstance(steps, bool) or not 1 <= steps <= MAX_STEPS:
+        if not integer(steps) or not 1 <= steps <= MAX_STEPS:
             raise BridgeError("INVALID_ARGUMENT", f"steps is a whole number from 1 to {MAX_STEPS}.")
         return guarded(args, call)
 

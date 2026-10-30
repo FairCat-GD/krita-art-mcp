@@ -1,4 +1,3 @@
-import uuid
 from typing import Any, TextIO
 
 import numpy as np
@@ -58,11 +57,6 @@ async def tool(mcp: Client, name: str, arguments: dict[str, Any]) -> dict[str, A
 def code(content: dict[str, Any]) -> str | None:
     error = content.get("error") or {}
     return error.get("code")
-
-
-async def close(mcp: Client, document_id: str, policy: str = "discard") -> dict[str, Any]:
-    guard = {"document_id": document_id, "request_id": str(uuid.uuid4())}
-    return await tool(mcp, "krita_document_close", {"guard": guard, "dirty_policy": policy})
 
 
 def differs(found: np.ndarray | None, expected: np.ndarray | None) -> str:

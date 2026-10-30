@@ -14,12 +14,14 @@ from krita_art_mcp.probe.common import (
     by_name,
     capture_composite,
     capture_selection,
+    close,
     guard,
+    harness_call,
     history_args,
     inspect_data,
     open_args,
 )
-from krita_art_mcp.probe.report import Report, close, code, differs, tool
+from krita_art_mcp.probe.report import Report, code, differs, tool
 from krita_art_mcp.tools.observe import LIMITS
 
 WIDTH, HEIGHT = fixtures.WIDTH, fixtures.HEIGHT
@@ -70,9 +72,7 @@ def _box(x: int, y: int, width: int, height: int) -> np.ndarray:
 
 
 def undo_labels(client: BridgeClient, document_id: str) -> str:
-    read = client.call(
-        "harness.undo_labels", {"document_id": document_id}, request_id=str(uuid.uuid4())
-    )
+    read = harness_call(client, "harness.undo_labels", document_id=document_id)
     if not isinstance(read, Done):
         return f"unread ({read})"
     actions = read.result.get("actions") or {}
@@ -406,10 +406,11 @@ async def _k46(
         if layer["type"] == "selection_mask" and layer["parent_id"] == root
     ]
     if len(global_masks) == 1:
-        made = client.call(
+        made = harness_call(
+            client,
             "harness.activate",
-            {"document_id": document_id, "node_id": global_masks[0]["id"]},
-            request_id=str(uuid.uuid4()),
+            document_id=document_id,
+            node_id=global_masks[0]["id"],
         )
         active = made.result.get("active_id") if isinstance(made, Done) else None
         report.measured(
@@ -427,10 +428,12 @@ async def _k46(
         "matches the fixture, and the read makes the mask's layer active"
     )
     base = next(layer for layer in layers if layer["name"] == "probe base")
-    made = client.call(
+    made = harness_call(
+        client,
         "harness.select_mask",
-        {"document_id": document_id, "layer_id": base["id"], "rect": _rect(30, 30, 8, 8)},
-        request_id=str(uuid.uuid4()),
+        document_id=document_id,
+        layer_id=base["id"],
+        rect=_rect(30, 30, 8, 8),
     )
     if not isinstance(made, Done):
         report.check(name, False, f"harness.select_mask: {made}")
@@ -505,10 +508,8 @@ async def _protection(report: Report, a: Client, document_id: str, made: list[st
 
 
 async def _label_timing(report: Report, client: BridgeClient, document_id: str) -> None:
-    timed = client.call(
-        "harness.label_timing",
-        {"document_id": document_id, "trials": LABEL_TRIALS},
-        request_id=str(uuid.uuid4()),
+    timed = harness_call(
+        client, "harness.label_timing", document_id=document_id, trials=LABEL_TRIALS
     )
     reads = timed.result.get("reads", []) if isinstance(timed, Done) else []
     stale = sum(1 for straight, _ in reads if straight is None or straight == "")

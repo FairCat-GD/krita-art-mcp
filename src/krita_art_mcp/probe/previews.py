@@ -9,8 +9,8 @@ from mcp import Client
 
 from krita_art_mcp import sheets
 from krita_art_mcp.probe import fixtures
-from krita_art_mcp.probe.common import capture, guard, open_working
-from krita_art_mcp.probe.report import Report, close, code, differs, sheet_cell, tool
+from krita_art_mcp.probe.common import capture, close, guard, open_working
+from krita_art_mcp.probe.report import Report, code, differs, sheet_cell, tool
 
 TOOL = "krita_preview_render"
 RIVER = {"space": "srgb", "rgba": [0.19, 0.42, 0.55, 1]}

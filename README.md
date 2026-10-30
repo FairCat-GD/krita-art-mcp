@@ -80,7 +80,7 @@ Every change is journaled before it is sent and is safe to retry with the same `
    ```
 
 To update the plugin, run `install-plugin` again and restart Krita, then restart your MCP client:
-the server and the plugin refuse each other at different versions.
+the server refuses a plugin of another version.
 
 ## Registering the server
 

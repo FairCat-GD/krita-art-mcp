@@ -3,7 +3,7 @@ from pathlib import Path
 from typing import Any
 
 from . import masks, paths, transfer
-from .errors import BridgeError, exact
+from .errors import BridgeError, exact, integer
 from .history import LABELS
 from .jobs import Call, Handler
 from .ledger import Step, fingerprint, fingerprint_of, selection_state
@@ -119,11 +119,7 @@ def _check(args: dict[str, Any]) -> dict[str, Any]:
         raise BridgeError("INVALID_ARGUMENT", f"combine is one of {', '.join(COMBINES)}.")
     for field in MODIFIERS:
         value = args[field]
-        if (
-            not isinstance(value, int)
-            or isinstance(value, bool)
-            or not 0 <= value <= MAX_MODIFIER_PX
-        ):
+        if not integer(value) or not 0 <= value <= MAX_MODIFIER_PX:
             message = f"{field} is a whole number of pixels from 0 to {MAX_MODIFIER_PX}."
             raise BridgeError("INVALID_ARGUMENT", message)
     if not isinstance(args["invert"], bool):

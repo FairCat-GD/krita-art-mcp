@@ -3863,6 +3863,33 @@ to 0.14.0–0.15.0. The pointers are to the code as the review saw it (`f61c7f2`
   - `probe`: 113 PASS, 0 FAIL, 34 MEASURED (unchanged), 92.4 s with 0 documents open;
   - 19 registered tools; 19 schema files; instructions 3,524 characters; 30 error codes; 32 bridge
     ops (−1).
+- **Review (`/code-review high`), 9 findings: 8 fixed and 1 no change needed.**
+  - **A blend-only update's moved-nodes check read before the recompose.** The tree `_blend` read
+    served `_moved` too, so what `port.refresh` moved on a watched field went unseen. `_moved`
+    reads after the refresh again and `_blend` returns only its step, so a blend alone reads the
+    tree 3 times, not 2, and 4 with `active`; the report still reuses the last read.
+  - **`any_plugin` left the protocol number gated,** which blinded the unsaved count just as a
+    version would. It now skips both; `doctor`'s own `PROTOCOL_MISMATCH` branch is gone, and step 5
+    reads the protocol from health, with the install fix.
+  - **README said the plugin refuses the server,** which only the server does.
+  - **`brush_state`'s comment** still described `brush()` with `preset_xml`.
+  - **The shared-validator test touched neither caller.** It now spies on registration and on
+    `krita_operation_get`.
+  - **F5 left copies:** `close` moved to `probe/common.py` to use `guard`, and nine hand-rolled
+    harness calls go through `harness_call`.
+  - **F20 left copies:** `errors.integer` replaces seven more inline checks.
+  - **The `then` callback outlived the import cycle it worked around;** `painting` calls `saving`
+    directly.
+  - **No change needed:** the activation memory reads a `Resource` wrapper fetched before
+    activation. Measured on 0.13.0 on six stock presets the probe had not painted: four digests
+    moved on first activation, and every second stroke under the listed hash completed.
+  - **`[0.13.0]`'s link** landed here, as planned.
+  - **Falsified:** the moved-nodes read after the refresh, whose test first passed under the break
+    because its fake fired on the refresh before the change, and now fires on the one after;
+    `any_plugin` reaching another protocol; registration taking the one validator.
+  - **Numbers after the review:** `verify` 6 stages, all PASS; 553 server tests (0); 658
+    plugin-core tests (+1); `probe` 113 PASS, 0 FAIL, 34 MEASURED, 93.5 s with 0 documents open;
+    the rest unchanged.
 
 ---
 

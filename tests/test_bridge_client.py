@@ -345,6 +345,10 @@ def test_doctor_and_the_probe_still_reach_a_plugin_of_another_version(live: Live
     )
     assert isinstance(reaching.call("echo"), Done)
     assert isinstance(reaching.health(), Done)
+    _write_bridge_file(
+        live.bridge_file.parent, info["port"], info["session_id"], token=info["token"], protocol=2
+    )
+    assert isinstance(reaching.call("echo"), Done)
 
 
 def test_a_refused_connection_reports_what_the_bridge_file_says_now(tmp_path: Path) -> None:

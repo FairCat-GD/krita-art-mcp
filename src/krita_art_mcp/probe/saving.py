@@ -17,6 +17,7 @@ from krita_art_mcp.probe import fixtures
 from krita_art_mcp.probe.common import (
     brush_args,
     by_name,
+    close,
     document_dirty,
     finished,
     guard,
@@ -29,7 +30,7 @@ from krita_art_mcp.probe.common import (
     stroke_args,
 )
 from krita_art_mcp.probe.opening import UNWRITABLE
-from krita_art_mcp.probe.report import Report, close, code, tool
+from krita_art_mcp.probe.report import Report, code, tool
 from krita_art_mcp.tools.changes import resolve_update
 from krita_art_mcp.tools.documents import SRGB_PROFILE
 from krita_art_mcp.tools.painting import stroke_op

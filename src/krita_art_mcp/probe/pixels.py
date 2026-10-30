@@ -3,7 +3,6 @@ import hashlib
 import io
 import os
 import time
-import uuid
 from pathlib import Path
 from typing import Any
 
@@ -14,8 +13,8 @@ from PIL import Image
 
 from krita_art_mcp.bridge_client import BridgeClient, Done
 from krita_art_mcp.probe import fixtures
-from krita_art_mcp.probe.common import open_args
-from krita_art_mcp.probe.report import Report, call, close, code, differs, tool
+from krita_art_mcp.probe.common import close, harness_call, open_args
+from krita_art_mcp.probe.report import Report, call, code, differs, tool
 from krita_art_mcp.tools.documents import SRGB_PROFILE
 from krita_art_mcp.tools.observe import BLEND_MODES
 
@@ -359,7 +358,7 @@ async def _k46(
             "layer_id": base,
             "rect": {"x": 4, "y": 40, "width": 8, "height": 6},
         }
-        made = client.call("harness.select_mask", arguments, request_id=str(uuid.uuid4()))
+        made = harness_call(client, "harness.select_mask", **arguments)
         if not isinstance(made, Done):
             report.check(name, False, f"harness.select_mask: {made}")
             return

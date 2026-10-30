@@ -12,8 +12,8 @@ from mcp import Client
 from krita_art_mcp import baselines, paths, roots
 from krita_art_mcp.bridge_client import BridgeClient, Done, Failed
 from krita_art_mcp.probe import fixtures
-from krita_art_mcp.probe.common import open_args
-from krita_art_mcp.probe.report import Report, close, code, differs, sheet_cell, tool
+from krita_art_mcp.probe.common import close, harness_call, open_args
+from krita_art_mcp.probe.report import Report, code, differs, sheet_cell, tool
 from krita_art_mcp.tools.saving import file_sha256
 
 COPY_NAME = re.compile(r"^\d{8}T\d{6}\.\d{3}Z-probe\.(ora|kra|png)$")
@@ -114,10 +114,10 @@ async def _make_kra(report: Report, a: Client, client: BridgeClient, ora: Path, 
 
 def _harness_export(client: BridgeClient, document_id: str, target: Path) -> Any:
     arguments = {"document_id": document_id, "target_path": str(target)}
-    outcome = client.call("harness.export_kra", arguments, request_id=str(uuid.uuid4()))
+    outcome = harness_call(client, "harness.export_kra", **arguments)
     if _failed_code(outcome) == "BUSY":
         # Krita's autosave can hold the document for a moment; the export wrote nothing.
-        outcome = client.call("harness.export_kra", arguments, request_id=str(uuid.uuid4()))
+        outcome = harness_call(client, "harness.export_kra", **arguments)
     return outcome
 
 

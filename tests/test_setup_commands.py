@@ -135,9 +135,7 @@ def _setup(
 
 REPO_HASH = plugin_files.source_hash(REPO_PLUGIN / paths.PLUGIN_NAME)
 UNREACHABLE = Failed(error_body("KRITA_NOT_RUNNING", "no bridge", details={"fix": "Restart."}))
-OTHER_PROTOCOL = Failed(
-    error_body("PROTOCOL_MISMATCH", details={"bridge_protocol": 2, "server_protocol": 1})
-)
+OTHER_PROTOCOL = Done({"protocol": 2, "plugin_hash": REPO_HASH, "krita_version": "5.3.4"}, None)
 
 
 @pytest.mark.parametrize(

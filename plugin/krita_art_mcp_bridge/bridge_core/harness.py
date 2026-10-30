@@ -3,7 +3,7 @@ from pathlib import Path
 from typing import Any
 
 from . import files, nodes, paths, roots
-from .errors import BridgeError, exact, no_arguments, number
+from .errors import BridgeError, exact, integer, no_arguments, number
 from .history import in_front
 from .jobs import Call, Handler
 from .pixels import check_rect
@@ -110,7 +110,7 @@ def handlers(registry: Registry, port: DocumentsPort, data: Path) -> dict[str, H
         exact(args, TIMING_FIELDS)
         handle = fixture(args["document_id"])
         trials = args["trials"]
-        if not isinstance(trials, int) or isinstance(trials, bool) or not 1 <= trials <= MAX_TRIALS:
+        if not integer(trials) or not 1 <= trials <= MAX_TRIALS:
             raise BridgeError("INVALID_ARGUMENT", f"trials is from 1 to {MAX_TRIALS}.")
         try:
             with in_front(port, handle.document):
@@ -233,7 +233,7 @@ def _check_view(view: Any) -> None:
             good
             and isinstance(pan, list)
             and len(pan) == 2
-            and all(isinstance(value, int) and not isinstance(value, bool) for value in pan)
+            and all(integer(value) for value in pan)
         )
     if not good:
         raise BridgeError("INVALID_ARGUMENT", "view is malformed.")
