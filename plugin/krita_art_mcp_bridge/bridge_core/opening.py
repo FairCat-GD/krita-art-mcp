@@ -79,6 +79,8 @@ def handlers(
             if working == os.path.dirname(source):
                 message = "working_dir must not be the source's own folder."
                 raise BridgeError("INVALID_ARGUMENT", message, False, {"field": "working_dir"})
+        # Taken before the hash, so a change while it runs shows as a moved stat.
+        stat = files.source_stat(source)
         # Nothing has changed up to here, so only these refusals may be retryable.
         if working is None:
             files.check_source(source, args["source_sha256"])
@@ -87,13 +89,18 @@ def handlers(
             path = files.working_copy(source, working, args["source_sha256"], now())
         made = _Made(None if working is None else path)
         try:
-            return _open(made, path, source, args, call)
+            return _open(made, path, source, stat, args, call)
         except BaseException as raised:
             made.undo(registry, port, args["mode"], call, raised)
             raise
 
     def _open(
-        made: _Made, path: str, source: str, args: dict[str, Any], call: Call
+        made: _Made,
+        path: str,
+        source: str,
+        stat: files.Stat | None,
+        args: dict[str, Any],
+        call: Call,
     ) -> dict[str, Any]:
         document = made.document = port.open(path)
         port.show(document)
@@ -120,6 +127,7 @@ def handlers(
         handle.path = path
         handle.source_path = source
         handle.source_sha256 = args["source_sha256"]
+        handle.source_stat = stat
         handle.baseline_id = baseline_id
         handle.protected = protected
         return {

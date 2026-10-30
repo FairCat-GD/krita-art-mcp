@@ -9,6 +9,7 @@ from .jobs import Call, Handler
 from .ledger import Step, fingerprint, fingerprint_of, selection_state
 from .pixels import paint_layer
 from .port import DocumentsPort
+from .rects import inside
 from .registry import Handle, Registry
 
 SELECTION_FIELDS = {
@@ -61,7 +62,7 @@ def handlers(registry: Registry, port: DocumentsPort, data: Path) -> dict[str, H
         if shape["kind"] == "mask":
             masks.source(data, shape, "mask_uri")
             rect = masks.box(shape)
-            masks.inside(rect, size, "shape")
+            inside(rect, size, "shape")
         elif shape["kind"] == "layer_alpha":
             paint_layer(port.tree(document), shape["layer_id"])
         elif shape["kind"] == "all":

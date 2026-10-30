@@ -1,66 +1,56 @@
-Read `REVIEW-2026-10-30.md` §3 (the findings block 13a names), §6 and §8.3; `SPEC.md` §4, §5
-(invariants 6, 9, 11), decision 23 with its note; `PDD.md` Part 8 (*Bridge protocol*, K12, K45);
-`CLAUDE.md`; your block (13a) in docs/spec/SESSIONS.md and block 13's done-note; then this file.
-Do Session 13a: the review fixes after the every-tool-built milestone. 13a has these parts:
-- `serve` refuses a plugin of another version, and `ephemeral` becomes a required call field
-  (F1, F10);
-- the wait-before-read scan covers the three read names (F2);
-- inspect counts its selection in the plugin, with no transfer file (F3);
-- `baseline_untouched` by stat first, a hash only when the stat moved (F9);
-- no hidden save file is left on the finish's stat-mismatch path or when the owner closes the
-  document by hand mid-finish (F17);
-- one harness namespace: `probe.preset_xml` goes, the two measurements move under `harness.*`
-  (F6);
-- one preset lookup and one `toXML` per stroke, one tree per update phase (F7);
-- the probe's shared helpers in one public home (F5);
-- the small ones: the single-point branch, two dead parameters, the duplicated rect and integer
-  helpers, the second validator, the double serialisations (F12, F13, F20, F21, F22);
-- four cross-side copies pinned (F18);
-- the lines: the probe's measured names, README's save line, the `[0.12.0]` link, the
-  open-document count beside the probe's time (F14, F15, F16, F34).
+Read `SPEC.md` §1 (decisions 28, 30, 31), §9; `PDD.md` Part 4 (*Server instructions*), Part 12;
+`reference/contract-package/krita-mcp-art-workflow-brief.md` §7; `REVIEW-2026-10-30.md` §5, §8.7
+and F4, F8; `CLAUDE.md`; your block (14) in docs/spec/SESSIONS.md and block 13a's done-note; then
+this file. Do Session 14: acceptance. 14 has these parts:
+- the full harness, every check from sessions 2–12 with timings recorded;
+- the contract's six acceptance exercises, as scoped in SPEC §9;
+- the H2 preset sheet: six stock presets as shipped, flat strokes, for the owner to judge;
+- H3 by hand: the owner registers the server in Codex, and the Codex agent describes a capture of
+  a known test pattern;
+- the server instructions finalised at or under 4,096 characters, naming the save's
+  8192 × 8192 bound (F4);
+- N-01's selected-canvas variant, measured and recorded (F8);
+- N-04 in the harness, its list of writes from the review's §5 and §8.7;
+- F-24, a floating message while a job runs, if time allows.
 
-Release 0.13.0.
+Ask at the start: which six stock presets the H2 sheet uses. Propose them from
+`krita_resource_list`, and the owner confirms.
+
+Release 0.14.0.
 
 ## State you need that is not in the specs
 
-- **Round 1 is the Phase 1 build.** Sessions 0 to 13 are done, 6a, 7a and 10a included. 13a, 14
-  and 15 remain: 13a (0.13.0), 14 (0.14.0) and 15 (0.15.0, the round's close). Review 13 inserted
-  13a on 2026-10-30, so 14 and 15 moved from 0.13.0–0.14.0.
-- **The push status.** `origin` is the private GitHub repository. `origin/main` holds everything
-  through 13's review-fixes commit ("review: the scan remedy would have flagged the allowed
-  write, and 6 smaller"), pushed with the owner's approval; nothing is local. List
-  `origin/main..HEAD` before any push.
-- **What 13 found that 13a builds on:** block 13a holds every item with its `file:line` pointer,
-  and the REVIEW's §3 the evidence; both point at `f61c7f2`, which is still the code. Beyond
-  the block:
-  - **`doctor` already turns a `PROTOCOL_MISMATCH` health into step 5** (`doctor.py:38-48`),
-    reading the protocol numbers from the error's details; the probe's first check
-    (`probe/__init__.py:68-71`) treats any failed health as "no bridge" and must learn the
-    mismatch too.
-  - **The test fixtures write `plugin_version: "0.2.0"`** (`tests/test_bridge_client.py:203-218`)
-    and list `bridge.json`'s keys (`test_bridge_lifecycle.py:40-52`); the test world in
-    `tests/support/worlds.py` runs a real `Bridge`, whose version is the package's.
-  - **`FakeResources.asked`** (`tests/fixtures/fake_krita.py:919, 927-929`) counts the
-    `preset_xmls` calls a stroke makes, so F7's new count can be held by a test.
-  - **`harness.retention` needs the `Jobs` object,** which only `Bridge` holds
-    (`bridge_core/bridge.py:47, 59-61`); it may stay in `bridge.py` under its new name.
-  - **`Pending.stat` and `_stat`** (`bridge_core/saving.py:70, 163, 536-541`) are the
-    inode-size-mtime pattern F9 reuses at the open (`opening.py:119-124`).
-  - **The hash's cold cost is unmeasured:** the REVIEW's 0.07 s per 200 MB is a warm floor on
-    CPython 3.12; 13a measures the cold case once inside Krita before changing the hash.
-- **What the spec said that turned out wrong or harder:** nothing new in 13; the handoff's
-  earlier notes (H4's 5 s save, ORA's opacity drift, decision 29's cases seen live) stand.
-- **Decisions written down nowhere else:** the owner's choice of landings is in the REVIEW's §6
-  and block 13's done-note; the protocol choice is decision 23's note, with a pointer in §4.
-- **Baseline** (13 as found; 13a changes code, so the test counts move by what it adds and the
-  probe gains one line):
+- **Round 1 is the Phase 1 build.** Sessions 0 to 13a are done, 6a, 7a and 10a included. 14
+  (0.14.0) and 15 (0.15.0, the round's close) remain.
+- **The push status.** `origin` is the private GitHub repository. 13a's commits are local;
+  `origin/main` holds everything through review 13's "review: the scan remedy would have flagged
+  the allowed write, and 6 smaller". List `origin/main..HEAD` before any push.
+- **What 13a left that 14 builds on:**
+  - **`probe/common.py`** is the one home of the probe's shared helpers, public: `guard`,
+    `by_name`, `history_args`, `harness_call`, `open_args`, `open_working`, `inspect_data`,
+    `document_dirty`, `capture`, `capture_composite`, `capture_selection`, `brush_colour`,
+    `brush_args`, `stroke_args`, `line_points`, `finished`, `krita_rss_kb`, `megabytes`. The
+    acceptance exercises should import from it. `report.py` keeps `tool`, `close`, `code`,
+    `differs` and `sheet_cell`.
+  - **`BridgeClient(any_plugin=True)`** is what `doctor` and the probe use; a default client,
+    `serve`'s, refuses a plugin of another version.
+  - **`Report.open_documents`** prints beside the wall time.
+  - **`harness.retention` and `harness.preset_digests`** replaced the `probe.*` ops; they take no
+    document and no folder gate.
+  - **The dead `SILENT_S`** (`probe/saving.py`) was in the review's §8.1 and in no block; it is
+    still there for the close's tidying.
+- **What the spec said that turned out wrong or harder:** block 13a's gate would have blinded
+  `doctor`'s unsaved count on a stale plugin, and its "one `toXML`" contradicted its own "the
+  checks stay"; both are amendments in the done-note.
+- **Decisions written down nowhere else:** the block's seven amendments are in its done-note; SPEC
+  decision 24 has its dated note.
+- **Baseline** (13a, 0.13.0):
   - `verify`: 6 stages, all PASS;
-  - 549 server tests passed, 0 skipped;
-  - 636 plugin-core tests passed, 0 skipped;
-  - `probe`: 113 PASS, 0 FAIL, 34 MEASURED; 95.6 s on an empty Krita, 145.6 s with 87 documents
-    open (document ops about three times slower, the benchmarks unmoved);
-  - 19 registered tools; 19 schema files; instructions 3,524 characters (session 14 finalises
-    them under 4,096 with 572 to spare); 30 error codes; 33 bridge ops (32 after 13a).
+  - 553 server tests passed, 0 skipped;
+  - 657 plugin-core tests passed, 0 skipped;
+  - `probe`: 113 PASS, 0 FAIL, 34 MEASURED; 92.4 s with 0 documents open;
+  - 19 registered tools; 19 schema files; instructions 3,524 characters (572 to spare); 30 error
+    codes; 32 bridge ops.
 - **Not done:**
   - **The owner's roots.** `doctor` step 6 FAILs with "no roots" until the owner runs
     `roots add`. No session runs it, and the probe needs no roots.
@@ -68,7 +58,7 @@ Release 0.13.0.
     wrap-around put back after a stroke; whether a K46 switch visibly moves the tab; the overlay
     in the mask display mode; K46 with the global selection's mask; a layer style refusing
     region scope; a lazy baseline from a file saved with a selection mask active; an autosave
-    holding a document during a save.
+    holding a document during a save; a document closed by hand during a save's finish.
   - **In the backlog from review 13:** saving over 8192 × 8192 (banded reads), one validator of
     argument shape or parity tests, schemas that advertise what refuses, one verified-mutation
     frame, a journal retention rule.
@@ -82,20 +72,18 @@ Release 0.13.0.
     `/usr/bin/python3` is 3.9.6, never use it for the project.
   - **The owner's Krita is live.** No session touches their documents. Restart Krita only when
     `doctor` reports 0 unsaved documents, and ask the owner first; another agent may be working.
-    `osascript` quitting Krita reports "User canceled" yet Krita quits: wait for the process to go.
-    On 2026-10-30 it held 87 open documents, none unsaved.
+    `osascript` quitting Krita reports "User canceled" yet Krita quits: wait for the process to go,
+    then a few seconds more, because `open` straight after fails with -600.
   - **Nothing private in any file or commit message.** Last before each commit: draft the
     message into `"$(git rev-parse --git-dir)/COMMIT_DRAFT"`, run `verify` with it
     (`--message`), commit with `git commit -F`, delete the draft.
 - **Every plugin change needs `install-plugin` and a Krita restart** before `probe` or `doctor`
   step 5 passes. That includes the version bump, which changes the plugin's hash, so bump before
-  the first live run. From 13a, `serve` refuses a plugin of another version too, so a stale
-  plugin fails every tool with `PROTOCOL_MISMATCH` until Krita restarts.
-- **The version check meets the probe first.** The probe's "the bridge answers its health check"
-  goes through `_open`; make it report a `PROTOCOL_MISMATCH` the way `doctor` step 5 does (the
-  install fix), or the first live run after the bump reads as a dead bridge.
-- **The wait scan must never match `setPixelData`.** Its one allowed site writes a selection
-  without a wait; the scan names the three read names, not a suffix.
+  the first live run. **`serve` now refuses a plugin of another version:** a stale plugin fails
+  every tool with `PROTOCOL_MISMATCH` until Krita restarts.
+- **A release restarts the MCP client too.** A `serve` already running keeps its old version, so
+  after a bump it refuses the new plugin until its client restarts. H3 and any Claude Code use of
+  the registered server need a fresh client after 0.14.0's install.
 - **Before the probe's paint checks, the stock presets must be listed in Krita:**
   `b) Basic-2 Opacity`, `b) Airbrush Soft`, `y) Texture Spray`, `y) Texture Wood Fiber`.
 - **Brush state is window-wide (K3).** Any live run that paints changes the owner's current
@@ -105,12 +93,12 @@ Release 0.13.0.
 - **If Krita dies silently about 5 s into a call,** suspect a socket before Krita: a client that
   gives up closes its connection, and only `SO_NOSIGPIPE` keeps the bridge's reply from killing
   Krita.
-- **Krita's memory grows across large opens and saves** (2.5 GB after a probe run). Restart it,
-  at 0 unsaved, before measuring.
-- **A save never overwrites the working copy.** The lazy baseline is read from that file; the save
-  writes only beside its own path.
-- **A review fix must not loosen a refusal.** F3 changes who counts, F9 when the hash runs; what
-  inspect reports and what a changed source answers stay the same.
+- **Krita's memory grows across large opens and saves** (3.4 GB after the long save in a probe
+  run). Restart it, at 0 unsaved, before measuring.
+- **The instructions have 572 characters to spare,** and the review's §2.4 names what an agent
+  would meet that they do not say: erasing refused, a stroke under half a pixel refused, region
+  scope needing the pixel engine, and the save's bound.
+- **The acceptance fixtures are fictional.** Never use the first game's art.
 - **Comments state the present.** No session ids, no "used to", no review stories, no finding
   numbers in code.
 - **Every push needs its own approval.** List `origin/main..HEAD` first.

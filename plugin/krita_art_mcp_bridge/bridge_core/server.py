@@ -17,9 +17,9 @@ from .jobs import Jobs
 
 MAX_BODY = 64 * 1024 * 1024
 MAX_WAIT_S = 10.0
-CALL_FIELDS = {"op", "args", "request_id", "operation_id", "client", "wait_s"}
-# Set by the server on a read whose request_id it minted, so its operation need not outlive it.
-OPTIONAL_CALL_FIELDS = {"ephemeral"}
+# `ephemeral` is true on a read whose request_id the server minted: its operation need not
+# outlive it.
+CALL_FIELDS = {"op", "args", "request_id", "operation_id", "client", "wait_s", "ephemeral"}
 FINAL = ("done", "error")
 OPERATIONS = "/v1/operations/"
 
@@ -181,7 +181,7 @@ class _Handler(BaseHTTPRequestHandler):
             body["op"],
             body["args"],
             body["client"],
-            body.get("ephemeral", False),
+            body["ephemeral"],
         )
         if operation is None:
             return _failure(503, "KRITA_NOT_RUNNING", "Krita is quitting.")
@@ -202,12 +202,9 @@ class _Handler(BaseHTTPRequestHandler):
 
 
 def _call_problem(body: dict[str, Any]) -> str | None:
-    if not CALL_FIELDS <= set(body) <= CALL_FIELDS | OPTIONAL_CALL_FIELDS:
-        return (
-            f"A call has the fields {sorted(CALL_FIELDS)}, and may have "
-            f"{sorted(OPTIONAL_CALL_FIELDS)}."
-        )
-    if not isinstance(body.get("ephemeral", False), bool):
+    if set(body) != CALL_FIELDS:
+        return f"A call has the fields {sorted(CALL_FIELDS)}."
+    if not isinstance(body["ephemeral"], bool):
         return "ephemeral must be true or false."
     for field in ("op", "request_id", "operation_id"):
         if not isinstance(body[field], str) or not body[field]:

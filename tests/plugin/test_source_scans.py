@@ -210,6 +210,10 @@ def _impure_core_imports(tree: ast.Module, module: str, is_package: bool) -> lis
     ]
 
 
+# Every read libkis offers; never setPixelData, whose one allowed site writes without a wait.
+PIXEL_READS = ("pixelData", "projectionPixelData", "pixelDataAtTime")
+
+
 def _reads_before_waiting(tree: ast.Module) -> list[str]:
     # Invariant 6: a function that reads pixels calls waitForDone() before its first read.
     hits = []
@@ -221,10 +225,11 @@ def _reads_before_waiting(tree: ast.Module) -> list[str]:
             for node in ast.walk(function)
             if isinstance(node, ast.Call)
             and isinstance(node.func, ast.Attribute)
-            and node.func.attr in ("pixelData", "waitForDone")
+            and node.func.attr in (*PIXEL_READS, "waitForDone")
         )
         names = [name for _, _, name in calls]
-        if "pixelData" in names and "waitForDone" not in names[: names.index("pixelData")]:
+        first = next((index for index, name in enumerate(names) if name in PIXEL_READS), None)
+        if first is not None and "waitForDone" not in names[:first]:
             hits.append(f"{function.lineno}: {function.name}")
     return hits
 
@@ -360,10 +365,28 @@ def test_the_adapter_waits_for_krita_before_every_pixel_read() -> None:
             False,
         ),
         ("def name(doc):\n    return doc.name()", False),
+        ("def read(node):\n    return node.projectionPixelData(0, 0, 1, 1)", True),
+        ("def read(node):\n    return node.pixelDataAtTime(0, 0, 1, 1, 3)", True),
+        ("def read(node, doc):\n    doc.waitForDone()\n    return node.pixelDataAtTime()", False),
+        ("def write(selection):\n    selection.setPixelData(b'', 0, 0, 0, 0)", False),
     ],
 )
 def test_a_read_before_the_wait_is_found(source: str, refused: bool) -> None:
     assert bool(_reads_before_waiting(ast.parse(source))) is refused
+
+
+def test_the_adapter_adds_one_bridge_op_and_the_rest_are_harness_ops() -> None:
+    tree = ast.parse((PLUGIN / PACKAGE / "krita_adapter" / "ops.py").read_text(encoding="utf-8"))
+    [handlers] = [
+        node.value
+        for node in ast.walk(tree)
+        if isinstance(node, ast.AnnAssign)
+        and isinstance(node.target, ast.Name)
+        and node.target.id == "HANDLERS"
+    ]
+    assert isinstance(handlers, ast.Dict)
+    names = [key.value for key in handlers.keys if isinstance(key, ast.Constant)]
+    assert names == ["bridge.unsaved_documents", "harness.preset_digests"]
 
 
 def test_bridge_core_imports_only_the_standard_library_and_itself() -> None:

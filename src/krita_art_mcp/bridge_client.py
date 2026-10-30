@@ -8,7 +8,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-from krita_art_mcp import paths, processes, setup_checks
+from krita_art_mcp import __version__, paths, processes, setup_checks
 from krita_art_mcp.errors import CODES, PROTOCOL, error_body
 
 # The server owns the wait budget: the bridge cannot answer while a Krita call holds the GIL
@@ -62,8 +62,6 @@ class _Bridge:
     port: int
     token: str
     session_id: str
-    # Whether the bridge takes a call's `ephemeral` field; an older plugin refuses it.
-    ephemeral_reads: bool = False
 
 
 class _Malformed(Exception):
@@ -81,6 +79,9 @@ class BridgeClient:
         is_live_krita: Callable[[int], bool] = processes.is_live_krita,
         explain: Callable[[], setup_checks.Step] | None = None,
         identity: dict[str, Any] | None = None,
+        # For doctor and the probe, which judge a stale plugin by its hash and must still read
+        # the unsaved count the restart rule needs.
+        any_plugin: bool = False,
     ) -> None:
         self._bridge_file = bridge_file or paths.bridge_file()
         self._budget_s = budget_s
@@ -89,6 +90,7 @@ class BridgeClient:
         self._is_live_krita = is_live_krita
         self._explain = explain or _explain_not_running
         self._identity = identity
+        self._any_plugin = any_plugin
         # The Krita session of each call this process left running, so a later poll can tell a
         # call still on its way from one the bridge never heard of.
         self._sent: dict[str, str] = {}
@@ -134,24 +136,24 @@ class BridgeClient:
         if client is None:
             message = "The server could not read its own start time, which the lease needs."
             return Failed(error_body("INTERNAL_ERROR", message, retryable=True))
-        body: dict[str, Any] = {
-            "op": op,
-            "args": args or {},
-            "request_id": request_id or f"req-{uuid.uuid4().hex}",
-            "operation_id": operation_id,
-            "client": client,
-            "wait_s": 0.0,
-        }
-        if request_id is None and bridge.ephemeral_reads:
-            # Nobody retries an id minted here, so the bridge may forget the call once answered.
-            body["ephemeral"] = True
-        call: dict[str, Any] | None = body
-        if len(json.dumps(call).encode("utf-8")) > MAX_BODY:
+        body = json.dumps(
+            {
+                "op": op,
+                "args": args or {},
+                "request_id": request_id or f"req-{uuid.uuid4().hex}",
+                "operation_id": operation_id,
+                "client": client,
+                "wait_s": self._wait_s(deadline),
+                # Nobody retries an id minted here, so the bridge may forget the call once answered.
+                "ephemeral": request_id is None,
+            }
+        ).encode("utf-8")
+        if len(body) > MAX_BODY:
             return Failed(error_body("INVALID_ARGUMENT", "The call is over 64 MB."))
         refused = before_send(bridge.session_id, operation_id) if before_send else None
         if refused is not None:
             return refused
-        return self._follow(bridge, operation_id, call, deadline)
+        return self._follow(bridge, operation_id, body, deadline, op=op)
 
     def operation(self, operation_id: str, *, sent_in: str | None = None) -> Outcome:
         # Follows a call already sent, for one more wait budget. `sent_in` names the Krita
@@ -175,7 +177,7 @@ class BridgeClient:
             return refused
         path = f"/v1/operations/{operation_id}/cancel"
         try:
-            status, reply = self._request(bridge, "POST", path, {}, HEALTH_TIMEOUT_S)
+            status, reply = self._request(bridge, "POST", path, b"{}", HEALTH_TIMEOUT_S)
         except ConnectionRefusedError:
             return self._refused()
         except (OSError, _Malformed):
@@ -193,9 +195,10 @@ class BridgeClient:
         self,
         bridge: _Bridge,
         operation_id: str,
-        call: dict[str, Any] | None,
+        call: bytes | None,
         deadline: float,
         strict: bool = False,
+        op: str | None = None,
     ) -> Outcome:
         # The bridge, its token and its session are pinned for the whole call, so a Krita that
         # restarts mid-call is noticed rather than silently asked again.
@@ -205,11 +208,9 @@ class BridgeClient:
         answered = False
         # When the bridge began answering 404 promptly; silence or a slow reply restarts it.
         unknown_since: float | None = None
-        op = None if call is None else call["op"]
         while True:
-            wait_s = max(0.0, min(self._poll_s, deadline - time.monotonic()))
+            wait_s = self._wait_s(deadline)
             if call is not None:
-                call["wait_s"] = wait_s
                 method, path = "POST", "/v1/call"
             else:
                 method, path = "GET", f"/v1/operations/{operation_id}?wait_s={wait_s:.3f}"
@@ -260,6 +261,9 @@ class BridgeClient:
                 self._sent[operation_id] = bridge.session_id
                 return Pending(last_status, operation_id, op)
 
+    def _wait_s(self, deadline: float) -> float:
+        return max(0.0, min(self._poll_s, deadline - time.monotonic()))
+
     def _open(self) -> _Bridge | Failed:
         try:
             info = json.loads(self._bridge_file.read_text(encoding="utf-8"))
@@ -273,17 +277,18 @@ class BridgeClient:
         if info.get("protocol") != PROTOCOL:
             details = {"bridge_protocol": info.get("protocol"), "server_protocol": PROTOCOL}
             return Failed(error_body("PROTOCOL_MISMATCH", details=details))
+        if not self._any_plugin and info.get("plugin_version") != __version__:
+            return _other_version(info.get("plugin_version"))
         port, token, session_id = info.get("port"), info.get("token"), info.get("session_id")
         if not (isinstance(port, int) and isinstance(token, str) and isinstance(session_id, str)):
             return Failed(error_body("INTERNAL_ERROR", "bridge.json is malformed; restart Krita."))
-        return _Bridge(port, token, session_id, info.get("ephemeral_reads") is True)
+        return _Bridge(port, token, session_id)
 
     def _request(
-        self, bridge: _Bridge, method: str, path: str, body: Any, timeout: float
+        self, bridge: _Bridge, method: str, path: str, data: bytes | None, timeout: float
     ) -> tuple[int, dict[str, Any]]:
         connection = http.client.HTTPConnection("127.0.0.1", bridge.port, timeout=timeout)
         headers = {"Authorization": f"Bearer {bridge.token}"}
-        data = None if body is None else json.dumps(body).encode("utf-8")
         if data is not None:
             headers["Content-Type"] = "application/json"
         try:
@@ -326,8 +331,9 @@ class BridgeClient:
 
     def _refused(self) -> Failed:
         # Nothing was sent. A Krita that died since bridge.json was read is simply not running.
-        if isinstance(self._open(), Failed):
-            return self._not_running()
+        opened = self._open()
+        if isinstance(opened, Failed):
+            return opened
         message = "Krita runs, but its bridge refused the connection; retry, or restart Krita."
         return Failed(error_body("INTERNAL_ERROR", message, retryable=True))
 
@@ -352,6 +358,14 @@ def _bridge_error(body: Any) -> dict[str, Any]:
     ):
         return {key: body[key] for key in ("code", "message", "retryable", "details")}
     return error_body("INTERNAL_ERROR", "The bridge sent a malformed error.")
+
+
+def _other_version(found: Any) -> Failed:
+    # The two ship together, so neither ever meets an op or a field the other lacks.
+    fix = f"{setup_checks.INSTALL} If the plugin is the newer, restart the MCP client instead."
+    message = f"Krita runs plugin {found}, and this server is {__version__}. {fix}"
+    details = {"plugin_version": found, "server_version": __version__, "fix": fix}
+    return Failed(error_body("PROTOCOL_MISMATCH", message, details=details))
 
 
 def _uncertain(operation_id: str, reason: str) -> Failed:

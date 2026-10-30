@@ -94,9 +94,12 @@ def selection_state(
     return clipped, b"" if pixels is None else bytes(pixels)
 
 
-def fingerprint(port: DocumentsPort, document: Any) -> Fingerprint:
+def fingerprint(
+    port: DocumentsPort, document: Any, tree: dict[str, Any] | None = None
+) -> Fingerprint:
+    # tree is one the caller read since the document last changed.
     size = port.describe(document)["size_px"]
-    return fingerprint_of(port.tree(document), selection_state(port, document, size))
+    return fingerprint_of(tree or port.tree(document), selection_state(port, document, size))
 
 
 def fingerprint_of(tree: dict[str, Any], state: tuple[dict[str, int], Any] | None) -> Fingerprint:

@@ -10,6 +10,7 @@ from .errors import BridgeError, exact
 from .jobs import Call, Handler
 from .ledger import Fingerprint, Step, fingerprint
 from .port import DocumentsPort
+from .rects import union
 from .registry import Handle, Registry
 
 HISTORY_FIELDS = {"document_id", "action", "steps"}
@@ -198,7 +199,7 @@ def handlers(registry: Registry, port: DocumentsPort, data: Path) -> dict[str, H
                 if not applied:
                     _refuse(handle, outcome, seen)
                 break
-        region = verification.union(step.region for step in applied)
+        region = union(step.region for step in applied)
         pixels = None
         if region is not None:
             pixels = _capture(handle, region)

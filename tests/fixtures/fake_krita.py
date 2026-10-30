@@ -653,7 +653,7 @@ class FakePort:
         if not isinstance(found, bytearray):
             self.canvas[key] = bytearray(found or bgra(width, height))
 
-    def set_brush(self, document: Any, brush: dict[str, Any]) -> dict[str, Any]:
+    def set_brush(self, document: Any, brush: dict[str, Any], preset: Any) -> dict[str, Any]:
         for key in BRUSH_ORDER:
             self.brush_order.append(key)
             if key in self.ignore_brush:
@@ -662,17 +662,14 @@ class FakePort:
                 # Activating a preset resets the composite op (K3).
                 self.brush_now["blend_mode"] = "normal"
             self.brush_now[key] = copy.deepcopy(self.adjust.get(key, brush[key]))
-        return self._brush()
+        found = copy.deepcopy(self.brush_now)
+        found["preset_xml"] = self.preset_xml.get(found["preset"], "")
+        return found
 
     def brush(self, document: Any) -> dict[str, Any]:
         self.brush_now.update(self.brush_drift)
         self.brush_drift = {}
-        return self._brush()
-
-    def _brush(self) -> dict[str, Any]:
-        found = copy.deepcopy(self.brush_now)
-        found["preset_xml"] = self.preset_xml.get(found["preset"], "")
-        return found
+        return copy.deepcopy(self.brush_now)
 
     def paint_ability(self, document: Any, layer_id: str) -> str:
         self.calls.append("ability")
@@ -917,16 +914,32 @@ class FakeResources:
         self.profile_names = ["sRGB-elle-V2-srgbtrc.icc", "sRGB built-in"]
         self.palette_list = [{"name": "Default", "file": "default.kpl"}]
         self.asked: list[list[str]] = []
+        # Each call a stroke makes, by method: the walks and serialisations it costs.
+        self.calls: list[str] = []
 
     def add_stroke_presets(self) -> None:
         self.preset_list += [{"name": name, "file": file} for file, name, _ in PRESETS[3:]]
 
     def presets(self) -> list[dict[str, str]]:
+        self.calls.append("presets")
         return list(self.preset_list)
 
     def preset_xmls(self, names: list[str]) -> dict[str, str]:
+        self.calls.append("preset_xmls")
         self.asked.append(list(names))
         return {name: self.xmls.get(name, "") for name in names}
+
+    def preset(self, preset_id: str) -> dict[str, Any] | None:
+        self.calls.append("preset")
+        for entry in self.preset_list:
+            if entry["file"] == preset_id:
+                name = entry["name"]
+                return {"name": name, "xml": self.xmls.get(name, ""), "resource": name}
+        return None
+
+    def preset_xml(self, resource: Any) -> str:
+        self.calls.append("preset_xml")
+        return self.xmls.get(resource, "")
 
     def profiles(self, model: str, depth: str) -> list[str]:
         return list(self.profile_names) if (model, depth) == ("RGBA", "U8") else []

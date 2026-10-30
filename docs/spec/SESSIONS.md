@@ -3780,6 +3780,90 @@ to 0.14.0–0.15.0. The pointers are to the code as the review saw it (`f61c7f2`
 - **No schema changes**, so `amend_schemas.py` is not needed; its `--check` test runs anyway.
 - **Restart Krita only at 0 unsaved documents** (decision 21).
 
+**Done (2026-10-30, 0.13.0).**
+- **Decided with the owner in plan mode:** the seven amendments below, and that the session
+  restarts Krita itself once `doctor` reports 0 unsaved, the 87 open documents closing with it.
+- **F1, F10.** `BridgeClient._open` refuses a `plugin_version` other than `__version__` with
+  `PROTOCOL_MISMATCH`, naming both versions and both fixes; `any_plugin=True` skips the gate for
+  `doctor` and the probe. `_refused` returns `_open`'s own failure. `ephemeral` is a required call
+  field, sent on every call; the `bridge.json` flag and `_Bridge.ephemeral_reads` are gone.
+- **F2.** `PIXEL_READS` names the three reads; the rule finds the first of any of them.
+- **F3.** `inspection._selection` counts `selected_pixels` and `coverage_px` and keeps the
+  wrong-size refusal `transfer.write` gave; `resolve_inspect` is gone and `RECEIPTS`'s entry has
+  no resolver.
+- **F9.** `files.source_stat` and `files.unchanged(path, expected, stat)`; the open stats the
+  source before it hashes; `Handle.source_stat`.
+- **F17.** `Pending.discard` and `Handle.drop_pending_save`, used by a new save, a close, the
+  finish's mismatch and `Registry.sync`, which reassigns its handles first.
+- **F6.** `probe.preset_xml` is gone; `harness.preset_digests` and `harness.retention`.
+- **F7.** `ResourcesPort.preset(preset_id)` returns `{name, xml, resource}` in one walk;
+  `set_brush` takes the resource, and `presets()` runs only for a refusal's `nearest`.
+  `fingerprint(port, document, tree)`, `_blend` returns its end tree, and that tree serves
+  `_moved` and the report when nothing moved it after; `tree` stays the rollback's target.
+- **F12, F13, F20, F21, F22.** The one-point branch, `binary` on `ellipse` and `document_id` on
+  `pending` are gone; `bridge_core/rects.py` holds `union` and `inside`, `errors.integer` the
+  integer check; `schemas.output_validator` is cached and shared; `tools._size` measures an image
+  and dumps the rest; a call is encoded once.
+- **F5.** `probe/common.py` holds the shared helpers publicly; `saving.py` no longer imports
+  `painting`. Moved by a one-use script, its renames counted.
+- **F18, F14, F15, F16, F34.** The three pins and the import; the two measured names; README's
+  line; the `[0.12.0]` link; `Report.open_documents`, printed after the wall time. `[0.13.0]`
+  needs its own commit's hash, so it lands in the review commit.
+- **Amendments** (all at plan time, with the owner):
+  - **`doctor` and `probe` skip the version gate.** Both call `bridge.unsaved_documents` through
+    `_open`, so a universal gate would blind decision 21's count on a stale plugin, the one moment
+    it is read. Both already refuse by hash, a stricter test.
+  - **The refusal names both fixes.** A running `serve` older than the plugin meets the gate at
+    every release, and `install-plugin` cannot cure that: the MCP client must restart.
+  - **A stroke serialises three times, not one.** Before activation, on the resource, for the
+    agent's hash; after it, on the view, for the reach, since `test_painting.py:667` holds that the
+    reach is the preset Krita holds; after it, on the resource, for the activation memory, since
+    the view's digest could let a dirty preset vouch for a tweak saved later. The fourth goes: the
+    read-back compares the fields without the XML, in a window with user input held back (K41).
+  - **F9's source stat carries ctime,** which a restored mtime cannot hide from; `saving._stat`
+    stays three fields, because the finish has no hash to fall back on.
+  - **`drop` lost its stat guard,** which would have left the very file F17 removes.
+  - **`png` stayed in `fixtures.py`,** public, since `write_ora` needs it.
+  - **SPEC decision 24 has a dated note:** `harness.*` also holds two measurements; `CLAUDE.md`'s
+    invariant 13 says the folder gate covers ops that take a document.
+- **Measured** (Krita 5.3.4.1 on macOS, Apple Silicon):
+  - **The whole-file hash inside Krita, on 0.12.0, before the change:** a `document.close` of a
+    1.07 GB ORA against a small one, read-only, three runs each: 0.36 s per GB warm, 0.42 s per GB
+    with the pages evicted (a control read went from 0.05 s to 0.16 s). SHA-256 sets the cost, not
+    the disk, which agrees with the review's warm figure.
+  - **`sum` over a 64 MB selection:** about 0.11 s on CPython 3.12.
+  - **`probe`:** 113 PASS, 0 FAIL, 34 MEASURED in 92.4 s, with 0 documents open, on a fresh Krita,
+    so every preset's first activation came through the new path.
+  - **H4 idle:** p50 4.6 ms, p95 5.5 ms, max 31.5 ms. **Create and close:** mean 691 ms.
+  - **N-01:** p95 0.08 s; corner to corner 0.38–0.42 s. **N-09:** p95 0.24 s; corner to corner
+    3.55–3.63 s. **N-02:** first render 0.73 s, 20 renders p95 0.31 s.
+  - **H4 long save:** 4.4 s, longest silence 2.51 s, median answer 12 ms; Krita 2,053 MB before and
+    3,440 MB after.
+  - **The bridge after N-01:** 949 operations, 945 requests, 945 bindings.
+  - **Leftovers:** `transfer/` and `harness/` empty; no warning or error in `plugin.log`.
+- **Checked by hand:**
+  - **The stale path, live:** with the new plugin installed and Krita still on 0.12.0, `doctor`
+    stopped at step 5 with the install fix and still printed 87 open, 0 unsaved; a real `serve`
+    answered `krita_server_info` with `PROTOCOL_MISMATCH`, both versions and both fixes.
+  - **The restart:** `osascript` reported "User canceled" and Krita quit; `open -a` right after
+    the process went failed with -600, and `open` of the app three seconds later worked.
+  - **Not exercised live:** a document closed by hand during a finish, which is unit-tested only
+    (`docs/BACKLOG.md`).
+- **Falsified** (each broken once with the file's bytes restored after; the tree compared equal):
+  the version refusal; `any_plugin`; `_refused`; the one encoding with its wait; `doctor`'s client;
+  the document count; `_size`; the shared validator; the pinned copies; the scan's three names, and
+  `setPixelData` staying out; inspect's counts, its empty selection and its short read; `drop`
+  without the guard; `sync`'s drop; the mismatch's removal; the stat sparing the hash; a moved stat
+  costing one; ctime; the stat before the hash; `ops.HANDLERS`; `harness.retention`; `ephemeral`
+  required; one preset walk; the stored preset feeding the memory; one tree per phase. 27 in all.
+- **Numbers:**
+  - `verify`: 6 stages, all PASS;
+  - 553 server tests passed (+4), 0 skipped;
+  - 657 plugin-core tests passed (+21), 0 skipped;
+  - `probe`: 113 PASS, 0 FAIL, 34 MEASURED (unchanged), 92.4 s with 0 documents open;
+  - 19 registered tools; 19 schema files; instructions 3,524 characters; 30 error codes; 32 bridge
+    ops (−1).
+
 ---
 
 ## 14: Acceptance

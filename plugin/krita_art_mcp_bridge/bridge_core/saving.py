@@ -11,6 +11,7 @@ from .inspection import TYPES, check_shown_frame
 from .jobs import Call, Handler
 from .pixels import MAX_READ_PIXELS
 from .port import DocumentsPort
+from .rects import union
 from .registry import Handle, Registry
 
 SAVE_FIELDS = {"document_id", "path"}
@@ -73,6 +74,11 @@ class Pending:
         self.changes = changes
         self.receipt = receipt
 
+    def discard(self) -> None:
+        # Whatever the file holds now: its hidden name carries this save's own token.
+        _remove(self.written)
+        _unmake(self.made)
+
 
 def handlers(registry: Registry, port: DocumentsPort, data: Path) -> dict[str, Handler]:
     def save(handle: Handle, args: dict[str, Any], call: Call) -> dict[str, Any]:
@@ -81,7 +87,7 @@ def handlers(registry: Registry, port: DocumentsPort, data: Path) -> dict[str, H
         _check_space(info)
         _check_size(info)
         check_shown_frame(info)
-        drop(handle)
+        handle.drop_pending_save()
         made = _make_folder(os.path.dirname(target))
         written = _written_name(target)
         try:
@@ -129,7 +135,9 @@ def handlers(registry: Registry, port: DocumentsPort, data: Path) -> dict[str, H
             raise
         untouched = None
         if handle.source_path is not None and handle.source_sha256 is not None:
-            untouched = files.unchanged(handle.source_path, handle.source_sha256)
+            untouched = files.unchanged(
+                handle.source_path, handle.source_sha256, handle.source_stat
+            )
         receipt = {
             "document_id": handle.document_id,
             "path": target,
@@ -161,11 +169,11 @@ def handlers(registry: Registry, port: DocumentsPort, data: Path) -> dict[str, H
         handle.pending_save = None
         details = {"document_id": handle.document_id, "path": pending.target}
         if _stat(pending.written) != pending.stat:
+            pending.discard()
             message = "The saved file changed or went before its mergedimage.png was checked."
             raise BridgeError("SAVE_VERIFY_FAILED", message, False, details)
         if args["merged_problem"] is not None or args["merged_sha256"] != pending.composite_sha256:
-            _remove(pending.written)
-            _unmake(pending.made)
+            pending.discard()
             details["mismatches"] = [
                 {
                     "field": "mergedimage",
@@ -205,15 +213,6 @@ def handlers(registry: Registry, port: DocumentsPort, data: Path) -> dict[str, H
         return guarded_finish(args, call)
 
     return {"document.save": save_document, "document.save_finish": finish_save}
-
-
-def drop(handle: Handle) -> None:
-    # A save never finished leaves nothing beside its target that is still as it was written.
-    pending = handle.pending_save
-    handle.pending_save = None
-    if isinstance(pending, Pending) and _stat(pending.written) == pending.stat:
-        _remove(pending.written)
-        _unmake(pending.made)
 
 
 def _target(data: Path, path: Any) -> tuple[str, str]:
@@ -362,18 +361,8 @@ def _rect(kind: str, live: dict[str, Any], saved: dict[str, Any]) -> dict[str, i
     # None where no pixels are compared: an ORA stores a group as its layers.
     if kind == ".ora" and live["type"] == "grouplayer":
         return None
-    return _union(live["bounds_px"], saved["bounds_px"])
-
-
-def _union(first: dict[str, int], second: dict[str, int]) -> dict[str, int]:
-    found = [rect for rect in (first, second) if rect["width"] > 0 and rect["height"] > 0]
-    if not found:
-        return {"x": 0, "y": 0, "width": 0, "height": 0}
-    left = min(rect["x"] for rect in found)
-    top = min(rect["y"] for rect in found)
-    right = max(rect["x"] + rect["width"] for rect in found)
-    bottom = max(rect["y"] + rect["height"] for rect in found)
-    return {"x": left, "y": top, "width": right - left, "height": bottom - top}
+    found = union([live["bounds_px"], saved["bounds_px"]])
+    return found or {"x": 0, "y": 0, "width": 0, "height": 0}
 
 
 def compare(
@@ -534,6 +523,7 @@ def _pixels_sha256(
 
 
 def _stat(path: str) -> tuple[int, int, int] | None:
+    # No ctime: the finish has no hash to fall back on, so a metadata touch would fail it.
     try:
         found = os.stat(path)
     except OSError:

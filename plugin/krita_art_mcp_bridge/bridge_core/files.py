@@ -5,6 +5,7 @@ import os
 from .errors import BridgeError
 
 CHUNK = 1 << 20
+Stat = tuple[int, int, int, int]
 
 
 def sha256_of(path: str) -> str:
@@ -15,7 +16,19 @@ def sha256_of(path: str) -> str:
     return digest.hexdigest()
 
 
-def unchanged(path: str, expected: str) -> bool:
+def source_stat(path: str) -> Stat | None:
+    # What a write moves; ctime too, which a restored modification time cannot hide from.
+    try:
+        found = os.stat(path)
+    except OSError:
+        return None
+    return found.st_ino, found.st_size, found.st_mtime_ns, found.st_ctime_ns
+
+
+def unchanged(path: str, expected: str, stat: Stat | None = None) -> bool:
+    # A stat as it was taken answers at once; only one that moved costs a hash.
+    if stat is not None and source_stat(path) == stat:
+        return True
     try:
         return sha256_of(path) == expected
     except OSError:

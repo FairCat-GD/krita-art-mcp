@@ -7,8 +7,6 @@ def path(points: list[dict[str, Any]], smooth: str) -> dict[str, Any]:
     # The bridge's path: lines through the points, or uniform Catmull-Rom as exact cubics.
     xy = [(point["x"], point["y"]) for point in points]
     start = xy[0]
-    if len(xy) == 1:
-        return {"start": list(start), "segments": [list(start)]}
     if smooth == "catmull_rom" and len(xy) >= 3:
         return {"start": list(start), "segments": catmull_rom(xy)}
     return {"start": list(start), "segments": [list(point) for point in xy[1:]]}

@@ -45,7 +45,8 @@ def run(
     with contextlib.ExitStack() as cleanup:
         _sweep(harness)
         cleanup.callback(_sweep, harness)
-        _probe(report, client or BridgeClient(), serve or _serve_command(), harness)
+        bridge = client or BridgeClient(any_plugin=True)
+        _probe(report, bridge, serve or _serve_command(), harness)
     return report.summary(time.monotonic() - started)
 
 
@@ -160,6 +161,8 @@ def _no_unsaved_documents(report: Report, client: BridgeClient) -> bool:
     # A crash while the probe makes and closes documents must cost the owner nothing.
     outcome = client.call("bridge.unsaved_documents")
     unsaved = outcome.result.get("unsaved") if isinstance(outcome, Done) else None
+    if isinstance(outcome, Done):
+        report.open_documents = outcome.result.get("open")
     return report.check(
         "no Krita document has unsaved changes, so the document checks may run",
         unsaved == 0,

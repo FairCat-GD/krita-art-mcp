@@ -8,6 +8,7 @@ from .errors import BridgeError, exact
 from .jobs import Call, Handler
 from .opening import LAYER_ID
 from .port import DocumentsPort
+from .rects import inside
 from .registry import Handle, Registry
 
 PROTECTION_FIELDS = {
@@ -82,7 +83,7 @@ def handlers(registry: Registry, port: DocumentsPort, data: Path) -> dict[str, H
         if value is not None and mask is not None:
             masks.source(data, value, "allowed_change_mask")
             rect = masks.box(value)
-            masks.inside(rect, size, "allowed_change_mask")
+            inside(rect, size, "allowed_change_mask")
             # A PNG maps pixel for pixel onto the canvas, so it must be the canvas's size.
             if value["source_path"] is not None and [rect["width"], rect["height"]] != size:
                 details = {"size_px": [rect["width"], rect["height"]], "canvas_px": size}

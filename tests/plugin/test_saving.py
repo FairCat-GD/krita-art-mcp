@@ -6,7 +6,7 @@ from pathlib import Path
 from typing import Any
 
 import pytest
-from bridge_core import documents, saving
+from bridge_core import documents, files, saving
 from bridge_core.errors import BridgeError
 from bridge_core.jobs import Call
 from bridge_core.registry import Handle, Registry
@@ -178,7 +178,7 @@ def test_a_written_file_changed_before_the_finish_fails_it(world: World) -> None
     saved = world.save(document_id)
     Path(saved["written"]).write_bytes(b"someone else's")
     assert world.code("finish", saved) == "SAVE_VERIFY_FAILED"
-    assert world.files() == [Path(saved["written"]).name]
+    assert world.files() == [] and not world.saves.exists()
 
 
 def test_a_target_that_appears_meanwhile_is_never_overwritten(world: World) -> None:
@@ -565,6 +565,23 @@ def test_a_new_save_or_a_close_drops_the_one_never_finished(world: World) -> Non
     assert world.files() == []
 
 
+def test_a_new_save_drops_one_never_finished_even_if_its_file_changed(world: World) -> None:
+    document_id = world.open()
+    first = world.save(document_id)
+    Path(first["written"]).write_bytes(b"touched")
+    second = world.save(document_id, "hero-r03.kra")
+    assert world.files() == [Path(second["written"]).name]
+
+
+def test_a_document_closed_by_hand_mid_finish_leaves_no_hidden_file(world: World) -> None:
+    document_id = world.open()
+    saved = world.save(document_id)
+    assert world.files() == [Path(saved["written"]).name]
+    del world.port.live[world.key(document_id)]
+    assert world.code("finish", saved) == "DOCUMENT_NOT_FOUND"
+    assert world.files() == [] and not world.saves.exists()
+
+
 def test_a_created_document_has_no_baseline_to_touch(world: World) -> None:
     created = world.run(
         "document.create",
@@ -585,3 +602,75 @@ def test_a_changed_source_is_reported_untouched_false(world: World) -> None:
     document_id = world.open()
     (world.art / "accepted" / "hero.kra").write_bytes(b"changed by hand")
     assert world.save(document_id)["baseline_untouched"] is False
+
+
+def _source_hashes(monkeypatch: pytest.MonkeyPatch) -> list[str]:
+    seen: list[str] = []
+    real = files.sha256_of
+
+    def counting(path: str) -> str:
+        if path.endswith(os.path.join("accepted", "hero.kra")):
+            seen.append(path)
+        return real(path)
+
+    monkeypatch.setattr(files, "sha256_of", counting)
+    return seen
+
+
+def test_an_untouched_source_is_answered_by_its_stat_with_no_hash(
+    world: World, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    document_id = world.open()
+    hashes = _source_hashes(monkeypatch)
+    assert world.save(document_id)["baseline_untouched"] is True
+    closing = {"document_id": document_id, "dirty_policy": "discard"}
+    assert world.run("document.close", closing)["baseline_untouched"] is True
+    assert hashes == []
+
+
+def test_a_moved_stat_costs_a_hash_and_the_hash_decides(
+    world: World, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    document_id = world.open()
+    source = world.art / "accepted" / "hero.kra"
+    hashes = _source_hashes(monkeypatch)
+    os.utime(source, ns=(1, 1))
+    assert world.save(document_id)["baseline_untouched"] is True
+    assert len(hashes) == 1
+    source.write_bytes(b"changed by hand")
+    closing = {"document_id": document_id, "dirty_policy": "discard"}
+    assert world.run("document.close", closing)["baseline_untouched"] is False
+    assert len(hashes) == 2
+
+
+def test_a_rewrite_that_restores_its_modification_time_is_still_seen(world: World) -> None:
+    document_id = world.open()
+    source = world.art / "accepted" / "hero.kra"
+    before = source.stat()
+    source.write_bytes(b"accepted ART")
+    os.utime(source, ns=(before.st_atime_ns, before.st_mtime_ns))
+    assert source.stat().st_size == before.st_size
+    assert world.save(document_id)["baseline_untouched"] is False
+
+
+@pytest.mark.parametrize(
+    ("mode", "hashing"), [("read_only", "check_source"), ("working_copy", "working_copy")]
+)
+def test_the_open_takes_the_stat_before_it_hashes(
+    world: World, monkeypatch: pytest.MonkeyPatch, mode: str, hashing: str
+) -> None:
+    order: list[str] = []
+    real_stat, real_hash = files.source_stat, getattr(files, hashing)
+
+    def stat(path: str) -> Any:
+        order.append("stat")
+        return real_stat(path)
+
+    def hash_it(*args: Any) -> Any:
+        order.append("hash")
+        return real_hash(*args)
+
+    monkeypatch.setattr(files, "source_stat", stat)
+    monkeypatch.setattr(files, hashing, hash_it)
+    world.open(mode)
+    assert order == ["stat", "hash"]

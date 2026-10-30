@@ -377,19 +377,6 @@ def test_reads_are_ephemeral_in_the_bridge_and_agents_calls_are_not(world: World
     assert document_id
 
 
-def test_an_older_bridge_that_takes_no_ephemeral_field_is_never_sent_one(world: World) -> None:
-    # A plugin from before the field refuses calls that carry it; until Krita restarts on the new
-    # plugin, reads must still work.
-    path = world.data / "bridge.json"
-    info = json.loads(path.read_text())
-    del info["ephemeral_reads"]
-    path.write_text(json.dumps(info))
-    server = world.server()
-    assert server.content("krita_document_list", {})["status"] == "completed"
-    reads = [op for op in world.bridge.jobs._operations.values() if op.op == "document.list"]
-    assert reads and not any(op.ephemeral for op in reads)
-
-
 def test_a_history_region_becomes_a_capture_and_the_hash_of_its_rgba(world: World) -> None:
     places = world.places()
     bgra = bytes(range(24))

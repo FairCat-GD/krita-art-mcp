@@ -1,6 +1,9 @@
+import functools
 import json
 from importlib.resources import files
 from typing import Any
+
+from jsonschema import Draft202012Validator
 
 
 def tool_names() -> list[str]:
@@ -14,3 +17,8 @@ def tool_names() -> list[str]:
 def load(tool_name: str) -> dict[str, Any]:
     tool: dict[str, Any] = json.loads(files(__name__).joinpath(f"{tool_name}.json").read_text())
     return tool
+
+
+@functools.cache
+def output_validator(tool_name: str) -> Draft202012Validator:
+    return Draft202012Validator(load(tool_name)["outputSchema"])

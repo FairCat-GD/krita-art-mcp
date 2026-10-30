@@ -161,8 +161,8 @@ def write_ora(
         archive.writestr("stack.xml", stack, compress_type=zipfile.ZIP_DEFLATED)
         for name, data in files.items():
             archive.writestr(name, data, compress_type=zipfile.ZIP_DEFLATED)
-        archive.writestr("mergedimage.png", _png(merged), compress_type=zipfile.ZIP_DEFLATED)
-        archive.writestr("Thumbnails/thumbnail.png", _png(np.asarray(thumbnail)))
+        archive.writestr("mergedimage.png", png(merged), compress_type=zipfile.ZIP_DEFLATED)
+        archive.writestr("Thumbnails/thumbnail.png", png(np.asarray(thumbnail)))
     return merged
 
 
@@ -194,7 +194,7 @@ def write_sparse_ora(path: Path, layers: tuple[Layer, ...], width: int, height: 
 
 def write_png(path: Path, pixels: Pixels) -> None:
     with path.open("xb") as stream:
-        stream.write(_png(pixels))
+        stream.write(png(pixels))
 
 
 def _xml(parent: ElementTree.Element, layers: tuple[Layer, ...], files: dict[str, bytes]) -> None:
@@ -213,7 +213,7 @@ def _xml(parent: ElementTree.Element, layers: tuple[Layer, ...], files: dict[str
             _xml(ElementTree.SubElement(parent, "stack", attributes), layer.children, files)
             continue
         source = f"data/layer{len(files)}.png"
-        files[source] = _png(layer.pixels)
+        files[source] = png(layer.pixels)
         ElementTree.SubElement(parent, "layer", {**attributes, "src": source})
 
 
@@ -250,7 +250,7 @@ def _blend(backdrop: np.ndarray, source: np.ndarray, opacity: float, op: str) ->
     return np.concatenate([colour, alpha * 255], axis=-1)
 
 
-def _png(pixels: Pixels) -> bytes:
+def png(pixels: Pixels) -> bytes:
     return _encode(Image.fromarray(pixels))
 
 

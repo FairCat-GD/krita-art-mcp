@@ -6,12 +6,10 @@ from typing import Any
 
 import numpy as np
 from mcp import Client
-from PIL import Image
 
 from krita_art_mcp import sheets
 from krita_art_mcp.probe import fixtures
-from krita_art_mcp.probe.changes import guard
-from krita_art_mcp.probe.opening import open_args
+from krita_art_mcp.probe.common import capture, guard, open_working
 from krita_art_mcp.probe.report import Report, close, code, differs, sheet_cell, tool
 
 TOOL = "krita_preview_render"
@@ -78,14 +76,8 @@ async def run(report: Report, a: Client, harness: Path) -> None:
     await _n02(report, a, folder, harness)
 
 
-async def _open(a: Client, path: Path, harness: Path) -> dict[str, Any]:
-    return await tool(
-        a, "krita_document_open", open_args(path, "working_copy", harness / "work" / "previews")
-    )
-
-
 async def _game(report: Report, a: Client, master: Path, harness: Path) -> None:
-    opened = await _open(a, master, harness)
+    opened = await open_working(a, master, harness, "previews")
     document_id = opened.get("document_id")
     name = "the first game's recipes: 2.95 and 1.8 px per unit from a 2x master exported at 4"
     if opened.get("status") != "completed" or not document_id:
@@ -127,7 +119,7 @@ async def _game(report: Report, a: Client, master: Path, harness: Path) -> None:
 
 
 async def _icons(report: Report, a: Client, icon: Path, harness: Path) -> None:
-    opened = await _open(a, icon, harness)
+    opened = await open_working(a, icon, harness, "previews")
     document_id = opened.get("document_id")
     name = "128 / 256 px icons fit their boxes, and integer_zoom 2 replicates the 256 px one"
     if opened.get("status") != "completed" or not document_id:
@@ -157,7 +149,7 @@ async def _icons(report: Report, a: Client, icon: Path, harness: Path) -> None:
 
 
 async def _overlays(report: Report, a: Client, master: Path, harness: Path) -> None:
-    opened = await _open(a, master, harness)
+    opened = await open_working(a, master, harness, "previews")
     document_id = opened.get("document_id")
     name = "a selection overlay is drawn into the sheet only, never the clean sheet or the document"
     if opened.get("status") != "completed" or not document_id:
@@ -176,7 +168,7 @@ async def _overlays(report: Report, a: Client, master: Path, harness: Path) -> N
             },
         )
         whole = {"x": 0, "y": 0, "width": MASTER_PX[0], "height": MASTER_PX[1]}
-        before = await _native(a, document_id, whole)
+        before = await capture(a, document_id, whole)
         rendered = await tool(
             a,
             TOOL,
@@ -188,7 +180,7 @@ async def _overlays(report: Report, a: Client, master: Path, harness: Path) -> N
                 overlays=["selection", "allowed_mask"],
             ),
         )
-        after = await _native(a, document_id, whole)
+        after = await capture(a, document_id, whole)
         [sheet] = (rendered.get("data") or {}).get("sheets") or [None]
         if sheet is None or sheet["clean_image"] is None or selected.get("status") != "completed":
             report.check(name, False, f"{code(selected)} / {code(rendered)}")
@@ -208,22 +200,6 @@ async def _overlays(report: Report, a: Client, master: Path, harness: Path) -> N
         )
     finally:
         await close(a, document_id)
-
-
-async def _native(a: Client, document_id: str, rect: dict[str, int]) -> np.ndarray | None:
-    arguments_ = {
-        "source": {"document_id": document_id, "frame": 0},
-        "target": "composite",
-        "layer_id": None,
-        "rect": rect,
-        "scale": 1,
-        "filter": "nearest",
-    }
-    data = (await tool(a, "krita_capture", arguments_)).get("data") or {}
-    if "image" not in data:
-        return None
-    with Image.open(data["image"]["path"]) as image:
-        return np.asarray(image.convert("RGBA"))
 
 
 def n02_master(size: int) -> fixtures.Layer:
@@ -246,7 +222,7 @@ async def _n02(report: Report, a: Client, folder: Path, harness: Path) -> None:
         fixtures.Layer("probe sun", fixtures.rect(400, 400, (240, 160, 30)), x=1300, y=300),
     )
     fixtures.write_sparse_ora(master, (*shapes, n02_master(size)), size, size)
-    opened = await _open(a, master, harness)
+    opened = await open_working(a, master, harness, "previews")
     document_id = opened.get("document_id")
     if opened.get("status") != "completed" or not document_id:
         report.check("N-02's master opens", False, str(opened.get("error")))

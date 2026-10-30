@@ -115,6 +115,9 @@ the decision as an **Amended <date> by the owner** note.
 24. **Commands:** `verify` is `uv run scripts/verify.py`; the live harness is
     `uv run krita-art-mcp probe`. The harness drives `serve` over stdio as a real MCP client and
     uses `harness.*` only to build fixtures.
+    **Amended 2026-10-30 by the owner, at 13a's plan:** `harness.*` also holds the two read-only
+    measurements the probe takes, `harness.preset_digests` and `harness.retention`, which take no
+    document (`REVIEW-2026-10-30.md` F6).
 25. **`KRITA_ART_MCP_DATA_DIR` moves only what the server owns** (captures, baselines, journal),
     because Krita launched from the Dock never sees the variable. `bridge.json`, `transfer/`,
     `logs/` and `config.json` stay in the default data directory, and so does the harness

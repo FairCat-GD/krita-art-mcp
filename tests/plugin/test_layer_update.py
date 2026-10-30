@@ -250,6 +250,33 @@ def test_an_unchanged_value_writes_nothing_and_still_counts_as_a_change(world: W
     assert "properties" not in world.port.calls and handle.dirty
 
 
+@pytest.mark.parametrize(
+    ("properties", "reads"),
+    [
+        ({"name": "renamed"}, 2),
+        ({"blend_mode": "multiply"}, 2),
+        ({"blend_mode": "multiply", "name": "renamed"}, 3),
+        ({"blend_mode": "multiply", "active": True}, 3),
+    ],
+)
+def test_an_update_reads_the_tree_once_per_phase(
+    world: World, monkeypatch: pytest.MonkeyPatch, properties: dict[str, Any], reads: int
+) -> None:
+    document_id, _ = world.document()
+    real = world.port.tree
+    seen: list[Any] = []
+
+    def counting(document: Any) -> dict[str, Any]:
+        seen.append(document)
+        return real(document)
+
+    monkeypatch.setattr(world.port, "tree", counting)
+    world.update(document_id, **properties)
+    # Each composite read checks the tree for K46 on its own, before and after an appearance.
+    appearance = 2 if "blend_mode" in properties else 0
+    assert len(seen) == reads + appearance
+
+
 # Refusals, before anything changes.
 
 

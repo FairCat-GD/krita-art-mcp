@@ -72,3 +72,7 @@ def exact(args: dict[str, Any], fields: set[str]) -> None:
 def number(value: Any) -> bool:
     # A finite JSON number; True and False are not numbers here.
     return isinstance(value, (int, float)) and not isinstance(value, bool) and math.isfinite(value)
+
+
+def integer(value: Any) -> bool:
+    return isinstance(value, int) and not isinstance(value, bool)

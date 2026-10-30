@@ -116,13 +116,14 @@ class DocumentsPort(Protocol):
     # composite changed.
     def add_fixture_node(self, document: Any, kind: str, layer_id: str) -> tuple[str, bool]: ...
 
-    # Applies the brush on the active view in K3's order: preset (a resource name), size,
-    # opacity, flow, blend, eraser, alpha lock, rotation, colour ([r, g, b, a] floats through
-    # ManagedColor, K18). Returns brush() afterwards.
-    def set_brush(self, document: Any, brush: dict[str, Any]) -> dict[str, Any]: ...
+    # Applies the brush on the active view in K3's order: preset (the resource
+    # ResourcesPort.preset found), size, opacity, flow, blend, eraser, alpha lock, rotation,
+    # colour ([r, g, b, a] floats through ManagedColor, K18). Returns brush() afterwards, plus
+    # "preset_xml", the current preset's Preset.toXML().
+    def set_brush(self, document: Any, brush: dict[str, Any], preset: Any) -> dict[str, Any]: ...
 
     # The active view's brush as Krita holds it: the keys set_brush takes, "preset" being the
-    # current preset's name, plus "preset_xml", the current preset's Preset.toXML().
+    # current preset's name.
     def brush(self, document: Any) -> dict[str, Any]: ...
 
     # Node.paintAbility() for the layer, with the document's view in front (K9).
@@ -171,6 +172,13 @@ class ResourcesPort(Protocol):
 
     # Each named preset's settings as Preset.toXML() writes them; "" for one it cannot.
     def preset_xmls(self, names: list[str]) -> dict[str, str]: ...
+
+    # The preset with this file name as {name, xml, resource}, in one walk of Krita's list; None
+    # when there is none. xml is as preset_xmls gives it; resource is for set_brush and preset_xml.
+    def preset(self, preset_id: str) -> dict[str, Any] | None: ...
+
+    # A found preset's settings as they stand now.
+    def preset_xml(self, resource: Any) -> str: ...
 
     def profiles(self, model: str, depth: str) -> list[str]: ...
 

@@ -1,13 +1,10 @@
 import os
-from dataclasses import replace
 from typing import Any
 
-import numpy as np
 from mcp.types import CallToolResult
 
-from krita_art_mcp import baselines, envelope, roots, transfer
-from krita_art_mcp.bridge_client import BeforeSend, Done, Failed, Outcome
-from krita_art_mcp.errors import error_body
+from krita_art_mcp import baselines, envelope, roots
+from krita_art_mcp.bridge_client import BeforeSend, Done, Outcome
 from krita_art_mcp.paths import Places
 from krita_art_mcp.tools.dispatch import ToolCall, from_outcome, journaled
 
@@ -156,34 +153,7 @@ def document_inspect(call: ToolCall, arguments: dict[str, Any]) -> CallToolResul
     if refused is not None:
         return refused
     op_args = {"document_id": arguments["document_id"], "frame": 0}
-    return inspect_receipt(
-        resolve_inspect(call.places, call.bridge.call("document.inspect", op_args))
-    )
-
-
-def resolve_inspect(places: Places, outcome: Outcome) -> Outcome:
-    # The selection crosses as a transfer file; its numbers are counted here, with NumPy.
-    if not isinstance(outcome, Done) or outcome.result.get("selection") is None:
-        return outcome
-    selection = outcome.result["selection"]
-    try:
-        if selection["pixels"] is None:
-            selected, coverage = 0, 0.0
-        else:
-            values = transfer.take(places.transfer_dir, selection["pixels"])
-            transfer.discard(places.transfer_dir, selection["pixels"])
-            selected = int(np.count_nonzero(values))
-            coverage = float(values.sum(dtype=np.uint64)) / 255
-    except transfer.TransferError as problem:
-        message = f"The selection could not be read ({problem}); inspect again."
-        error = error_body("INTERNAL_ERROR", message, retryable=True)
-        return Failed(error, outcome.operation_id, submitted=True, op=outcome.op)
-    counted = {
-        "bounds_px": selection["bounds_px"],
-        "selected_pixels": selected,
-        "coverage_px": coverage,
-    }
-    return replace(outcome, result={**outcome.result, "selection": counted})
+    return inspect_receipt(call.bridge.call("document.inspect", op_args))
 
 
 def inspect_receipt(outcome: Outcome) -> CallToolResult:

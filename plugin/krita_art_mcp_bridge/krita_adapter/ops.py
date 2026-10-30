@@ -3,7 +3,7 @@ from typing import Any
 
 from krita import Krita, Preset
 
-from ..bridge_core.errors import exact, no_arguments
+from ..bridge_core.errors import no_arguments
 from ..bridge_core.jobs import Call, Handler
 from ..bridge_core.resources import fingerprint
 
@@ -33,15 +33,7 @@ def preset_digests(args: dict[str, Any], call: Call) -> dict[str, Any]:
     return {"presets": len(found), "raw": raw.hexdigest(), "canonical": canonical.hexdigest()}
 
 
-def preset_xml(args: dict[str, Any], call: Call) -> dict[str, Any]:
-    # Measures what a preset's settings hold as Krita has them now.
-    exact(args, {"name"})
-    found = Krita.instance().resources("preset").get(args["name"])
-    return {"xml": None if found is None else str(Preset(found).toXML())}
-
-
 HANDLERS: dict[str, Handler] = {
     "bridge.unsaved_documents": unsaved_documents,
-    "probe.preset_digests": preset_digests,
-    "probe.preset_xml": preset_xml,
+    "harness.preset_digests": preset_digests,
 }

@@ -48,7 +48,6 @@ def test_bridge_json_is_private_and_names_a_serving_bridge(tmp_path: Path) -> No
             "plugin_hash",
             "krita_version",
             "qt_major",
-            "ephemeral_reads",
         }
         assert written["pid"] == os.getpid()
         assert len(bytes.fromhex(written["token"])) == 32

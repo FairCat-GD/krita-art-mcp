@@ -14,21 +14,26 @@ from krita_art_mcp import paths
 from krita_art_mcp.bridge_client import BridgeClient, Done, Outcome, Pending
 from krita_art_mcp.paths import Places
 from krita_art_mcp.probe import fixtures
-from krita_art_mcp.probe.changes import by_name, guard
-from krita_art_mcp.probe.opening import UNWRITABLE, open_args, sha
-from krita_art_mcp.probe.painting import (
-    _brush,
-    _finished,
-    _harness,
-    _krita_rss_kb,
-    _line,
-    _megabytes,
-    _stroke,
+from krita_art_mcp.probe.common import (
+    brush_args,
+    by_name,
+    document_dirty,
+    finished,
+    guard,
+    harness_call,
+    inspect_data,
+    krita_rss_kb,
+    line_points,
+    megabytes,
+    open_args,
+    stroke_args,
 )
+from krita_art_mcp.probe.opening import UNWRITABLE
 from krita_art_mcp.probe.report import Report, close, code, tool
 from krita_art_mcp.tools.changes import resolve_update
 from krita_art_mcp.tools.documents import SRGB_PROFILE
 from krita_art_mcp.tools.painting import stroke_op
+from krita_art_mcp.tools.saving import file_sha256
 
 # The fields a KRA brings back for every layer, beside its id; the root's own id is new.
 KRA_FIELDS = (
@@ -82,25 +87,11 @@ def _hidden(folder: Path) -> list[str]:
 
 async def _save(a: Client, document_id: str, path: Path) -> dict[str, Any]:
     arguments = save_args(document_id, path)
-    saved = await _finished(a, await tool(a, "krita_document_save", arguments), SAVE_LIMIT_S)
+    saved = await finished(a, await tool(a, "krita_document_save", arguments), SAVE_LIMIT_S)
     if code(saved) == "BUSY":
         # An autosave can hold the document for a moment; the save wrote nothing, so it retries.
-        saved = await _finished(a, await tool(a, "krita_document_save", arguments), SAVE_LIMIT_S)
+        saved = await finished(a, await tool(a, "krita_document_save", arguments), SAVE_LIMIT_S)
     return saved
-
-
-async def _dirty(a: Client, document_id: str) -> bool | None:
-    listed = await tool(a, "krita_document_list", {})
-    for entry in (listed.get("data") or {}).get("documents", []):
-        if entry["document_id"] == document_id:
-            return bool(entry["dirty"])
-    return None
-
-
-async def _layers(a: Client, document_id: str) -> dict[str, Any]:
-    seen = await tool(a, "krita_document_inspect", {"document_id": document_id, "frame": 0})
-    data: dict[str, Any] = seen.get("data") or {}
-    return data
 
 
 async def run(
@@ -131,7 +122,7 @@ async def _round_trips(
             return
         await _ora(report, a, document_id, folder)
         shape = by_name(data["layers"])["probe shape"]["id"]
-        blurred = _harness(
+        blurred = harness_call(
             client, "harness.add_node", document_id=document_id, kind="filter_mask", layer_id=shape
         )
         painted = await _paint(a, document_id, ids[SAVED_NAME], hard, (34, 6, 50, 14))
@@ -158,7 +149,7 @@ async def _paint(
     hard: dict[str, Any],
     line: tuple[float, float, float, float],
 ) -> str | None:
-    stroke = _stroke(document_id, layer_id, _brush(hard, size_px=4), _line(*line))
+    stroke = stroke_args(document_id, layer_id, brush_args(hard, size_px=4), line_points(*line))
     painted = await tool(a, "krita_paint_stroke", stroke)
     return None if painted.get("status") == "completed" else f"krita_paint_stroke: {code(painted)}"
 
@@ -202,7 +193,7 @@ async def _prepare(
         ("harness.add_node", {"kind": "transform_mask", "layer_id": base}),
         ("harness.select_mask", {"layer_id": base, "rect": rect}),
     ):
-        outcome = _harness(client, op, document_id=document_id, **args)
+        outcome = harness_call(client, op, document_id=document_id, **args)
         if not isinstance(outcome, Done):
             return f"{op}: {outcome}"
     return ids
@@ -228,7 +219,7 @@ async def _ora(report: Report, a: Client, document_id: str, folder: Path) -> Non
         and result.get("layers_preserved") is False
         and lost == expected
         and not _hidden(folder)
-        and await _dirty(a, document_id) is False,
+        and await document_dirty(a, document_id) is False,
         f"{code(saved)}: {(saved.get('error') or {}).get('details')}" if code(saved) else str(lost),
     )
     reopened = await tool(a, "krita_document_open", open_args(target, "read_only"))
@@ -246,24 +237,24 @@ async def _kra(
     report: Report, a: Client, document_id: str, data: dict[str, Any], folder: Path
 ) -> None:
     target = folder / "saved.kra"
-    live = await _layers(a, document_id)
-    was_dirty = await _dirty(a, document_id)
+    live = await inspect_data(a, document_id)
+    was_dirty = await document_dirty(a, document_id)
     arguments = save_args(document_id, target)
-    saved = await _finished(a, await tool(a, "krita_document_save", arguments), SAVE_LIMIT_S)
+    saved = await finished(a, await tool(a, "krita_document_save", arguments), SAVE_LIMIT_S)
     result = saved.get("data") or {}
     flags = ("reopened_verified", "layers_preserved", "composite_preserved", "baseline_untouched")
     problems = []
     if saved.get("status") != "completed":
         problems.append(f"{code(saved)}: {(saved.get('error') or {}).get('details')}")
-    elif not target.exists() or result.get("sha256") != sha(target):
+    elif not target.exists() or result.get("sha256") != file_sha256(target):
         problems.append("the file at the path is not the one the receipt names")
     elif [result[flag] for flag in flags] != [True] * 4 or result["expected_losses"] != []:
         problems.append(f"the receipt says {result}")
     if _hidden(folder):
         problems.append(f"left beside it: {_hidden(folder)}")
-    if (was_dirty, await _dirty(a, document_id)) != (True, False):
-        problems.append(f"dirty went from {was_dirty} to {await _dirty(a, document_id)}")
-    if sha(Path(data["path"])) != data["source_sha256"]:
+    if (was_dirty, await document_dirty(a, document_id)) != (True, False):
+        problems.append(f"dirty went from {was_dirty} to {await document_dirty(a, document_id)}")
+    if file_sha256(Path(data["path"])) != data["source_sha256"]:
         problems.append("the working copy's file changed")
     report.check(
         "a KRA save of a dirty working copy lands verified: every flag true, no losses, nothing "
@@ -279,7 +270,9 @@ async def _kra(
     )
     reopened = await tool(a, "krita_document_open", open_args(target, "read_only"))
     back = (
-        await _layers(a, reopened["document_id"]) if reopened.get("status") == "completed" else {}
+        await inspect_data(a, reopened["document_id"])
+        if reopened.get("status") == "completed"
+        else {}
     )
     differences = _kra_differences(live, back)
     report.check(
@@ -324,7 +317,7 @@ async def _refusals(report: Report, a: Client, document_id: str, folder: Path) -
     if not taken.exists():
         report.check("the refusals have a saved KRA to try to overwrite", False)
         return
-    before = sha(taken)
+    before = file_sha256(taken)
     codes = [
         code(await tool(a, "krita_document_save", save_args(document_id, path)))
         for path in (taken, UNWRITABLE / "x.kra", folder / "x.png")
@@ -332,7 +325,7 @@ async def _refusals(report: Report, a: Client, document_id: str, folder: Path) -
     report.check(
         "an existing path, a path outside the roots and a .png are refused, and the file stays",
         codes == ["FILE_EXISTS", "PATH_NOT_ALLOWED", "UNSUPPORTED_CAPABILITY"]
-        and sha(taken) == before
+        and file_sha256(taken) == before
         and not (folder / "x.png").exists(),
         ", ".join(str(found) for found in codes),
     )
@@ -342,7 +335,7 @@ async def _adjustment(
     report: Report, a: Client, client: BridgeClient, document_id: str, shape: str, folder: Path
 ) -> None:
     # ORA drops adjustment layers, and a lost node never excuses a composite difference.
-    added = _harness(
+    added = harness_call(
         client, "harness.add_node", document_id=document_id, kind="filter_layer", layer_id=shape
     )
     changed = isinstance(added, Done) and added.result.get("composite_changed") is True
@@ -393,17 +386,17 @@ async def _long_save(
     fixtures.write_sparse_ora(
         source, fixtures.long_save_stack(LONG_LAYERS, LONG_SIDE, LONG_SIZE), LONG_SIZE, LONG_SIZE
     )
-    rss_before = _krita_rss_kb()
-    opened = await _finished(
+    rss_before = krita_rss_kb()
+    opened = await finished(
         a,
         await tool(a, "krita_document_open", open_args(source, "working_copy", folder / "work")),
         SAVE_LIMIT_S,
     )
-    painted = _harness(client, "document.create", **_canvas())
+    painted = harness_call(client, "document.create", **_canvas())
     if opened.get("status") != "completed" or not isinstance(painted, Done):
         report.check("H4's documents open", False, f"{opened.get('error')}; {painted}")
         if isinstance(painted, Done):
-            _harness(
+            harness_call(
                 client,
                 "document.close",
                 document_id=painted.result["document_id"],
@@ -418,8 +411,8 @@ async def _long_save(
         stroke = {
             "guard": {"document_id": paint_id, "request_id": request_id},
             "layer_id": painted.result["initial_layer_id"],
-            "brush": _brush(hard, size_px=4),
-            "points": _line(4, 4, 40, 20),
+            "brush": brush_args(hard, size_px=4),
+            "points": line_points(4, 4, 40, 20),
         }
         op_args = stroke_op(stroke)
         assert not isinstance(op_args, CallToolResult)
@@ -440,7 +433,7 @@ async def _long_save(
             )
             await asyncio.sleep(PAINT_DELAY_S)
             sent = await asyncio.to_thread(paint_twice)
-            saved = await _finished(a, await saving, SAVE_LIMIT_S)
+            saved = await finished(a, await saving, SAVE_LIMIT_S)
             ended = time.monotonic()
             took = ended - started
             await asyncio.sleep(2 * RECOVERY_S)
@@ -449,7 +442,7 @@ async def _long_save(
             # Its images cross as transfer files, which the tool's resolver takes; the probe sent
             # the stroke itself, so it resolves it too, into the harness folder.
             resolve_update(Places.under(paths.default_data_dir(), folder / "h4"), followed[0])
-        history = (await _layers(a, paint_id)).get("history") or {}
+        history = (await inspect_data(a, paint_id)).get("history") or {}
         _h4_checks(report, poller.calls, ended, saved, sent, followed, history)
         silences = sorted(
             (answered - sent_at for sent_at, answered in poller.calls if answered is not None),
@@ -459,12 +452,12 @@ async def _long_save(
             f"H4: saving the {LONG_SIZE} x {LONG_SIZE} working copy with {LONG_LAYERS} gradient "
             f"{LONG_SIDE} px layers",
             f"{took:.1f} s; longest silence {silences[0]:.2f} s, median answer "
-            f"{statistics.median(silences) * 1000:.0f} ms; Krita {_megabytes(rss_before)} before, "
-            f"{_megabytes(_krita_rss_kb())} after",
+            f"{statistics.median(silences) * 1000:.0f} ms; Krita {megabytes(rss_before)} before, "
+            f"{megabytes(krita_rss_kb())} after",
         )
     finally:
         await close(a, document_id)
-        _harness(client, "document.close", document_id=paint_id, dirty_policy="discard")
+        harness_call(client, "document.close", document_id=paint_id, dirty_policy="discard")
 
 
 def _canvas() -> dict[str, Any]:

@@ -6,7 +6,7 @@ size, and undo or keep it. It is for painted (non-pixel) 2D game art.
 
 ## Status
 
-Phase 1 is being built. Version 0.12.0 connects the server to a running Krita through the plugin
+Phase 1 is being built. Version 0.13.0 connects the server to a running Krita through the plugin
 and offers these tools:
 
 - `krita_server_info`: Krita's version, what this build can do, and the folders agents may use;
@@ -42,7 +42,7 @@ and offers these tools:
   cancelling one still queued.
 
 Every change is journaled before it is sent and is safe to retry with the same `request_id`.
-Saving arrives in the coming releases; `CHANGELOG.md` lists what each one adds.
+`CHANGELOG.md` lists what each release adds.
 
 ## Requirements
 
@@ -79,7 +79,8 @@ Saving arrives in the coming releases; `CHANGELOG.md` lists what each one adds.
    uv run krita-art-mcp doctor
    ```
 
-To update the plugin, run `install-plugin` again and restart Krita.
+To update the plugin, run `install-plugin` again and restart Krita, then restart your MCP client:
+the server and the plugin refuse each other at different versions.
 
 ## Registering the server
 

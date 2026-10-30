@@ -10,10 +10,10 @@ from .pixels import (
     check_read_space,
     check_rect,
     check_target,
-    inside,
     read_rects,
 )
 from .port import DocumentsPort
+from .rects import inside
 from .registry import Handle, Registry
 
 PREVIEW_FIELDS = {"sources", "render"}
@@ -50,7 +50,7 @@ def handlers(registry: Registry, port: DocumentsPort, data: Path) -> dict[str, H
             check_shown_frame(info)
             width, height = info["size_px"]
             rect = source["rect"] or {"x": 0, "y": 0, "width": width, "height": height}
-            inside(rect, info["size_px"])
+            inside(rect, info["size_px"], "rect")
             if source["baseline_id"] is not None and source["baseline_id"] != handle.baseline_id:
                 owned = {"document_id": handle.document_id, "baseline_id": handle.baseline_id}
                 message = "baseline_id is not this document's as_opened baseline."

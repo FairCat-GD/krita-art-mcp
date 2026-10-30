@@ -1,7 +1,5 @@
-from pathlib import Path
 from typing import Any
 
-from . import paths, transfer
 from .errors import BridgeError, exact
 from .jobs import Call, Handler
 from .ledger import selection_state
@@ -76,7 +74,7 @@ def protected_ids(handle: Handle, tree: dict[str, Any]) -> set[str]:
     return handle.protected
 
 
-def handlers(registry: Registry, port: DocumentsPort, data: Path) -> dict[str, Handler]:
+def handlers(registry: Registry, port: DocumentsPort) -> dict[str, Handler]:
     def inspect(args: dict[str, Any], call: Call) -> dict[str, Any]:
         # A read: no lease, and the owner's view and active node are left alone.
         exact(args, INSPECT_FIELDS)
@@ -101,7 +99,7 @@ def handlers(registry: Registry, port: DocumentsPort, data: Path) -> dict[str, H
             "root_layer_id": tree["root_id"],
             "active_layer_id": tree["active_id"],
             "layers": layer_entries(tree, protected_ids(handle, tree)),
-            "selection": _selection(port, handle, info["size_px"], data),
+            "selection": _selection(port, handle, info["size_px"]),
             "protection": {
                 "allowed_change_mask": handle.allowed_summary,
                 "preserve_composite_alpha": handle.preserve_composite_alpha,
@@ -116,15 +114,18 @@ def handlers(registry: Registry, port: DocumentsPort, data: Path) -> dict[str, H
     return {"document.inspect": inspect}
 
 
-def _selection(
-    port: DocumentsPort, handle: Handle, size: list[int], data: Path
-) -> dict[str, Any] | None:
+def _selection(port: DocumentsPort, handle: Handle, size: list[int]) -> dict[str, Any] | None:
     found = selection_state(port, handle.document, size)
     if found is None:
         return None
     bounds, pixels = found
-    width, height = bounds["width"], bounds["height"]
-    if width <= 0 or height <= 0:
-        return {"bounds_px": bounds, "pixels": None}
-    spec = transfer.write(paths.transfer_dir(data), pixels, width, height, "A8")
-    return {"bounds_px": bounds, "pixels": spec}
+    expected = bounds["width"] * bounds["height"]
+    if len(pixels) != expected:
+        details = {"bytes": len(pixels), "expected": expected}
+        message = "Krita returned a buffer of the wrong size."
+        raise BridgeError("INTERNAL_ERROR", message, False, details)
+    return {
+        "bounds_px": bounds,
+        "selected_pixels": expected - pixels.count(0),
+        "coverage_px": sum(pixels) / 255,
+    }

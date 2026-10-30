@@ -321,8 +321,8 @@ class KritaDocuments:
         document.waitForDone()
         return _layer_id(node), bytes(document.pixelData(0, 0, width, height)) != before
 
-    def set_brush(self, document: Any, brush: dict[str, Any]) -> dict[str, Any]:
-        return painting.set_brush(document, brush)
+    def set_brush(self, document: Any, brush: dict[str, Any], preset: Any) -> dict[str, Any]:
+        return painting.set_brush(document, brush, preset)
 
     def brush(self, document: Any) -> dict[str, Any]:
         return painting.read_brush(document)

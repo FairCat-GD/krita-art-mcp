@@ -6,6 +6,38 @@ All notable changes to krita-art-mcp are documented here. The format follows
 
 ## [Unreleased]
 
+## [0.13.0] — 2026-10-30
+
+A stale plugin now says so, the calls an agent makes most got lighter, and a failed save leaves
+nothing behind. This release needs `install-plugin`, a Krita restart and a restart of the MCP
+client.
+
+### Changed
+
+- **The server refuses a plugin of another version.** Every tool answers `PROTOCOL_MISMATCH` and
+  names both versions and the fix: `install-plugin` and a Krita restart, or a restart of the MCP
+  client when the plugin is the newer. Before, a plugin one release behind answered each new tool
+  with "Unknown op", which read as a bad call. `doctor` and `probe` still reach the plugin and
+  judge it by its hash, so `doctor` can always report Krita's unsaved documents.
+- **`krita_document_inspect` counts its selection in the plugin.** The selection no longer crosses
+  to the server as a file on every inspect, up to 64 MB on an 8k master, to give two numbers. What
+  inspect reports is unchanged.
+- **Saves and closes no longer hash the source every time.** `baseline_untouched` compares the
+  file's stat with the one taken at the open and hashes only when that moved, which costs about
+  0.4 s per GB. A source rewritten in place is still reported, even with its modification time put
+  back.
+- **A stroke costs less.** It walks Krita's preset list once and serialises the preset three
+  times, not four; a layer update reads the layer tree once per phase. Every check stays, except
+  that the check just before painting compares the brush's fields, not its full settings.
+- **The probe prints Krita's open documents beside its time,** since its document checks run about
+  three times slower on a Krita holding 87 documents.
+
+### Fixed
+
+- **No hidden save file is left behind.** A save whose written file changed before the finish
+  checked it, and one whose document was closed by hand during the finish, each left a hidden
+  `.saving` file beside the target. Both now remove it and any folder the save made.
+
 ## [0.12.0] — 2026-10-28
 
 Agents can now keep their work. A save is written by Krita's own exporter to a new file, and it
@@ -485,6 +517,7 @@ The first release is the scaffold that the Phase 1 tools are built on.
   reports its version to the client; it offers no tools yet.
 - **`krita-art-mcp --version`.** It prints the installed version.
 
+[0.12.0]: https://github.com/FairCat-GD/krita-art-mcp/commit/7d18a6a767f5ca3db9ff435b14aaafc5c84bd346
 [0.11.0]: https://github.com/FairCat-GD/krita-art-mcp/commit/0611f50b9f2a180e531c7152ab46dfa91eb777ab
 [0.10.0]: https://github.com/FairCat-GD/krita-art-mcp/commit/ffbad0e6e39d2bea0be68001183dcddcc2f9c971
 [0.9.0]: https://github.com/FairCat-GD/krita-art-mcp/commit/04a86abd869aae2deea4326f17acbaf159efef3b

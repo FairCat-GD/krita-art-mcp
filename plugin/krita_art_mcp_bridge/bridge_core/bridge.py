@@ -44,7 +44,7 @@ class Bridge:
             **facts,
             "capabilities": capabilities.matrix(),
         }
-        ops = {"server_info": self._server_info, "probe.retention": self._retention, **handlers}
+        ops = {"server_info": self._server_info, "harness.retention": self._retention, **handlers}
         self.jobs = Jobs(ops, wake, on_main_thread, log)
         self._httpd: BridgeHTTPServer | None = None
         self._thread: threading.Thread | None = None
@@ -104,8 +104,6 @@ class Bridge:
                 "plugin_hash": self.health["plugin_hash"],
                 "krita_version": self.health.get("krita_version"),
                 "qt_major": self.health.get("qt_major"),
-                # Calls may carry `ephemeral`; a server sends it only to a bridge that says so.
-                "ephemeral_reads": True,
             },
         )
 

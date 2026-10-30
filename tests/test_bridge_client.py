@@ -17,12 +17,12 @@ from jsonschema import Draft202012Validator
 from mcp import Client
 from mcp.types import CallToolResult
 
-from krita_art_mcp import bridge_client, schemas
+from krita_art_mcp import __version__, bridge_client, schemas
 from krita_art_mcp.bridge_client import REGISTER_GRACE_S, BridgeClient, Done, Failed, Pending
 from krita_art_mcp.journal import Journal
 from krita_art_mcp.paths import Places
 from krita_art_mcp.server import build_server
-from krita_art_mcp.setup_checks import Step
+from krita_art_mcp.setup_checks import INSTALL, Step
 
 PLUGIN_PACKAGE = Path(__file__).resolve().parents[1] / "plugin" / "krita_art_mcp_bridge"
 FACTS = {"krita_version": "5.3.4", "qt_major": 5}
@@ -208,7 +208,7 @@ def _write_bridge_file(directory: Path, port: int, session_id: str, **overrides:
         "pid": 4242,
         "session_id": session_id,
         "protocol": 1,
-        "plugin_version": "0.2.0",
+        "plugin_version": __version__,
         "plugin_hash": "0" * 64,
         "krita_version": "5.3.4",
         "qt_major": 5,
@@ -316,6 +316,65 @@ def test_another_protocol_is_a_mismatch(tmp_path: Path) -> None:
     assert _code(outcome) == "PROTOCOL_MISMATCH"
     assert isinstance(outcome, Failed)
     assert outcome.error["details"] == {"bridge_protocol": 2, "server_protocol": 1}
+
+
+def test_a_plugin_of_another_version_is_refused_with_both_fixes(tmp_path: Path) -> None:
+    path = _write_bridge_file(tmp_path, _free_port(), "stale", plugin_version="0.0.1")
+    for outcome in (_client(path).call("echo"), _client(path).health()):
+        assert _code(outcome) == "PROTOCOL_MISMATCH"
+        assert isinstance(outcome, Failed)
+        details = outcome.error["details"]
+        assert (details["plugin_version"], details["server_version"]) == ("0.0.1", __version__)
+        message = outcome.error["message"]
+        assert INSTALL in message and "restart the MCP client" in message
+        assert details["fix"] in message
+
+
+def test_doctor_and_the_probe_still_reach_a_plugin_of_another_version(live: Live) -> None:
+    info = json.loads(live.bridge_file.read_text())
+    _write_bridge_file(
+        live.bridge_file.parent,
+        info["port"],
+        info["session_id"],
+        token=info["token"],
+        plugin_version="0.0.1",
+    )
+    assert _code(live.client().call("echo")) == "PROTOCOL_MISMATCH"
+    reaching = BridgeClient(
+        bridge_file=live.bridge_file, is_live_krita=lambda pid: True, any_plugin=True
+    )
+    assert isinstance(reaching.call("echo"), Done)
+    assert isinstance(reaching.health(), Done)
+
+
+def test_a_refused_connection_reports_what_the_bridge_file_says_now(tmp_path: Path) -> None:
+    path = _write_bridge_file(tmp_path, _free_port(), "restarting")
+
+    def restarted(pid: int) -> bool:
+        # Read after the first _open took its copy, so only the second sees it.
+        _write_bridge_file(tmp_path, _free_port(), "newer", plugin_version="0.0.1")
+        return True
+
+    assert _code(_client(path, is_live_krita=restarted).call("echo")) == "PROTOCOL_MISMATCH"
+
+
+def test_a_call_is_encoded_once_with_its_wait_and_its_ephemeral_field(
+    live: Live, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    real = json.dumps
+    encoded: list[Any] = []
+
+    def counting(value: Any, *args: Any, **kwargs: Any) -> str:
+        encoded.append(value)
+        return real(value, *args, **kwargs)
+
+    monkeypatch.setattr(json, "dumps", counting)
+    client = live.client()
+    assert isinstance(client.call("echo"), Done)
+    assert isinstance(client.call("echo", request_id="req-kept"), Done)
+    calls = [value for value in encoded if isinstance(value, dict) and "wait_s" in value]
+    assert [call["ephemeral"] for call in calls] == [True, False]
+    assert all(call["wait_s"] == pytest.approx(0.2, abs=0.05) for call in calls)
 
 
 def test_a_malformed_bridge_file_is_an_internal_error(tmp_path: Path) -> None:

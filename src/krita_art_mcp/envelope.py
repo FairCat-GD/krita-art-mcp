@@ -47,9 +47,9 @@ def completed(
     return _result(text, content, False)
 
 
-def pending(status: str, operation_id: str, *, document_id: str | None = None) -> CallToolResult:
+def pending(status: str, operation_id: str) -> CallToolResult:
     text = f"Krita is still busy with this call ({status}, operation {operation_id})."
-    content = structured(status, document_id=document_id, operation_id=operation_id)
+    content = structured(status, operation_id=operation_id)
     return _result(text, content, False)
 
 

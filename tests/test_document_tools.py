@@ -933,25 +933,10 @@ def test_inspect_counts_the_selection_and_reads_frame_0_only(world: World) -> No
         "selected_pixels": 4,
         "coverage_px": (255 + 128 + 255 + 255) / 255,
     }
-    assert list((world.data / "transfer").iterdir()) == []
+    transfer = world.data / "transfer"
+    assert not transfer.exists() or list(transfer.iterdir()) == []
     later = server.content("krita_document_inspect", {**arguments, "frame": 1})
     assert later["error"]["code"] == "UNSUPPORTED_CAPABILITY" and later["operation_id"] is None
-
-
-def test_a_selection_file_read_already_asks_for_another_inspect(world: World) -> None:
-    gone = {
-        "path": str(world.data / "transfer" / "gone.raw"),
-        "size_px": [1, 1],
-        "format": "A8",
-    }
-    (world.data / "transfer").mkdir(exist_ok=True)
-    result = {"selection": {"bounds_px": {"x": 0, "y": 0, "width": 1, "height": 1}, "pixels": gone}}
-    outcome = documents_tools.resolve_inspect(
-        world.places(), Done(result, "op-1", "document.inspect")
-    )
-    assert isinstance(outcome, Failed)
-    assert outcome.error["code"] == "INTERNAL_ERROR" and outcome.error["retryable"] is True
-    assert "inspect again" in outcome.error["message"]
 
 
 def test_server_info_reports_the_roots_the_plugin_enforces(world: World) -> None:

@@ -1,4 +1,4 @@
 # Held equal to the package version by a server test.
-PLUGIN_VERSION = "0.12.0"
+PLUGIN_VERSION = "0.13.0"
 # The bridge protocol; the server holds an equal copy and refuses any other number.
 PROTOCOL = 1

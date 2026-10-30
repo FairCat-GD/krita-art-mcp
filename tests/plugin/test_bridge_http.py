@@ -64,6 +64,7 @@ class Live:
             "operation_id": operation_id,
             "client": {"pid": 1, "started_at": "test"},
             "wait_s": wait_s,
+            "ephemeral": False,
         }
         status, reply = self.request("POST", "/v1/call", body)
         assert status == 200
@@ -220,6 +221,7 @@ def test_a_call_needs_a_client_the_lease_can_tell_apart(live: Live, client: Any)
         "operation_id": "op-1",
         "client": client,
         "wait_s": 1,
+        "ephemeral": False,
     }
     status, reply = live.request("POST", "/v1/call", body)
     assert status == 400
@@ -235,6 +237,7 @@ def test_a_reused_operation_id_is_refused_without_reporting_the_other_call(live:
         "operation_id": "op-1",
         "client": {"pid": 1, "started_at": "test"},
         "wait_s": 1,
+        "ephemeral": False,
     }
     status, reply = live.request("POST", "/v1/call", body)
     assert status == 200
@@ -284,6 +287,7 @@ def test_a_client_that_hangs_up_before_its_reply_cannot_kill_the_process(live: L
             "operation_id": "op-gone",
             "client": {"pid": 1, "started_at": "test"},
             "wait_s": 1.0,
+            "ephemeral": False,
         }
     ).encode()
     head = (
@@ -363,3 +367,17 @@ def test_ephemeral_must_be_a_boolean(live: Live, value: Any) -> None:
     }
     status, reply = live.request("POST", "/v1/call", body)
     assert status == 400 and "ephemeral" in reply["error"]["message"]
+
+
+def test_a_call_without_ephemeral_is_refused(live: Live) -> None:
+    body = {
+        "op": "echo",
+        "args": {},
+        "request_id": "req-1",
+        "operation_id": "op-1",
+        "client": {"pid": 1, "started_at": "test"},
+        "wait_s": 1,
+    }
+    status, reply = live.request("POST", "/v1/call", body)
+    assert status == 400 and "ephemeral" in reply["error"]["message"]
+    assert "op-1" not in live.bridge.jobs._operations

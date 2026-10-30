@@ -1,10 +1,7 @@
-import asyncio
 import hashlib
-import json
 import math
 import os
 import statistics
-import subprocess
 import time
 import uuid
 from collections.abc import Awaitable, Callable
@@ -13,14 +10,27 @@ from typing import Any
 
 import numpy as np
 from mcp import Client
-from PIL import Image
 
-from krita_art_mcp import paths
 from krita_art_mcp.bridge_client import BridgeClient, Done
 from krita_art_mcp.journal import Journal
 from krita_art_mcp.probe import fixtures, previews
-from krita_art_mcp.probe.changes import by_name, guard, history_args
-from krita_art_mcp.probe.opening import open_args
+from krita_art_mcp.probe.common import (
+    brush_args,
+    brush_colour,
+    by_name,
+    capture,
+    capture_composite,
+    finished,
+    guard,
+    harness_call,
+    history_args,
+    krita_rss_kb,
+    line_points,
+    megabytes,
+    open_args,
+    open_working,
+    stroke_args,
+)
 from krita_art_mcp.probe.pixels import brushes
 from krita_art_mcp.probe.report import Report, close, code, differs, sheet_cell, tool
 
@@ -67,47 +77,6 @@ JOURNAL_BUDGET_BYTES = 100 * 1024 * 1024
 OPEN_LIMIT_S = 600.0
 
 
-def _colour(rgb: tuple[int, int, int]) -> dict[str, Any]:
-    return {"space": "srgb", "rgba": [channel / 255 for channel in rgb] + [1]}
-
-
-def _brush(preset: dict[str, Any], **changes: Any) -> dict[str, Any]:
-    return {
-        "preset_id": preset["id"],
-        "preset_sha256": preset["sha256"],
-        "size_px": 12,
-        "opacity": 1,
-        "flow": 1,
-        "color": _colour((200, 60, 90)),
-        "eraser": False,
-        **changes,
-    }
-
-
-def _stroke(
-    document_id: str,
-    layer_id: str,
-    brush: dict[str, Any],
-    points: list[dict[str, Any]],
-    request_id: str | None = None,
-    **extra: Any,
-) -> dict[str, Any]:
-    return {
-        "guard": guard(document_id, request_id),
-        "layer_id": layer_id,
-        "brush": brush,
-        "points": points,
-        **extra,
-    }
-
-
-def _line(x0: float, y0: float, x1: float, y1: float, count: int = 8) -> list[dict[str, Any]]:
-    return [
-        {"x": x0 + (x1 - x0) * index / (count - 1), "y": y0 + (y1 - y0) * index / (count - 1)}
-        for index in range(count)
-    ]
-
-
 def _s_curve(x: float, y: float) -> list[dict[str, Any]]:
     # About 600 px long inside a 400 x 400 square whose corner is (x, y).
     return [
@@ -150,13 +119,13 @@ async def run(
     fixtures.write_ora(paint, fixtures.paint_stack(), fixtures.PAINT_WIDTH, fixtures.PAINT_HEIGHT)
     fixtures.write_ora(rim, fixtures.rim_stack())
     await _capabilities(report, a)
-    opened = await _open(a, paint, harness)
+    opened = await open_working(a, paint, harness, "painting")
     document_id = opened.get("document_id")
     if opened.get("status") != "completed" or not document_id:
         report.check("the paint checks' working copy opens", False, str(opened.get("error")))
         return
     used = [entry["id"] for entry in presets.values() if entry is not None]
-    saved = _harness(
+    saved = harness_call(
         client, "harness.brush_state", document_id=document_id, action="read", preset_ids=used
     )
     try:
@@ -177,14 +146,14 @@ async def run(
         await then(report, a, client, harness, hard)
     finally:
         if isinstance(saved, Done):
-            put_back = _harness(
+            put_back = harness_call(
                 client,
                 "harness.brush_state",
                 document_id=document_id,
                 action="write",
                 state=saved.result["state"],
             )
-            again = _harness(
+            again = harness_call(
                 client,
                 "harness.brush_state",
                 document_id=document_id,
@@ -202,15 +171,6 @@ async def run(
         await close(a, document_id)
 
 
-def _harness(client: BridgeClient, op: str, **args: Any) -> Any:
-    return client.call(op, args, request_id=str(uuid.uuid4()))
-
-
-async def _open(a: Client, source: Path, harness: Path, **extra: Any) -> dict[str, Any]:
-    work = harness / "work" / "painting"
-    return await tool(a, "krita_document_open", open_args(source, "working_copy", work, **extra))
-
-
 async def _layer(a: Client, document_id: str, root: str, name: str) -> str | None:
     arguments = {
         "guard": guard(document_id),
@@ -222,32 +182,6 @@ async def _layer(a: Client, document_id: str, root: str, name: str) -> str | Non
     made = await tool(a, "krita_layer_create", arguments)
     layer_id: str | None = (made.get("data") or {}).get("layer_id")
     return layer_id
-
-
-async def _composite(a: Client, document_id: str, width: int, height: int) -> np.ndarray | None:
-    return await _capture(a, document_id, "composite", None, (0, 0, width, height))
-
-
-async def _capture(
-    a: Client,
-    document_id: str,
-    target: str,
-    layer_id: str | None,
-    box: tuple[int, int, int, int],
-) -> np.ndarray | None:
-    arguments = {
-        "source": {"document_id": document_id, "frame": 0},
-        "target": target,
-        "layer_id": layer_id,
-        "rect": {"x": box[0], "y": box[1], "width": box[2], "height": box[3]},
-        "scale": 1,
-        "filter": "nearest",
-    }
-    data = (await tool(a, "krita_capture", arguments)).get("data") or {}
-    if "image" not in data:
-        return None
-    with Image.open(data["image"]["path"]) as image:
-        return np.asarray(image.convert("RGBA"))
 
 
 async def _capabilities(report: Report, a: Client) -> None:
@@ -277,8 +211,10 @@ async def _colours(
     centres, problems = [], []
     for index, rgb in enumerate(COLOURS):
         x = 8 + index * 15
-        brush = _brush(hard, size_px=10, color=_colour(rgb))
-        done = await tool(a, TOOL, _stroke(document_id, layer_id, brush, _line(x, 20, x, 60)))
+        brush = brush_args(hard, size_px=10, color=brush_colour(rgb))
+        done = await tool(
+            a, TOOL, stroke_args(document_id, layer_id, brush, line_points(x, 20, x, 60))
+        )
         if done.get("status") != "completed":
             problems.append(f"#{bytes(rgb).hex().upper()}: {code(done)}")
         centres.append([x, 40])
@@ -321,13 +257,15 @@ async def _one_step(
         report.check("the undo check's layer is added", False)
         return
     width, height = fixtures.PAINT_WIDTH, fixtures.PAINT_HEIGHT
-    before = await _composite(a, document_id, width, height)
+    before = await capture_composite(a, document_id, width, height)
     request_id = str(uuid.uuid4())
-    arguments = _stroke(document_id, layer_id, _brush(hard), _line(20, 70, 140, 80), request_id)
+    arguments = stroke_args(
+        document_id, layer_id, brush_args(hard), line_points(20, 70, 140, 80), request_id
+    )
     first = await tool(a, TOOL, arguments)
     again = await tool(a, TOOL, arguments)
     from_b = await tool(b, TOOL, arguments)
-    painted = await _composite(a, document_id, width, height)
+    painted = await capture_composite(a, document_id, width, height)
     stroke_ids = {(content.get("data") or {}).get("stroke_id") for content in (first, from_b)}
     report.check(
         "a retried stroke returns the original receipt, from both servers, and paints nothing more",
@@ -337,10 +275,10 @@ async def _one_step(
         and from_b.get("status") == "completed",
         f"{code(first)}, again {again == first}, b {code(from_b) or stroke_ids}",
     )
-    labels = _harness(client, "harness.undo_labels", document_id=document_id)
+    labels = harness_call(client, "harness.undo_labels", document_id=document_id)
     undo_label = labels.result.get("undo") if isinstance(labels, Done) else None
     undone = await tool(a, "krita_history_step", history_args(document_id, "undo"))
-    after = await _composite(a, document_id, width, height)
+    after = await capture_composite(a, document_id, width, height)
     report.check(
         "one stroke is one undo step, named Scripted Brush Stroke: one history undo puts the "
         "composite back as it was",
@@ -365,26 +303,26 @@ async def _view(
     if layer_id is None:
         report.check("N-07's layer is added", False)
         return
-    read = _harness(client, "harness.view", document_id=document_id, view=None)
+    read = harness_call(client, "harness.view", document_id=document_id, view=None)
     if not isinstance(read, Done):
         report.check("harness.view reads the view", False, str(read))
         return
     first_view = read.result["view"]
-    points = _line(15, 15, 145, 85, 24)
-    box = (0, 0, fixtures.PAINT_WIDTH, fixtures.PAINT_HEIGHT)
+    points = line_points(15, 15, 145, 85, 24)
+    rect = {"x": 0, "y": 0, "width": fixtures.PAINT_WIDTH, "height": fixtures.PAINT_HEIGHT}
     hashes, views = [], []
     try:
         for view in (None, _turned(first_view)):
             if view is not None:
-                moved = _harness(client, "harness.view", document_id=document_id, view=view)
+                moved = harness_call(client, "harness.view", document_id=document_id, view=view)
                 views.append(moved.result["view"] if isinstance(moved, Done) else str(moved))
-            done = await tool(a, TOOL, _stroke(document_id, layer_id, _brush(hard), points))
-            pixels = await _capture(a, document_id, "layer", layer_id, box)
+            done = await tool(a, TOOL, stroke_args(document_id, layer_id, brush_args(hard), points))
+            pixels = await capture(a, document_id, rect, "layer", layer_id)
             hashes.append(None if pixels is None else hashlib.sha256(pixels.tobytes()).hexdigest())
             if done.get("status") == "completed":
                 await tool(a, "krita_history_step", history_args(document_id, "undo"))
     finally:
-        _harness(client, "harness.view", document_id=document_id, view=first_view)
+        harness_call(client, "harness.view", document_id=document_id, view=first_view)
     report.check(
         "N-07: one stroke lands on the same layer pixels at two zoom, rotation and pan settings",
         len(hashes) == 2 and hashes[0] is not None and hashes[0] == hashes[1],
@@ -414,10 +352,12 @@ async def _witness(
     # Two strokes, so the step under the one undone by hand has the same label: only the
     # pixels tell them apart.
     first = await tool(
-        a, TOOL, _stroke(document_id, layer_id, _brush(hard), _line(20, 30, 140, 30))
+        a, TOOL, stroke_args(document_id, layer_id, brush_args(hard), line_points(20, 30, 140, 30))
     )
-    done = await tool(a, TOOL, _stroke(document_id, layer_id, _brush(hard), _line(20, 60, 140, 60)))
-    by_hand = _harness(client, "harness.undo", document_id=document_id)
+    done = await tool(
+        a, TOOL, stroke_args(document_id, layer_id, brush_args(hard), line_points(20, 60, 140, 60))
+    )
+    by_hand = harness_call(client, "harness.undo", document_id=document_id)
     under = by_hand.result.get("undo") if isinstance(by_hand, Done) else None
     refused = await tool(a, "krita_history_step", history_args(document_id, "undo"))
     report.check(
@@ -442,24 +382,24 @@ async def _tall_tip(
     source = folder / "tip.ora"
     base = fixtures.Layer("probe base", fixtures.rect(TIP_CANVAS_PX, TIP_CANVAS_PX, (30, 110, 200)))
     fixtures.write_ora(source, (base,), TIP_CANVAS_PX, TIP_CANVAS_PX)
-    opened = await _open(a, source, harness)
+    opened = await open_working(a, source, harness, "painting")
     document_id = opened.get("document_id")
     if opened.get("status") != "completed" or not document_id:
         report.measured(name, f"its document did not open: {code(opened)}")
         return
     middle = TIP_CANVAS_PX / 2
     lines = {
-        "horizontal": _line(middle - 80, middle, middle + 80, middle),
-        "vertical": _line(middle, middle - 80, middle, middle + 80),
-        "diagonal": _line(middle - 60, middle - 60, middle + 60, middle + 60),
+        "horizontal": line_points(middle - 80, middle, middle + 80, middle),
+        "vertical": line_points(middle, middle - 80, middle, middle + 80),
+        "diagonal": line_points(middle - 60, middle - 60, middle + 60, middle + 60),
     }
     found, margins = [], set()
     try:
         root = opened["data"]["root_layer_id"]
         for label, points in lines.items():
             layer_id = await _layer(a, document_id, root, f"tip {label}")
-            brush = _brush(tall, size_px=TIP_BRUSH_PX)
-            arguments = _stroke(document_id, layer_id or "", brush, points, verify="full")
+            brush = brush_args(tall, size_px=TIP_BRUSH_PX)
+            arguments = stroke_args(document_id, layer_id or "", brush, points, verify="full")
             data = (await tool(a, TOOL, arguments)).get("data") or {}
             if not data.get("changed_bounds_px"):
                 found.append(f"{label}: not painted")
@@ -486,7 +426,7 @@ async def _beside(
     name = "a baseline rendered beside the current state after a stroke is the document as opened"
     source = folder / "beside.ora"
     fixtures.write_ora(source, fixtures.paint_stack(), fixtures.PAINT_WIDTH, fixtures.PAINT_HEIGHT)
-    opened = await _open(a, source, harness)
+    opened = await open_working(a, source, harness, "painting")
     document_id = opened.get("document_id")
     if opened.get("status") != "completed" or not document_id:
         report.check(name, False, str(opened.get("error")))
@@ -497,8 +437,10 @@ async def _beside(
         alone = previews.arguments([previews.source(document_id)], previews.GAME[:1], **units)
         before = await tool(a, previews.TOOL, alone)
         layer_id = await _layer(a, document_id, data["root_layer_id"], "beside")
-        line = _line(20, 48, fixtures.PAINT_WIDTH - 20, 48)
-        painted = await tool(a, TOOL, _stroke(document_id, layer_id or "", _brush(hard), line))
+        line = line_points(20, 48, fixtures.PAINT_WIDTH - 20, 48)
+        painted = await tool(
+            a, TOOL, stroke_args(document_id, layer_id or "", brush_args(hard), line)
+        )
         paired = previews.source(document_id, baseline_id=data["baseline_id"])
         after = await tool(
             a, previews.TOOL, previews.arguments([paired], previews.GAME[:1], **units)
@@ -559,42 +501,50 @@ async def _refusals(
     if layer_id is None or group_id is None:
         report.check("the refusal checks' layers are added", False)
         return
-    line = _line(30, 30, 90, 40)
+    line = line_points(30, 30, 90, 40)
     pressed = [{**point, "pressure": 0.5} for point in line]
     unknown = {**hard, "id": "krita-art-mcp probe missing.kpp"}
     cases = {
-        "a protected layer": (_stroke(document_id, base, _brush(hard), line), "LOCKED_TARGET"),
-        "a group": (_stroke(document_id, group_id, _brush(hard), line), "LAYER_NOT_PAINTABLE"),
+        "a protected layer": (
+            stroke_args(document_id, base, brush_args(hard), line),
+            "LOCKED_TARGET",
+        ),
+        "a group": (
+            stroke_args(document_id, group_id, brush_args(hard), line),
+            "LAYER_NOT_PAINTABLE",
+        ),
         "a point past the canvas": (
-            _stroke(document_id, layer_id, _brush(hard), _line(-40, 30, 90, 40)),
+            stroke_args(document_id, layer_id, brush_args(hard), line_points(-40, 30, 90, 40)),
             "INVALID_ARGUMENT",
         ),
         "pressure without input_fallback": (
-            _stroke(document_id, layer_id, _brush(hard), pressed),
+            stroke_args(document_id, layer_id, brush_args(hard), pressed),
             "UNSUPPORTED_CAPABILITY",
         ),
         "an unknown preset": (
-            _stroke(document_id, layer_id, _brush(unknown), line),
+            stroke_args(document_id, layer_id, brush_args(unknown), line),
             "INVALID_ARGUMENT",
         ),
         "a preset whose settings differ": (
-            _stroke(document_id, layer_id, _brush(hard, preset_sha256="0" * 64), line),
+            stroke_args(document_id, layer_id, brush_args(hard, preset_sha256="0" * 64), line),
             "RESOURCE_HASH_MISMATCH",
         ),
         "the eraser with alpha lock": (
-            _stroke(document_id, layer_id, _brush(hard, eraser=True, alpha_lock=True), line),
+            stroke_args(
+                document_id, layer_id, brush_args(hard, eraser=True, alpha_lock=True), line
+            ),
             "INVALID_ARGUMENT",
         ),
         "the eraser": (
-            _stroke(document_id, layer_id, _brush(hard, eraser=True), line),
+            stroke_args(document_id, layer_id, brush_args(hard, eraser=True), line),
             "UNSUPPORTED_CAPABILITY",
         ),
         "a single point": (
-            _stroke(document_id, layer_id, _brush(hard), line[:1]),
+            stroke_args(document_id, layer_id, brush_args(hard), line[:1]),
             "UNSUPPORTED_CAPABILITY",
         ),
         "smooth stabilizer": (
-            _stroke(document_id, layer_id, _brush(hard), line, smooth="stabilizer"),
+            stroke_args(document_id, layer_id, brush_args(hard), line, smooth="stabilizer"),
             "UNSUPPORTED_CAPABILITY",
         ),
     }
@@ -610,10 +560,12 @@ async def _refusals(
         "; ".join(wrong),
     )
     flat = await tool(
-        a, TOOL, _stroke(document_id, layer_id, _brush(hard), pressed, input_fallback="flat")
+        a,
+        TOOL,
+        stroke_args(document_id, layer_id, brush_args(hard), pressed, input_fallback="flat"),
     )
     smooth = await tool(
-        a, TOOL, _stroke(document_id, layer_id, _brush(hard), line, smooth="catmull_rom")
+        a, TOOL, stroke_args(document_id, layer_id, brush_args(hard), line, smooth="catmull_rom")
     )
     report.check(
         "input_fallback flat paints the pressed points at pressure 1, and catmull_rom smoothing "
@@ -622,11 +574,13 @@ async def _refusals(
         and smooth.get("status") == "completed",
         f"{code(flat) or 'flat'}, {code(smooth) or 'smoothed'}",
     )
-    spread = _harness(
+    spread = harness_call(
         client, "harness.add_node", document_id=document_id, kind="filter_layer", layer_id=layer_id
     )
-    region = await tool(a, TOOL, _stroke(document_id, layer_id, _brush(hard), line))
-    full = await tool(a, TOOL, _stroke(document_id, layer_id, _brush(hard), line, verify="full"))
+    region = await tool(a, TOOL, stroke_args(document_id, layer_id, brush_args(hard), line))
+    full = await tool(
+        a, TOOL, stroke_args(document_id, layer_id, brush_args(hard), line, verify="full")
+    )
     reasons = ((region.get("error") or {}).get("details") or {}).get("reasons") or []
     report.check(
         "a filter layer above the target refuses region scope, naming it, and verify full paints",
@@ -636,14 +590,16 @@ async def _refusals(
         and full.get("status") == "completed",
         f"region {code(region)}, full {code(full) or 'completed'}",
     )
-    masked = _harness(
+    masked = harness_call(
         client,
         "harness.select_mask",
         document_id=document_id,
         layer_id=layer_id,
         rect={"x": 10, "y": 10, "width": 40, "height": 40},
     )
-    local = await tool(a, TOOL, _stroke(document_id, layer_id, _brush(hard), line, verify="full"))
+    local = await tool(
+        a, TOOL, stroke_args(document_id, layer_id, brush_args(hard), line, verify="full")
+    )
     report.check(
         "a layer with a local selection mask is LAYER_HAS_LOCAL_SELECTION",
         isinstance(masked, Done) and code(local) == "LAYER_HAS_LOCAL_SELECTION",
@@ -655,7 +611,7 @@ async def _refusals(
         try:
             layers = by_name((read_only.get("data") or {}).get("layers") or [])
             refused = await tool(
-                a, TOOL, _stroke(read_id, layers["probe base"]["id"], _brush(hard), line)
+                a, TOOL, stroke_args(read_id, layers["probe base"]["id"], brush_args(hard), line)
             )
         finally:
             await close(a, read_id)
@@ -677,7 +633,7 @@ async def _masks(
     presets: dict[str, Any],
 ) -> None:
     # N-08 / H8 on a copy of its own, since protection only tightens.
-    opened = await _open(a, paint, harness)
+    opened = await open_working(a, paint, harness, "painting")
     document_id = opened.get("document_id")
     if opened.get("status") != "completed" or not document_id:
         report.check("N-08's working copy opens", False, str(opened.get("error")))
@@ -701,16 +657,18 @@ async def _masks(
         if layer_id is None or protected.get("status") != "completed":
             report.check("N-08's layer and protection are set", False, str(code(protected)))
             return
-        edge = _line(100, 30, 100, 58)
+        edge = line_points(100, 30, 100, 58)
         for role in ("soft", "scatter"):
             preset = presets[role]
             if preset is None:
                 report.check(f"N-08: a {role} stock preset is listed", False)
                 continue
-            brush = _brush(preset, size_px=24)
+            brush = brush_args(preset, size_px=24)
             await _select(a, document_id, {"type": "rect", "rect": allowed})
             kept = {
-                mode: await tool(a, TOOL, _stroke(document_id, layer_id, brush, edge, verify=mode))
+                mode: await tool(
+                    a, TOOL, stroke_args(document_id, layer_id, brush, edge, verify=mode)
+                )
                 for mode in ("region", "full")
             }
             outside = {
@@ -720,14 +678,16 @@ async def _masks(
                 for mode, content in kept.items()
             }
             await _select(a, document_id, {"type": "none"})
-            before = await _composite(a, document_id, width, height)
+            before = await capture_composite(a, document_id, width, height)
             leaked = {
-                mode: await tool(a, TOOL, _stroke(document_id, layer_id, brush, edge, verify=mode))
+                mode: await tool(
+                    a, TOOL, stroke_args(document_id, layer_id, brush, edge, verify=mode)
+                )
                 for mode in ("region", "full")
             }
             if role == "soft":
                 await _k43(report, a, client, document_id)
-            after = await _composite(a, document_id, width, height)
+            after = await capture_composite(a, document_id, width, height)
             confirmed = {
                 mode: ((content.get("error") or {}).get("details") or {}).get("rollback_verified")
                 for mode, content in leaked.items()
@@ -746,7 +706,9 @@ async def _masks(
             )
         hard = presets["hard"]
         away = await tool(
-            a, TOOL, _stroke(document_id, layer_id, _brush(hard), _line(145, 85, 155, 90))
+            a,
+            TOOL,
+            stroke_args(document_id, layer_id, brush_args(hard), line_points(145, 85, 155, 90)),
         )
         report.check(
             "a stroke wholly outside the allowed mask is refused before painting with "
@@ -760,7 +722,7 @@ async def _masks(
 
 async def _k43(report: Report, a: Client, client: BridgeClient, document_id: str) -> None:
     # Straight after a rollback, before any other step deletes Krita's redo of it.
-    labels = _harness(client, "harness.undo_labels", document_id=document_id)
+    labels = harness_call(client, "harness.undo_labels", document_id=document_id)
     offered = labels.result.get("redo") if isinstance(labels, Done) else None
     redo = await tool(a, "krita_history_step", history_args(document_id, "redo"))
     report.check(
@@ -785,7 +747,7 @@ async def _select(a: Client, document_id: str, shape: dict[str, Any]) -> None:
 
 
 async def _rim(report: Report, a: Client, rim: Path, harness: Path, hard: dict[str, Any]) -> None:
-    opened = await _open(a, rim, harness)
+    opened = await open_working(a, rim, harness, "painting")
     document_id = opened.get("document_id")
     if opened.get("status") != "completed" or not document_id:
         report.check("the rim's working copy opens", False, str(opened.get("error")))
@@ -818,20 +780,20 @@ async def _rim(report: Report, a: Client, rim: Path, harness: Path, hard: dict[s
                 "properties": {"inherit_alpha": True},
             },
         )
-        brush = _brush(hard, size_px=8, color=_colour((230, 60, 30)))
-        across = _line(8, 24, 56, 24)
-        before = await _composite(a, document_id, fixtures.WIDTH, fixtures.HEIGHT)
-        kept = await tool(a, TOOL, _stroke(document_id, clipped, brush, across))
-        after = await _composite(a, document_id, fixtures.WIDTH, fixtures.HEIGHT)
+        brush = brush_args(hard, size_px=8, color=brush_colour((230, 60, 30)))
+        across = line_points(8, 24, 56, 24)
+        before = await capture_composite(a, document_id, fixtures.WIDTH, fixtures.HEIGHT)
+        kept = await tool(a, TOOL, stroke_args(document_id, clipped, brush, across))
+        after = await capture_composite(a, document_id, fixtures.WIDTH, fixtures.HEIGHT)
         same_alpha = (
             before is not None
             and after is not None
             and np.array_equal(before[..., 3], after[..., 3])
         )
         checked = (kept.get("data") or {}).get("verification") or {}
-        refused = await tool(a, TOOL, _stroke(document_id, plain, brush, across))
+        refused = await tool(a, TOOL, stroke_args(document_id, plain, brush, across))
         details = (refused.get("error") or {}).get("details") or {}
-        again = await _composite(a, document_id, fixtures.WIDTH, fixtures.HEIGHT)
+        again = await capture_composite(a, document_id, fixtures.WIDTH, fixtures.HEIGHT)
         report.check(
             "the rim: a correction on an inherit_alpha layer keeps every alpha byte under "
             "preserve_composite_alpha; the same stroke on a normal layer is rolled back",
@@ -848,41 +810,10 @@ async def _rim(report: Report, a: Client, rim: Path, harness: Path, hard: dict[s
         await close(a, document_id)
 
 
-def _krita_rss_kb() -> int | None:
-    try:
-        pid = json.loads(paths.bridge_file().read_text(encoding="utf-8"))["pid"]
-        out = subprocess.run(
-            ["ps", "-o", "rss=", "-p", str(int(pid))],
-            capture_output=True,
-            text=True,
-            check=True,
-            stdin=subprocess.DEVNULL,
-        ).stdout
-        return int(out.strip())
-    except (OSError, ValueError, KeyError, subprocess.CalledProcessError):
-        return None
-
-
-def _megabytes(kilobytes: int | None) -> str:
-    return "unread" if kilobytes is None else f"{kilobytes / 1024:.0f} MB"
-
-
 def _size(folder: Path) -> int:
     if not folder.is_dir():
         return 0
     return sum(entry.stat().st_size for entry in folder.rglob("*") if entry.is_file())
-
-
-async def _finished(a: Client, content: dict[str, Any], limit_s: float) -> dict[str, Any]:
-    # A call that ran past the server's wait is followed to its receipt.
-    deadline = time.monotonic() + limit_s
-    while content.get("status") in ("queued", "running") and time.monotonic() < deadline:
-        await asyncio.sleep(1.0)
-        got = await tool(a, "krita_operation_get", {"operation_id": content["operation_id"]})
-        receipt = (got.get("data") or {}).get("receipt")
-        if receipt is not None:
-            return dict(receipt)
-    return content
 
 
 async def _benchmark(
@@ -900,16 +831,16 @@ async def _benchmark(
     source = folder / f"{name.lower()}.ora"
     fixtures.write_sparse_ora(source, fixtures.benchmark_stack(spec["layers"], area), size, size)
     baselines = harness / "server-a" / "baselines"
-    held, rss_before = _size(baselines), _krita_rss_kb()
+    held, rss_before = _size(baselines), krita_rss_kb()
     started = time.perf_counter()
-    opened = await _finished(a, await _open(a, source, harness), OPEN_LIMIT_S)
+    opened = await finished(a, await open_working(a, source, harness, "painting"), OPEN_LIMIT_S)
     opened_s = time.perf_counter() - started
     document_id = opened.get("document_id")
     report.measured(
         f"{name}: opening the {size} x {size} master with {spec['layers']} layers",
         f"{opened_s:.1f} s, {(_size(baselines) - held) / 1e6:.0f} MB of baseline written (read "
         "lazily), Krita "
-        f"{_megabytes(rss_before)} before and {_megabytes(_krita_rss_kb())} after",
+        f"{megabytes(rss_before)} before and {megabytes(krita_rss_kb())} after",
     )
     if opened.get("status") != "completed" or not document_id:
         report.check(f"{name}'s master opens", False, str(opened.get("error")))
@@ -921,13 +852,13 @@ async def _benchmark(
             report.check(f"{name}'s layer is added", False)
             return
         journal = harness / "server-a" / "journal"
-        logged, rss = _lines_size(journal), _krita_rss_kb()
-        brush = _brush(hard, size_px=BRUSH_PX)
+        logged, rss = _lines_size(journal), krita_rss_kb()
+        brush = brush_args(hard, size_px=BRUSH_PX)
         took, scopes, failures = [], [], []
         for index in range(STROKES):
             points = _s_curve(corner + index * 3, corner + index * 3)
             started = time.perf_counter()
-            done = await tool(a, TOOL, _stroke(document_id, layer_id, brush, points))
+            done = await tool(a, TOOL, stroke_args(document_id, layer_id, brush, points))
             took.append(time.perf_counter() - started)
             if done.get("status") != "completed":
                 failures.append(f"stroke {index}: {code(done) or done.get('status')}")
@@ -944,10 +875,10 @@ async def _benchmark(
         )
         long_took = []
         for index in range(LONG_STROKES):
-            points = _line(40 + index * 9, 40, size - 40, size - 40 - index * 9, POINTS)
+            points = line_points(40 + index * 9, 40, size - 40, size - 40 - index * 9, POINTS)
             started = time.perf_counter()
-            done = await _finished(
-                a, await tool(a, TOOL, _stroke(document_id, layer_id, brush, points)), 120.0
+            done = await finished(
+                a, await tool(a, TOOL, stroke_args(document_id, layer_id, brush, points)), 120.0
             )
             long_took.append(f"{time.perf_counter() - started:.2f} s {code(done) or ''}".strip())
         report.measured(f"{name}: corner-to-corner strokes, not gated", ", ".join(long_took))
@@ -959,11 +890,11 @@ async def _benchmark(
 
 
 def _retention(report: Report, client: BridgeClient, rss_before: int | None) -> None:
-    held = _harness(client, "probe.retention")
+    held = harness_call(client, "harness.retention")
     counts = held.result if isinstance(held, Done) else str(held)
     report.measured(
-        "F2: Krita's memory across N-01, and what the bridge holds after it",
-        f"{_megabytes(rss_before)} before, {_megabytes(_krita_rss_kb())} after; {counts}",
+        "Krita's memory across N-01, and what the bridge holds after it",
+        f"{megabytes(rss_before)} before, {megabytes(krita_rss_kb())} after; {counts}",
     )
 
 
@@ -979,7 +910,7 @@ def _journal(report: Report, journal: Path, before: int, strokes: int) -> None:
     bites = week_s > LOOKUP_BUDGET_S or week > JOURNAL_BUDGET_BYTES
     held = _size(journal / "args")
     report.measured(
-        "F3: the journal after N-01, and a heavy week extrapolated",
+        "the journal after N-01, and a heavy week extrapolated",
         f"lines {size / 1e6:.2f} MB, {per_stroke / 1e3:.1f} KB per stroke, argument files "
         f"{held / 1e6:.2f} MB, a fresh first lookup {lookup_s * 1000:.0f} ms; a week of "
         f"{WEEK_STROKES} strokes: {week / 1e6:.0f} MB of lines and {week_s:.2f} s, so it "

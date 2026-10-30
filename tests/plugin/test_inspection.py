@@ -132,16 +132,43 @@ def test_phase_1_reads_frame_0_only(world: World, frame: Any, code: str) -> None
     assert refused.value.body["code"] == code
 
 
-def test_the_selection_crosses_as_a_transfer_file(world: World) -> None:
+def test_the_plugin_counts_the_selection_and_writes_no_file(world: World) -> None:
     opened = world.opened()
     key = next(iter(world.port.live))
-    world.port.live[key]["selection"] = ({"x": 1, "y": 2, "width": 2, "height": 1}, b"\0\xff")
-    selection = world.inspect(opened["document_id"])["selection"]
-    assert selection["bounds_px"] == {"x": 1, "y": 2, "width": 2, "height": 1}
-    assert Path(selection["pixels"]["path"]).read_bytes() == b"\0\xff"
-    assert selection["pixels"]["format"] == "A8"
-    world.port.live[key]["selection"] = ({"x": 0, "y": 0, "width": 0, "height": 0}, b"")
-    assert world.inspect(opened["document_id"])["selection"]["pixels"] is None
+    pixels = bytes([0, 255, 128, 0, 255, 255])
+    bounds = {"x": 1, "y": 2, "width": 3, "height": 2}
+    world.port.live[key]["selection"] = (bounds, pixels)
+    assert world.inspect(opened["document_id"])["selection"] == {
+        "bounds_px": bounds,
+        "selected_pixels": 4,
+        "coverage_px": (255 + 128 + 255 + 255) / 255,
+    }
+    assert not (world.data / "transfer").exists()
+
+
+def test_an_empty_selection_counts_nothing(world: World) -> None:
+    opened = world.opened()
+    key = next(iter(world.port.live))
+    empty = {"x": 0, "y": 0, "width": 0, "height": 0}
+    world.port.live[key]["selection"] = (empty, b"")
+    assert world.inspect(opened["document_id"])["selection"] == {
+        "bounds_px": empty,
+        "selected_pixels": 0,
+        "coverage_px": 0.0,
+    }
+
+
+def test_a_selection_krita_reads_short_is_refused(
+    world: World, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    opened = world.opened()
+    key = next(iter(world.port.live))
+    world.port.live[key]["selection"] = ({"x": 0, "y": 0, "width": 2, "height": 2}, bytes(4))
+    monkeypatch.setattr(world.port, "selection_rect", lambda document, rect: None)
+    with pytest.raises(BridgeError) as refused:
+        world.inspect(opened["document_id"])
+    assert refused.value.body["code"] == "INTERNAL_ERROR"
+    assert refused.value.body["details"] == {"bytes": 0, "expected": 4}
 
 
 def test_inspect_refuses_at_job_start_and_for_an_unknown_id(world: World) -> None:

@@ -24,12 +24,8 @@ def view_of(document: Any) -> Any:
     return view
 
 
-def set_brush(document: Any, brush: dict[str, Any]) -> dict[str, Any]:
+def set_brush(document: Any, brush: dict[str, Any], preset: Any) -> dict[str, Any]:
     view = view_of(document)
-    preset = Krita.instance().resources("preset").get(brush["preset"])
-    if preset is None:
-        details = {"preset": brush["preset"]}
-        raise BridgeError("INVALID_ARGUMENT", "Krita has no preset by that name.", False, details)
     # K3's order: activating a preset resets the composite op, so the blend follows it.
     view.setCurrentBrushPreset(preset)
     view.setBrushSize(float(brush["size_px"]))
@@ -40,17 +36,16 @@ def set_brush(document: Any, brush: dict[str, Any]) -> dict[str, Any]:
     view.setGlobalAlphaLock(bool(brush["alpha_lock"]))
     view.setBrushRotation(float(brush["rotation_deg"]))
     view.setForeGroundColor(_colour(brush["color"]))
-    return read_brush(document)
-
-
-def read_brush(document: Any) -> dict[str, Any]:
-    view = view_of(document)
-    preset = view.currentBrushPreset()
+    held = view.currentBrushPreset()
     try:
-        xml = "" if preset is None else str(Preset(preset).toXML())
+        xml = "" if held is None else str(Preset(held).toXML())
     except Exception:
         xml = ""
     return {**_current(view), "preset_xml": xml}
+
+
+def read_brush(document: Any) -> dict[str, Any]:
+    return _current(view_of(document))
 
 
 def _current(view: Any) -> dict[str, Any]:

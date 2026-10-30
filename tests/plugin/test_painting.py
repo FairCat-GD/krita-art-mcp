@@ -1152,7 +1152,7 @@ def test_the_harness_ops_take_only_its_own_documents(world: World) -> None:
 # What the bridge retains.
 
 
-def test_probe_retention_counts_what_the_bridge_holds(tmp_path: Path) -> None:
+def test_harness_retention_counts_what_the_bridge_holds(tmp_path: Path) -> None:
     bridge = Bridge(
         data_dir=tmp_path / "data",
         package_dir=PACKAGE,
@@ -1166,13 +1166,15 @@ def test_probe_retention_counts_what_the_bridge_holds(tmp_path: Path) -> None:
     assert bridge.jobs.retention() == {"operations": 0, "requests": 0, "bound": 0}
     bridge.jobs.submit("op-1", "req-1", "echo", {}, A)
     bridge.jobs.submit("op-2", "req-1", "echo", {}, A)
-    retention = bridge.jobs.submit("op-3", "req-3", "probe.retention", {}, A)
+    retention = bridge.jobs.submit("op-3", "req-3", "harness.retention", {}, A)
     bridge.drain()
     assert retention is not None
     assert retention.reply()["result"] == {"operations": 3, "requests": 2, "bound": 2}
-    refused = bridge.jobs.submit("op-4", "req-4", "probe.retention", {"x": 1}, A)
+    refused = bridge.jobs.submit("op-4", "req-4", "harness.retention", {"x": 1}, A)
+    gone = bridge.jobs.submit("op-5", "req-5", "probe.retention", {}, A)
     bridge.drain()
     assert refused is not None and refused.reply()["error"]["code"] == "INVALID_ARGUMENT"
+    assert gone is not None and "Unknown op" in gone.reply()["error"]["message"]
 
 
 def test_a_preset_krita_fills_in_on_its_first_activation_keeps_its_listed_digest(
@@ -1186,10 +1188,10 @@ def test_a_preset_krita_fills_in_on_its_first_activation_keeps_its_listed_digest
         "</Preset>", '<param name="Filled">1</param></Preset>'
     )
 
-    def first_load(document: Any, brush: dict[str, Any]) -> dict[str, Any]:
+    def first_load(document: Any, brush: dict[str, Any], preset: Any) -> dict[str, Any]:
         # Krita adds what the stored preset leaves out when it first loads it.
         world.resources.xmls[name] = filled
-        return real(document, brush)
+        return real(document, brush, preset)
 
     world.port.set_brush = first_load  # type: ignore[method-assign]
     brush = {"preset_id": "hard-round.kpp", "preset_sha256": listed}
@@ -1203,3 +1205,29 @@ def test_a_preset_krita_fills_in_on_its_first_activation_keeps_its_listed_digest
     world.resources.xmls[name] = filled.replace('"Filled">1', '"Filled">2')
     refused = world.stroke_refused(document_id, brush=brush)
     assert refused["code"] == "RESOURCE_HASH_MISMATCH"
+
+
+def test_a_stroke_walks_the_preset_list_once_and_reads_the_stored_preset_twice(
+    world: World,
+) -> None:
+    document_id, _ = world.document()
+    world.resources.calls.clear()
+    world.stroke(document_id)
+    assert world.resources.calls == ["preset", "preset_xml"]
+
+
+def test_a_dirty_preset_the_view_holds_never_vouches_for_a_later_saved_change(
+    world: World,
+) -> None:
+    document_id, _ = world.document()
+    name = "Hard Round"
+    listed = resources.fingerprint(world.resources.xmls[name])[1]
+    tweaked = world.resources.xmls[name].replace(
+        "</Preset>", '<param name="Tweak">1</param></Preset>'
+    )
+    world.port.preset_xml[name] = tweaked
+    brush = {"preset_id": "hard-round.kpp", "preset_sha256": listed}
+    assert world.stroke(document_id, brush=brush)["effective_brush"]["preset_sha256"] == listed
+    # The owner saves the tweak, so the stored preset is no longer the one that was listed.
+    world.resources.xmls[name] = tweaked
+    assert world.stroke_refused(document_id, brush=brush)["code"] == "RESOURCE_HASH_MISMATCH"

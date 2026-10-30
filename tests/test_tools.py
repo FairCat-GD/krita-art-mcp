@@ -11,7 +11,7 @@ from typing import Any
 import pytest
 from mcp import Client
 from mcp.server.mcpserver import MCPServer
-from mcp.types import CallToolResult
+from mcp.types import CallToolResult, ImageContent
 
 from krita_art_mcp import baselines, envelope, schemas, server, tools
 from krita_art_mcp.bridge_client import BridgeClient
@@ -151,6 +151,26 @@ def test_a_result_over_6_mb_becomes_internal_error() -> None:
     result = _call(_server(run), {})
     assert result.is_error is True
     assert "byte limit" in result.structured_content["error"]["details"]["reason"]
+
+
+def test_a_results_size_is_its_whole_dump_with_the_image_only_measured() -> None:
+    result = envelope.completed({"note": 'café "quoted"\n'}, "A line with an é.")
+    result.content.append(
+        ImageContent.model_validate(
+            {
+                "type": "image",
+                "data": "QUJD" * 1000,
+                "mimeType": "image/png",
+                "_meta": {"codex/imageDetail": "original"},
+            }
+        )
+    )
+    whole = result.model_dump_json(by_alias=True, exclude_none=True).encode("utf-8")
+    assert tools._size(result) == len(whole)
+
+
+def test_a_tool_and_operation_get_share_one_output_validator() -> None:
+    assert schemas.output_validator("krita_capture") is schemas.output_validator("krita_capture")
 
 
 def test_calls_from_one_server_process_run_one_at_a_time() -> None:

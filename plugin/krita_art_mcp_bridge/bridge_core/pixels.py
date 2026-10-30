@@ -3,10 +3,11 @@ from pathlib import Path
 from typing import Any
 
 from . import nodes, paths, transfer
-from .errors import BridgeError, exact
+from .errors import BridgeError, exact, integer
 from .inspection import TYPES, check_frame, check_shown_frame
 from .jobs import Call, Handler
 from .port import DocumentsPort
+from .rects import inside
 from .registry import Handle, Registry
 
 CAPTURE_FIELDS = {"document_id", "frame", "target", "layer_id", "rect", "render"}
@@ -38,7 +39,7 @@ def handlers(registry: Registry, port: DocumentsPort, data: Path) -> dict[str, H
         handle = registry.find(args["document_id"])
         info = port.describe(handle.document)
         check_shown_frame(info)
-        inside(rect, info["size_px"])
+        inside(rect, info["size_px"], "rect")
         width, height = rect["width"], rect["height"]
         if target == "selection":
             pixels = port.selection_rect(handle.document, rect)
@@ -135,7 +136,7 @@ def check_rect(rect: Any) -> dict[str, int]:
     if (
         not isinstance(rect, dict)
         or set(rect) != RECT_FIELDS
-        or not all(_integer(rect[key]) for key in RECT_FIELDS)
+        or not all(integer(rect[key]) for key in RECT_FIELDS)
         or rect["x"] < 0
         or rect["y"] < 0
         or rect["width"] < 1
@@ -145,10 +146,6 @@ def check_rect(rect: Any) -> dict[str, int]:
     return {key: rect[key] for key in ("x", "y", "width", "height")}
 
 
-def _integer(value: Any) -> bool:
-    return isinstance(value, int) and not isinstance(value, bool)
-
-
 def check_target(args: dict[str, Any], targets: tuple[str, ...]) -> str:
     target, layer_id = args["target"], args["layer_id"]
     if target not in targets:
@@ -156,14 +153,6 @@ def check_target(args: dict[str, Any], targets: tuple[str, ...]) -> str:
     if (target == "layer") != (isinstance(layer_id, str) and bool(layer_id)):
         raise BridgeError("INVALID_ARGUMENT", "layer_id names a layer for target layer only.")
     return str(target)
-
-
-def inside(rect: dict[str, int], size: list[int]) -> None:
-    if rect["x"] + rect["width"] > size[0] or rect["y"] + rect["height"] > size[1]:
-        details = {"rect": rect, "canvas_px": size}
-        raise BridgeError(
-            "INVALID_ARGUMENT", "The rect reaches outside the canvas.", False, details
-        )
 
 
 def paint_layer(tree: dict[str, Any], layer_id: str) -> dict[str, Any]:
@@ -191,7 +180,7 @@ def _points(points: Any) -> list[list[int]]:
         or not all(
             isinstance(point, list)
             and len(point) == 2
-            and all(_integer(value) and value >= 0 for value in point)
+            and all(integer(value) and value >= 0 for value in point)
             for point in points
         )
     ):

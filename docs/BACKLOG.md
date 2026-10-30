@@ -161,6 +161,10 @@ these are the parts only a person can see.
   fresh working copy, and did not repeat. Set Krita's autosave to every minute, change a working
   copy by hand, and save it through the tool as the autosave starts: expect `BUSY`, nothing beside
   the path, and a retry that succeeds.
+- **A document closed by hand during a save's finish** (0.13.0). The bridge drops the save's
+  hidden file when it finds the document gone; unit tests hold that, and the window is a few
+  seconds. Save a large working copy through the tool, close its document in Krita before the save
+  returns, and check that nothing hidden is left beside the path.
 - **Mirror painting and wrap-around put back after a stroke** (0.9.0). The adapter switches both
   off for the stroke and back on in a `finally`; no harness op turns them on, so the probe never
   sees the restore. With either on in Krita, paint one stroke and check both are on afterwards.

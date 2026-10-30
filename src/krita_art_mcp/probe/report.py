@@ -13,6 +13,8 @@ class Report:
         self.passed = 0
         self.failed = 0
         self.measured_count = 0
+        # Read before the probe opens anything: its document times depend on what is open.
+        self.open_documents: int | None = None
 
     def check(self, name: str, passed: bool, detail: str = "") -> bool:
         if passed:
@@ -30,9 +32,11 @@ class Report:
         print(text, file=self._out, flush=True)
 
     def summary(self, seconds: float) -> int:
+        documents = self.open_documents
+        condition = "" if documents is None else f", with {documents} document(s) open"
         self.note(
             f"probe: {self.passed} PASS, {self.failed} FAIL, {self.measured_count} MEASURED "
-            f"in {seconds:.1f} s"
+            f"in {seconds:.1f} s{condition}"
         )
         return 1 if self.failed or not self.passed else 0
 

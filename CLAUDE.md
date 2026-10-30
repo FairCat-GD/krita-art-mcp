@@ -112,7 +112,7 @@ The why for each is in `docs/spec/SPEC.md` §5.
 10. **The capability matrix is true at every release,** and a tool is registered only once it is
     built. *Enforced by* the registered-tools test and the harness.
 11. **No stale plugin.** `probe` and `doctor` refuse a plugin whose source hash differs from the
-    repo's.
+    repo's, and `serve` refuses a plugin of another version.
 12. **The bridge is closed to everyone but the owner.**
     - It listens on 127.0.0.1 only and requires the token (constant-time compare, `Host` check,
       64 MB body limit).
@@ -121,7 +121,7 @@ The why for each is in `docs/spec/SPEC.md` §5.
 13. **Harnesses leave the owner's things alone.**
     - They never touch the owner's documents, files, `kritarc` or `config.json`.
     - They work only in `<data dir>/harness/`, and restore the brush state afterwards.
-    - *Enforced by* the `harness.*` folder gate.
+    - *Enforced by* the `harness.*` folder gate on every op that takes a document.
 14. **Nothing private enters the repository.** *Enforced by* the hygiene stage (see below).
 
 ## `mcp` is pinned to 2.3.x: FastMCP is `MCPServer`, and errors are returned
@@ -186,7 +186,7 @@ message for AI attribution. A hit names the file and line, or the commit and mes
 | `uv run krita-art-mcp install-plugin [--krita-data-dir DIR]` | Copies the plugin into Krita's `pykrita/` (default `~/Library/Application Support/Krita`) and prints the steps left. It never edits `kritarc`. |
 | `uv run krita-art-mcp roots add <dir>` / `list` / `remove <dir>` | Edits `config.json`: the folders an agent may name. `add` refuses `/`, the home folder, and any folder equal to, holding or inside a data folder; such a root already in `config.json` makes both sides refuse every path until it is removed. Only the owner runs it; no session or harness does. |
 | `uv run krita-art-mcp doctor` | Checks the setup in six ordered steps and names the first one that fails, with its fix; the sixth needs a root. Then it prints Krita's open and unsaved document counts, which the restart rule reads. |
-| `uv run krita-art-mcp probe` | The live harness: plugin hash first, then health, `krita_server_info` over stdio, H4 idle, the runtime facts, then its own documents and fixture files, then a leftover check before its final sweeps. Prints PASS, FAIL or MEASURED per check, then the counts and the wall time; exits 1 on any FAIL. |
+| `uv run krita-art-mcp probe` | The live harness: plugin hash first, then health, `krita_server_info` over stdio, H4 idle, the runtime facts, then its own documents and fixture files, then a leftover check before its final sweeps. Prints PASS, FAIL or MEASURED per check, then the counts, the wall time and Krita's open documents; exits 1 on any FAIL. |
 
 **What only the live harness can see.** The unit tests never touch Krita. `uv run krita-art-mcp
 probe` drives a real `serve` over stdio against the owner's running Krita 5.3.x. It needs the

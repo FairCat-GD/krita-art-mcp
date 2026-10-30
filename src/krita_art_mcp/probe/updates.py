@@ -9,15 +9,16 @@ from mcp import Client
 
 from krita_art_mcp.bridge_client import BridgeClient, Done
 from krita_art_mcp.probe import fixtures
-from krita_art_mcp.probe.changes import (
+from krita_art_mcp.probe.changes import undo_labels
+from krita_art_mcp.probe.common import (
     by_name,
     capture_composite,
+    document_dirty,
     guard,
     history_args,
     inspect_data,
-    undo_labels,
+    open_working,
 )
-from krita_art_mcp.probe.opening import open_args
 from krita_art_mcp.probe.report import Report, close, code, differs, tool
 
 BLEND_LABEL = "Composition Mode Change"
@@ -53,28 +54,12 @@ def _update(document_id: str, layer_id: str, **properties: Any) -> dict[str, Any
     return arguments if verify is None else {**arguments, "verify": verify}
 
 
-async def _open(a: Client, source: Path, harness: Path, editable: list[str]) -> dict[str, Any]:
-    work = harness / "work" / "updates"
-    return await tool(
-        a,
-        "krita_document_open",
-        open_args(source, "working_copy", work, editable_layer_names=editable),
-    )
-
-
-async def _dirty(a: Client, document_id: str) -> bool | None:
-    listed = (await tool(a, "krita_document_list", {})).get("data") or {}
-    for entry in listed.get("documents", []):
-        if entry["document_id"] == document_id:
-            dirty: bool = entry["dirty"]
-            return dirty
-    return None
-
-
 async def _properties(
     report: Report, a: Client, client: BridgeClient, ora: Path, harness: Path
 ) -> None:
-    opened = await _open(a, ora, harness, ["probe paint", "probe group"])
+    opened = await open_working(
+        a, ora, harness, "updates", editable_layer_names=["probe paint", "probe group"]
+    )
     document_id = opened.get("document_id")
     if opened.get("status") != "completed" or not document_id:
         report.check("the layer_update checks' working copy opens", False, str(opened.get("error")))
@@ -94,7 +79,7 @@ async def _properties(
 async def _active(report: Report, a: Client, document_id: str, paint: str) -> None:
     done = await tool(a, "krita_layer_update", _update(document_id, paint, active=True))
     seen = await inspect_data(a, document_id)
-    dirty = await _dirty(a, document_id)
+    dirty = await document_dirty(a, document_id)
     report.check(
         "layer_update with active alone makes the layer active and leaves the document clean",
         (done.get("data") or {}).get("effective_properties") == {"active": True}
@@ -204,7 +189,7 @@ async def _reach(
 
 
 async def _leaks(report: Report, a: Client, client: BridgeClient, ora: Path, harness: Path) -> None:
-    opened = await _open(a, ora, harness, ["probe paint"])
+    opened = await open_working(a, ora, harness, "updates", editable_layer_names=["probe paint"])
     document_id = opened.get("document_id")
     if opened.get("status") != "completed" or not document_id:
         report.check("the leak checks' working copy opens", False, str(opened.get("error")))
@@ -228,7 +213,7 @@ async def _leaks(report: Report, a: Client, client: BridgeClient, ora: Path, har
         details = (leak.get("error") or {}).get("details", {})
         after = await capture_composite(a, document_id)
         paint_now = by_name((await inspect_data(a, document_id)).get("layers") or [])["probe paint"]
-        dirty = await _dirty(a, document_id)
+        dirty = await document_dirty(a, document_id)
         checked = details.get("verification") or {}
         report.check(
             "an opacity change that leaks past the allowed mask is refused, restored and "
@@ -274,7 +259,7 @@ async def _leaks(report: Report, a: Client, client: BridgeClient, ora: Path, har
 
 
 async def _rim(report: Report, a: Client, rim: Path, harness: Path) -> None:
-    opened = await _open(a, rim, harness, ["probe recolour"])
+    opened = await open_working(a, rim, harness, "updates", editable_layer_names=["probe recolour"])
     document_id = opened.get("document_id")
     if opened.get("status") != "completed" or not document_id:
         report.check("the rim checks' working copy opens", False, str(opened.get("error")))

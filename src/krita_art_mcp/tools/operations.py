@@ -3,7 +3,6 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Any
 
-from jsonschema import Draft202012Validator
 from mcp.types import CallToolResult
 
 from krita_art_mcp import envelope, schemas
@@ -33,9 +32,7 @@ RECEIPTS: dict[str, Known] = {
     "document.list": Known("krita_document_list", documents.list_receipt),
     "document.create": Known("krita_document_create", documents.create_receipt),
     "document.open": Known("krita_document_open", documents.open_receipt),
-    "document.inspect": Known(
-        "krita_document_inspect", documents.inspect_receipt, documents.resolve_inspect
-    ),
+    "document.inspect": Known("krita_document_inspect", documents.inspect_receipt),
     "document.close": Known(
         "krita_document_close", documents.close_receipt, documents.resolve_close
     ),
@@ -89,7 +86,8 @@ def operation_get(call: ToolCall, arguments: dict[str, Any]) -> CallToolResult:
         text = f"Operation {data['operation_id']} is still {data['state']}."
         return envelope.completed(data, text, operation_id=data["operation_id"])
     receipt = known.receipt(outcome)
-    mismatch = next(iter(_validator(known.tool).iter_errors(receipt.structured_content)), None)
+    validator = schemas.output_validator(known.tool)
+    mismatch = next(iter(validator.iter_errors(receipt.structured_content)), None)
     if mismatch is not None:
         reason = f"the receipt does not match {known.tool}'s output schema: {mismatch.message}"
         return envelope.failure("INTERNAL_ERROR", details={"reason": reason})
@@ -140,15 +138,6 @@ def _finish_journaled(
         outcome,
         receipt,
     )
-
-
-_VALIDATORS: dict[str, Draft202012Validator] = {}
-
-
-def _validator(tool: str) -> Draft202012Validator:
-    if tool not in _VALIDATORS:
-        _VALIDATORS[tool] = Draft202012Validator(schemas.load(tool)["outputSchema"])
-    return _VALIDATORS[tool]
 
 
 def operation_cancel(call: ToolCall, arguments: dict[str, Any]) -> CallToolResult:

@@ -305,18 +305,6 @@ def _bytes(buffer: Any) -> memoryview:
     return memoryview(buffer).cast("B")
 
 
-def union(rects: Iterable[dict[str, int] | None]) -> dict[str, int] | None:
-    # The canvas rect around every non-empty rect given; None when there is none.
-    found = [rect for rect in rects if rect is not None and not _empty(rect)]
-    if not found:
-        return None
-    left = min(rect["x"] for rect in found)
-    top = min(rect["y"] for rect in found)
-    right = max(rect["x"] + rect["width"] for rect in found)
-    bottom = max(rect["y"] + rect["height"] for rect in found)
-    return {"x": left, "y": top, "width": right - left, "height": bottom - top}
-
-
 def changes(old: Any, new: Any, rect: dict[str, int]) -> tuple[int, dict[str, int] | None]:
     # How many BGRA pixels differ between two reads of one rect, and the canvas rect around them.
     pixels = 0 if _empty(rect) else rect["width"] * rect["height"]

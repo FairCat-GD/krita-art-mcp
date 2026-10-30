@@ -8,13 +8,14 @@ from typing import Any
 
 from . import brushes, log, verification
 from .documents import COLOR_MODEL, DEPTH, SRGB_PROFILE
-from .errors import BridgeError, exact, number
+from .errors import BridgeError, exact, integer, number
 from .history import DONE, LABELS, UNDO, in_front, move, unconfirmed
 from .inspection import TYPES
 from .jobs import Call, Handler
 from .ledger import Fingerprint, Step, fingerprint
 from .opening import LAYER_ID
 from .port import DocumentsPort, ResourcesPort
+from .rects import union
 from .registry import Handle, Registry
 from .resources import BLEND_MODES
 from .resources import fingerprint as preset_fingerprint
@@ -64,8 +65,9 @@ def handlers(
         target = _target(tree, layer_id, handle.protected)
         size = info["size_px"]
         _on_canvas(args["path"], size, asked["size_px"])
-        name = _preset(resources, asked["preset_id"])
-        listed = _listed(resources, name, asked["preset_id"], asked["preset_sha256"], activated)
+        preset = _preset(resources, asked["preset_id"])
+        name = preset["name"]
+        listed = _listed(preset["xml"], asked["preset_id"], asked["preset_sha256"], activated)
         if port.cumulative_undo():
             details: dict[str, Any] = {"reason": "cumulative_undo"}
             message = (
@@ -77,9 +79,11 @@ def handlers(
         if mode == verification.REGION:
             verification.refuse_reach(tree, effects, layer_id, "this stroke past its reach")
         with in_front(port, document):
-            effective = port.set_brush(document, _krita_brush(asked, name))
+            effective = port.set_brush(document, _krita_brush(asked, name), preset["resource"])
             _taken(asked, name, effective)
-            _, loaded = preset_fingerprint(resources.preset_xmls([name]).get(name, ""))
+            # The stored preset's, not the view's: a dirty digest here could vouch for a later
+            # change the owner saves.
+            _, loaded = preset_fingerprint(resources.preset_xml(preset["resource"]))
             if loaded is not None and loaded != listed:
                 activated[(asked["preset_id"], loaded)] = listed
             ability = port.paint_ability(document, layer_id)
@@ -101,7 +105,7 @@ def handlers(
             target_rect = (
                 ring
                 if mode == verification.REGION
-                else _clip(verification.union([_box(old_bounds), loose_ring]) or loose_ring, size)
+                else _clip(union([_box(old_bounds), loose_ring]) or loose_ring, size)
             )
             verification.refuse_unverifiable(info, effects, scope)
             verification.refuse_unverifiable(info, effects, target_rect)
@@ -121,7 +125,8 @@ def handlers(
             before = verification.read(
                 port, document, scope, layer_id, list(hashed), {layer_id: target_rect, **hashed}
             )
-            if port.brush(document) != effective:
+            held = {key: value for key, value in effective.items() if key != "preset_xml"}
+            if port.brush(document) != held:
                 message = "Krita's brush changed after it was set, so the stroke was not painted."
                 raise BridgeError("INTERNAL_ERROR", message, False, {"layer_id": layer_id})
             start = fingerprint(port, document)
@@ -181,7 +186,7 @@ def handlers(
                     _sha(verification.crop(before.target, stroke.target_rect, diff)),
                     _sha(verification.crop(after.target, stroke.target_rect, diff)),
                 )
-                region = verification.union([verdict.changed_bounds_px, diff])
+                region = union([verdict.changed_bounds_px, diff])
                 made = Step(
                     "paint.stroke",
                     call.operation_id,
@@ -199,7 +204,7 @@ def handlers(
             if stroke.mode == verification.FULL and new and not _inside(new, stroke.target_rect):
                 # Full scope does not hold the target to R; what it painted past the read shows
                 # in its bounds.
-                diff = verification.union([diff, new])
+                diff = union([diff, new])
         except BridgeError as raised:
             problem = raised
         except Exception as raised:
@@ -391,7 +396,7 @@ def _check_args(args: Any) -> None:
     if args["verify"] not in verification.MODES:
         raise BridgeError("INVALID_ARGUMENT", "verify is region or full.")
     points = args["accepted_points"]
-    if not _integer(points) or not 1 <= points <= MAX_POINTS:
+    if not integer(points) or not 1 <= points <= MAX_POINTS:
         raise BridgeError("INVALID_ARGUMENT", f"accepted_points is 1 to {MAX_POINTS}.")
     _check_brush(args["brush"])
     _check_path(args["path"])
@@ -452,10 +457,6 @@ def _malformed(key: str) -> None:
 
 def _malformed_path(message: str) -> None:
     raise BridgeError("INVALID_ARGUMENT", message)
-
-
-def _integer(value: Any) -> bool:
-    return isinstance(value, int) and not isinstance(value, bool)
 
 
 def _numbers(values: Any, lengths: tuple[int, ...]) -> bool:
@@ -523,12 +524,11 @@ def _on_canvas(path: dict[str, Any], size: list[int], brush_px: float) -> None:
             raise BridgeError("INVALID_ARGUMENT", message, False, details)
 
 
-def _preset(resources: ResourcesPort, preset_id: str) -> str:
-    presets = resources.presets()
-    for preset in presets:
-        if preset["file"] == preset_id:
-            return preset["name"]
-    files = [preset["file"] for preset in presets]
+def _preset(resources: ResourcesPort, preset_id: str) -> dict[str, Any]:
+    preset = resources.preset(preset_id)
+    if preset is not None:
+        return preset
+    files = [entry["file"] for entry in resources.presets()]
     nearest = difflib.get_close_matches(preset_id, files, NEAREST, 0.0)
     details = {"preset_id": preset_id, "nearest": nearest}
     message = "No brush preset has that id; resource.list names them."
@@ -536,15 +536,14 @@ def _preset(resources: ResourcesPort, preset_id: str) -> str:
 
 
 def _listed(
-    resources: ResourcesPort,
-    name: str,
+    xml: str,
     preset_id: str,
     wanted: str | None,
     activated: dict[tuple[str, str], str],
 ) -> str:
     # The digest resource.list gave for the preset before the bridge's own activation of it
     # moved it, if it did.
-    _, found = preset_fingerprint(resources.preset_xmls([name]).get(name, ""))
+    _, found = preset_fingerprint(xml)
     if found is None:
         details: dict[str, Any] = {"preset_id": preset_id}
         message = "Krita cannot describe this preset, so its stroke could not be reported."
@@ -636,7 +635,7 @@ def _verdict(
     moved = [node_id for node_id, old in protected.items() if bounds.get(node_id) != old]
     changed = sorted(set(verdict.protected_changed) | set(moved))
     new = _box(bounds.get(layer_id))
-    allowed_bounds = verification.union([_box(old_bounds), stroke.loose_ring]) or stroke.loose_ring
+    allowed_bounds = union([_box(old_bounds), stroke.loose_ring]) or stroke.loose_ring
     # R bounds the check only in region scope; full scope reads every composite byte.
     outside = stroke.mode == verification.REGION and (
         (diff is not None and not _inside(diff, stroke.region))

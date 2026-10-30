@@ -1,5 +1,4 @@
 import hashlib
-import io
 import os
 import uuid
 from pathlib import Path
@@ -7,26 +6,28 @@ from typing import Any
 
 import numpy as np
 from mcp import Client
-from PIL import Image
 
 from krita_art_mcp import masks
 from krita_art_mcp.bridge_client import BridgeClient, Done
 from krita_art_mcp.probe import fixtures
-from krita_art_mcp.probe.opening import open_args
+from krita_art_mcp.probe.common import (
+    by_name,
+    capture_composite,
+    capture_selection,
+    guard,
+    history_args,
+    inspect_data,
+    open_args,
+)
 from krita_art_mcp.probe.report import Report, close, code, differs, tool
 from krita_art_mcp.tools.observe import LIMITS
 
 WIDTH, HEIGHT = fixtures.WIDTH, fixtures.HEIGHT
-FULL = {"x": 0, "y": 0, "width": WIDTH, "height": HEIGHT}
 LIMIT = LIMITS["capture_source_pixels"]
 LABEL_TRIALS = 7
 CLOSE_CYCLES = 5
 ELLIPSE = {"x": 10, "y": 6, "width": 30, "height": 20}
 POLYGON: list[list[float]] = [[4.5, 3.25], [50, 8], [30.5, 40.75], [12, 30]]
-
-
-def guard(document_id: str, request_id: str | None = None) -> dict[str, str]:
-    return {"document_id": document_id, "request_id": request_id or str(uuid.uuid4())}
 
 
 def _rect(x: int, y: int, width: int, height: int) -> dict[str, Any]:
@@ -56,10 +57,6 @@ def _layer(document_id: str, parent_id: str, above_id: str | None, **changes: An
     }
 
 
-def history_args(document_id: str, action: str, steps: int = 1) -> dict[str, Any]:
-    return {"guard": guard(document_id), "action": action, "steps": steps}
-
-
 def _canvas(mask: masks.Mask) -> np.ndarray:
     canvas = np.zeros((HEIGHT, WIDTH), dtype=np.uint8)
     x, y = mask.origin
@@ -70,48 +67,6 @@ def _canvas(mask: masks.Mask) -> np.ndarray:
 
 def _box(x: int, y: int, width: int, height: int) -> np.ndarray:
     return _canvas(masks.rect(_rect(x, y, width, height), LIMIT))
-
-
-async def _selection(a: Client, document_id: str) -> np.ndarray | None:
-    arguments = {
-        "source": {"document_id": document_id, "frame": 0},
-        "target": "selection",
-        "layer_id": None,
-        "rect": dict(FULL),
-        "scale": 1,
-        "filter": "nearest",
-    }
-    path = ((await tool(a, "krita_capture", arguments)).get("data") or {}).get("image", {})
-    if not path:
-        return None
-    with Image.open(path["path"]) as image:
-        return np.asarray(image)
-
-
-async def capture_composite(a: Client, document_id: str) -> np.ndarray | None:
-    arguments = {
-        "source": {"document_id": document_id, "frame": 0},
-        "target": "composite",
-        "layer_id": None,
-        "rect": dict(FULL),
-        "scale": 1,
-        "filter": "nearest",
-    }
-    data = (await tool(a, "krita_capture", arguments)).get("data") or {}
-    if "image" not in data:
-        return None
-    with Image.open(data["image"]["path"]) as image:
-        return np.asarray(image)
-
-
-async def inspect_data(a: Client, document_id: str) -> dict[str, Any]:
-    found = await tool(a, "krita_document_inspect", {"document_id": document_id, "frame": 0})
-    data: dict[str, Any] = found.get("data") or {}
-    return data
-
-
-def by_name(layers: list[dict[str, Any]]) -> dict[str, dict[str, Any]]:
-    return {layer["name"]: layer for layer in layers}
 
 
 def undo_labels(client: BridgeClient, document_id: str) -> str:
@@ -132,7 +87,7 @@ async def run(report: Report, a: Client, b: Client, client: BridgeClient, harnes
     ora, raster = folder / "changes.ora", folder / "raster.png"
     composite = fixtures.write_ora(ora, fixtures.probe_stack())
     gradient = np.tile(np.arange(0, 240, 16, dtype=np.uint8), (6, 1))
-    raster.write_bytes(_png(gradient))
+    raster.write_bytes(fixtures.png(gradient))
     await _read_only(report, a, ora, raster)
     opened = await tool(
         a, "krita_document_open", open_args(ora, "working_copy", harness / "work" / "changes")
@@ -153,12 +108,6 @@ async def run(report: Report, a: Client, b: Client, client: BridgeClient, harnes
     finally:
         await close(a, document_id)
     await _close_at_once(report, a, ora, harness)
-
-
-def _png(pixels: np.ndarray) -> bytes:
-    stream = io.BytesIO()
-    Image.fromarray(pixels).save(stream, "PNG")
-    return stream.getvalue()
 
 
 async def _read_only(report: Report, a: Client, ora: Path, raster: Path) -> None:
@@ -310,7 +259,7 @@ async def _selections(
             continue
         if name == "rect":
             report.measured("the undo labels after selection_set", undo_labels(client, document_id))
-        found = await _selection(a, document_id)
+        found = await capture_selection(a, document_id)
         if found is None or differs(found, expected):
             problems.append(f"{name}: {differs(found, expected)}")
     cleared = await tool(a, "krita_selection_set", _select(document_id, {"type": "none"}))
@@ -340,7 +289,7 @@ async def _selections(
             "krita_selection_set",
             _select(document_id, {"type": "rect", "rect": rect}, combine=combine),
         )
-        found = await _selection(a, document_id)
+        found = await capture_selection(a, document_id)
         if found is None or differs(found, expected):
             problems.append(f"{combine}: {differs(found, expected)}")
     await tool(
@@ -348,7 +297,7 @@ async def _selections(
         "krita_selection_set",
         _select(document_id, {"type": "rect", "rect": _rect(8, 8, 16, 16)}, invert=True),
     )
-    found = await _selection(a, document_id)
+    found = await capture_selection(a, document_id)
     inverted = 255 - _box(8, 8, 16, 16)
     if found is None or differs(found, inverted):
         problems.append(f"invert: {differs(found, inverted)}")
@@ -381,11 +330,11 @@ async def _ledger(report: Report, a: Client, document_id: str, root: str) -> Non
     steps = (undone.get("data") or {}).get("steps")
     if steps != [{"tool": "krita_selection_set", "operation_id": second.get("operation_id")}]:
         problems.append(f"undo: {code(undone) or steps}")
-    found = await _selection(a, document_id)
+    found = await capture_selection(a, document_id)
     if found is None or differs(found, _box(2, 2, 10, 10)):
         problems.append(f"after undo: {differs(found, _box(2, 2, 10, 10))}")
     await tool(a, "krita_history_step", history_args(document_id, "redo"))
-    found = await _selection(a, document_id)
+    found = await capture_selection(a, document_id)
     if found is None or differs(found, _box(30, 20, 12, 8)):
         problems.append(f"after redo: {differs(found, _box(30, 20, 12, 8))}")
     # Back over both selections and the layer, then forward again.

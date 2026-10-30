@@ -262,6 +262,35 @@ def test_the_probe_stops_at_a_stale_plugin_and_sweeps_its_folder(tmp_path: Path)
     assert stat.S_IMODE(harness.stat().st_mode) == 0o700
 
 
+def test_doctor_and_the_probe_reach_a_stale_plugin_to_judge_it_by_hash(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    made: list[dict[str, Any]] = []
+
+    class Recording(_Client):
+        def __init__(self, **options: Any) -> None:
+            made.append(options)
+            super().__init__(UNREACHABLE)
+
+    monkeypatch.setattr(doctor, "BridgeClient", Recording)
+    monkeypatch.setattr(probe, "BridgeClient", Recording)
+    setup = _setup(tmp_path, installed=True, enabled=True, running=True)
+    doctor.run(setup, out=io.StringIO())
+    probe.run(io.StringIO(), harness=tmp_path / "harness", serve=["/nonexistent"])
+    assert [options.get("any_plugin") for options in made] == [True, True]
+
+
+def test_the_probe_prints_the_open_documents_it_read_beside_its_time() -> None:
+    out = io.StringIO()
+    report = Report(out)
+    documents = Done({"open": 87, "unsaved": 0}, "op-1")
+    assert probe._no_unsaved_documents(report, _Client(_healthy(REPO_HASH), documents))
+    report.summary(95.6)
+    assert out.getvalue().splitlines()[-1] == (
+        "probe: 1 PASS, 0 FAIL, 0 MEASURED in 95.6 s, with 87 document(s) open"
+    )
+
+
 def test_the_probe_fails_when_the_bridge_does_not_answer(tmp_path: Path) -> None:
     out = io.StringIO()
     status = probe.run(out, _Client(UNREACHABLE), tmp_path / "harness", ["/nonexistent"])

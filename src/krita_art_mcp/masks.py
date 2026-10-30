@@ -43,7 +43,7 @@ def rect(box: dict[str, int], limit: int) -> Mask:
     return Mask(pixels, (box["x"], box["y"]))
 
 
-def ellipse(box: dict[str, int], limit: int, binary: bool = False) -> Mask:
+def ellipse(box: dict[str, int], limit: int) -> Mask:
     _bounded(box["width"], box["height"], limit)
     cx, cy = box["x"] + box["width"] / 2, box["y"] + box["height"] / 2
     rx, ry = box["width"] / 2, box["height"] / 2
@@ -55,7 +55,7 @@ def ellipse(box: dict[str, int], limit: int, binary: bool = False) -> Mask:
         return within
 
     counts = _coverage(box["x"], box["y"], box["width"], box["height"], inside)
-    return Mask(_values(counts, binary), (box["x"], box["y"]))
+    return Mask(_values(counts, False), (box["x"], box["y"]))
 
 
 def polygon(points: Sequence[Sequence[float]], limit: int, binary: bool = False) -> Mask:

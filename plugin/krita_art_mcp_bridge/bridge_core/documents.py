@@ -67,8 +67,10 @@ def handlers(registry: Registry, port: DocumentsPort, data: Path) -> dict[str, H
             raise BridgeError("DOCUMENT_DIRTY", message, False, {"document_id": handle.document_id})
         untouched = None
         if handle.source_path is not None and handle.source_sha256 is not None:
-            untouched = files.unchanged(handle.source_path, handle.source_sha256)
-        saving.drop(handle)
+            untouched = files.unchanged(
+                handle.source_path, handle.source_sha256, handle.source_stat
+            )
+        handle.drop_pending_save()
         closed = port.close(handle.document, settle_s(handle, port.front() == handle.document))
         still_open = any(h is handle for h in registry.sync())
         if not closed or still_open:
@@ -96,7 +98,7 @@ def handlers(registry: Registry, port: DocumentsPort, data: Path) -> dict[str, H
         "document.baselines": baselines,
         "document.close": close_document,
         **opening.handlers(registry, port, data),
-        **inspection.handlers(registry, port, data),
+        **inspection.handlers(registry, port),
         **pixels.handlers(registry, port, data),
         **previews.handlers(registry, port, data),
         **layers.handlers(registry, port),

@@ -15,7 +15,7 @@ def run(
     setup: Setup | None = None, client: BridgeClient | None = None, out: TextIO = sys.stdout
 ) -> int:
     setup = setup or Setup()
-    client = client or BridgeClient(budget_s=BUDGET_S)
+    client = client or BridgeClient(budget_s=BUDGET_S, any_plugin=True)
     status = _report(_steps(setup, client), out)
     # A session checks this before it restarts Krita itself (decision 21), usually because the
     # plugin is stale, so it is reported whichever step failed.

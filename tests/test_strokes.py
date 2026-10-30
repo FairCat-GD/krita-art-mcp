@@ -1,5 +1,3 @@
-import pytest
-
 from krita_art_mcp import strokes
 
 
@@ -35,11 +33,3 @@ def test_smooth_none_draws_lines() -> None:
 def test_two_points_draw_a_line_even_when_smoothed() -> None:
     path = strokes.path(_points((1.5, 2.5), (7.5, 3.5)), "catmull_rom")
     assert path == {"start": [1.5, 2.5], "segments": [[7.5, 3.5]]}
-
-
-@pytest.mark.parametrize("smooth", ["none", "catmull_rom"])
-def test_one_point_is_a_zero_length_line(smooth: str) -> None:
-    assert strokes.path(_points((4.5, 5.5)), smooth) == {
-        "start": [4.5, 5.5],
-        "segments": [[4.5, 5.5]],
-    }

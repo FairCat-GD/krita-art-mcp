@@ -13,6 +13,7 @@ from bridge_core import previews as bridge_previews
 from bridge_core import processes as bridge_processes
 from bridge_core import protection as bridge_protection
 from bridge_core import resources as bridge_resources
+from bridge_core import saving as bridge_saving
 from bridge_core import selections as bridge_selections
 from bridge_core import verification as bridge_verification
 from bridge_core.jobs import Jobs
@@ -20,6 +21,7 @@ from bridge_core.source_hash import source_hash as plugin_source_hash
 from jsonschema import Draft202012Validator
 
 from krita_art_mcp import (
+    colour,
     envelope,
     errors,
     paths,
@@ -32,10 +34,12 @@ from krita_art_mcp import (
 from krita_art_mcp.bridge_client import WAIT_BUDGET_S
 from krita_art_mcp.instructions import INSTRUCTIONS
 from krita_art_mcp.probe import painting as probe_painting
+from krita_art_mcp.probe import saving as probe_saving
 from krita_art_mcp.probe import updates as probe_updates
 from krita_art_mcp.tools import documents as tool_documents
 from krita_art_mcp.tools import observe
 from krita_art_mcp.tools import preview as tool_preview
+from krita_art_mcp.tools import saving as tool_saving
 
 ENVELOPE_FIELDS = ["api_version", "status", "document_id", "revision", "operation_id", "error"]
 
@@ -83,6 +87,13 @@ def test_the_server_and_plugin_constants_agree() -> None:
     # The undo labels the probe expects are the ones the plugin checks.
     assert probe_painting.LABEL == bridge_history.LABELS["paint.stroke"]
     assert probe_updates.BLEND_LABEL == bridge_history.LABELS["layer.update"]
+    assert set(bridge_saving.SRGB_PROFILES) == colour.SRGB_PROFILES
+    assert tool_saving.FORMATS == bridge_saving.FORMATS
+    # The probe compares inspect's entries, which carry the space fields it leaves out.
+    spaces = ("color_model", "depth", "profile_id")
+    assert probe_saving.KRA_FIELDS == tuple(
+        field for field in bridge_saving.KRA_FIELDS if field not in spaces
+    )
 
 
 def test_the_blend_enum_agents_send_is_the_whitelist() -> None:

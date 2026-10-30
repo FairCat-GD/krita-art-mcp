@@ -8,7 +8,7 @@ from jsonschema import Draft202012Validator, ValidationError
 from mcp.server.mcpserver import Context
 from mcp.server.mcpserver.tools import Tool
 from mcp.server.mcpserver.utilities.func_metadata import ArgModelBase, FuncMetadata
-from mcp.types import CallToolResult, ToolAnnotations
+from mcp.types import CallToolResult, ImageContent, ToolAnnotations
 
 from krita_art_mcp import envelope, schemas
 from krita_art_mcp.bridge_client import BridgeClient
@@ -96,7 +96,7 @@ def _bound(
 def build(name: str, run: Run) -> Tool:
     spec = schemas.load(name)
     inputs = Draft202012Validator(spec["inputSchema"])
-    outputs = Draft202012Validator(spec["outputSchema"])
+    outputs = schemas.output_validator(name)
 
     # Sync on purpose: mcp runs it on a worker thread, so a 45 s bridge wait never stalls stdio.
     def call(arguments: dict[str, Any], ctx: Context) -> CallToolResult:
@@ -165,10 +165,22 @@ def _result_problem(result: CallToolResult, outputs: Draft202012Validator) -> st
     first = next(iter(outputs.iter_errors(result.structured_content)), None)
     if first is not None:
         return f"the result does not match its output schema: {first.message}"
-    size = len(result.model_dump_json(by_alias=True, exclude_none=True).encode("utf-8"))
+    size = _size(result)
     if size >= MAX_RESULT_BYTES:
         return f"the result is {size} bytes, over the {MAX_RESULT_BYTES}-byte limit"
     return None
+
+
+def _size(result: CallToolResult) -> int:
+    # The whole dump's length, but an image's base64 is measured, so only mcp ever dumps it.
+    images = [item for item in result.content if isinstance(item, ImageContent)]
+    content = [
+        item.model_copy(update={"data": ""}) if isinstance(item, ImageContent) else item
+        for item in result.content
+    ]
+    light = result.model_copy(update={"content": content})
+    dumped = light.model_dump_json(by_alias=True, exclude_none=True).encode("utf-8")
+    return len(dumped) + sum(len(image.data) for image in images)
 
 
 def _short(message: str) -> str:

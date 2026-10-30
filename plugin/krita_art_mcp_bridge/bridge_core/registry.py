@@ -4,6 +4,7 @@ from collections.abc import Callable
 from typing import Any, Protocol
 
 from .errors import BridgeError
+from .files import Stat
 from .jobs import Call, Handler
 from .ledger import Ledger
 
@@ -33,6 +34,7 @@ class Handle:
         self.path: str | None = None
         self.source_path: str | None = None
         self.source_sha256: str | None = None
+        self.source_stat: Stat | None = None
         self.baseline_id: str | None = None
         # Ids of the layers agents may not change; an owner's document is protected whole.
         self.protected: set[str] = set()
@@ -68,6 +70,12 @@ class Handle:
     def touched(self) -> None:
         # Its nodes changed: Krita's layer docker updates them a moment later (see the close).
         self.changed_at = time.monotonic()
+
+    def drop_pending_save(self) -> None:
+        # A save never finished leaves nothing beside its target.
+        pending, self.pending_save = self.pending_save, None
+        if pending is not None:
+            pending.discard()
 
 
 DocumentHandler = Callable[[Handle, dict[str, Any], Call], dict[str, Any]]
@@ -117,7 +125,14 @@ class Registry:
     def sync(self) -> list[Handle]:
         # Libkis wrappers compare by document but cannot be hashed, so matching is by ==.
         live = self._port.documents()
-        self._handles = [h for h in self._handles if any(h.document == d for d in live)]
+        kept: list[Handle] = []
+        gone: list[Handle] = []
+        for h in self._handles:
+            (kept if any(h.document == d for d in live) else gone).append(h)
+        self._handles = kept
+        for h in gone:
+            # The owner closed it, so its save can never finish.
+            h.drop_pending_save()
         ordered = []
         for document in live:
             handle = next((h for h in self._handles if h.document == document), None)

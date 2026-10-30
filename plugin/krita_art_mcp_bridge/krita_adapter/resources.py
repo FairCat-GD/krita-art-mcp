@@ -11,14 +11,23 @@ class KritaResources:
 
     def preset_xmls(self, names: list[str]) -> dict[str, str]:
         found = Krita.instance().resources("preset")
-        xmls = {}
-        for name in names:
-            resource = found.get(name)
-            try:
-                xmls[name] = "" if resource is None else str(Preset(resource).toXML())
-            except Exception:
-                xmls[name] = ""
-        return xmls
+        return {name: self.preset_xml(found.get(name)) for name in names}
+
+    def preset(self, preset_id: str) -> dict[str, Any] | None:
+        for name, resource in Krita.instance().resources("preset").items():
+            if _file(name, resource) == preset_id:
+                return {
+                    "name": str(name),
+                    "xml": self.preset_xml(resource),
+                    "resource": resource,
+                }
+        return None
+
+    def preset_xml(self, resource: Any) -> str:
+        try:
+            return "" if resource is None else str(Preset(resource).toXML())
+        except Exception:
+            return ""
 
     def profiles(self, model: str, depth: str) -> list[str]:
         return [str(profile) for profile in Krita.instance().profiles(model, depth)]
@@ -28,9 +37,11 @@ class KritaResources:
 
 
 def _named(resources: Any) -> list[dict[str, str]]:
+    return [
+        {"name": str(name), "file": _file(name, resource)} for name, resource in resources.items()
+    ]
+
+
+def _file(name: Any, resource: Any) -> str:
     # The id is the file name; a resource Krita gives none is known by its name.
-    entries = []
-    for name, resource in resources.items():
-        file = os.path.basename(str(resource.filename()))
-        entries.append({"name": str(name), "file": file or str(name)})
-    return entries
+    return os.path.basename(str(resource.filename())) or str(name)

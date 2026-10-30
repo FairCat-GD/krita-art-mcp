@@ -12,6 +12,7 @@ from mcp import Client
 from krita_art_mcp import baselines, paths, roots
 from krita_art_mcp.bridge_client import BridgeClient, Done, Failed
 from krita_art_mcp.probe import fixtures
+from krita_art_mcp.probe.common import open_args
 from krita_art_mcp.probe.report import Report, close, code, differs, sheet_cell, tool
 from krita_art_mcp.tools.saving import file_sha256
 
@@ -38,22 +39,6 @@ class Opened:
     seconds: float
 
 
-def sha(path: Path) -> str:
-    return file_sha256(path)
-
-
-def open_args(source: Path, mode: str, work: Path | None = None, **extra: Any) -> dict[str, Any]:
-    arguments: dict[str, Any] = {
-        "source_path": str(source),
-        "source_sha256": sha(source),
-        "mode": mode,
-        "request_id": str(uuid.uuid4()),
-    }
-    if work is not None:
-        arguments["working_dir"] = str(work)
-    return {**arguments, **extra}
-
-
 async def run(report: Report, a: Client, b: Client, client: BridgeClient, harness: Path) -> None:
     harness = Path(os.path.realpath(harness))
     folder = harness / "fixtures"
@@ -71,7 +56,7 @@ async def run(report: Report, a: Client, b: Client, client: BridgeClient, harnes
     )
     if not await _make_kra(report, a, client, ora, kra):
         return
-    hashes = {path: sha(path) for path in (ora, kra, png)}
+    hashes = {path: file_sha256(path) for path in (ora, kra, png)}
     ora_tree = fixtures.expected_tree(stack)
     png_tree = [{**ora_tree[0], "name": None, "bounds_px": fixtures.bounds(composite)}]
     opened: dict[tuple[str, str], Opened] = {}
@@ -91,7 +76,7 @@ async def run(report: Report, a: Client, b: Client, client: BridgeClient, harnes
     await _refusals(report, a, b, client, png, harness, allowed or [])
     report.check(
         "every fixture is unchanged by the opens",
-        all(sha(path) == digest for path, digest in hashes.items()),
+        all(file_sha256(path) == digest for path, digest in hashes.items()),
     )
     _kritarc(report, harness)
     _measured(report, opened)
@@ -110,7 +95,9 @@ async def _make_kra(report: Report, a: Client, client: BridgeClient, ora: Path, 
         again = _harness_export(client, document_id, kra)
     finally:
         await close(a, document_id)
-    written = isinstance(made, Done) and kra.exists() and made.result.get("sha256") == sha(kra)
+    written = (
+        isinstance(made, Done) and kra.exists() and made.result.get("sha256") == file_sha256(kra)
+    )
     report.check(
         "harness.export_kra writes the KRA fixture with Krita's own exporter",
         written,
@@ -360,7 +347,7 @@ async def _escapes(
     )
     op_args = {
         "source_path": str(link),
-        "source_sha256": sha(png),
+        "source_sha256": file_sha256(png),
         "mode": "read_only",
         "working_dir": None,
         "editable_layer_ids": None,
