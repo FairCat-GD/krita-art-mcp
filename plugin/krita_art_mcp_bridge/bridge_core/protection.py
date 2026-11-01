@@ -107,7 +107,7 @@ def handlers(registry: Registry, port: DocumentsPort, data: Path) -> dict[str, H
         handle.allowed_summary = None if new is None else summary(new, size[0])
         handle.preserve_composite_alpha = args["preserve_composite_alpha"]
         handle.preserve_canvas = args["preserve_canvas"]
-        # History never undoes a step made under the looser protection (PDD Part 4).
+        # History never undoes a step made under the looser protection.
         handle.ledger.seal()
         return {
             "document_id": handle.document_id,

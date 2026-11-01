@@ -17,7 +17,7 @@ def run(
     setup = setup or Setup()
     client = client or BridgeClient(budget_s=BUDGET_S, any_plugin=True)
     status = _report(_steps(setup, client), out)
-    # A session checks this before it restarts Krita itself (decision 21), usually because the
+    # A session checks this before it restarts Krita itself, usually because the
     # plugin is stale, so it is reported whichever step failed.
     documents = client.call("bridge.unsaved_documents")
     if isinstance(documents, Done):

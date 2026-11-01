@@ -15,7 +15,7 @@ from krita_art_mcp.transfer import Pixels
 
 log = logging.getLogger(__name__)
 
-# The diff image's long edge at most (PDD Part 4).
+# The diff image's long edge at most.
 DIFF_PX = 1024
 # The bits of the plugin's flags byte per pixel; the plugin holds equal values.
 CHANGED = 1

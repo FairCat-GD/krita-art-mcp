@@ -375,7 +375,7 @@ def test_a_read_before_the_wait_is_found(source: str, refused: bool) -> None:
     assert bool(_reads_before_waiting(ast.parse(source))) is refused
 
 
-def test_the_adapter_adds_one_bridge_op_and_the_rest_are_harness_ops() -> None:
+def test_the_adapter_adds_one_bridge_op() -> None:
     tree = ast.parse((PLUGIN / PACKAGE / "krita_adapter" / "ops.py").read_text(encoding="utf-8"))
     [handlers] = [
         node.value
@@ -386,7 +386,7 @@ def test_the_adapter_adds_one_bridge_op_and_the_rest_are_harness_ops() -> None:
     ]
     assert isinstance(handlers, ast.Dict)
     names = [key.value for key in handlers.keys if isinstance(key, ast.Constant)]
-    assert names == ["bridge.unsaved_documents", "harness.preset_digests"]
+    assert names == ["bridge.unsaved_documents"]
 
 
 def test_bridge_core_imports_only_the_standard_library_and_itself() -> None:

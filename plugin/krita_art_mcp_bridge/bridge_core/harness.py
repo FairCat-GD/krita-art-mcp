@@ -15,7 +15,7 @@ MASK_FIELDS = {"document_id", "layer_id", "rect"}
 ACTIVATE_FIELDS = {"document_id", "node_id"}
 TIMING_FIELDS = {"document_id", "trials"}
 NODE_FIELDS = {"document_id", "kind", "layer_id"}
-# The nodes that spread a change past a layer's bounds (decision 20), as add_node makes them.
+# The nodes that spread a change past a layer's bounds, as add_node makes them.
 NODE_KINDS = ("filter_layer", "filter_mask", "transform_mask", "clone_layer")
 MAX_TRIALS = 20
 VIEW_FIELDS = {"document_id", "view"}
@@ -26,7 +26,7 @@ MAX_PRESETS = 100
 
 
 def require_inside_harness(data: Path, path: Any, field: str) -> str:
-    # Harness ops build fixtures only in the harness's own folder (decision 20).
+    # Harness ops build fixtures only in the harness's own folder.
     real = roots.resolve(path, field)
     if not roots.inside(real, [os.path.realpath(paths.harness_dir(data))]):
         details = {"field": field}
@@ -101,12 +101,11 @@ def handlers(registry: Registry, port: DocumentsPort, data: Path) -> dict[str, H
         handle = fixture(args["document_id"])
         with in_front(port, handle.document):
             undo, redo = port.undo_labels(handle.document)
-            actions = port.undo_actions(handle.document)
-        return {"document_id": handle.document_id, "undo": undo, "redo": redo, "actions": actions}
+        return {"document_id": handle.document_id, "undo": undo, "redo": redo}
 
     def label_timing(args: dict[str, Any], call: Call) -> dict[str, Any]:
-        # Whether the Undo label names a step pushed in the same job, straight after the wait
-        # and once posted events are through.
+        # Whether the Undo label names a step pushed in the same job, once posted events are
+        # through.
         exact(args, TIMING_FIELDS)
         handle = fixture(args["document_id"])
         trials = args["trials"]

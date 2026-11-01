@@ -392,11 +392,9 @@ def _phases(data_dir: Path, request_id: str) -> list[str]:
 
 
 async def _cycles(report: Report, a: Client) -> None:
-    # Decision 8: krita_document_close stays only if this never crashes Krita.
-    durations = []
+    # krita_document_close stays only if this never crashes Krita.
     failures = []
     for cycle in range(CYCLES):
-        started = time.perf_counter()
         created = await tool(
             a, "krita_document_create", _create_args(f"cycle {cycle}", str(uuid.uuid4()))
         )
@@ -405,7 +403,6 @@ async def _cycles(report: Report, a: Client) -> None:
             if created.get("status") == "completed"
             else created
         )
-        durations.append(time.perf_counter() - started)
         if (closed.get("data") or {}).get("closed") is not True:
             failures.append(f"cycle {cycle}: {code(closed)}")
             break
@@ -413,9 +410,5 @@ async def _cycles(report: Report, a: Client) -> None:
     report.check(
         f"{CYCLES} create and close cycles, and Krita still answers",
         not failures and alive.get("status") == "completed",
-        "; ".join(failures) or f"{len(durations)} cycles",
-    )
-    report.measured(
-        "create and close cycle",
-        f"mean {statistics.mean(durations) * 1000:.0f} ms, max {max(durations) * 1000:.0f} ms",
+        "; ".join(failures) or f"{CYCLES} cycles",
     )

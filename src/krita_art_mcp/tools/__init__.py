@@ -62,7 +62,7 @@ TOOLS: dict[str, ToolFunction] = {
 BUILT_TOOLS = sorted(TOOLS)
 
 log = logging.getLogger(__name__)
-# Each server process serialises its own calls (PDD Part 8); mcp would run them concurrently.
+# Each server process serialises its own calls; mcp would run them concurrently.
 CALLS = threading.Lock()
 
 

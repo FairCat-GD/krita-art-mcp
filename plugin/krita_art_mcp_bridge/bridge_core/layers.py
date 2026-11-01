@@ -81,7 +81,7 @@ def handlers(registry: Registry, port: DocumentsPort) -> dict[str, Handler]:
 
 
 def _placement(tree: dict[str, Any], parent_id: str, above_id: str | None) -> None:
-    # The root or a group holds layers; a protected group may take a new child (PDD Part 4).
+    # The root or a group holds layers; a protected group may take a new child.
     nodes = {node["id"]: node for node in tree["nodes"]}
     if parent_id != tree["root_id"]:
         parent = nodes.get(parent_id)

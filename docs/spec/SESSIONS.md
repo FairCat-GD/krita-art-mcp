@@ -4303,3 +4303,100 @@ closes. Session 15 shifts to 0.16.0. 14's done-note, *Checked by hand*, has the 
 
 **Watch for:**
 - **The docs describe what was built, not the plan.** Where they differ, the done-notes win.
+
+**Done (2026-11-01, 0.16.0).**
+- **Decided with the owner at the start:**
+  - **F31:** the session's rule, approved with the plan: a MEASURED line stays only if something rests
+    on it and no check would notice it changing. 23 of 47 stay, each with its reason in
+    `ARCHITECTURE.md`'s testing strategy.
+  - **A targeted rewrite of history before publishing,** after the review commit, because history
+    keeps the old hash file, a personal folder path, a machine inventory and notes on app permissions.
+  - **The README's copyright holder and security route:** the owner's name, and GitHub's private
+    vulnerability reporting.
+  - **GitHub topics and project keywords,** added by the owner, read as "tags": a git tag does nothing
+    for discovery, and none is made.
+  - **An adversarial review of the plan by Fable, for public readiness,** added by the owner, and a
+    cold read of the new documents by Fable before this commit.
+- **Decided with the owner mid-session:**
+  - **The owner's name left the term list.** The session had taken the list to be empty, as 7a
+    recorded; it holds 75 words now. Hygiene refused the README's copyright line, and the owner chose
+    the name, called it public, and gave a yes to removing its two words.
+- **`docs/ARCHITECTURE.md`,** from the template: the overview and a glossary of the terms the code and
+  docs use, the 14 invariants with their whys, the bridge and tool contracts, the placeholder and
+  error tables (F23, F25), the harness ops' reach (F27), the call lock (§8.8 item 10), the data layer,
+  one section per subsystem, the testing strategy, the deliberate decisions, the known debt, the ids
+  the code cites, and the baseline with its condition (F34, §8.8 item 11).
+- **`docs/USER-GUIDE.md`:** setup, the core loop call by call with schema-valid examples, retries and
+  long calls, all 30 codes, Phase 1's limits with the save's 8192 × 8192 bound (F4) and the English
+  interface, who can drive the bridge, what it leaves on the machine, and `doctor`.
+- **`README.md`** is short and truthful, and links the guide, which is now the one home for setup.
+  **`CLAUDE.md`** is repointed, with the as-built paragraph. **`docs/DEVELOPMENT-WORKFLOW.md`:** the *In
+  this repository* paragraph, in the past tense, and nothing else.
+- **`docs/BACKLOG.md`:** where round 1's files are; decision 29's uncertain outcome under *Not yet
+  checked by hand*; the rollback half of the language item; the findings the owner did not take and
+  the debts only done-notes held, as sentences that stand alone; the final topics.
+- **F11.** `journal.arguments` and the version-1 comment are gone; `_apply` refuses any version but 2.
+- **F31.** 24 lines retired. `harness.preset_digests` is gone (32 → 31 ops). `harness.label_timing`
+  keeps its check and loses the straight read. The `actions` chain went with its only reader.
+  `log._private_file`'s narrowing is gone. So are `SILENT_S` and the parameters the lines left.
+- **Citations.** 13 `PDD Part N` and 11 `decision N` comments lost the citation, since those files are
+  gone. K, C, N and H ids stay, defined in `ARCHITECTURE.md`.
+- **Amendments:**
+  - **The grown, shrunk and feathered rect became a check, not a retirement.** It was the only live run
+    of those three calls. PASS goes to 131. The plan-time design check's finding.
+  - **The reader refuses rather than skips a line of another version,** with one message naming both
+    cures, because a skipped line could let a retry repeat its work. Plan time.
+  - **The close also writes the release sha into the backlog's header,** which the workflow's close
+    row does not name. Plan time, with the owner.
+  - **The journal measurement takes the fastest of five lookups.** Two runs read 14 and 19 ms and
+    extrapolated to "bites", while a direct timing of the same size read 1 ms. One read in the probe's
+    large process can carry a collection of its whole heap, and the week scales it. With the fastest
+    of five the line reads 2 ms and does not bite. The session's own finding.
+  - **Hygiene does not read old file versions,** and Fable's brief called the term list empty. So the
+    session scanned all 1,050 historic text versions and every commit message against the real list
+    with hygiene's own tokens: 0 hits, with the scanner confirmed on a known hit. The rewrite repeats
+    it.
+  - **Fable's cold read found 13 faults in the new documents, all fixed.** Two matter to a user:
+    cumulative undo must be off, and a colour's alpha must be 1. The save's bound is a pixel count, not
+    a side. One fix is narrower than the finding: a save brings a document forward only when a
+    selection mask is active, so the guide names strokes, undos and redos.
+  - **One of Fable's findings did not survive checking and was dropped:** the backlog is right that the
+    old hashes reach the root commit. They are in its handoff, as well as in the 16 commits of the
+    hash file. So the rewrite reaches the root, and every sha changes.
+- **Measured** (Krita 5.3.4.1, macOS, Apple Silicon, on a Krita restarted this session, 0 documents
+  open):
+  - **Stages:** document 0.9 s, cycle 14.5 s, open 7.9 s, pixel 3.3 s, preview 10.8 s, change 6.5 s,
+    update 3.0 s, paint 6.4 s, benchmark 29.5 s, save 15.1 s, acceptance 10.6 s.
+  - **H4 idle:** p50 5.1 ms, p95 5.8 ms, max 6.9 ms.
+  - **N-01:** p95 0.09 s; selected 0.10 s; corner to corner 0.42–0.46 s. **N-09:** p95 0.23 s; selected
+    0.28 s; corner to corner 3.90–4.12 s. **N-02:** first render 0.75 s, 20 renders p95 0.33 s.
+  - **H4 long save:** 4.6 s, longest silence 2.67 s, median answer 11 ms.
+  - **The journal after N-01:** 3.2 KB per stroke, first lookup 2 ms, a heavy week 44 MB and 0.17 s.
+  - **The tall tip:** 0.52 × size, inside the 44.4 px margin.
+  - `transfer/` and `harness/` empty; no warning or error in `plugin.log`.
+- **Checked by hand:** the owner approved the restart with 1 document open, 0 unsaved. `osascript`
+  reported "User canceled" and Krita quit; `open` 6 s later worked. `doctor`: all 6 steps pass, one
+  root. The owner's client restart follows the release.
+- **Falsified:**
+  - **Version 1 refused:** the old `version > VERSION` failed the version-1 case alone.
+  - **Grow, shrink and feather, live:** `shrink_px` forced to 0 in the server failed that check alone,
+    130 PASS, 1 FAIL. Bytes restored, the tree compared equal.
+- **SPEC §9, item by item:**
+  1. Every block has its done-note and Review section. This block's Review goes in the review commit's
+     message, as the workflow says.
+  2. All 19 tools are registered with amended schemas, and every example and result validates.
+  3. `verify` is green, and the full harness passes, its counts in the baseline.
+  4. N-01, N-02 and N-09 pass.
+  5. H3, H4, H6 and H8 hold, and the six exercises pass as scoped. H4's save is the 5 s gradient one,
+     by the owner's decision.
+  6. Every invariant's enforcement exists and is described in `ARCHITECTURE.md`.
+  7. The as-built documents exist, and `CLAUDE.md` points at them.
+  8. Everything open is in `docs/BACKLOG.md`; `docs: close round 1` empties `docs/spec/`.
+  9. The trial and publishing are the owner's. The rewrite is the step before publishing.
+- **Numbers:**
+  - `verify`: 6 stages, all PASS;
+  - 669 server tests passed, 0 skipped;
+  - 665 plugin-core tests passed, 0 skipped;
+  - `probe`: 131 PASS (+1), 0 FAIL, 23 MEASURED (−24), 113.9 s with 0 documents open;
+  - 19 registered tools; 19 schema files; instructions 3,901 characters; 30 error codes; 31 bridge ops
+    (−1).

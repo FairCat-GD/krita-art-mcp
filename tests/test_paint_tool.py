@@ -9,7 +9,7 @@ from jsonschema import Draft202012Validator
 from mcp.types import ImageContent
 from worlds import NOW, World, running_world
 
-from krita_art_mcp import journal, schemas, verification
+from krita_art_mcp import schemas, verification
 from krita_art_mcp.bridge_client import BridgeClient, Done, Failed, Outcome
 from krita_art_mcp.tools import changes, painting
 from krita_art_mcp.tools.dispatch import ToolCall
@@ -207,9 +207,9 @@ def test_the_defaults_are_filled_and_the_path_sent(
     ]
     dispatched = [line for line in _journal(world) if line["phase"] == "dispatched"]
     folder = world.tmp_path / "a" / "journal"
-    assert [(line["tool"], journal.arguments(folder, line)) for line in dispatched] == [
-        ("krita_paint_stroke", arguments)
-    ]
+    assert [
+        (line["tool"], json.loads((folder / line["args_file"]).read_text())) for line in dispatched
+    ] == [("krita_paint_stroke", arguments)]
 
 
 def test_given_values_and_flat_input_reach_the_op(

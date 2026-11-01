@@ -76,7 +76,8 @@ def test_the_journal_line_is_written_before_the_call_is_sent(world: World) -> No
     assert seen == [["dispatched"]]
     lines = _lines(world)
     assert [line["phase"] for line in lines] == ["dispatched", "finished"]
-    assert journal.arguments(world.tmp_path / "a" / "journal", lines[0]) == _create()
+    held = world.tmp_path / "a" / "journal" / lines[0]["args_file"]
+    assert json.loads(held.read_text()) == _create()
     assert lines[0]["session_id"] == world.bridge.session_id
     assert lines[1]["outcome"] == journal.RECEIPT
 
@@ -120,29 +121,6 @@ def test_a_day_s_argument_folder_is_made_private_once(
     # The second call makes only the journal's own folder private, for its line.
     assert len(made) - first == 1
     assert (tmp_path / "journal" / journal.ARGS_DIR).is_dir()
-
-
-def test_a_version_1_line_with_its_arguments_inline_is_still_read(tmp_path: Path) -> None:
-    folder = tmp_path / "journal"
-    folder.mkdir()
-    line = {
-        "v": 1,
-        "ts": "2026-10-24T10:00:00.000+00:00",
-        "client": None,
-        "request_id": "req-old",
-        "operation_id": "op-old",
-        "tool": "krita_document_create",
-        "args_sha256": "a" * 64,
-        "session_id": "s-old",
-        "phase": "dispatched",
-        "args": {"name": "kept"},
-        "document_path": None,
-        "layer_names": [],
-    }
-    (folder / "2026-10-24.jsonl").write_text(json.dumps(line) + "\n")
-    prior = _journal_on(tmp_path, NOW).lookup("req-old")
-    assert prior is not None and prior.binding() == ("krita_document_create", "a" * 64)
-    assert journal.arguments(folder, line) == {"name": "kept"}
 
 
 def test_reads_are_not_journaled(world: World) -> None:
@@ -436,14 +414,18 @@ def test_cancel_reports_a_finished_operation_and_refuses_a_running_one(world: Wo
     assert cancelled["data"] == {"operation_id": queued.operation_id, "state": "cancelled"}
 
 
-def test_a_newer_journal_is_refused_with_a_clear_error(world: World) -> None:
+@pytest.mark.parametrize("version", [journal.VERSION - 1, journal.VERSION + 1])
+def test_a_journal_of_another_version_is_refused_with_a_clear_error(
+    world: World, version: int
+) -> None:
     folder = world.tmp_path / "a" / "journal"
     folder.mkdir(parents=True)
-    newer = {"v": journal.VERSION + 1, "request_id": "x"}
-    (folder / "2026-10-24.jsonl").write_text(json.dumps(newer) + "\n")
+    other = {"v": version, "request_id": "x"}
+    (folder / "2026-10-24.jsonl").write_text(json.dumps(other) + "\n")
     result = world.server().content("krita_document_create", _create())
     assert result["error"]["code"] == "INTERNAL_ERROR"
-    assert "newer" in result["error"]["message"]
+    assert f"version {version};" in result["error"]["message"]
+    assert "move that file aside" in result["error"]["message"]
     assert world.port.created == 0
 
 
@@ -498,7 +480,7 @@ def test_a_line_cut_short_by_a_crash_neither_breaks_the_journal_nor_the_next_lin
 ) -> None:
     folder = tmp_path / "journal"
     folder.mkdir()
-    (folder / "2026-10-24.jsonl").write_bytes(b'{"v": 1, "request_id": "req-cut", "pha')
+    (folder / "2026-10-24.jsonl").write_bytes(b'{"v": 2, "request_id": "req-cut", "pha')
     writer = _journal_on(tmp_path, NOW)
     writer.dispatched(
         client=None,
@@ -700,10 +682,10 @@ def test_a_poll_waits_for_a_call_the_bridge_has_not_registered_yet(world: World)
 @pytest.mark.parametrize(
     "line",
     [
-        {"v": 1},
-        {"v": 1, "request_id": "req-x", "phase": "dispatched"},
+        {"v": journal.VERSION},
+        {"v": journal.VERSION, "request_id": "req-x", "phase": "dispatched"},
         {
-            "v": 1,
+            "v": journal.VERSION,
             "request_id": "req-x",
             "phase": "elsewhere",
             "operation_id": "o",
@@ -712,7 +694,7 @@ def test_a_poll_waits_for_a_call_the_bridge_has_not_registered_yet(world: World)
             "args_sha256": "0",
         },
         {
-            "v": 1,
+            "v": journal.VERSION,
             "request_id": "req-x",
             "phase": "finished",
             "operation_id": "o",

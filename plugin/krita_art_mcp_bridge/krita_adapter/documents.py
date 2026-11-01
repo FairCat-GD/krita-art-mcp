@@ -274,10 +274,6 @@ class KritaDocuments:
         _flush()
         return _label("edit_undo", "Undo"), _label("edit_redo", "Redo")
 
-    def undo_actions(self, document: Any) -> dict[str, Any]:
-        _flush()
-        return {"undo": _raw("edit_undo"), "redo": _raw("edit_redo")}
-
     def undo_limit(self) -> int:
         # Krita's own setting; 0 keeps every step.
         text = str(Krita.instance().readSetting("", "undoStackLimit", str(UNDO_LIMIT_DEFAULT)))
@@ -287,16 +283,15 @@ class KritaDocuments:
             return UNDO_LIMIT_DEFAULT
         return limit if limit > 0 else UNLIMITED
 
-    def label_timing(self, document: Any, trials: int) -> list[list[str | None]]:
+    def label_timing(self, document: Any, trials: int) -> list[str | None]:
         root = document.rootNode()
         reads = []
         for trial in range(trials):
             node = document.createNode(f"krita-art-mcp probe timing {trial}", "paintlayer")
             root.addChildNode(node, None)
             document.waitForDone()
-            straight = _label("edit_undo", "Undo")
             _flush()
-            reads.append([straight, _label("edit_undo", "Undo")])
+            reads.append(_label("edit_undo", "Undo"))
         return reads
 
     def add_active_mask(self, document: Any, layer_id: str, rect: dict[str, int]) -> bool:
@@ -505,13 +500,6 @@ def _label(name: str, prefix: str) -> str | None:
     if text.startswith(prefix):
         text = text[len(prefix) :]
     return text.strip()
-
-
-def _raw(name: str) -> dict[str, Any]:
-    action = Krita.instance().action(name)
-    if action is None:
-        return {"text": None, "enabled": None}
-    return {"text": str(action.text()), "enabled": bool(action.isEnabled())}
 
 
 def _layer_id(node: Any) -> str:

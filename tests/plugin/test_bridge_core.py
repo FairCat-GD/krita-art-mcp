@@ -6,7 +6,7 @@ import pytest
 from bridge_core import capabilities, errors
 from bridge_core.source_hash import source_hash
 
-# The capability names of PDD Part 4, krita_server_info.
+# The capability names of krita_server_info.
 CAPABILITIES = {
     "stroke.native_brush",
     "stroke.per_point_input",

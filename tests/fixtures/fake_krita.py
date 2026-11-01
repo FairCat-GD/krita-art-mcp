@@ -519,22 +519,15 @@ class FakePort:
         redo = stack[index]["label"] if index < len(stack) else None
         return undo, redo
 
-    def undo_actions(self, document: Any) -> dict[str, Any]:
-        undo, redo = self.undo_labels(document)
-        return {
-            "undo": {"text": f"Undo {undo or ''}", "enabled": undo is not None},
-            "redo": {"text": f"Redo {redo or ''}", "enabled": redo is not None},
-        }
-
     def undo_limit(self) -> int:
         return self.limit
 
-    def label_timing(self, document: Any, trials: int) -> list[list[str | None]]:
+    def label_timing(self, document: Any, trials: int) -> list[str | None]:
         root = self._tree(document.key)["root_id"]
         reads = []
         for trial in range(trials):
             self.create_layer(document, root, None, "paintlayer", f"timing {trial}")
-            reads.append([None, self.undo_labels(document)[0]])
+            reads.append(self.undo_labels(document)[0])
         return reads
 
     def export(self, document: Any, target: str) -> bool:
@@ -754,7 +747,7 @@ def _whole(width: int, height: int) -> dict[str, int]:
     return {"x": 0, "y": 0, "width": width, "height": height}
 
 
-# The node types Krita's ORA exporter writes as layers (PDD Part 6).
+# The node types Krita's ORA exporter writes as layers.
 ORA_TYPES = {"paintlayer", "grouplayer", "filllayer", "clonelayer", "filelayer", "vectorlayer"}
 
 

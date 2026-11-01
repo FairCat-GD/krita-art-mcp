@@ -63,8 +63,6 @@ LONG_SIDE = 4096
 POLL_S = 0.1
 POLL_TIMEOUT_S = 120.0
 RECOVERY_S = 1.0
-# An answer slower than this came out of a silence: Krita held the GIL.
-SILENT_S = 0.5
 # Sent this long after the save starts, the paint call lands while Krita exports.
 PAINT_DELAY_S = 0.5
 # The paint client's waits, so the call and its retry both time out inside the export's silence.

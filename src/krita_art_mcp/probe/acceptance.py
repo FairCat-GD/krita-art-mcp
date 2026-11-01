@@ -425,28 +425,8 @@ async def _boundary(
             f"confirmed {details.get('rollback_verified')}, composite "
             f"{differs(last, after) or 'as before'}",
         )
-        await _same_edge(report, a, document_id, layer_id, role, brush, points)
     finally:
         await close(a, document_id)
-
-
-async def _same_edge(
-    report: Report,
-    a: Client,
-    document_id: str,
-    layer_id: str,
-    role: str,
-    brush: dict[str, Any],
-    points: list[dict[str, Any]],
-) -> None:
-    await select(a, document_id, {"type": "polygon", "points": DIAMOND})
-    done = await tool(a, TOOL, stroke_args(document_id, layer_id, brush, points))
-    details = (done.get("error") or {}).get("details") or {}
-    outside = (details.get("verification") or {}).get("changed_outside_px")
-    report.measured(
-        f"exercise 3, {role} brush: a selection equal to the allowed polygon, not gated",
-        f"{code(done) or 'kept'}, {outside} px changed outside the mask",
-    )
 
 
 async def _batch(

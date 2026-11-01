@@ -14,7 +14,7 @@ def private_dir(path: Path) -> Path:
 
 def default_data_dir() -> Path:
     # bridge.json, logs and the harness folder stay here whatever KRITA_ART_MCP_DATA_DIR says,
-    # because Krita launched from the Dock never sees the variable (decision 25).
+    # because Krita launched from the Dock never sees the variable.
     return Path.home() / "Library" / "Application Support" / "krita-art-mcp"
 
 
@@ -68,7 +68,7 @@ class Places:
 
     @classmethod
     def under(cls, default_data: Path, server_data: Path) -> "Places":
-        # The plugin sees only the default data dir (decision 25); baselines are the server's.
+        # The plugin sees only the default data dir; baselines are the server's.
         return cls(
             config_file=default_data / "config.json",
             transfer_dir=default_data / "transfer",

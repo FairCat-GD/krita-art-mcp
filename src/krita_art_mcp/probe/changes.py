@@ -71,15 +71,6 @@ def _box(x: int, y: int, width: int, height: int) -> np.ndarray:
     return _canvas(masks.rect(_rect(x, y, width, height), LIMIT))
 
 
-def undo_labels(client: BridgeClient, document_id: str) -> str:
-    read = harness_call(client, "harness.undo_labels", document_id=document_id)
-    if not isinstance(read, Done):
-        return f"unread ({read})"
-    actions = read.result.get("actions") or {}
-    raw = {name: (value.get("text"), value.get("enabled")) for name, value in actions.items()}
-    return f"undo {read.result['undo']!r}, redo {read.result['redo']!r}; actions {raw}"
-
-
 async def run(report: Report, a: Client, b: Client, client: BridgeClient, harness: Path) -> None:
     harness = Path(os.path.realpath(harness))
     folder = harness / "changes"
@@ -97,8 +88,8 @@ async def run(report: Report, a: Client, b: Client, client: BridgeClient, harnes
         return
     document_id = opened["document_id"]
     try:
-        made = await _layers(report, a, client, document_id, opened["data"], composite)
-        await _selections(report, a, client, document_id, raster, gradient)
+        made = await _layers(report, a, document_id, opened["data"], composite)
+        await _selections(report, a, document_id, raster, gradient)
         await _ledger(report, a, document_id, opened["data"]["root_layer_id"])
         await _retries(report, a, b, document_id)
         await _protection(report, a, document_id, made)
@@ -150,7 +141,6 @@ async def _read_only(report: Report, a: Client, ora: Path, raster: Path) -> None
 async def _layers(
     report: Report,
     a: Client,
-    client: BridgeClient,
     document_id: str,
     opened: dict[str, Any],
     composite: np.ndarray,
@@ -159,7 +149,6 @@ async def _layers(
     root, base = opened["root_layer_id"], layers["probe base"]
     group, shape = layers["probe group"], layers["probe shape"]
     first = await tool(a, "krita_layer_create", _layer(document_id, root, base["id"]))
-    report.measured("the undo labels after layer_create", undo_labels(client, document_id))
     second = await tool(
         a, "krita_layer_create", _layer(document_id, group["id"], shape["id"], type="group")
     )
@@ -171,12 +160,6 @@ async def _layers(
     # Both new layers share a name, so they are found by id.
     entries = {layer["id"]: layer for layer in inspected.get("layers") or []}
     seen = by_name(inspected.get("layers") or [])
-    report.measured(
-        "the active layer after layer_create",
-        "the new one"
-        if inspected.get("active_layer_id") == made[1]
-        else str(inspected.get("active_layer_id")),
-    )
     problems = []
     for content, parent, above, kind in (
         (first, root, base, "paint"),
@@ -221,7 +204,6 @@ async def _layers(
 async def _selections(
     report: Report,
     a: Client,
-    client: BridgeClient,
     document_id: str,
     raster: Path,
     gradient: np.ndarray,
@@ -257,15 +239,10 @@ async def _selections(
         if selected.get("status") != "completed":
             problems.append(f"{name}: {code(selected)}")
             continue
-        if name == "rect":
-            report.measured("the undo labels after selection_set", undo_labels(client, document_id))
         found = await capture_selection(a, document_id)
         if found is None or differs(found, expected):
             problems.append(f"{name}: {differs(found, expected)}")
     cleared = await tool(a, "krita_selection_set", _select(document_id, {"type": "none"}))
-    report.measured(
-        "the undo labels after clearing the selection", undo_labels(client, document_id)
-    )
     if (cleared.get("data") or {}).get("bounds_px") is not None or (
         await inspect_data(a, document_id)
     ).get("selection") is not None:
@@ -306,16 +283,25 @@ async def _selections(
         not problems,
         "; ".join(problems),
     )
-    measured = []
-    for name, value in (("grow_px", 3), ("shrink_px", 3), ("feather_px", 3)):
+    problems = []
+    for name, bounds in (
+        ("grow_px", _rect(17, 11, 26, 22)),
+        ("shrink_px", _rect(23, 17, 14, 10)),
+        ("feather_px", _rect(17, 11, 26, 22)),
+    ):
         selected = await tool(
             a,
             "krita_selection_set",
-            _select(document_id, {"type": "rect", "rect": _rect(20, 14, 20, 16)}, **{name: value}),
+            _select(document_id, {"type": "rect", "rect": _rect(20, 14, 20, 16)}, **{name: 3}),
         )
-        data = selected.get("data") or {}
-        measured.append(f"{name} {value}: {data.get('bounds_px')} {data.get('selected_pixels')} px")
-    report.measured("a 20 x 16 rect grown, shrunk and feathered by 3", "; ".join(measured))
+        found_bounds = (selected.get("data") or {}).get("bounds_px")
+        if found_bounds != bounds:
+            problems.append(f"{name}: {code(selected) or found_bounds}")
+    report.check(
+        "a 20 x 16 rect grown, shrunk and feathered by 3 lands on the bounds Krita gives each",
+        not problems,
+        "; ".join(problems),
+    )
 
 
 async def _ledger(report: Report, a: Client, document_id: str, root: str) -> None:
@@ -512,16 +498,10 @@ async def _label_timing(report: Report, client: BridgeClient, document_id: str) 
         client, "harness.label_timing", document_id=document_id, trials=LABEL_TRIALS
     )
     reads = timed.result.get("reads", []) if isinstance(timed, Done) else []
-    stale = sum(1 for straight, _ in reads if straight is None or straight == "")
-    fresh = [flushed for _, flushed in reads]
-    report.measured(
-        "the Undo label read straight after a push in the same job",
-        f"stale in {stale} of {len(reads)}: {sorted({str(straight) for straight, _ in reads})}",
-    )
     report.check(
         "after posted events are through, the Undo label names the step just pushed, every time",
-        len(reads) == LABEL_TRIALS and len(set(fresh)) == 1 and fresh[0] is not None,
-        f"{sorted({str(flushed) for flushed in fresh})}" if reads else str(timed),
+        len(reads) == LABEL_TRIALS and len(set(reads)) == 1 and reads[0] is not None,
+        f"{sorted({str(read) for read in reads})}" if reads else str(timed),
     )
 
 

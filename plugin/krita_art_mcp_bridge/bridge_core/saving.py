@@ -38,7 +38,7 @@ KRA_FIELDS = (
     "depth",
     "profile_id",
 )
-# What Krita's ORA exporter writes as layers (PDD Part 6): groups stay groups, the rest come back
+# What Krita's ORA exporter writes as layers: groups stay groups, the rest come back
 # as paint layers. Masks are baked into their layer's pixels, and adjustment layers are dropped.
 ORA_LAYERS = {"paintlayer", "grouplayer", "filllayer", "clonelayer", "filelayer", "vectorlayer"}
 ORA_FIELDS = ("name", "visible", "blend_mode", "locked", "inherit_alpha")
@@ -113,7 +113,7 @@ def handlers(registry: Registry, port: DocumentsPort, data: Path) -> dict[str, H
             saved = reopening.read_file(registry, port, written, call.client, read, message)
             for pair in saved["pairs"]:
                 if pair["rect"] is not None:
-                    # An ORA layer holds its projection, its masks applied (PDD Part 6).
+                    # An ORA layer holds its projection, its masks applied.
                     projection = kind == ".ora"
                     pair["live_sha256"] = _pixels_sha256(
                         port, handle.document, pair["live"]["id"], pair["rect"], projection
@@ -189,7 +189,7 @@ def handlers(registry: Registry, port: DocumentsPort, data: Path) -> dict[str, H
         except BaseException:
             _unmake(pending.made)
             raise
-        # A change since the save read the document keeps its dirt (decision 27).
+        # A change since the save read the document keeps its dirt.
         cleared = handle.changes == pending.changes
         if cleared:
             handle.dirty = False

@@ -73,7 +73,7 @@ def handlers(registry: Registry, port: DocumentsPort, data: Path) -> dict[str, H
             message = f"There is no selection to {args['combine']} with; use replace."
             raise BridgeError("INVALID_ARGUMENT", message, False, details)
         if shape["kind"] == "none" and not selected:
-            # A successful guarded call dirties the document (decision 27); Krita gets nothing.
+            # A successful guarded call dirties the document; Krita gets nothing.
             handle.before_change()
             return {"document_id": handle.document_id, "selection": None, "undo_steps": 0}
         label = LABELS["selection.clear" if shape["kind"] == "none" else "selection.set"]

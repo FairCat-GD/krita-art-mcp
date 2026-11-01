@@ -1,5 +1,4 @@
 import os
-import time
 from pathlib import Path
 from typing import Any
 
@@ -8,7 +7,6 @@ from mcp import Client
 
 from krita_art_mcp.bridge_client import BridgeClient, Done
 from krita_art_mcp.probe import fixtures
-from krita_art_mcp.probe.changes import undo_labels
 from krita_art_mcp.probe.common import (
     by_name,
     capture_composite,
@@ -69,7 +67,7 @@ async def _properties(
         layers = by_name(opened["data"]["layers"])
         paint = layers["probe paint"]["id"]
         await _active(report, a, document_id, paint)
-        await _ledger(report, a, client, document_id, paint)
+        await _ledger(report, a, document_id, paint)
         await _locked(report, a, document_id, layers)
         # Its harness ops seal history, so they come last.
         await _reach(report, a, client, document_id, paint)
@@ -90,27 +88,21 @@ async def _active(report: Report, a: Client, document_id: str, paint: str) -> No
     )
 
 
-async def _ledger(
-    report: Report, a: Client, client: BridgeClient, document_id: str, paint: str
-) -> None:
+async def _ledger(report: Report, a: Client, document_id: str, paint: str) -> None:
     problems = []
     for mode in ("multiply", "screen"):
         done = await tool(a, "krita_layer_update", _update(document_id, paint, blend_mode=mode))
         if (done.get("data") or {}).get("undo_steps") != 1:
             problems.append(f"{mode}: {code(done) or done.get('data')}")
-    report.measured("the undo labels after a blend change", undo_labels(client, document_id))
     await tool(a, "krita_history_step", history_args(document_id, "undo"))
     middle = by_name((await inspect_data(a, document_id)).get("layers") or [])
     if middle.get("probe paint", {}).get("blend_mode") != "multiply":
         problems.append(f"undo 1 left {middle.get('probe paint', {}).get('blend_mode')}")
     await tool(a, "krita_history_step", history_args(document_id, "redo"))
-    labels = []
     for properties in UNDO_FREE:
         done = await tool(a, "krita_layer_update", _update(document_id, paint, **properties))
         if done.get("status") != "completed" or (done.get("data") or {}).get("undo_steps") != 0:
             problems.append(f"{properties}: {code(done)}")
-        labels.append(f"{next(iter(properties))}: {undo_labels(client, document_id)}")
-    report.measured("the undo labels after each property without an undo step", "; ".join(labels))
     # Both blend steps are still on top of Krita's stack: a step any property pushed would stop
     # history.
     undone = (await tool(a, "krita_history_step", history_args(document_id, "undo", 2))).get(
@@ -147,7 +139,7 @@ async def _locked(report: Report, a: Client, document_id: str, layers: dict[str,
 async def _reach(
     report: Report, a: Client, client: BridgeClient, document_id: str, paint: str
 ) -> None:
-    made, changed = {}, {}
+    made = {}
     for kind in SPREADERS:
         added = harness_call(
             client, "harness.add_node", document_id=document_id, kind=kind, layer_id=paint
@@ -155,7 +147,7 @@ async def _reach(
         if not isinstance(added, Done):
             report.check(f"harness.add_node makes a {kind}", False, str(added))
             return
-        made[kind], changed[kind] = added.result["node_id"], added.result["composite_changed"]
+        made[kind] = added.result["node_id"]
         if kind == "filter_layer":
             region = await tool(a, "krita_layer_update", _update(document_id, paint, opacity=0.75))
             full = await tool(
@@ -173,7 +165,6 @@ async def _reach(
                 == {"x": 0, "y": 0, "width": fixtures.WIDTH, "height": fixtures.HEIGHT},
                 f"region {code(region)}, full {code(full) or checked.get('changed_bounds_px')}",
             )
-    report.measured("the composite changed when the harness added", str(changed))
     # A value no earlier call set, so the update always changes something to refuse.
     region = await tool(a, "krita_layer_update", _update(document_id, paint, opacity=0.3))
     reasons = (region.get("error") or {}).get("details", {}).get("reasons", [])
@@ -206,9 +197,7 @@ async def _leaks(report: Report, a: Client, client: BridgeClient, ora: Path, har
         }
         protected = await tool(a, "krita_protection_set", protect)
         before = await capture_composite(a, document_id)
-        started = time.perf_counter()
         leak = await tool(a, "krita_layer_update", _update(document_id, paint, opacity=0.5))
-        took = time.perf_counter() - started
         details = (leak.get("error") or {}).get("details", {})
         after = await capture_composite(a, document_id)
         paint_now = by_name((await inspect_data(a, document_id)).get("layers") or [])["probe paint"]
@@ -230,7 +219,6 @@ async def _leaks(report: Report, a: Client, client: BridgeClient, ora: Path, har
             f"composite {differs(after, before) or 'as before'}, opacity {paint_now['opacity']}, "
             f"dirty {dirty}",
         )
-        report.measured("a refused, restored and confirmed opacity change", f"{took * 1000:.0f} ms")
         blend = await tool(
             a, "krita_layer_update", _update(document_id, paint, blend_mode="multiply")
         )

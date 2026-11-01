@@ -116,7 +116,7 @@ def handlers(
         editable = _editable(
             tree["nodes"], args["editable_layer_ids"], args["editable_layer_names"]
         )
-        # Every layer that exists now is protected, except those the agent resumes (PDD Part 4).
+        # Every layer that exists now is protected, except those the agent resumes.
         protected = {node["id"] for node in tree["nodes"]} - editable
         layers = layer_entries(tree, protected)
         width, height = info["size_px"]

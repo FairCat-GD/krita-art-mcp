@@ -1,8 +1,6 @@
 import base64
-import hashlib
 import io
 import os
-import time
 from pathlib import Path
 from typing import Any
 
@@ -74,14 +72,13 @@ async def run(report: Report, a: Client, client: BridgeClient, harness: Path) ->
         return
     document_id = opened["document_id"]
     layers = _ids(opened["data"]["layers"])
-    report.measured("the fixture's profile_id", str(opened["data"]["profile_id"]))
     try:
         await _captures(report, a, document_id, layers, stack, composite)
         await _refusals(report, a, document_id, layers)
         await _samples(report, a, document_id, layers)
     finally:
         await close(a, document_id)
-    await _resources(report, a, client)
+    await _resources(report, a)
     await _k46(report, a, client, ora, png, harness, composite)
 
 
@@ -93,9 +90,7 @@ async def _captures(
     stack: tuple[fixtures.Layer, ...],
     composite: np.ndarray,
 ) -> None:
-    started = time.perf_counter()
     result = await call(a, "krita_capture", _capture(document_id))
-    seconds = time.perf_counter() - started
     content = result.structured_content or {}
     found = _file(content)
     problems = []
@@ -109,7 +104,6 @@ async def _captures(
         not problems,
         "; ".join(problems),
     )
-    report.measured("a native capture of the whole fixture", f"{seconds * 1000:.0f} ms")
     rect = {"x": 8, "y": 10, "width": 20, "height": 20}
     part = await tool(a, "krita_capture", _capture(document_id, rect=rect))
     crop = composite[10:30, 8:28]
@@ -284,7 +278,7 @@ async def brushes(a: Client) -> list[dict[str, Any]] | None:
             return entries
 
 
-async def _resources(report: Report, a: Client, client: BridgeClient) -> None:
+async def _resources(report: Report, a: Client) -> None:
     first, second = await brushes(a), await brushes(a)
     hashed = [entry for entry in first or [] if entry["sha256"]]
     report.check(
@@ -307,27 +301,6 @@ async def _resources(report: Report, a: Client, client: BridgeClient) -> None:
         and SRGB_PROFILE in profiles
         and lists["palette"].get("total", 0) > 0,
         f"{len(modes)} modes, {len(profiles)} profiles, {lists['palette'].get('total')} palettes",
-    )
-    ids = {entry["id"] for entry in first or []}
-    digest = hashlib.sha256(
-        "".join(f"{entry['id']}\t{entry['sha256']}\n" for entry in first or []).encode()
-    ).hexdigest()
-    report.measured(
-        "brush presets",
-        f"{len(first or [])} presets, {len(ids)} distinct ids, digest {digest[:16]}",
-    )
-    measured = client.call("harness.preset_digests")
-    if isinstance(measured, Done):
-        result = measured.result
-        report.measured(
-            "preset settings across runs",
-            f"{result['presets']} presets, raw {result['raw'][:16]}, "
-            f"canonical {result['canonical'][:16]}",
-        )
-    report.measured(
-        "profiles and palettes",
-        f"{lists['profile'].get('total')} RGBA / U8 profiles, "
-        f"{lists['palette'].get('total')} palettes",
     )
 
 

@@ -34,9 +34,7 @@ COMPARED = (
 @dataclass
 class Opened:
     data: dict[str, Any]
-    inspected: dict[str, Any]
     baseline: np.ndarray | None
-    seconds: float
 
 
 async def run(report: Report, a: Client, b: Client, client: BridgeClient, harness: Path) -> None:
@@ -79,11 +77,10 @@ async def run(report: Report, a: Client, b: Client, client: BridgeClient, harnes
         all(file_sha256(path) == digest for path, digest in hashes.items()),
     )
     _kritarc(report, harness)
-    _measured(report, opened)
 
 
 async def _make_kra(report: Report, a: Client, client: BridgeClient, ora: Path, kra: Path) -> bool:
-    # A KRA no tool can write yet: Krita's own exporter writes it from the ORA (decision 20).
+    # The fixture comes from Krita's own exporter, so it holds what a real KRA holds.
     opened = await tool(a, "krita_document_open", open_args(ora, "read_only"))
     if opened.get("status") != "completed":
         report.check("harness.export_kra writes the KRA fixture", False, str(opened.get("error")))
@@ -180,7 +177,7 @@ async def _round_trip(
         problems.append("the baseline outlived its document")
     detail = "; ".join(problems) or f"{len(data['layers'])} layers in {seconds * 1000:.0f} ms"
     report.check(name, not problems, detail)
-    return Opened(data, seen, baseline, seconds)
+    return Opened(data, baseline)
 
 
 def _native_render(document_id: str, data: dict[str, Any]) -> dict[str, Any]:
@@ -326,7 +323,7 @@ async def _refusals(
         f"{code(refused)}, {len(left)} file(s) left",
     )
     await _escapes(report, a, client, png, harness, allowed)
-    await _retry(report, a, b, client, png, harness)
+    await _retry(report, a, b, png, harness)
 
 
 async def _escapes(
@@ -376,13 +373,10 @@ async def _escapes(
     )
 
 
-async def _retry(
-    report: Report, a: Client, b: Client, client: BridgeClient, png: Path, harness: Path
-) -> None:
+async def _retry(report: Report, a: Client, b: Client, png: Path, harness: Path) -> None:
     work = harness / "work" / "retry"
     arguments = open_args(png, "working_copy", work)
     first = await tool(a, "krita_document_open", arguments)
-    unsaved = client.call("bridge.unsaved_documents")
     again = await tool(a, "krita_document_open", arguments)
     through_b = await tool(b, "krita_document_open", arguments)
     copies = sorted(os.listdir(work)) if work.exists() else []
@@ -400,11 +394,6 @@ async def _retry(
         code(later) == "UNSUPPORTED_CAPABILITY" and later.get("operation_id") is None,
         str(code(later)),
     )
-    if isinstance(unsaved, Done):
-        report.measured(
-            "a fresh open marked modified",
-            f"{unsaved.result['unsaved']} of {unsaved.result['open']} open documents unsaved",
-        )
     await close(a, document_id)
 
 
@@ -422,23 +411,3 @@ def _kritarc(report: Report, harness: Path) -> None:
         elif section == "RecentFiles" and str(harness) in text:
             named += 1
     report.check("kritarc's recent files name no harness file", named == 0, f"{named} entries")
-
-
-def _measured(report: Report, opened: dict[tuple[str, str], Opened]) -> None:
-    times = ", ".join(
-        f"{label} {found.seconds * 1000:.0f} ms"
-        for (label, mode), found in opened.items()
-        if mode == "read_only"
-    )
-    report.measured("krita_document_open, read_only", times)
-    png = opened.get(("PNG", "read_only"))
-    if png is not None:
-        report.measured("the PNG's one layer", repr(png.data["layers"][0]["name"]))
-    ora = opened.get(("ORA", "read_only"))
-    if ora is not None:
-        shape = next(layer for layer in ora.data["layers"] if layer["name"] == "probe shape")
-        report.measured(
-            "Node.position against bounds, for an ORA layer at x=8, y=12",
-            f"offset_px {shape['offset_px']}, bounds_px {shape['bounds_px']}",
-        )
-        report.measured("a fresh document's selection", str(ora.inspected.get("selection")))

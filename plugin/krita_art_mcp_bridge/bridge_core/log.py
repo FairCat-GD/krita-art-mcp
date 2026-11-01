@@ -41,12 +41,7 @@ def setup(log_dir: Path) -> logging.Logger:
 
 
 def _private_file(path: str) -> None:
-    # Made 0600, or narrowed to it when an older run made it with the default mode.
-    fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_APPEND, 0o600)
-    try:
-        os.fchmod(fd, 0o600)
-    finally:
-        os.close(fd)
+    os.close(os.open(path, os.O_WRONLY | os.O_CREAT | os.O_APPEND, 0o600))
 
 
 def _rotate(source: str, dest: str) -> None:

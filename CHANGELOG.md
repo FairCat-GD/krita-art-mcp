@@ -6,6 +6,36 @@ All notable changes to krita-art-mcp are documented here. The format follows
 
 ## [Unreleased]
 
+## [0.16.0] — 2026-11-01
+
+Phase 1 is complete and documented. This release needs `install-plugin`, a Krita restart and a
+restart of the MCP client.
+
+### Added
+
+- **A user guide.** It covers setup, the core loop call by call, every error code and what to do
+  about it, Phase 1's limits, who can drive the bridge, and what the tool leaves on your computer.
+- **An architecture document.** It describes the system as built, the invariants and how each is
+  enforced, the Krita facts the code rests on, and the baseline a change is measured against.
+- **The probe checks that a selection grows, shrinks and feathers** to the bounds Krita gives each.
+  It was the only live run of those calls, and until now only printed them.
+
+### Changed
+
+- **The README is short and says what is true.** Setup moved to the user guide. The requirements now
+  say that Krita's interface must be in English, because undo and rollback confirm each step by its
+  English name.
+- **The probe prints only what no check would notice.** It reports 23 MEASURED lines, down from 47,
+  and each one that stays has its reason in the architecture document.
+- **The probe's journal measurement stopped crying wolf.** It takes the fastest of five reads, because
+  one read could carry a garbage collection of the probe's own process and report that the journal
+  bites when it does not.
+
+### Removed
+
+- **Journal lines from before 0.9.0 are no longer read.** None can fall inside the 7-day window. A
+  server that meets a line of another version refuses it with a clear error naming both cures.
+
 ## [0.15.0] — 2026-11-01
 
 An agent's first calls now work in Codex, without learning the arguments from refusals. This release

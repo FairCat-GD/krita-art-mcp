@@ -57,7 +57,7 @@ def handlers(registry: Registry, port: DocumentsPort, data: Path) -> dict[str, H
             port.refresh(document)
             before = verification.read(port, document, rect)
         if set(wanted) == {"active"}:
-            # Only which layer the owner sees selected changes (decision 27).
+            # Only which layer the owner sees selected changes.
             was = handle.dirty
             handle.touched()
         else:

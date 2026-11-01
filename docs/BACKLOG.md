@@ -5,8 +5,10 @@ Work that has been named but belongs to no session. Each item needs its own inta
 in `docs/spec/SESSIONS.md`; see `docs/DEVELOPMENT-WORKFLOW.md`). When an item is picked up, it
 moves out of this file.
 
-The phases below are described in full in the PDD, Part 4. That is `docs/spec/PDD.md` while round 1
-runs; after it closes, read it from git history at round 1's release commit.
+The phases below are described in full in the PDD, Part 4. Round 1's `docs/spec/` left the tree when
+the round closed. Read `PDD.md`, `SPEC.md`, `REVIEW-2026-10-24.md`, `REVIEW-2026-10-25.md` and
+`REVIEW-2026-10-30.md` from git history, at round 1's release commit. `docs/ARCHITECTURE.md`'s
+overview says what "the contract", "Phase N" and "review N" mean.
 
 ## Deferred
 
@@ -85,10 +87,12 @@ runs; after it closes, read it from git history at round 1's release commit.
 - **Reading a frame other than the one on screen** (0.5.0). Reads refuse a document whose current
   frame is not 0, and never move the owner's timeline. `Node.pixelDataAtTime` (K32) could read a
   layer at any frame without moving it; Phase 5 decides.
-- **Undo labels in other languages** (0.7.0). `krita_history_step` confirms each step by the label
-  Krita's Undo action gives it, as measured in English ("Add Layer", and an unnamed step for a
-  selection change). In another language every layer step reads as a step the bridge did not
-  make, and history refuses it. Labels could be read from Krita's own translation, or measured at
+- **Undo labels in other languages** (0.7.0). `history.move` confirms each step by the label Krita's
+  Undo action gives it, as measured in English ("Add Layer", and an unnamed step for a selection
+  change). In another language ordinary calls complete, but every layer step reads as a step the
+  bridge did not make: `krita_history_step` refuses it, and a leak's rollback ends in
+  `ROLLBACK_FAILED` and an unsafe document. Until this lands, the guide and the README require
+  Krita's interface in English. Labels could be read from Krita's own translation, or measured at
   bridge start on a throwaway document.
 - **Region checks that know a filter's kind** (0.8.0). `krita_layer_update` refuses region scope
   whenever a filter layer sits above the layer or a filter mask on it, whatever the filter. A
@@ -97,8 +101,9 @@ runs; after it closes, read it from git history at round 1's release commit.
 - **Krita's memory after an 8192 × 8192 document closes** (0.9.0). Opening the N-09 master
   (30 layers) took 4.7–5.2 s and raised Krita's resident memory by 300–500 MB, which stayed after
   the close; across a probe run Krita grew from about 0.9 GB to 1.5 GB. The 0.8.0 kill while
-  opening an 8k ORA did not recur in six 8k opens. Whether Krita returns the memory later, or a
-  painting day accumulates it, is unmeasured.
+  opening an 8k ORA did not recur in six 8k opens. By the end of a probe run Krita holds about 2.5 GB,
+  and a restart resets it. Whether Krita returns the memory later, or a painting day accumulates it,
+  is unmeasured.
 - **Erasing** (0.9.0). `eraser: true` is refused with `UNSUPPORTED_CAPABILITY`: on Krita 5.3.4.1,
   `View.eraserMode()` read false after `setEraserMode(True)`, with `b) Basic-2 Opacity` and with
   the stock `a) Eraser Soft`, so no stroke could be confirmed to erase. The order of the brush
@@ -127,6 +132,36 @@ runs; after it closes, read it from git history at round 1's release commit.
 - **Composite reads in two Krita states** (0.5.0). "Isolate active layer" mode changes the
   composite a read sees, and a document with two views reports the first view's active node. Both
   are untested.
+- **Selection steps are confirmed by state alone** (0.7.0). Their Undo label is empty, and Krita keeps
+  Redo enabled as "Redo " with nothing to redo. A named step on top still stops history.
+- **A job interrupted before it runs** (0.6.0). An interrupt landing between taking a job and running
+  it fails that job, but the jobs queued behind it wait for the next call to wake the queue.
+- **A server killed mid-write** (0.6.0) leaves a `.mask-*.tmp` in `transfer/`, which only the bridge's
+  start sweeps.
+- **The credit patterns name nine tools** (hygiene). A tool missing from them passes a "generated"
+  line in a commit message.
+- **A replayed receipt loses its inline diff.** A retried failed stroke returns the artifact's path and
+  the counts, but not the image the first call carried. Cosmetic.
+- **The reach analysis over-refuses a filter layer inside a closed group above the target,** which
+  cannot see below its own group. It is safe, and costs such a document `verify: "full"`.
+- **Bounded growths, accepted.** The bridge's dedup state grows for the Krita session, about 1,000
+  operations a probe run. History's region capture and a refusal's diff are bounded by the canvas,
+  not by the read limit.
+- **A create's other colour models are refused twice,** by the schema's enum and by the plugin. Harmless.
+- **`limits.capture_pixels` is reported, and enforced only by `max_px`'s schema maximum.** It is that
+  maximum squared.
+- **`document.save_finish` sits outside the `RECEIPTS` completeness test,** which scans tool functions
+  for `call("…")` literals. A second two-op tool would need the test widened.
+- **`effects` serialises every layer style on each region-scope call,** the only way libkis tells
+  whether a style exists. It is inside N-09's budget with 30 layers.
+- **`Registry.sync` compares every handle with every document on each lookup.** Unmeasured as a cost
+  at 87 documents; a Krita holding hundreds may feel it.
+- **`Jobs.follow` and `wait` take their deadline from `time.monotonic()`,** where every other time in
+  the class comes from the injectable clock. Nothing is wrong; it is the one seam.
+- **Test fixtures are repeated.** Eighteen test files define their own `world` around `running_world`,
+  `_render`, `_pixels` and `_document` appear four times each, and there is no `conftest.py`.
+- **The plugin's eraser plumbing is unreachable** while the server refuses erasing, and
+  `schemas.tool_names` is reached by tests only.
 
 ## Not yet checked by hand
 
@@ -156,7 +191,10 @@ these are the parts only a person can see.
 - **N-03 in Activity Monitor** (0.2.0). With the plugin loaded and Krita idle, Krita's CPU should
   stay under 1%. `top` measured 0.0% in six samples 5 s apart. Look at Krita's row in Activity
   Monitor for a minute while it is idle.
-
+- **A Krita that dies mid-call** (0.3.0). Unit tests hold the uncertain outcome, and each of the
+  deaths found in 0.12.0 came back `INTERNAL_ERROR` with `outcome: uncertain`, but nobody has forced
+  one on purpose. Quit Krita hard during a long save through the tool, restart it, and retry with the
+  same `request_id`: expect `uncertain`, with nothing sent again.
 - **A lazy baseline from a file saved with a selection mask active** (0.11.0). The baseline is
   read from the working copy's file, opened again without a view, so Krita should draw no mask
   overlay into it (K46); the probe's fixtures never save one. Save a KRA by hand with a local
@@ -182,8 +220,9 @@ these are the parts only a person can see.
   real review defect through krita-art-mcp. The owner compares the fixes with the scripted pass at
   game size, and the result shapes Phase 2's priorities.
 - **Publishing the repository.** When the owner decides, with the description "MCP server that
-  lets AI agents paint in Krita" and the topics `krita`, `mcp`, `model-context-protocol`,
-  `krita-plugin` and `game-art`.
+  lets AI agents paint in Krita" and the topics `krita`, `krita-mcp`, `krita-plugin`, `mcp`,
+  `mcp-server`, `model-context-protocol`, `ai-agents`, `game-art` and `digital-painting`. Turn on
+  private vulnerability reporting once it is public, since the README sends security reports there.
   - **First, decide whether to rewrite history** (deferred by the owner in session 7a). SHA-256
     hashes of seven words the hygiene stage once checked are in every commit from the root
     (`98db9f5`) until session 7a deleted them. Five are the owner's own public identifiers; two

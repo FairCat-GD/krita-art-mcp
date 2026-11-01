@@ -6,7 +6,7 @@ import pytest
 
 from krita_art_mcp import colour
 
-# PDD Part 12: sRGB to CIE L*a*b* (D65), tolerance 0.05.
+# sRGB to CIE L*a*b* (D65), tolerance 0.05.
 FIXTURES = [
     ((255, 255, 255), (100.00, 0.00, 0.00)),
     ((128, 128, 128), (53.59, 0.00, 0.00)),

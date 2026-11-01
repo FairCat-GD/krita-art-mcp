@@ -997,11 +997,10 @@ def test_harness_steps_the_ledger_cannot_name_seal_history(world: World) -> None
     handle = world.registry.find(document_id)
     world.layer(document_id)
     timed = world.run("harness.label_timing", {"document_id": document_id, "trials": 2})
-    assert timed["reads"] == [[None, "Add Layer"], [None, "Add Layer"]]
+    assert timed["reads"] == ["Add Layer", "Add Layer"]
     assert handle.ledger.undo_available() == 0
     labels = world.run("harness.undo_labels", {"document_id": document_id})
     assert (labels["undo"], labels["redo"]) == ("Add Layer", None)
-    assert labels["actions"]["undo"] == {"text": "Undo Add Layer", "enabled": True}
     world.layer(document_id)
     world.run(
         "harness.select_mask",

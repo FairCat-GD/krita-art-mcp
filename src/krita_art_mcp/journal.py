@@ -10,8 +10,7 @@ from typing import Any
 
 from krita_art_mcp.paths import private_dir
 
-# Version 2 keeps each call's arguments in a file of their own, so reading the journal never
-# decodes them; version 1 lines carry them inline and are still read.
+# Each call's arguments live in a file of their own, so reading the journal never decodes them.
 VERSION = 2
 ARGS_DIR = "args"
 # Within one Krita session the bridge dedups however old the id; across a Krita restart only
@@ -34,13 +33,6 @@ log = logging.getLogger(__name__)
 
 class JournalError(Exception):
     pass
-
-
-def arguments(directory: Path, line: dict[str, Any]) -> Any:
-    # A dispatched line's arguments, inline (version 1) or from their own file (version 2).
-    if "args_file" in line:
-        return json.loads((directory / line["args_file"]).read_text(encoding="utf-8"))
-    return line["args"]
 
 
 def utc_now() -> datetime.datetime:
@@ -234,10 +226,11 @@ class Journal:
             # Only a writer that died before sending leaves a broken line, so it sent nothing.
             log.warning("skipped a broken line in %s", path.name)
             return
-        if not isinstance(version, int) or version > VERSION:
+        # A line skipped here could let a retry repeat the work it records.
+        if version != VERSION:
             raise JournalError(
-                f"{path.name} holds a journal line of version {version}, written by a newer "
-                f"krita-art-mcp; this server reads up to version {VERSION}. Update it."
+                f"{path.name} holds a journal line of version {version}; this server reads only "
+                f"version {VERSION}. Update krita-art-mcp, or move that file aside."
             )
         try:
             self._index(line)

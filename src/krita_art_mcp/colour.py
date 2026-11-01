@@ -4,7 +4,7 @@ from typing import Any
 import numpy as np
 from numpy.typing import ArrayLike, NDArray
 
-# sRGB to CIE XYZ (D65) with the 7-digit matrix, and the D65 white (PDD Part 12).
+# sRGB to CIE XYZ (D65) with the 7-digit matrix, and the D65 white.
 SRGB_TO_XYZ = np.array(
     [
         [0.4124564, 0.3575761, 0.1804375],

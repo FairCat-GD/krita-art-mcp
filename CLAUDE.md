@@ -12,9 +12,11 @@ data live under them:
 - MCP server `krita-art`, with tools `krita_*`;
 - `~/Library/Application Support/krita-art-mcp/`, `KRITA_ART_MCP_DATA_DIR` and `bridge.json`.
 
-**Read `docs/spec/SPEC.md` before changing code.** `docs/DEVELOPMENT-WORKFLOW.md` is the
-session-based workflow this repo follows. `docs/BACKLOG.md` lists what has been named but not
-planned.
+**`docs/ARCHITECTURE.md` is the system as built, and `docs/USER-GUIDE.md` is its behaviour from the
+user's side.** Read the architecture's overview, invariants and baseline before changing code, then
+the sections your work touches. Every session keeps both true, in the commit that changes what they
+describe. `docs/DEVELOPMENT-WORKFLOW.md` is the session-based workflow this repo follows.
+`docs/BACKLOG.md` lists what has been named but not planned.
 
 ## Working protocol
 
@@ -34,19 +36,19 @@ Every session runs the cycle in `docs/DEVELOPMENT-WORKFLOW.md`:
 One session per chat. A push or tag needs explicit approval, each time.
 
 **Scope lives in `docs/spec/SESSIONS.md`**, one block per session, in order, and in the round's
-spec files. In round 1 that is `SPEC.md`, beside the frozen `PDD.md` and the contract package in
-`reference/`. After round 1, each request gets one `FEATURE-*.md`, holding the request verbatim
-plus the decisions resolved at intake; it is read-only and not re-litigated.
+spec files. Each request gets one `FEATURE-*.md`, holding the request verbatim plus the decisions
+resolved at intake; it is read-only and not re-litigated.
 
 `docs/spec/` holds only the round in progress. When a round closes, its files are deleted (git
-history keeps them), and anything still open moves to `docs/BACKLOG.md`.
+history keeps them), and anything still open moves to `docs/BACKLOG.md`. No round is in progress
+until an intake opens one. `docs/BACKLOG.md`'s header says where round 1's files are.
 
 **State lives in `docs/next-session-prompt.md`**, rewritten by every session as its last act.
 
 **Read order:**
 1. what the session block's **Read** line names;
 2. this file;
-3. `docs/ARCHITECTURE.md`'s overview, invariants and baseline, once it exists;
+3. `docs/ARCHITECTURE.md`'s overview, invariants and baseline;
 4. from `SESSIONS.md`, its header, the session's block and the previous block's done-note;
 5. the prompt.
 
@@ -59,7 +61,7 @@ The Read line is a floor: read further where the code leads.
    message (see *Git*).
    - Run the live harness (`uv run krita-art-mcp probe`) whenever your change could affect what
      it covers.
-   - Expected results are in the done-notes until `docs/ARCHITECTURE.md`'s baseline table exists.
+   - Expected results are in `docs/ARCHITECTURE.md`'s baseline table.
 2. Falsify each new check once before trusting it: break the assertion, watch it fail at its own
    step, restore it. Checks that already existed are not falsified again.
 3. User-visible changes get a line in `CHANGELOG.md`. Version is `major.minor.fix` in
@@ -75,7 +77,7 @@ The Read line is a floor: read further where the code leads.
 
 ## Invariants — these are rules, not preferences
 
-The why for each is in `docs/spec/SPEC.md` §5.
+The why for each is in `docs/ARCHITECTURE.md`, *The invariants*.
 
 1. **No raw pixel writes, and no tool runs code.** No tool, harness operation or fixture writes
    raw pixels into a layer. *Enforced by* the plugin source scan, which bans `setPixelData`,
@@ -227,8 +229,7 @@ touches the owner's documents or `config.json`.
   restart Krita while a document has unsaved changes.
 - Edit `docs/spec/` beyond what the workflow gives your session: your block's done-note and
   logged amendments; in a review session, its `REVIEW-<date>.md` and the amendments or inserted
-  blocks the owner chose; in the round's last session, the close. Never edit
-  `docs/spec/reference/`.
+  blocks the owner chose; in the round's last session, the close.
 - Loosen a schema to make an example pass, or relax a budget to make a benchmark pass.
 - Upgrade a pinned dependency in passing, or rename a machine identifier.
 - Put anything private in a file or a commit message.

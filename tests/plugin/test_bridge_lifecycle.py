@@ -209,20 +209,16 @@ def test_the_log_rotates_at_5_mb(tmp_path: Path) -> None:
 def test_the_log_is_private_and_stays_private_when_it_rotates(tmp_path: Path) -> None:
     log_dir = tmp_path / "logs"
     log_dir.mkdir()
-    older = log_dir / "plugin.log"
-    older.write_text("written by an older plugin\n")
-    older.chmod(0o644)
     logger = log.setup(log_dir)
     [handler] = logger.handlers
     assert isinstance(handler, logging.handlers.RotatingFileHandler)
-    assert stat.S_IMODE(older.stat().st_mode) == 0o600
     logger.info("before the rotation")
     handler.doRollover()
     logger.info("after the rotation")
     handler.close()
     for name in ("plugin.log", "plugin.log.1"):
         assert stat.S_IMODE((log_dir / name).stat().st_mode) == 0o600
-    assert "after the rotation" in older.read_text()
+    assert "after the rotation" in (log_dir / "plugin.log").read_text()
 
 
 def test_a_log_deleted_while_krita_runs_rotates_into_a_fresh_one(tmp_path: Path) -> None:

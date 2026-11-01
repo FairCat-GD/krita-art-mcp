@@ -22,7 +22,7 @@ class Port(Protocol):
 
 
 class Handle:
-    # One open document, as every client and server process sees it (PDD Part 6).
+    # One open document, as every client and server process sees it.
     def __init__(
         self,
         document_id: str,
@@ -63,7 +63,7 @@ class Handle:
 
     def before_change(self) -> bool:
         # Called before a handler's first libkis mutation, so an exception after it leaves the
-        # document dirty (PDD Part 4: a bridge mutation since the last verified save).
+        # document dirty: a bridge mutation since the last verified save.
         was = self.dirty
         self.dirty = True
         self.changes += 1

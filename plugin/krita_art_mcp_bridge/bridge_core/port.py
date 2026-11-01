@@ -102,15 +102,12 @@ class DocumentsPort(Protocol):
     # are through; None for an action with no step.
     def undo_labels(self, document: Any) -> tuple[str | None, str | None]: ...
 
-    # Harness only: the Undo and Redo actions' own text and enabled state, {undo, redo}.
-    def undo_actions(self, document: Any) -> dict[str, Any]: ...
-
     # How many steps Krita keeps in a document's undo stack.
     def undo_limit(self) -> int: ...
 
-    # Harness only: adds an empty layer per trial and reads the Undo label straight after the
-    # wait, then after posted events are through.
-    def label_timing(self, document: Any, trials: int) -> list[list[str | None]]: ...
+    # Harness only: adds an empty layer per trial and reads the Undo label after posted events
+    # are through.
+    def label_timing(self, document: Any, trials: int) -> list[str | None]: ...
 
     # Harness only: adds a local selection mask over rect to a layer and makes it the active
     # node; whether the composite over rect changed with it.

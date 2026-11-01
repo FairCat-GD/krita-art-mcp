@@ -16,13 +16,14 @@ included. The one edit a project makes to it is an **In this repository** paragr
 the introduction, naming where the project deviates and why (see *Adapting the workflow*). The
 project's own standing rules live in its `CLAUDE.md`, not here.
 
-**In this repository.** Round 1 builds Phase 1 of krita-art-mcp from the product draft
-(`docs/spec/PDD.md`) and the contract derived from it (`docs/spec/SPEC.md`). This repository's
-history will be public, which changes two things. The PDD and the contract package beside it are
-frozen as received except that private details (people, games, agent personas) are replaced by
-roles. And no document, test or commit message here names a person, a game or an agent persona,
-or credits an AI tool. Round 1 also places three architecture reviews at its milestones; each
-writes `docs/spec/REVIEW-<date>.md` as evidence, and only the user turns a finding into scope.
+**In this repository.** Round 1 built Phase 1 of krita-art-mcp from the product draft (`PDD.md`) and
+the contract derived from it (`SPEC.md`); they are in git history now, as `docs/BACKLOG.md`'s header
+says. This repository's history is written to be public, which changes two things. The PDD and the
+contract package beside it were frozen as received except that private details (people, games, agent
+personas) were replaced by roles. And no document, test or commit message here names a person, a game
+or an agent persona, or credits an AI tool. Round 1 also placed three architecture reviews at its
+milestones; each wrote `docs/spec/REVIEW-<date>.md` as evidence, and only the user turned a finding
+into scope.
 
 ## The documents
 

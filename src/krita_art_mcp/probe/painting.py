@@ -77,6 +77,7 @@ AREA_PX = 400
 WEEK_STROKES = 7 * 2000
 LOOKUP_BUDGET_S = 1.0
 JOURNAL_BUDGET_BYTES = 100 * 1024 * 1024
+LOOKUPS = 5
 # How long an open of the 8k master may run past the server's wait before the probe gives up.
 OPEN_LIMIT_S = 600.0
 
@@ -105,10 +106,6 @@ async def run(report: Report, a: Client, b: Client, client: BridgeClient, harnes
     presets = {"hard": _pick(found, HARD), "soft": _pick(found, SOFT)}
     presets["scatter"] = _pick(found, SCATTER)
     presets["tall"] = _pick(found, TALL)
-    report.measured(
-        "the stock presets the paint checks use",
-        ", ".join(f"{role}: {(entry or {}).get('name')}" for role, entry in presets.items()),
-    )
     hard = presets["hard"]
     if not report.check("a hard round stock preset is listed", hard is not None):
         return
@@ -890,9 +887,9 @@ def _retention(report: Report, client: BridgeClient, rss_before: int | None) -> 
 def _journal(report: Report, journal: Path, before: int, strokes: int) -> None:
     # The lines a lookup decodes, apart from the argument files it never reads.
     size = _lines_size(journal)
-    started = time.perf_counter()
-    Journal(journal).lookup(str(uuid.uuid4()))
-    lookup_s = time.perf_counter() - started
+    # The fastest of a few: one read can carry a collection of this process's whole heap, and the
+    # week scales what it measures.
+    lookup_s = min(_lookup_s(journal) for _ in range(LOOKUPS))
     per_stroke = (size - before) / strokes if strokes else 0.0
     week = per_stroke * WEEK_STROKES
     week_s = lookup_s * week / size if size else 0.0
@@ -905,6 +902,12 @@ def _journal(report: Report, journal: Path, before: int, strokes: int) -> None:
         f"{WEEK_STROKES} strokes: {week / 1e6:.0f} MB of lines and {week_s:.2f} s, so it "
         f"{'bites' if bites else 'does not bite'}",
     )
+
+
+def _lookup_s(journal: Path) -> float:
+    started = time.perf_counter()
+    Journal(journal).lookup(str(uuid.uuid4()))
+    return time.perf_counter() - started
 
 
 def _lines_size(journal: Path) -> int:
