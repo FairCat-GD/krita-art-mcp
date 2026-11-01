@@ -223,14 +223,15 @@ these are the parts only a person can see.
   game size, and the result shapes Phase 2's priorities.
 - **Publishing the repository.** When the owner decides, with the description "MCP server that
   lets AI agents paint in Krita" and the topics `krita`, `krita-mcp`, `krita-plugin`, `mcp`,
-  `mcp-server`, `model-context-protocol`, `ai-agents`, `game-art` and `digital-painting`. Turn on
+  `mcp-server`, `model-context-protocol`, `ai-agents`, `game-art` and `digital-painting`, both set on
+  the repository already. Turn on
   private vulnerability reporting once it is public, since the README sends security reports there.
-  - **First, rewrite history.** The owner chose a targeted rewrite on 2026-11-01. History holds
-    SHA-256 hashes of seven words the hygiene stage once checked, from the root (`98db9f5`) until
-    they were deleted, and a personal folder path, a machine inventory and notes on app permissions.
-    Hygiene reads no old file versions, so scan every historic blob against the term list too. A
-    rewrite changes every sha, so the CHANGELOG's links and this file's follow it. GitHub keeps
-    commits it has seen, so recreate the private repository rather than force-pushing.
+  - **History stays as it is,** by the owner's decision on 2026-11-01, since none of it is a secret.
+    It holds SHA-256 hashes of seven words the hygiene stage once checked, from the root (`98db9f5`)
+    until they were deleted, five of them the owner's public identifiers and two never identified;
+    one personal folder's name; a machine inventory; and a note on app permissions. Every old file
+    version and commit message scanned clean against the term list on that date. Hygiene reads no
+    old file versions, so repeat that scan just before publishing if the list has grown.
 
 - **Report Krita's layer-docker crash upstream.** On 5.3.4.1, closing a document within about
   half a second of a selection change crashes Krita in `KisNodeModel::processUpdateQueue`, a null

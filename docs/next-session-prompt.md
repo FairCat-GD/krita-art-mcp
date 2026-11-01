@@ -11,9 +11,8 @@ and plan the round in `docs/spec/`, a Read line in every block (see
   (`04e9f6c`), and `docs/BACKLOG.md`'s header says how to read them. The owner kept the contract
   package in the tree at the close: it moved to `docs/reference/contract-package/`, frozen, because
   Phase 2 starts from its draft shapes.
-- **Before anything else, finish the publishing steps the owner agreed at round 1's close:** the
-  targeted history rewrite, the push and the GitHub topics, as `docs/BACKLOG.md`'s *Publishing the
-  repository* item says. Do not push before the rewrite.
+- **History is not rewritten.** The owner decided against it at round 1's close, as
+  `docs/BACKLOG.md`'s *Publishing the repository* item says. The GitHub topics and description are set.
 - **Round 1's last review** (`/code-review high`), 9 findings, 9 fixed, no version: the handoff and
   backlog name the rewrite; the instructions and the save's refusal state the bound as 67 megapixels,
   and that a larger document paints in region scope only; the selection check compares pixel counts,
@@ -24,9 +23,8 @@ and plan the round in `docs/spec/`, a Read line in every block (see
   670 server tests, 665 plugin-core tests, `probe` 131 PASS, 0 FAIL, 23 MEASURED, 113.6 s, 0 documents
   open.
 - **The review changed the plugin,** so the MCP client needs one more restart.
-- **Push status:** `origin/main` holds everything through 14a's "review: a repeated mistake hid other
-  problems, and 7 smaller". The release commit and `docs: close round 1` wait for the next approved
-  push. List `origin/main..HEAD` before any push.
+- **Push status:** `origin/main` holds everything, through "docs: keep history as it is, and say what
+  it holds". `origin/main..HEAD` is empty. List it before any push.
 - **Open items live in `docs/BACKLOG.md`,** including what this round added: the findings the owner
   did not take, the debts only done-notes held, and *Not yet checked by hand*.
 - **The trial and publishing** are the owner's, after the round.
