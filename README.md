@@ -62,6 +62,8 @@ client cannot read the repository, and how to update.
   baseline counts.
 - [`docs/BACKLOG.md`](docs/BACKLOG.md): what has been named but not planned, the later phases among
   it.
+- [`docs/reference/contract-package/`](docs/reference/contract-package/): the frozen draft contract
+  for all 69 planned tools, where later phases start.
 - [`CHANGELOG.md`](CHANGELOG.md): what each version changed.
 - [`docs/DEVELOPMENT-WORKFLOW.md`](docs/DEVELOPMENT-WORKFLOW.md) and [`CLAUDE.md`](CLAUDE.md): how the
   work is split into sessions, and the standing rules.

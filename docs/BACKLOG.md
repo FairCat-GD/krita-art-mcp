@@ -5,10 +5,12 @@ Work that has been named but belongs to no session. Each item needs its own inta
 in `docs/spec/SESSIONS.md`; see `docs/DEVELOPMENT-WORKFLOW.md`). When an item is picked up, it
 moves out of this file.
 
-The phases below are described in full in the PDD, Part 4. Round 1's `docs/spec/` left the tree when
-the round closed. Read `PDD.md`, `SPEC.md`, `REVIEW-2026-10-24.md`, `REVIEW-2026-10-25.md` and
-`REVIEW-2026-10-30.md` from git history, at round 1's release commit. `docs/ARCHITECTURE.md`'s
-overview says what "the contract", "Phase N" and "review N" mean.
+The phases below are described in full in the PDD, Part 4, and the contract's draft tools are in
+`docs/reference/contract-package/`. The rest of round 1's `docs/spec/` left the tree when the round
+closed. Read its files from git history, at round 1's release commit:
+`git show 04e9f6c:docs/spec/PDD.md`, and likewise `SPEC.md`, `SESSIONS.md`, `REVIEW-2026-10-24.md`,
+`REVIEW-2026-10-25.md` and `REVIEW-2026-10-30.md`. `docs/ARCHITECTURE.md`'s overview says what "the
+contract", "Phase N" and "review N" mean.
 
 ## Deferred
 

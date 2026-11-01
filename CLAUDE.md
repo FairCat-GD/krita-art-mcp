@@ -230,6 +230,7 @@ touches the owner's documents or `config.json`.
 - Edit `docs/spec/` beyond what the workflow gives your session: your block's done-note and
   logged amendments; in a review session, its `REVIEW-<date>.md` and the amendments or inserted
   blocks the owner chose; in the round's last session, the close.
+- Edit `docs/reference/`: the contract package is frozen.
 - Loosen a schema to make an example pass, or relax a budget to make a benchmark pass.
 - Upgrade a pinned dependency in passing, or rename a machine identifier.
 - Put anything private in a file or a commit message.

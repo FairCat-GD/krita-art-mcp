@@ -36,6 +36,8 @@ MCP client (Codex, Claude Code) ──stdio──▶ server: src/krita_art_mcp/ 
 - `tests/` (server, CPython 3.12), `tests/plugin/` (plugin core, CPython 3.10), `tests/fixtures/`
   (shared by both, so valid on 3.10) and `tests/support/` (the server's).
 - `scripts/`: `verify.py`, `hygiene.py`, `amend_schemas.py`.
+- `docs/reference/contract-package/`: the frozen contract. Nothing reads it, and every `verify` stage
+  but hygiene skips it.
 
 **Three version numbers, kept apart.** The package version (`pyproject.toml`, with the plugin's
 copy held equal by a test), shown by `--version`, in the MCP `serverInfo` and by
@@ -45,14 +47,15 @@ protocol, `1`. The protocol stays 1 while the server and the plugin are released
 
 **Terms these documents use.**
 - **The PDD:** the product design draft round 1 started from. It describes all six phases in full.
-- **The contract:** the draft tool schemas and acceptance exercises that came with the PDD. They
-  were the starting point for every schema here, never the authority.
+- **The contract:** the draft tool schemas and acceptance exercises that came with the PDD, for all
+  69 planned tools. They were the starting point for every schema here, never the authority, and
+  Phase 2 starts from their draft shapes. It is frozen, and kept in `docs/reference/contract-package/`.
 - **Phase N:** the PDD's roadmap. Phase 1 is built. Phases 2 to 6 are construct, integrity,
   delivery, asset modules and input-aware strokes, each its own round.
 - **Review N and F-numbers:** the three architecture reviews of round 1, named for their sessions
   (6, 10, 13), and their findings.
-- `docs/spec/` held these during the round. `docs/BACKLOG.md`'s header says how to read them from
-  git history.
+- `docs/spec/` held the PDD, the round's plan and the reviews. `docs/BACKLOG.md`'s header says how to
+  read them from git history.
 
 ## The invariants
 
