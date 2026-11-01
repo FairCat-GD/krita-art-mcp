@@ -194,7 +194,8 @@ def test_the_two_copies_of_data_in_an_output_schema_agree(tool_name: str) -> Non
 def _shown(schema: dict[str, Any]) -> Iterator[dict[str, Any]]:
     yield schema
     branches = [*schema.get("anyOf", []), *schema.get("oneOf", [])]
-    for child in [*schema.get("properties", {}).values(), *branches, schema.get("items")]:
+    children = [*schema.get("properties", {}).values(), *branches]
+    for child in [*children, schema.get("items"), schema.get("additionalProperties")]:
         if isinstance(child, dict):
             yield from _shown(child)
 

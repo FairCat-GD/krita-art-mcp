@@ -15,8 +15,8 @@ Release 0.16.0.
 
 - **Round 1 is the Phase 1 build.** Sessions 0 to 14a are done. 15 (0.16.0, the close) remains.
 - **The push status.** `origin` is the private GitHub repository. `origin/main` holds everything
-  through 14's "review: exercise 1 never confirmed its view moved, and 9 smaller". 14a is local:
-  list `origin/main..HEAD` before any push.
+  through 14a's "review: a repeated mistake hid other problems, and 7 smaller". List
+  `origin/main..HEAD` before any push.
 - **What 14 and 14a left that 15 builds on:**
   - **`probe/acceptance.py`** holds the six exercises, inside `painting.run`'s brush-state window.
   - **`probe/writes.py`** is N-04: `places`, `take`, `strays`. Its limit is in 14's done-note, and
@@ -34,7 +34,9 @@ Release 0.16.0.
   - **Codex's limits:** 5,000 bytes for a normalised input, 16,000 for a rendered one.
   - **The semantic checks stop at their first refusal,** and the note says why.
   - **"Field absent" is `{"not": {}}`,** because a bare `false` loses the error's path.
-  - **`MAX_REPORTED_PROBLEMS` is 200,** because of C4.
+  - **`MAX_REPORTED_PROBLEMS` is 50,** because of C4, and fields take turns over the cap.
+  - **A conditional sits under `dependentSchemas`** on the field it reads, because an `if` passes on
+    an absent field and adds a false problem.
 - **What the spec said that turned out wrong or harder:** seven amendments are in 14's done-note,
   and five are in 14a's.
 - **Decisions written down nowhere else:** H2's and H3's outcomes are in 14's done-note, and the H2
@@ -42,9 +44,9 @@ Release 0.16.0.
   it does not, and `ARCHITECTURE.md` should not repeat that.
 - **Baseline** (14a, 0.15.0):
   - `verify`: 6 stages, all PASS;
-  - 661 server tests passed, 0 skipped;
+  - 669 server tests passed, 0 skipped;
   - 665 plugin-core tests passed, 0 skipped;
-  - `probe`: 130 PASS, 0 FAIL, 47 MEASURED; 120.2 s with 0 documents open;
+  - `probe`: 130 PASS, 0 FAIL, 47 MEASURED; 115.0 s with 1 document open;
   - 19 registered tools; 19 schema files; instructions 3,901 characters (195 to spare); 30 error
     codes; 32 bridge ops.
 - **Not done:**

@@ -55,28 +55,32 @@
       "request_id"
     ],
     "additionalProperties": false,
-    "if": {
-      "properties": {
-        "mode": {
-          "const": "working_copy"
-        }
-      }
-    },
-    "then": {
-      "required": [
-        "working_dir"
-      ]
-    },
-    "else": {
-      "properties": {
-        "working_dir": {
-          "not": {}
+    "dependentSchemas": {
+      "mode": {
+        "if": {
+          "properties": {
+            "mode": {
+              "const": "working_copy"
+            }
+          }
         },
-        "editable_layer_ids": {
-          "not": {}
+        "then": {
+          "required": [
+            "working_dir"
+          ]
         },
-        "editable_layer_names": {
-          "not": {}
+        "else": {
+          "properties": {
+            "working_dir": {
+              "not": {}
+            },
+            "editable_layer_ids": {
+              "not": {}
+            },
+            "editable_layer_names": {
+              "not": {}
+            }
+          }
         }
       }
     }

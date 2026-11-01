@@ -147,22 +147,26 @@
             "target"
           ],
           "additionalProperties": false,
-          "if": {
-            "properties": {
-              "target": {
-                "const": "layer"
-              }
-            }
-          },
-          "then": {
-            "required": [
-              "layer_id"
-            ]
-          },
-          "else": {
-            "properties": {
-              "layer_id": {
-                "not": {}
+          "dependentSchemas": {
+            "target": {
+              "if": {
+                "properties": {
+                  "target": {
+                    "const": "layer"
+                  }
+                }
+              },
+              "then": {
+                "required": [
+                  "layer_id"
+                ]
+              },
+              "else": {
+                "properties": {
+                  "layer_id": {
+                    "not": {}
+                  }
+                }
               }
             }
           }

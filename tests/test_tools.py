@@ -1,6 +1,7 @@
 import ast
 import asyncio
 import inspect
+import json
 import textwrap
 import threading
 import time
@@ -152,6 +153,70 @@ def test_more_problems_than_the_report_holds_are_counted() -> None:
     assert error["details"]["omitted"] == 2 * 4096 + 1 - tools.MAX_REPORTED_PROBLEMS
     assert error["message"].endswith(f"; and {error['details']['omitted']} more")
     assert tools._size(result) < envelope.MAX_RESULT_BYTES
+
+
+def _refusal(tool_name: str, arguments: dict[str, Any]) -> dict[str, Any]:
+    server = MCPServer("refused", tools=[tools.build(tool_name, _completed)])
+    return dict(_call(server, arguments, tool_name).structured_content["error"])
+
+
+def _example(tool_name: str, *without: str) -> dict[str, Any]:
+    example = schemas.load(tool_name)["example"]["input"]
+    return {field: value for field, value in example.items() if field not in without}
+
+
+def test_a_repeated_mistake_leaves_room_for_another_field() -> None:
+    bad = {"points": [["a", "b"]] * 256, "source": {"document_id": "doc-1"}}
+    error = _refusal("krita_sample", {**_example("krita_sample"), **bad})
+    assert "/source" in [problem["path"] for problem in error["details"]["errors"]]
+    assert "frame" in error["message"]
+
+
+def test_problems_read_in_number_order() -> None:
+    arguments = {**_example("krita_sample"), "points": [["a", "b"]] * 20}
+    paths = [
+        problem["path"] for problem in _refusal("krita_sample", arguments)["details"]["errors"]
+    ]
+    assert paths[:6] == [f"/points/{index}/{member}" for index in range(3) for member in range(2)]
+    assert paths[-1] == "/points/19/1"
+
+
+@pytest.mark.parametrize(
+    ("tool_name", "arguments", "paths"),
+    [
+        ("krita_capture", _example("krita_capture", "target"), [""]),
+        ("krita_sample", _example("krita_sample", "target"), [""]),
+        ("krita_document_open", _example("krita_document_open", "mode", "working_dir"), [""]),
+    ],
+)
+def test_a_missing_field_brings_no_false_problem_with_it(
+    tool_name: str, arguments: dict[str, Any], paths: list[str]
+) -> None:
+    errors = _refusal(tool_name, arguments)["details"]["errors"]
+    assert [problem["path"] for problem in errors] == paths
+
+
+def test_a_source_with_no_target_has_one_problem() -> None:
+    example = _example("krita_preview_render")
+    source = {"document_id": "doc-1", "frame": 0}
+    errors = _refusal("krita_preview_render", {**example, "sources": [source]})["details"]["errors"]
+    assert [problem["path"] for problem in errors] == ["/sources/0"]
+
+
+def test_a_forbidden_field_is_refused_in_plain_words() -> None:
+    arguments = {**_example("krita_document_open"), "mode": "read_only"}
+    error = _refusal("krita_document_open", arguments)
+    assert error["message"] == "/working_dir: not allowed with these arguments"
+
+
+def test_the_largest_report_stays_well_under_claude_codes_token_limit() -> None:
+    server = MCPServer("large", tools=[tools.build("krita_sample", _completed)])
+    wide = "x" * 1000
+    arguments = {**_example("krita_sample"), "points": [[wide, wide]] * 4096}
+    result = _call(server, arguments, "krita_sample")
+    answer = json.dumps(result.structured_content) + result.content[0].text
+    # 25,000 tokens at a pessimistic 2 bytes each.
+    assert len(answer) < 50_000
 
 
 def test_a_raising_tool_returns_internal_error() -> None:

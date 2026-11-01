@@ -138,25 +138,29 @@
       "filter"
     ],
     "additionalProperties": false,
-    "if": {
-      "properties": {
-        "target": {
-          "const": "layer"
-        }
-      }
-    },
-    "then": {
-      "properties": {
-        "layer_id": {
-          "type": "string",
-          "minLength": 1
-        }
-      }
-    },
-    "else": {
-      "properties": {
-        "layer_id": {
-          "type": "null"
+    "dependentSchemas": {
+      "target": {
+        "if": {
+          "properties": {
+            "target": {
+              "const": "layer"
+            }
+          }
+        },
+        "then": {
+          "properties": {
+            "layer_id": {
+              "type": "string",
+              "minLength": 1
+            }
+          }
+        },
+        "else": {
+          "properties": {
+            "layer_id": {
+              "type": "null"
+            }
+          }
         }
       }
     }

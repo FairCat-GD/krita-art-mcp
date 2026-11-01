@@ -4233,6 +4233,34 @@ closes. Session 15 shifts to 0.16.0. 14's done-note, *Checked by hand*, has the 
   - `probe`: 130 PASS, 0 FAIL, 47 MEASURED, 120.2 s with 0 documents open;
   - 19 registered tools; 19 schema files; instructions 3,901 characters (195 to spare); 30 error
     codes; 32 bridge ops.
+- **Review (`/code-review high`), 8 findings: 8 fixed.** No plugin change, so no restart.
+  - **A repeated mistake hid other problems.** The cap ran after a sort by path, so 256 bad points
+    filled it and a bad `source` went unnamed. Over the cap, top-level fields now take turns.
+  - **A missing `target` or `mode` brought a false problem,** because an `if` passes on an absent
+    field: omitting `target` also said `layer_id` must be a string. Each conditional now sits under
+    `dependentSchemas` on the field it reads, which applies only once that field is there. This
+    supersedes "on the object" above. Codex drops the keyword as it drops `if`.
+  - **The cap's reason did not hold:** 200 long problems made a 137 KB answer. It is now 50, and a
+    test holds the largest answer under 50,000 bytes. This supersedes "now 200" and the 200 amendment
+    above; fields taking turns is what makes 50 enough.
+  - **Array indices sorted as text,** so `/points/10` came before `/points/2`. They sort as numbers.
+  - **`should not be valid under {}` explained nothing.** A forbidden field now reads "not allowed
+    with these arguments".
+  - **The form test skipped `additionalProperties`,** which Codex renders. It walks them now.
+  - **The live name check** moved inside the PNG's read-only round trip: no extra open, and the round
+    trip's own close covers it.
+  - **`[0.15.0]`'s link** landed here, as planned.
+  - **Checked again:** the differential against the schemas from before 14a, 123,977 cases, 3,891
+    accepted, 0 differences. A scratchpad render shows every input whole. Claude Code loads all 19
+    schemas through the API. **Not repeated in the real Codex:** its client needs a restart to read
+    the new schemas, and only keys it drops changed.
+  - **Falsified:** the fair share; the number order; the four guards; the plain words; the cap at 200;
+    a form under `additionalProperties`. **One first passed:** the sample row set `layer_id` to a
+    string, which brings no false problem; it now leaves `null`. Live, the moved check failed with the
+    old plugin's empty name and passed without it.
+  - **Numbers after the review:** `verify` 6 stages, all PASS; 669 server tests (+8); 665 plugin-core
+    tests; `probe` 130 PASS, 0 FAIL, 47 MEASURED, 115.0 s with 1 document open. No warning or error in
+    `plugin.log`.
 
 ---
 

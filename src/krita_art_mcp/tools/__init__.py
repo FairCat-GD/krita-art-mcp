@@ -1,6 +1,7 @@
 import functools
 import logging
 import threading
+from collections import Counter
 from collections.abc import Callable
 from typing import Any
 
@@ -27,8 +28,8 @@ from krita_art_mcp.tools import (
 )
 from krita_art_mcp.tools.dispatch import ToolCall
 
-# More is one mistake repeated, and the answer would pass Claude Code's 25,000 tokens (C4).
-MAX_REPORTED_PROBLEMS = 200
+# An answer holds each problem three times, and stays well under Claude Code's 25,000 tokens (C4).
+MAX_REPORTED_PROBLEMS = 50
 # jsonschema quotes the offending value, which may be a 4096-point array.
 MAX_MESSAGE_CHARS = 200
 
@@ -128,7 +129,7 @@ def _checked(
 ) -> CallToolResult:
     # Errors are returned, never raised: a raise reaches the client as a bare
     # "Error executing tool", without the envelope.
-    problems = sorted(inputs.iter_errors(arguments), key=_pointer)
+    problems = list(inputs.iter_errors(arguments))
     if problems:
         result = _invalid(problems)
     else:
@@ -147,14 +148,38 @@ def _checked(
 def _invalid(problems: list[ValidationError]) -> CallToolResult:
     # One answer names every problem, so an agent fixes them together.
     reported = [
-        {"path": _pointer(problem), "message": _short(problem.message)}
-        for problem in problems[:MAX_REPORTED_PROBLEMS]
+        {"path": _pointer(problem), "message": _said(problem)} for problem in _fair_share(problems)
     ]
     omitted = len(problems) - len(reported)
     parts = [f"{problem['path'] or '/'}: {problem['message']}" for problem in reported]
     parts += [f"and {omitted} more"] if omitted else []
     details = {"errors": reported, "omitted": omitted}
     return envelope.failure("INVALID_ARGUMENT", "; ".join(parts), details=details)
+
+
+def _fair_share(problems: list[ValidationError]) -> list[ValidationError]:
+    # Over the cap fields take turns, so one field's repeated mistake leaves room for another's.
+    turns: Counter[Any] = Counter()
+
+    def turn(problem: ValidationError) -> int:
+        field = next(iter(problem.absolute_path), None)
+        turns[field] += 1
+        return turns[field]
+
+    ordered = sorted(problems, key=_position)
+    return sorted(sorted(ordered, key=turn)[:MAX_REPORTED_PROBLEMS], key=_position)
+
+
+def _position(problem: ValidationError) -> tuple[tuple[bool, Any], ...]:
+    # Array indices in number order, which a sort on the pointer would not give.
+    return tuple((isinstance(part, str), part) for part in problem.absolute_path)
+
+
+def _said(problem: ValidationError) -> str:
+    # A field a rule forbids is `{"not": {}}`, whose own message explains nothing.
+    if problem.validator == "not" and problem.validator_value == {}:
+        return "not allowed with these arguments"
+    return _short(problem.message)
 
 
 def _client_name(ctx: Any) -> str | None:

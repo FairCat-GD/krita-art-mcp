@@ -72,7 +72,6 @@ async def run(report: Report, a: Client, b: Client, client: BridgeClient, harnes
                 opened[(label, mode)] = found
     _baselines(report, opened, composite)
     _layer_ids(report, opened)
-    await _file_name(report, a, png)
     await _editable(report, a, ora, kra, harness, opened)
     await _refusals(report, a, b, client, png, harness, allowed or [])
     report.check(
@@ -172,6 +171,8 @@ async def _round_trip(
     seen = inspected.get("data") or {}
     if seen.get("layers") != data["layers"] or seen.get("baseline_id") != data["baseline_id"]:
         problems.append("inspect disagrees with open")
+    if (label, mode) == ("PNG", "read_only"):
+        await _file_name(report, a, document_id, source)
     closed = (await close(a, document_id, "refuse")).get("data") or {}
     if closed != {"closed": True, "baseline_untouched": True}:
         problems.append(f"close answered {closed}")
@@ -263,16 +264,12 @@ def _layer_ids(report: Report, opened: dict[tuple[str, str], Opened]) -> None:
     )
 
 
-async def _file_name(report: Report, a: Client, png: Path) -> None:
-    opened = await tool(a, "krita_document_open", open_args(png, "read_only"))
-    document_id = opened.get("document_id")
+async def _file_name(report: Report, a: Client, document_id: str, source: Path) -> None:
     listed = await tool(a, "krita_document_list", {})
     documents = (listed.get("data") or {}).get("documents", [])
     names = [entry["name"] for entry in documents if entry["document_id"] == document_id]
-    if document_id is not None:
-        await close(a, document_id)
     report.check(
-        "a file with no title lists under its file's name", names == [png.name], str(names)
+        "a file with no title lists under its file's name", names == [source.name], str(names)
     )
 
 

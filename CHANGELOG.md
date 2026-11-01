@@ -17,8 +17,8 @@ needs `install-plugin`, a Krita restart and a restart of the MCP client.
   `krita_document_open` as `args: unknown`, lost two fields of `krita_preview_render`, showed every
   fixed-length list as a list of strings, and lost every tool's result. Each rule now has a form
   Codex renders. Every tool accepts and refuses exactly what it did.
-- **An argument error names every problem in one answer,** up to 200. `details` lists them, and
-  `omitted` counts any beyond that.
+- **An argument error names every problem in one answer,** up to 50, with fields taking turns so one
+  repeated mistake cannot hide another. `details` lists them, and `omitted` counts any beyond that.
 - **A file opened in Krita lists under its file's name.** Krita leaves such a document's title
   empty, so `krita_document_list` showed an empty `name`.
 
@@ -566,6 +566,7 @@ The first release is the scaffold that the Phase 1 tools are built on.
   reports its version to the client; it offers no tools yet.
 - **`krita-art-mcp --version`.** It prints the installed version.
 
+[0.15.0]: https://github.com/FairCat-GD/krita-art-mcp/commit/52113ab900602e3a85faa6fad2ddffadaca627a3
 [0.14.0]: https://github.com/FairCat-GD/krita-art-mcp/commit/9b6c6ccc10ae0fca01b5322850ed69f1cb9fa128
 [0.13.0]: https://github.com/FairCat-GD/krita-art-mcp/commit/61d3d861b8fa050329b66234052f6817a46a9701
 [0.12.0]: https://github.com/FairCat-GD/krita-art-mcp/commit/7d18a6a767f5ca3db9ff435b14aaafc5c84bd346
