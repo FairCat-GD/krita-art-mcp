@@ -241,130 +241,126 @@
       "error"
     ],
     "additionalProperties": false,
-    "allOf": [
-      {
-        "if": {
+    "if": {
+      "properties": {
+        "status": {
+          "const": "completed"
+        }
+      }
+    },
+    "then": {
+      "properties": {
+        "data": {
+          "type": "object",
           "properties": {
-            "status": {
-              "const": "completed"
-            }
-          }
-        },
-        "then": {
-          "properties": {
-            "data": {
-              "type": "object",
-              "properties": {
-                "kind": {
-                  "type": "string",
-                  "enum": [
-                    "brush",
-                    "profile",
-                    "palette",
-                    "blend_mode"
-                  ]
-                },
-                "total": {
-                  "type": "integer",
-                  "minimum": 0
-                },
-                "resources": {
-                  "type": "array",
-                  "items": {
-                    "type": "object",
-                    "properties": {
-                      "id": {
+            "kind": {
+              "type": "string",
+              "enum": [
+                "brush",
+                "profile",
+                "palette",
+                "blend_mode"
+              ]
+            },
+            "total": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "resources": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "id": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "name": {
+                    "type": "string"
+                  },
+                  "engine": {
+                    "anyOf": [
+                      {
                         "type": "string",
                         "minLength": 1
                       },
-                      "name": {
-                        "type": "string"
-                      },
-                      "engine": {
-                        "anyOf": [
-                          {
-                            "type": "string",
-                            "minLength": 1
-                          },
-                          {
-                            "type": "null"
-                          }
-                        ]
-                      },
-                      "sha256": {
-                        "anyOf": [
-                          {
-                            "type": "string",
-                            "pattern": "^[0-9a-f]{64}$"
-                          },
-                          {
-                            "type": "null"
-                          }
-                        ]
+                      {
+                        "type": "null"
                       }
-                    },
-                    "required": [
-                      "id",
-                      "name",
-                      "engine",
-                      "sha256"
-                    ],
-                    "additionalProperties": false
+                    ]
                   },
-                  "maxItems": 100
+                  "sha256": {
+                    "anyOf": [
+                      {
+                        "type": "string",
+                        "pattern": "^[0-9a-f]{64}$"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  }
                 },
-                "next_cursor": {
-                  "anyOf": [
-                    {
-                      "type": "string",
-                      "pattern": "^(0|[1-9][0-9]*)$"
-                    },
-                    {
-                      "type": "null"
-                    }
-                  ]
-                }
+                "required": [
+                  "id",
+                  "name",
+                  "engine",
+                  "sha256"
+                ],
+                "additionalProperties": false
               },
-              "required": [
-                "kind",
-                "total",
-                "resources",
-                "next_cursor"
-              ],
-              "additionalProperties": false
+              "maxItems": 100
             },
-            "error": {
-              "type": "null"
-            }
-          }
-        }
-      },
-      {
-        "if": {
-          "properties": {
-            "status": {
-              "enum": [
-                "failed",
-                "cancelled"
+            "next_cursor": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "pattern": "^(0|[1-9][0-9]*)$"
+                },
+                {
+                  "type": "null"
+                }
               ]
-            }
-          }
-        },
-        "then": {
-          "properties": {
-            "data": {
-              "type": "null"
-            },
-            "error": {
-              "type": "object"
             }
           },
           "required": [
-            "error"
-          ]
+            "kind",
+            "total",
+            "resources",
+            "next_cursor"
+          ],
+          "additionalProperties": false
+        },
+        "error": {
+          "type": "null"
+        }
+      }
+    },
+    "else": {
+      "if": {
+        "properties": {
+          "status": {
+            "enum": [
+              "failed",
+              "cancelled"
+            ]
+          }
         }
       },
-      {
+      "then": {
+        "properties": {
+          "data": {
+            "type": "null"
+          },
+          "error": {
+            "type": "object"
+          }
+        },
+        "required": [
+          "error"
+        ]
+      },
+      "else": {
         "if": {
           "properties": {
             "status": {
@@ -390,7 +386,7 @@
           }
         }
       }
-    ]
+    }
   },
   "annotations": {
     "readOnlyHint": true,

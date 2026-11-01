@@ -78,17 +78,10 @@
                     },
                     "size_px": {
                       "type": "array",
-                      "prefixItems": [
-                        {
-                          "type": "integer",
-                          "minimum": 1
-                        },
-                        {
-                          "type": "integer",
-                          "minimum": 1
-                        }
-                      ],
-                      "items": false,
+                      "items": {
+                        "type": "integer",
+                        "minimum": 1
+                      },
                       "minItems": 2,
                       "maxItems": 2
                     },
@@ -215,134 +208,123 @@
       "error"
     ],
     "additionalProperties": false,
-    "allOf": [
-      {
-        "if": {
-          "properties": {
-            "status": {
-              "const": "completed"
-            }
-          }
-        },
-        "then": {
-          "properties": {
-            "data": {
-              "type": "object",
-              "properties": {
-                "documents": {
-                  "type": "array",
-                  "items": {
-                    "type": "object",
-                    "properties": {
-                      "document_id": {
-                        "type": "string",
-                        "minLength": 1
-                      },
-                      "name": {
-                        "type": "string"
-                      },
-                      "path": {
-                        "anyOf": [
-                          {
-                            "type": "string",
-                            "minLength": 1
-                          },
-                          {
-                            "type": "null"
-                          }
-                        ]
-                      },
-                      "size_px": {
-                        "type": "array",
-                        "prefixItems": [
-                          {
-                            "type": "integer",
-                            "minimum": 1
-                          },
-                          {
-                            "type": "integer",
-                            "minimum": 1
-                          }
-                        ],
-                        "items": false,
-                        "minItems": 2,
-                        "maxItems": 2
-                      },
-                      "color_model": {
-                        "type": "string",
-                        "minLength": 1
-                      },
-                      "depth": {
-                        "type": "string",
-                        "minLength": 1
-                      },
-                      "profile_id": {
-                        "type": "string"
-                      },
-                      "dirty": {
-                        "type": "boolean"
-                      },
-                      "mode": {
-                        "type": "string",
-                        "enum": [
-                          "new",
-                          "working_copy",
-                          "read_only"
-                        ]
-                      }
-                    },
-                    "required": [
-                      "document_id",
-                      "name",
-                      "path",
-                      "size_px",
-                      "color_model",
-                      "depth",
-                      "profile_id",
-                      "dirty",
-                      "mode"
-                    ],
-                    "additionalProperties": false
-                  }
-                }
-              },
-              "required": [
-                "documents"
-              ],
-              "additionalProperties": false
-            },
-            "error": {
-              "type": "null"
-            }
-          }
+    "if": {
+      "properties": {
+        "status": {
+          "const": "completed"
         }
-      },
-      {
-        "if": {
+      }
+    },
+    "then": {
+      "properties": {
+        "data": {
+          "type": "object",
           "properties": {
-            "status": {
-              "enum": [
-                "failed",
-                "cancelled"
-              ]
-            }
-          }
-        },
-        "then": {
-          "properties": {
-            "data": {
-              "type": "null"
-            },
-            "error": {
-              "type": "object"
+            "documents": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "document_id": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "name": {
+                    "type": "string"
+                  },
+                  "path": {
+                    "anyOf": [
+                      {
+                        "type": "string",
+                        "minLength": 1
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "size_px": {
+                    "type": "array",
+                    "items": {
+                      "type": "integer",
+                      "minimum": 1
+                    },
+                    "minItems": 2,
+                    "maxItems": 2
+                  },
+                  "color_model": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "depth": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "profile_id": {
+                    "type": "string"
+                  },
+                  "dirty": {
+                    "type": "boolean"
+                  },
+                  "mode": {
+                    "type": "string",
+                    "enum": [
+                      "new",
+                      "working_copy",
+                      "read_only"
+                    ]
+                  }
+                },
+                "required": [
+                  "document_id",
+                  "name",
+                  "path",
+                  "size_px",
+                  "color_model",
+                  "depth",
+                  "profile_id",
+                  "dirty",
+                  "mode"
+                ],
+                "additionalProperties": false
+              }
             }
           },
           "required": [
-            "error"
-          ]
+            "documents"
+          ],
+          "additionalProperties": false
+        },
+        "error": {
+          "type": "null"
+        }
+      }
+    },
+    "else": {
+      "if": {
+        "properties": {
+          "status": {
+            "enum": [
+              "failed",
+              "cancelled"
+            ]
+          }
         }
       },
-      {
+      "then": {
+        "properties": {
+          "data": {
+            "type": "null"
+          },
+          "error": {
+            "type": "object"
+          }
+        },
+        "required": [
+          "error"
+        ]
+      },
+      "else": {
         "if": {
           "properties": {
             "status": {
@@ -368,7 +350,7 @@
           }
         }
       }
-    ]
+    }
   },
   "annotations": {
     "readOnlyHint": true,

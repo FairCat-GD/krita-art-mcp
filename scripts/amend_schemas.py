@@ -105,11 +105,12 @@ def amended(tools: dict[str, dict[str, Any]]) -> dict[str, dict[str, Any]]:
             output["properties"][field] = copy.deepcopy(shape)
         output["required"] = list(REQUIRED)
         output["additionalProperties"] = False
-        completed = {
-            "if": {"properties": {"status": {"const": "completed"}}},
-            "then": {"properties": {"data": copy.deepcopy(_data(tool)), "error": {"type": "null"}}},
+        # One chain, not an allOf: Codex renders an allOf ahead of the `type` beside it.
+        output["if"] = {"properties": {"status": {"const": "completed"}}}
+        output["then"] = {
+            "properties": {"data": copy.deepcopy(_data(tool)), "error": {"type": "null"}}
         }
-        output["allOf"] = [completed, copy.deepcopy(FAILED_RULE), copy.deepcopy(PENDING_RULE)]
+        output["else"] = {**copy.deepcopy(FAILED_RULE), "else": copy.deepcopy(PENDING_RULE)}
     return tools
 
 

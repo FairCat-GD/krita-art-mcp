@@ -4142,6 +4142,98 @@ closes. Session 15 shifts to 0.16.0. 14's done-note, *Checked by hand*, has the 
 - **A release restarts the MCP client too.** Tell the owner before the Krita restart.
 - **Whatever Codex needs must not cost Claude Code:** check the registered tools in both clients.
 
+**Done (2026-11-01, 0.15.0).**
+- **Why `args: unknown`, found from Codex's own record.** The H3 rollout holds the declarations its
+  agent printed: `krita_capture(args: unknown): Promise<CallToolResult<unknown & unknown & unknown>>`.
+  The installed Codex is 0.166.0-alpha.5.1, in the ChatGPT app; the files below are identical at
+  tag `rust-v0.166.0-alpha.5.1` and at main.
+  - **Codex shows its model a TypeScript declaration, never the schema.** `render_map`
+    (`codex-rs/code-mode-protocol/src/json_schema_types.rs`) tests `anyOf`/`oneOf`, then `allOf`,
+    before `type`, so an object with a top-level `allOf` renders only the `allOf`.
+  - **`sanitize_json_schema` (`codex-rs/tools/src/json_schema.rs`)** reduces a member holding only
+    `if`/`then`/`else` to `{}`, which renders `unknown`. It turns `items: false` into a string
+    schema, and Codex's struct has no `prefixItems`, so a tuple renders `Array<string>`.
+- **Which tools lost what:** whole inputs on `krita_capture`, `krita_sample` and
+  `krita_document_open`; `sources` and `recipes` on `krita_preview_render`; every one of the 12 input
+  tuples shown as strings; and every output, on all 19. Compaction never applied.
+- **The fix is the block's first route: equivalent forms, no example in a `description`.**
+  - **A tuple** is `items`, with `minItems` equal to `maxItems`. All 12 input and 36 output tuples are
+    same-typed, so `prefixItems` is gone.
+  - **A conditional** sits on the object, as `if`/`then`/`else`. `krita_document_open`'s two rules
+    become one, since `mode` is required and an enum of two. `recipes.items`' `oneOf` becomes an
+    exactly-one-of `if`/`then`/`else`.
+  - **"Field absent" is `{"properties": {"f": {"not": {}}}}`.** A bare `false` loses the error's path,
+    through jsonschema's `descend` shortcut, and a root `not` opens its message with all the
+    arguments.
+  - **Outputs** are one chain, written by `amend_schemas.py`: completed, else `FAILED_RULE`, else
+    `PENDING_RULE`.
+  - **No schema loosened.** A one-off differential of the committed schemas against the new ones
+    over every example's mutations: 123,977 cases, 3,891 accepted, 0 differences. API version stays
+    0.2.0.
+- **An argument error names every problem,** up to `MAX_REPORTED_PROBLEMS`, now 200: the message
+  joins them, `details.errors` lists them, and `details.omitted` counts the rest.
+- **Which semantic checks still stop at their first refusal, and why.** All of them; no code changed.
+  - **The server's checks on the arguments alone** (`_capture_rules`, `preview._rules`, the stroke's
+    `_refusal`, the selection's clearing rule, open's `_open_rules`): one envelope carries one code
+    with its own `details`, these codes differ (`UNSUPPORTED_CAPABILITY`, `PATH_NOT_ALLOWED`), and
+    a later check can assume an earlier one held.
+  - **The server's checks that read or compute** (`inside_roots`, `masks.py`, `sheets.py`): each
+    step's result feeds the next.
+  - **The plugin's handlers:** a second line behind the schema, where a job ends at its first raise,
+    and each check reads what the one before confirmed, the document before the layer before the
+    pixels. An agent that passes the schema rarely meets them twice in one call.
+- **The file-name fallback** is `_listed_name` in `bridge_core/documents.py`. `document.name()` is the
+  document's title, empty for a file opened in Krita. `_created_here`, used by `_probe_documents` and
+  `_own_documents`, holds the `read_only` guard, so an owner's file named like the probe's stays out.
+- **Amendments:**
+  - **The block named one tool;** the same two causes reached all 19, so 14a fixed all of them. The
+    owner approved outputs being in scope with the plan.
+  - **The cap stays,** at 200 rather than 6 MB (plan time). A call with more is one mistake repeated,
+    and such an answer passes Claude Code's 25,000 tokens (C4) long before 6 MB.
+  - **The cause came from the rollout and the tag's source,** not a chat with the owner. The owner ran
+    the gate's chats.
+  - **No port of Codex's renderer entered the repository:** it would drift unseen. `tests/test_schemas.py`
+    holds the forms, and a scratchpad port rendered every tool at implementation.
+  - **The probe gained one check:** a file with no title lists under its file's name.
+- **For `ARCHITECTURE.md`, Codex's limits:** a tool's normalised input over 5,000 bytes is compacted
+  (the largest here is 2,135), a rendered input or output over 16,000 bytes becomes `unknown` (the
+  largest is 2,294), and `Array<number>` hides a tuple's length. `ALL_TOOLS` carries the declarations,
+  so an agent reads one by filtering for it.
+- **Checked by hand:**
+  - **The gate: holds.** On H3's own prompt, in a new Codex chat after a client restart, the agent read
+    the declarations, listed, found the pattern by its file's name, and made a first `krita_capture`
+    with every argument right and no refused call. H3's run had eight refused calls. Its description
+    of the image was correct.
+  - **All 19 declarations, printed by that chat:** every input and output whole. The only
+    `Array<string>` fields are the real string lists, `editable_layer_ids`, `editable_layer_names`
+    and `protected_layer_ids`.
+  - **Claude Code, from a temporary config with `--strict-mcp-config`:** 19 tools listed; H3's prompt
+    took a first `krita_capture` with no refused call and found the document by name; and a
+    `ToolSearch` loaded all 19 schemas through the API, so every changed form is accepted.
+- **Measured** (Krita 5.3.4.1 on macOS, Apple Silicon, after a restart, 0 documents open):
+  - **Stages:** document 1.0 s, cycle 13.9 s, open 8.4 s, pixel 4.6 s, preview 11.6 s, change 6.4 s,
+    update 2.8 s, paint 6.2 s, benchmark 32.2 s, save 16.8 s, acceptance 10.5 s.
+  - **H4 idle:** p50 5.1 ms, p95 5.8 ms, max 27.4 ms. **Create and close:** mean 693 ms.
+  - **N-01 with a canvas-wide selection:** p95 0.11 s. **N-09 with one:** p95 0.34 s. **N-02:** p95
+    0.45 s. **H4 long save:** 5.3 s, longest silence 3.09 s.
+- **Falsified** (each broken once, the file's bytes restored after each, the tree compared equal):
+  - **Unit, 36:** `allOf` back on capture, a source and the outputs; `prefixItems` and `items: false`,
+    together and apart; a union beside a `type`; the untyped `oneOf`; each moved rule on capture,
+    sample, open, sources and recipes; `size_px`'s lengths, type and minimum; a sample point; `rgba`'s
+    bound; each output rule; the message cut to its first problem; the cap; the count; the count in
+    the message; the fallback; a title ignored; the `read_only` guard. Each failed at its own check.
+    **One first passed:** the `editable_layer_ids` row was refused by the id's pattern, whatever the
+    rule. It now holds a real id, and catches the break.
+  - **Live, 1:** the real check, run against Krita with the old plugin's empty name put back, failed at
+    its own line and passed without it.
+- **Numbers:**
+  - `verify`: 6 stages, all PASS;
+  - 661 server tests passed (+81), 0 skipped;
+  - 665 plugin-core tests passed (+3), 0 skipped;
+  - `probe`: 130 PASS, 0 FAIL, 47 MEASURED, 120.2 s with 0 documents open;
+  - 19 registered tools; 19 schema files; instructions 3,901 characters (195 to spare); 30 error
+    codes; 32 bridge ops.
+
 ---
 
 ## 15: Documentation pass, and the round's close

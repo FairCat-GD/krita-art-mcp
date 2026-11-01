@@ -197,109 +197,105 @@
       "error"
     ],
     "additionalProperties": false,
-    "allOf": [
-      {
-        "if": {
+    "if": {
+      "properties": {
+        "status": {
+          "const": "completed"
+        }
+      }
+    },
+    "then": {
+      "properties": {
+        "data": {
+          "type": "object",
           "properties": {
-            "status": {
-              "const": "completed"
-            }
-          }
-        },
-        "then": {
-          "properties": {
-            "data": {
-              "type": "object",
-              "properties": {
-                "operation_id": {
+            "operation_id": {
+              "type": "string",
+              "minLength": 1
+            },
+            "tool": {
+              "anyOf": [
+                {
                   "type": "string",
                   "minLength": 1
                 },
-                "tool": {
-                  "anyOf": [
-                    {
-                      "type": "string",
-                      "minLength": 1
-                    },
-                    {
-                      "type": "null"
-                    }
-                  ]
-                },
-                "state": {
-                  "type": "string",
-                  "enum": [
-                    "queued",
-                    "running",
-                    "completed",
-                    "failed",
-                    "cancelled"
-                  ]
-                },
-                "progress": {
-                  "anyOf": [
-                    {
-                      "type": "number",
-                      "minimum": 0,
-                      "maximum": 1
-                    },
-                    {
-                      "type": "null"
-                    }
-                  ]
-                },
-                "receipt": {
-                  "anyOf": [
-                    {
-                      "type": "object"
-                    },
-                    {
-                      "type": "null"
-                    }
-                  ]
+                {
+                  "type": "null"
                 }
-              },
-              "required": [
-                "operation_id",
-                "tool",
-                "state",
-                "progress",
-                "receipt"
-              ],
-              "additionalProperties": false
+              ]
             },
-            "error": {
-              "type": "null"
-            }
-          }
-        }
-      },
-      {
-        "if": {
-          "properties": {
-            "status": {
+            "state": {
+              "type": "string",
               "enum": [
+                "queued",
+                "running",
+                "completed",
                 "failed",
                 "cancelled"
               ]
-            }
-          }
-        },
-        "then": {
-          "properties": {
-            "data": {
-              "type": "null"
             },
-            "error": {
-              "type": "object"
+            "progress": {
+              "anyOf": [
+                {
+                  "type": "number",
+                  "minimum": 0,
+                  "maximum": 1
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "receipt": {
+              "anyOf": [
+                {
+                  "type": "object"
+                },
+                {
+                  "type": "null"
+                }
+              ]
             }
           },
           "required": [
-            "error"
-          ]
+            "operation_id",
+            "tool",
+            "state",
+            "progress",
+            "receipt"
+          ],
+          "additionalProperties": false
+        },
+        "error": {
+          "type": "null"
+        }
+      }
+    },
+    "else": {
+      "if": {
+        "properties": {
+          "status": {
+            "enum": [
+              "failed",
+              "cancelled"
+            ]
+          }
         }
       },
-      {
+      "then": {
+        "properties": {
+          "data": {
+            "type": "null"
+          },
+          "error": {
+            "type": "object"
+          }
+        },
+        "required": [
+          "error"
+        ]
+      },
+      "else": {
         "if": {
           "properties": {
             "status": {
@@ -325,7 +321,7 @@
           }
         }
       }
-    ]
+    }
   },
   "annotations": {
     "readOnlyHint": true,

@@ -182,72 +182,68 @@
       "error"
     ],
     "additionalProperties": false,
-    "allOf": [
-      {
-        "if": {
+    "if": {
+      "properties": {
+        "status": {
+          "const": "completed"
+        }
+      }
+    },
+    "then": {
+      "properties": {
+        "data": {
+          "type": "object",
           "properties": {
-            "status": {
-              "const": "completed"
-            }
-          }
-        },
-        "then": {
-          "properties": {
-            "data": {
-              "type": "object",
-              "properties": {
-                "closed": {
+            "closed": {
+              "type": "boolean"
+            },
+            "baseline_untouched": {
+              "anyOf": [
+                {
                   "type": "boolean"
                 },
-                "baseline_untouched": {
-                  "anyOf": [
-                    {
-                      "type": "boolean"
-                    },
-                    {
-                      "type": "null"
-                    }
-                  ]
+                {
+                  "type": "null"
                 }
-              },
-              "required": [
-                "closed",
-                "baseline_untouched"
-              ],
-              "additionalProperties": false
-            },
-            "error": {
-              "type": "null"
-            }
-          }
-        }
-      },
-      {
-        "if": {
-          "properties": {
-            "status": {
-              "enum": [
-                "failed",
-                "cancelled"
               ]
-            }
-          }
-        },
-        "then": {
-          "properties": {
-            "data": {
-              "type": "null"
-            },
-            "error": {
-              "type": "object"
             }
           },
           "required": [
-            "error"
-          ]
+            "closed",
+            "baseline_untouched"
+          ],
+          "additionalProperties": false
+        },
+        "error": {
+          "type": "null"
+        }
+      }
+    },
+    "else": {
+      "if": {
+        "properties": {
+          "status": {
+            "enum": [
+              "failed",
+              "cancelled"
+            ]
+          }
         }
       },
-      {
+      "then": {
+        "properties": {
+          "data": {
+            "type": "null"
+          },
+          "error": {
+            "type": "object"
+          }
+        },
+        "required": [
+          "error"
+        ]
+      },
+      "else": {
         "if": {
           "properties": {
             "status": {
@@ -273,7 +269,7 @@
           }
         }
       }
-    ]
+    }
   },
   "annotations": {
     "readOnlyHint": false,

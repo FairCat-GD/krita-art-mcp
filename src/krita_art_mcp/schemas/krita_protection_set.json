@@ -95,15 +95,9 @@
                 "type": "array",
                 "items": {
                   "type": "array",
-                  "prefixItems": [
-                    {
-                      "type": "number"
-                    },
-                    {
-                      "type": "number"
-                    }
-                  ],
-                  "items": false,
+                  "items": {
+                    "type": "number"
+                  },
                   "minItems": 2,
                   "maxItems": 2
                 },
@@ -346,135 +340,131 @@
       "error"
     ],
     "additionalProperties": false,
-    "allOf": [
-      {
-        "if": {
+    "if": {
+      "properties": {
+        "status": {
+          "const": "completed"
+        }
+      }
+    },
+    "then": {
+      "properties": {
+        "data": {
+          "type": "object",
           "properties": {
-            "status": {
-              "const": "completed"
-            }
-          }
-        },
-        "then": {
-          "properties": {
-            "data": {
-              "type": "object",
-              "properties": {
-                "protected_layer_ids": {
-                  "type": "array",
-                  "items": {
-                    "type": "string",
-                    "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
-                  },
-                  "uniqueItems": true
-                },
-                "allowed_change_mask": {
-                  "anyOf": [
-                    {
+            "protected_layer_ids": {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+              },
+              "uniqueItems": true
+            },
+            "allowed_change_mask": {
+              "anyOf": [
+                {
+                  "type": "object",
+                  "properties": {
+                    "sha256": {
+                      "type": "string",
+                      "pattern": "^[0-9a-f]{64}$"
+                    },
+                    "bounds_px": {
                       "type": "object",
                       "properties": {
-                        "sha256": {
-                          "type": "string",
-                          "pattern": "^[0-9a-f]{64}$"
+                        "x": {
+                          "type": "integer"
                         },
-                        "bounds_px": {
-                          "type": "object",
-                          "properties": {
-                            "x": {
-                              "type": "integer"
-                            },
-                            "y": {
-                              "type": "integer"
-                            },
-                            "width": {
-                              "type": "integer",
-                              "minimum": 0
-                            },
-                            "height": {
-                              "type": "integer",
-                              "minimum": 0
-                            }
-                          },
-                          "required": [
-                            "x",
-                            "y",
-                            "width",
-                            "height"
-                          ],
-                          "additionalProperties": false
+                        "y": {
+                          "type": "integer"
                         },
-                        "allowed_pixels": {
+                        "width": {
+                          "type": "integer",
+                          "minimum": 0
+                        },
+                        "height": {
                           "type": "integer",
                           "minimum": 0
                         }
                       },
                       "required": [
-                        "sha256",
-                        "bounds_px",
-                        "allowed_pixels"
+                        "x",
+                        "y",
+                        "width",
+                        "height"
                       ],
                       "additionalProperties": false
                     },
-                    {
-                      "type": "null"
+                    "allowed_pixels": {
+                      "type": "integer",
+                      "minimum": 0
                     }
-                  ]
+                  },
+                  "required": [
+                    "sha256",
+                    "bounds_px",
+                    "allowed_pixels"
+                  ],
+                  "additionalProperties": false
                 },
-                "composite_outside_mask": {
-                  "const": "exact"
-                },
-                "preserve_composite_alpha": {
-                  "type": "boolean"
-                },
-                "preserve_canvas": {
-                  "type": "boolean"
-                },
-                "undo_steps": {
-                  "const": 0
+                {
+                  "type": "null"
                 }
-              },
-              "required": [
-                "protected_layer_ids",
-                "allowed_change_mask",
-                "composite_outside_mask",
-                "preserve_composite_alpha",
-                "preserve_canvas",
-                "undo_steps"
-              ],
-              "additionalProperties": false
-            },
-            "error": {
-              "type": "null"
-            }
-          }
-        }
-      },
-      {
-        "if": {
-          "properties": {
-            "status": {
-              "enum": [
-                "failed",
-                "cancelled"
               ]
-            }
-          }
-        },
-        "then": {
-          "properties": {
-            "data": {
-              "type": "null"
             },
-            "error": {
-              "type": "object"
+            "composite_outside_mask": {
+              "const": "exact"
+            },
+            "preserve_composite_alpha": {
+              "type": "boolean"
+            },
+            "preserve_canvas": {
+              "type": "boolean"
+            },
+            "undo_steps": {
+              "const": 0
             }
           },
           "required": [
-            "error"
-          ]
+            "protected_layer_ids",
+            "allowed_change_mask",
+            "composite_outside_mask",
+            "preserve_composite_alpha",
+            "preserve_canvas",
+            "undo_steps"
+          ],
+          "additionalProperties": false
+        },
+        "error": {
+          "type": "null"
+        }
+      }
+    },
+    "else": {
+      "if": {
+        "properties": {
+          "status": {
+            "enum": [
+              "failed",
+              "cancelled"
+            ]
+          }
         }
       },
-      {
+      "then": {
+        "properties": {
+          "data": {
+            "type": "null"
+          },
+          "error": {
+            "type": "object"
+          }
+        },
+        "required": [
+          "error"
+        ]
+      },
+      "else": {
         "if": {
           "properties": {
             "status": {
@@ -500,7 +490,7 @@
           }
         }
       }
-    ]
+    }
   },
   "annotations": {
     "readOnlyHint": false,

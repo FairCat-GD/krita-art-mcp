@@ -241,126 +241,122 @@
       "error"
     ],
     "additionalProperties": false,
-    "allOf": [
-      {
-        "if": {
+    "if": {
+      "properties": {
+        "status": {
+          "const": "completed"
+        }
+      }
+    },
+    "then": {
+      "properties": {
+        "data": {
+          "type": "object",
           "properties": {
-            "status": {
-              "const": "completed"
-            }
-          }
-        },
-        "then": {
-          "properties": {
-            "data": {
-              "type": "object",
-              "properties": {
-                "path": {
-                  "type": "string",
-                  "minLength": 1
-                },
-                "sha256": {
-                  "type": "string",
-                  "pattern": "^[0-9a-f]{64}$"
-                },
-                "reopened_verified": {
-                  "const": true
-                },
-                "layers_preserved": {
+            "path": {
+              "type": "string",
+              "minLength": 1
+            },
+            "sha256": {
+              "type": "string",
+              "pattern": "^[0-9a-f]{64}$"
+            },
+            "reopened_verified": {
+              "const": true
+            },
+            "layers_preserved": {
+              "type": "boolean"
+            },
+            "baseline_untouched": {
+              "anyOf": [
+                {
                   "type": "boolean"
                 },
-                "baseline_untouched": {
-                  "anyOf": [
-                    {
-                      "type": "boolean"
-                    },
-                    {
-                      "type": "null"
-                    }
-                  ]
-                },
-                "composite_preserved": {
-                  "const": true
-                },
-                "expected_losses": {
-                  "type": "array",
-                  "items": {
-                    "type": "object",
-                    "properties": {
-                      "layer_id": {
-                        "type": "string",
-                        "minLength": 1
-                      },
-                      "name": {
-                        "type": "string"
-                      },
-                      "type": {
-                        "type": "string",
-                        "minLength": 1
-                      },
-                      "lost": {
-                        "type": "string",
-                        "enum": [
-                          "node",
-                          "type",
-                          "alpha_locked",
-                          "opacity"
-                        ]
-                      }
-                    },
-                    "required": [
-                      "layer_id",
-                      "name",
-                      "type",
-                      "lost"
-                    ],
-                    "additionalProperties": false
-                  }
+                {
+                  "type": "null"
                 }
-              },
-              "required": [
-                "path",
-                "sha256",
-                "reopened_verified",
-                "layers_preserved",
-                "baseline_untouched",
-                "composite_preserved",
-                "expected_losses"
-              ],
-              "additionalProperties": false
-            },
-            "error": {
-              "type": "null"
-            }
-          }
-        }
-      },
-      {
-        "if": {
-          "properties": {
-            "status": {
-              "enum": [
-                "failed",
-                "cancelled"
               ]
-            }
-          }
-        },
-        "then": {
-          "properties": {
-            "data": {
-              "type": "null"
             },
-            "error": {
-              "type": "object"
+            "composite_preserved": {
+              "const": true
+            },
+            "expected_losses": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "layer_id": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "name": {
+                    "type": "string"
+                  },
+                  "type": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "lost": {
+                    "type": "string",
+                    "enum": [
+                      "node",
+                      "type",
+                      "alpha_locked",
+                      "opacity"
+                    ]
+                  }
+                },
+                "required": [
+                  "layer_id",
+                  "name",
+                  "type",
+                  "lost"
+                ],
+                "additionalProperties": false
+              }
             }
           },
           "required": [
-            "error"
-          ]
+            "path",
+            "sha256",
+            "reopened_verified",
+            "layers_preserved",
+            "baseline_untouched",
+            "composite_preserved",
+            "expected_losses"
+          ],
+          "additionalProperties": false
+        },
+        "error": {
+          "type": "null"
+        }
+      }
+    },
+    "else": {
+      "if": {
+        "properties": {
+          "status": {
+            "enum": [
+              "failed",
+              "cancelled"
+            ]
+          }
         }
       },
-      {
+      "then": {
+        "properties": {
+          "data": {
+            "type": "null"
+          },
+          "error": {
+            "type": "object"
+          }
+        },
+        "required": [
+          "error"
+        ]
+      },
+      "else": {
         "if": {
           "properties": {
             "status": {
@@ -386,7 +382,7 @@
           }
         }
       }
-    ]
+    }
   },
   "annotations": {
     "readOnlyHint": false,

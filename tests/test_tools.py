@@ -122,6 +122,38 @@ def test_a_huge_invalid_argument_gets_a_short_message() -> None:
     assert all(len(problem["message"]) <= 200 for problem in error["details"]["errors"])
 
 
+def test_an_argument_error_names_every_problem_in_one_answer() -> None:
+    server = MCPServer("every", tools=[tools.build("krita_capture", _completed)])
+    arguments = {
+        "document_id": "doc-1",
+        "target": "composite",
+        "rect": {"x": 0, "y": 0, "width": 512, "height": 512},
+        "scale": 1,
+        "filter": "nearest",
+    }
+    result = _call(server, arguments, "krita_capture")
+    error = result.structured_content["error"]
+    assert error["code"] == "INVALID_ARGUMENT"
+    assert [problem["path"] for problem in error["details"]["errors"]] == ["", "", ""]
+    assert error["details"]["omitted"] == 0
+    for field in ("source", "layer_id", "document_id"):
+        assert field in error["message"] and field in result.content[0].text
+
+
+def test_more_problems_than_the_report_holds_are_counted() -> None:
+    server = MCPServer("many", tools=[tools.build("krita_sample", _completed)])
+    example = schemas.load("krita_sample")["example"]["input"]
+    wide = "x" * 1000
+    result = _call(server, {**example, "points": [[wide, wide]] * 4096}, "krita_sample")
+    error = result.structured_content["error"]
+    assert error["code"] == "INVALID_ARGUMENT"
+    assert len(error["details"]["errors"]) == tools.MAX_REPORTED_PROBLEMS
+    # Both members of every point, and the list's own length.
+    assert error["details"]["omitted"] == 2 * 4096 + 1 - tools.MAX_REPORTED_PROBLEMS
+    assert error["message"].endswith(f"; and {error['details']['omitted']} more")
+    assert tools._size(result) < envelope.MAX_RESULT_BYTES
+
+
 def test_a_raising_tool_returns_internal_error() -> None:
     def run(arguments: dict[str, Any], client_name: str | None = None) -> CallToolResult:
         raise RuntimeError("boom")

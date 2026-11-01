@@ -48,9 +48,8 @@ ENVELOPE_FIELDS = ["api_version", "status", "document_id", "revision", "operatio
 def _shared_shape(tool_name: str) -> dict[str, Any]:
     # Everything in the output schema but each tool's own `data`.
     output = schemas.load(tool_name)["outputSchema"]
-    rules = json.loads(json.dumps(output["allOf"]))
-    for rule in rules:
-        rule["then"].get("properties", {}).pop("data", None)
+    rules = json.loads(json.dumps({key: output[key] for key in ("if", "then", "else")}))
+    rules["then"]["properties"].pop("data")
     return {
         "properties": {field: output["properties"][field] for field in ENVELOPE_FIELDS},
         "required": output["required"],

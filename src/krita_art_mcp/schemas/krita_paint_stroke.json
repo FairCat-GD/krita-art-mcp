@@ -63,29 +63,11 @@
               },
               "rgba": {
                 "type": "array",
-                "prefixItems": [
-                  {
-                    "type": "number",
-                    "minimum": 0,
-                    "maximum": 1
-                  },
-                  {
-                    "type": "number",
-                    "minimum": 0,
-                    "maximum": 1
-                  },
-                  {
-                    "type": "number",
-                    "minimum": 0,
-                    "maximum": 1
-                  },
-                  {
-                    "type": "number",
-                    "minimum": 0,
-                    "maximum": 1
-                  }
-                ],
-                "items": false,
+                "items": {
+                  "type": "number",
+                  "minimum": 0,
+                  "maximum": 1
+                },
                 "minItems": 4,
                 "maxItems": 4
               }
@@ -325,29 +307,11 @@
                       },
                       "rgba": {
                         "type": "array",
-                        "prefixItems": [
-                          {
-                            "type": "number",
-                            "minimum": 0,
-                            "maximum": 1
-                          },
-                          {
-                            "type": "number",
-                            "minimum": 0,
-                            "maximum": 1
-                          },
-                          {
-                            "type": "number",
-                            "minimum": 0,
-                            "maximum": 1
-                          },
-                          {
-                            "type": "number",
-                            "minimum": 0,
-                            "maximum": 1
-                          }
-                        ],
-                        "items": false,
+                        "items": {
+                          "type": "number",
+                          "minimum": 0,
+                          "maximum": 1
+                        },
                         "minItems": 4,
                         "maxItems": 4
                       }
@@ -764,187 +728,257 @@
       "error"
     ],
     "additionalProperties": false,
-    "allOf": [
-      {
-        "if": {
+    "if": {
+      "properties": {
+        "status": {
+          "const": "completed"
+        }
+      }
+    },
+    "then": {
+      "properties": {
+        "data": {
+          "type": "object",
           "properties": {
-            "status": {
-              "const": "completed"
-            }
-          }
-        },
-        "then": {
-          "properties": {
-            "data": {
+            "layer_id": {
+              "type": "string",
+              "minLength": 1
+            },
+            "stroke_id": {
+              "type": "string",
+              "minLength": 1
+            },
+            "accepted_points": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 4096
+            },
+            "input_applied": {
+              "const": "flat"
+            },
+            "effective_brush": {
               "type": "object",
               "properties": {
-                "layer_id": {
+                "preset_id": {
                   "type": "string",
                   "minLength": 1
                 },
-                "stroke_id": {
+                "preset_sha256": {
                   "type": "string",
-                  "minLength": 1
+                  "pattern": "^[0-9a-f]{64}$"
                 },
-                "accepted_points": {
-                  "type": "integer",
-                  "minimum": 1,
-                  "maximum": 4096
+                "engine": {
+                  "anyOf": [
+                    {
+                      "type": "string",
+                      "minLength": 1
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
                 },
-                "input_applied": {
-                  "const": "flat"
+                "size_px": {
+                  "type": "number"
                 },
-                "effective_brush": {
+                "opacity": {
+                  "type": "number",
+                  "minimum": 0,
+                  "maximum": 1
+                },
+                "flow": {
+                  "type": "number",
+                  "minimum": 0,
+                  "maximum": 1
+                },
+                "color": {
                   "type": "object",
                   "properties": {
-                    "preset_id": {
+                    "space": {
                       "type": "string",
-                      "minLength": 1
-                    },
-                    "preset_sha256": {
-                      "type": "string",
-                      "pattern": "^[0-9a-f]{64}$"
-                    },
-                    "engine": {
-                      "anyOf": [
-                        {
-                          "type": "string",
-                          "minLength": 1
-                        },
-                        {
-                          "type": "null"
-                        }
+                      "enum": [
+                        "srgb"
                       ]
                     },
-                    "size_px": {
-                      "type": "number"
-                    },
-                    "opacity": {
-                      "type": "number",
-                      "minimum": 0,
-                      "maximum": 1
-                    },
-                    "flow": {
-                      "type": "number",
-                      "minimum": 0,
-                      "maximum": 1
-                    },
-                    "color": {
-                      "type": "object",
-                      "properties": {
-                        "space": {
-                          "type": "string",
-                          "enum": [
-                            "srgb"
-                          ]
-                        },
-                        "rgba": {
-                          "type": "array",
-                          "prefixItems": [
-                            {
-                              "type": "number",
-                              "minimum": 0,
-                              "maximum": 1
-                            },
-                            {
-                              "type": "number",
-                              "minimum": 0,
-                              "maximum": 1
-                            },
-                            {
-                              "type": "number",
-                              "minimum": 0,
-                              "maximum": 1
-                            },
-                            {
-                              "type": "number",
-                              "minimum": 0,
-                              "maximum": 1
-                            }
-                          ],
-                          "items": false,
-                          "minItems": 4,
-                          "maxItems": 4
-                        }
+                    "rgba": {
+                      "type": "array",
+                      "items": {
+                        "type": "number",
+                        "minimum": 0,
+                        "maximum": 1
                       },
-                      "required": [
-                        "space",
-                        "rgba"
-                      ],
-                      "additionalProperties": false
-                    },
-                    "eraser": {
-                      "type": "boolean"
-                    },
-                    "blend_mode": {
-                      "type": "string",
-                      "minLength": 1
-                    },
-                    "alpha_lock": {
-                      "type": "boolean"
-                    },
-                    "rotation_deg": {
-                      "type": "number"
-                    },
-                    "antialias": {
-                      "const": true
-                    },
-                    "spacing": {
-                      "anyOf": [
-                        {
-                          "type": "number"
-                        },
-                        {
-                          "type": "null"
-                        }
-                      ]
-                    },
-                    "reach": {
-                      "type": "object",
-                      "properties": {
-                        "tip": {
-                          "type": "string",
-                          "enum": [
-                            "round",
-                            "square",
-                            "image",
-                            "unknown"
-                          ]
-                        },
-                        "scatter": {
-                          "type": "number",
-                          "minimum": 0
-                        },
-                        "margin_px": {
-                          "type": "number",
-                          "minimum": 0
-                        }
-                      },
-                      "required": [
-                        "tip",
-                        "scatter",
-                        "margin_px"
-                      ],
-                      "additionalProperties": false
+                      "minItems": 4,
+                      "maxItems": 4
                     }
                   },
-                  "additionalProperties": false,
                   "required": [
-                    "preset_id",
-                    "preset_sha256",
-                    "engine",
-                    "size_px",
-                    "opacity",
-                    "flow",
-                    "color",
-                    "eraser",
-                    "blend_mode",
-                    "alpha_lock",
-                    "rotation_deg",
-                    "antialias",
-                    "spacing",
-                    "reach"
+                    "space",
+                    "rgba"
+                  ],
+                  "additionalProperties": false
+                },
+                "eraser": {
+                  "type": "boolean"
+                },
+                "blend_mode": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "alpha_lock": {
+                  "type": "boolean"
+                },
+                "rotation_deg": {
+                  "type": "number"
+                },
+                "antialias": {
+                  "const": true
+                },
+                "spacing": {
+                  "anyOf": [
+                    {
+                      "type": "number"
+                    },
+                    {
+                      "type": "null"
+                    }
                   ]
+                },
+                "reach": {
+                  "type": "object",
+                  "properties": {
+                    "tip": {
+                      "type": "string",
+                      "enum": [
+                        "round",
+                        "square",
+                        "image",
+                        "unknown"
+                      ]
+                    },
+                    "scatter": {
+                      "type": "number",
+                      "minimum": 0
+                    },
+                    "margin_px": {
+                      "type": "number",
+                      "minimum": 0
+                    }
+                  },
+                  "required": [
+                    "tip",
+                    "scatter",
+                    "margin_px"
+                  ],
+                  "additionalProperties": false
+                }
+              },
+              "additionalProperties": false,
+              "required": [
+                "preset_id",
+                "preset_sha256",
+                "engine",
+                "size_px",
+                "opacity",
+                "flow",
+                "color",
+                "eraser",
+                "blend_mode",
+                "alpha_lock",
+                "rotation_deg",
+                "antialias",
+                "spacing",
+                "reach"
+              ]
+            },
+            "changed_bounds_px": {
+              "anyOf": [
+                {
+                  "type": "object",
+                  "properties": {
+                    "x": {
+                      "type": "integer",
+                      "minimum": 0
+                    },
+                    "y": {
+                      "type": "integer",
+                      "minimum": 0
+                    },
+                    "width": {
+                      "type": "integer",
+                      "minimum": 1
+                    },
+                    "height": {
+                      "type": "integer",
+                      "minimum": 1
+                    }
+                  },
+                  "required": [
+                    "x",
+                    "y",
+                    "width",
+                    "height"
+                  ],
+                  "additionalProperties": false
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "protected_pixels_changed": {
+              "const": 0
+            },
+            "undo_label": {
+              "type": "string",
+              "minLength": 1
+            },
+            "undo_steps": {
+              "const": 1
+            },
+            "history_sealed": {
+              "type": "boolean"
+            },
+            "verification": {
+              "type": "object",
+              "properties": {
+                "mode": {
+                  "type": "string",
+                  "enum": [
+                    "region",
+                    "full"
+                  ]
+                },
+                "rect": {
+                  "type": "object",
+                  "properties": {
+                    "x": {
+                      "type": "integer",
+                      "minimum": 0
+                    },
+                    "y": {
+                      "type": "integer",
+                      "minimum": 0
+                    },
+                    "width": {
+                      "type": "integer",
+                      "minimum": 0
+                    },
+                    "height": {
+                      "type": "integer",
+                      "minimum": 0
+                    }
+                  },
+                  "required": [
+                    "x",
+                    "y",
+                    "width",
+                    "height"
+                  ],
+                  "additionalProperties": false
+                },
+                "changed_px": {
+                  "type": "integer",
+                  "minimum": 0
                 },
                 "changed_bounds_px": {
                   "anyOf": [
@@ -981,256 +1015,164 @@
                     }
                   ]
                 },
-                "protected_pixels_changed": {
+                "changed_outside_px": {
                   "const": 0
                 },
-                "undo_label": {
-                  "type": "string",
-                  "minLength": 1
+                "alpha_changed_px": {
+                  "type": "integer",
+                  "minimum": 0
                 },
-                "undo_steps": {
-                  "const": 1
-                },
-                "history_sealed": {
-                  "type": "boolean"
-                },
-                "verification": {
-                  "type": "object",
-                  "properties": {
-                    "mode": {
-                      "type": "string",
-                      "enum": [
-                        "region",
-                        "full"
-                      ]
-                    },
-                    "rect": {
+                "before": {
+                  "anyOf": [
+                    {
                       "type": "object",
                       "properties": {
-                        "x": {
-                          "type": "integer",
-                          "minimum": 0
+                        "uri": {
+                          "type": "string",
+                          "minLength": 2,
+                          "pattern": "^/"
                         },
-                        "y": {
-                          "type": "integer",
-                          "minimum": 0
+                        "path": {
+                          "type": "string",
+                          "minLength": 2,
+                          "pattern": "^/"
                         },
-                        "width": {
-                          "type": "integer",
-                          "minimum": 0
+                        "mime_type": {
+                          "const": "image/png"
                         },
-                        "height": {
+                        "sha256": {
+                          "type": "string",
+                          "pattern": "^[0-9a-f]{64}$"
+                        },
+                        "size_bytes": {
                           "type": "integer",
-                          "minimum": 0
+                          "minimum": 1
+                        },
+                        "retention_days": {
+                          "type": "integer",
+                          "minimum": 1
                         }
                       },
                       "required": [
-                        "x",
-                        "y",
-                        "width",
-                        "height"
+                        "uri",
+                        "path",
+                        "mime_type",
+                        "sha256",
+                        "size_bytes",
+                        "retention_days"
                       ],
                       "additionalProperties": false
                     },
-                    "changed_px": {
-                      "type": "integer",
-                      "minimum": 0
-                    },
-                    "changed_bounds_px": {
-                      "anyOf": [
-                        {
-                          "type": "object",
-                          "properties": {
-                            "x": {
-                              "type": "integer",
-                              "minimum": 0
-                            },
-                            "y": {
-                              "type": "integer",
-                              "minimum": 0
-                            },
-                            "width": {
-                              "type": "integer",
-                              "minimum": 1
-                            },
-                            "height": {
-                              "type": "integer",
-                              "minimum": 1
-                            }
-                          },
-                          "required": [
-                            "x",
-                            "y",
-                            "width",
-                            "height"
-                          ],
-                          "additionalProperties": false
-                        },
-                        {
-                          "type": "null"
-                        }
-                      ]
-                    },
-                    "changed_outside_px": {
-                      "const": 0
-                    },
-                    "alpha_changed_px": {
-                      "type": "integer",
-                      "minimum": 0
-                    },
-                    "before": {
-                      "anyOf": [
-                        {
-                          "type": "object",
-                          "properties": {
-                            "uri": {
-                              "type": "string",
-                              "minLength": 2,
-                              "pattern": "^/"
-                            },
-                            "path": {
-                              "type": "string",
-                              "minLength": 2,
-                              "pattern": "^/"
-                            },
-                            "mime_type": {
-                              "const": "image/png"
-                            },
-                            "sha256": {
-                              "type": "string",
-                              "pattern": "^[0-9a-f]{64}$"
-                            },
-                            "size_bytes": {
-                              "type": "integer",
-                              "minimum": 1
-                            },
-                            "retention_days": {
-                              "type": "integer",
-                              "minimum": 1
-                            }
-                          },
-                          "required": [
-                            "uri",
-                            "path",
-                            "mime_type",
-                            "sha256",
-                            "size_bytes",
-                            "retention_days"
-                          ],
-                          "additionalProperties": false
-                        },
-                        {
-                          "type": "null"
-                        }
-                      ]
-                    },
-                    "after": {
-                      "anyOf": [
-                        {
-                          "type": "object",
-                          "properties": {
-                            "uri": {
-                              "type": "string",
-                              "minLength": 2,
-                              "pattern": "^/"
-                            },
-                            "path": {
-                              "type": "string",
-                              "minLength": 2,
-                              "pattern": "^/"
-                            },
-                            "mime_type": {
-                              "const": "image/png"
-                            },
-                            "sha256": {
-                              "type": "string",
-                              "pattern": "^[0-9a-f]{64}$"
-                            },
-                            "size_bytes": {
-                              "type": "integer",
-                              "minimum": 1
-                            },
-                            "retention_days": {
-                              "type": "integer",
-                              "minimum": 1
-                            }
-                          },
-                          "required": [
-                            "uri",
-                            "path",
-                            "mime_type",
-                            "sha256",
-                            "size_bytes",
-                            "retention_days"
-                          ],
-                          "additionalProperties": false
-                        },
-                        {
-                          "type": "null"
-                        }
-                      ]
+                    {
+                      "type": "null"
                     }
-                  },
-                  "required": [
-                    "mode",
-                    "rect",
-                    "changed_px",
-                    "changed_bounds_px",
-                    "changed_outside_px",
-                    "alpha_changed_px",
-                    "before",
-                    "after"
-                  ],
-                  "additionalProperties": false
+                  ]
+                },
+                "after": {
+                  "anyOf": [
+                    {
+                      "type": "object",
+                      "properties": {
+                        "uri": {
+                          "type": "string",
+                          "minLength": 2,
+                          "pattern": "^/"
+                        },
+                        "path": {
+                          "type": "string",
+                          "minLength": 2,
+                          "pattern": "^/"
+                        },
+                        "mime_type": {
+                          "const": "image/png"
+                        },
+                        "sha256": {
+                          "type": "string",
+                          "pattern": "^[0-9a-f]{64}$"
+                        },
+                        "size_bytes": {
+                          "type": "integer",
+                          "minimum": 1
+                        },
+                        "retention_days": {
+                          "type": "integer",
+                          "minimum": 1
+                        }
+                      },
+                      "required": [
+                        "uri",
+                        "path",
+                        "mime_type",
+                        "sha256",
+                        "size_bytes",
+                        "retention_days"
+                      ],
+                      "additionalProperties": false
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
                 }
               },
-              "additionalProperties": false,
               "required": [
-                "layer_id",
-                "stroke_id",
-                "accepted_points",
-                "input_applied",
-                "effective_brush",
+                "mode",
+                "rect",
+                "changed_px",
                 "changed_bounds_px",
-                "protected_pixels_changed",
-                "undo_label",
-                "undo_steps",
-                "history_sealed",
-                "verification"
-              ]
-            },
-            "error": {
-              "type": "null"
-            }
-          }
-        }
-      },
-      {
-        "if": {
-          "properties": {
-            "status": {
-              "enum": [
-                "failed",
-                "cancelled"
-              ]
-            }
-          }
-        },
-        "then": {
-          "properties": {
-            "data": {
-              "type": "null"
-            },
-            "error": {
-              "type": "object"
+                "changed_outside_px",
+                "alpha_changed_px",
+                "before",
+                "after"
+              ],
+              "additionalProperties": false
             }
           },
+          "additionalProperties": false,
           "required": [
-            "error"
+            "layer_id",
+            "stroke_id",
+            "accepted_points",
+            "input_applied",
+            "effective_brush",
+            "changed_bounds_px",
+            "protected_pixels_changed",
+            "undo_label",
+            "undo_steps",
+            "history_sealed",
+            "verification"
           ]
+        },
+        "error": {
+          "type": "null"
+        }
+      }
+    },
+    "else": {
+      "if": {
+        "properties": {
+          "status": {
+            "enum": [
+              "failed",
+              "cancelled"
+            ]
+          }
         }
       },
-      {
+      "then": {
+        "properties": {
+          "data": {
+            "type": "null"
+          },
+          "error": {
+            "type": "object"
+          }
+        },
+        "required": [
+          "error"
+        ]
+      },
+      "else": {
         "if": {
           "properties": {
             "status": {
@@ -1256,7 +1198,7 @@
           }
         }
       }
-    ]
+    }
   },
   "annotations": {
     "readOnlyHint": false,

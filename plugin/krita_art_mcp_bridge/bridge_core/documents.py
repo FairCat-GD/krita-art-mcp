@@ -151,11 +151,16 @@ def _check_created(
         raise BridgeError("INTERNAL_ERROR", message, False, details)
 
 
+def _listed_name(info: dict[str, Any]) -> str:
+    # Krita's name is the document's title, which a file opened in Krita usually leaves empty.
+    return str(info["name"]) or Path(info["path"] or "").name
+
+
 def _entry(handle: Handle, port: DocumentsPort) -> dict[str, Any]:
     info = port.describe(handle.document)
     return {
         "document_id": handle.document_id,
-        "name": info["name"],
+        "name": _listed_name(info),
         "path": info["path"],
         "size_px": info["size_px"],
         "color_model": info["color_model"],

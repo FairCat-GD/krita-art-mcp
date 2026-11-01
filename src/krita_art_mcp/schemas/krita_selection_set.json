@@ -125,15 +125,9 @@
                 "type": "array",
                 "items": {
                   "type": "array",
-                  "prefixItems": [
-                    {
-                      "type": "number"
-                    },
-                    {
-                      "type": "number"
-                    }
-                  ],
-                  "items": false,
+                  "items": {
+                    "type": "number"
+                  },
                   "minItems": 2,
                   "maxItems": 2
                 },
@@ -163,17 +157,10 @@
               },
               "origin_px": {
                 "type": "array",
-                "prefixItems": [
-                  {
-                    "type": "integer",
-                    "minimum": 0
-                  },
-                  {
-                    "type": "integer",
-                    "minimum": 0
-                  }
-                ],
-                "items": false,
+                "items": {
+                  "type": "integer",
+                  "minimum": 0
+                },
                 "minItems": 2,
                 "maxItems": 2
               }
@@ -491,160 +478,156 @@
       "error"
     ],
     "additionalProperties": false,
-    "allOf": [
-      {
-        "if": {
-          "properties": {
-            "status": {
-              "const": "completed"
-            }
-          }
-        },
-        "then": {
-          "properties": {
-            "data": {
-              "type": "object",
-              "properties": {
-                "selection_id": {
-                  "anyOf": [
-                    {
-                      "type": "string",
-                      "pattern": "^sel-[0-9a-f]{16}$"
-                    },
-                    {
-                      "type": "null"
-                    }
-                  ]
-                },
-                "mask": {
-                  "anyOf": [
-                    {
-                      "type": "object",
-                      "properties": {
-                        "uri": {
-                          "type": "string",
-                          "minLength": 2,
-                          "pattern": "^/"
-                        },
-                        "path": {
-                          "type": "string",
-                          "minLength": 2,
-                          "pattern": "^/"
-                        },
-                        "mime_type": {
-                          "const": "image/png"
-                        },
-                        "sha256": {
-                          "type": "string",
-                          "pattern": "^[0-9a-f]{64}$"
-                        },
-                        "size_bytes": {
-                          "type": "integer",
-                          "minimum": 1
-                        },
-                        "retention_days": {
-                          "type": "integer",
-                          "minimum": 1
-                        }
-                      },
-                      "required": [
-                        "uri",
-                        "path",
-                        "mime_type",
-                        "sha256",
-                        "size_bytes",
-                        "retention_days"
-                      ],
-                      "additionalProperties": false
-                    },
-                    {
-                      "type": "null"
-                    }
-                  ]
-                },
-                "bounds_px": {
-                  "anyOf": [
-                    {
-                      "type": "object",
-                      "properties": {
-                        "x": {
-                          "type": "integer"
-                        },
-                        "y": {
-                          "type": "integer"
-                        },
-                        "width": {
-                          "type": "integer",
-                          "minimum": 0
-                        },
-                        "height": {
-                          "type": "integer",
-                          "minimum": 0
-                        }
-                      },
-                      "required": [
-                        "x",
-                        "y",
-                        "width",
-                        "height"
-                      ],
-                      "additionalProperties": false
-                    },
-                    {
-                      "type": "null"
-                    }
-                  ]
-                },
-                "selected_pixels": {
-                  "type": "integer",
-                  "minimum": 0
-                },
-                "undo_steps": {
-                  "type": "integer",
-                  "minimum": 0
-                }
-              },
-              "required": [
-                "selection_id",
-                "mask",
-                "bounds_px",
-                "selected_pixels",
-                "undo_steps"
-              ],
-              "additionalProperties": false
-            },
-            "error": {
-              "type": "null"
-            }
-          }
+    "if": {
+      "properties": {
+        "status": {
+          "const": "completed"
         }
-      },
-      {
-        "if": {
+      }
+    },
+    "then": {
+      "properties": {
+        "data": {
+          "type": "object",
           "properties": {
-            "status": {
-              "enum": [
-                "failed",
-                "cancelled"
+            "selection_id": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "pattern": "^sel-[0-9a-f]{16}$"
+                },
+                {
+                  "type": "null"
+                }
               ]
-            }
-          }
-        },
-        "then": {
-          "properties": {
-            "data": {
-              "type": "null"
             },
-            "error": {
-              "type": "object"
+            "mask": {
+              "anyOf": [
+                {
+                  "type": "object",
+                  "properties": {
+                    "uri": {
+                      "type": "string",
+                      "minLength": 2,
+                      "pattern": "^/"
+                    },
+                    "path": {
+                      "type": "string",
+                      "minLength": 2,
+                      "pattern": "^/"
+                    },
+                    "mime_type": {
+                      "const": "image/png"
+                    },
+                    "sha256": {
+                      "type": "string",
+                      "pattern": "^[0-9a-f]{64}$"
+                    },
+                    "size_bytes": {
+                      "type": "integer",
+                      "minimum": 1
+                    },
+                    "retention_days": {
+                      "type": "integer",
+                      "minimum": 1
+                    }
+                  },
+                  "required": [
+                    "uri",
+                    "path",
+                    "mime_type",
+                    "sha256",
+                    "size_bytes",
+                    "retention_days"
+                  ],
+                  "additionalProperties": false
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "bounds_px": {
+              "anyOf": [
+                {
+                  "type": "object",
+                  "properties": {
+                    "x": {
+                      "type": "integer"
+                    },
+                    "y": {
+                      "type": "integer"
+                    },
+                    "width": {
+                      "type": "integer",
+                      "minimum": 0
+                    },
+                    "height": {
+                      "type": "integer",
+                      "minimum": 0
+                    }
+                  },
+                  "required": [
+                    "x",
+                    "y",
+                    "width",
+                    "height"
+                  ],
+                  "additionalProperties": false
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "selected_pixels": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "undo_steps": {
+              "type": "integer",
+              "minimum": 0
             }
           },
           "required": [
-            "error"
-          ]
+            "selection_id",
+            "mask",
+            "bounds_px",
+            "selected_pixels",
+            "undo_steps"
+          ],
+          "additionalProperties": false
+        },
+        "error": {
+          "type": "null"
+        }
+      }
+    },
+    "else": {
+      "if": {
+        "properties": {
+          "status": {
+            "enum": [
+              "failed",
+              "cancelled"
+            ]
+          }
         }
       },
-      {
+      "then": {
+        "properties": {
+          "data": {
+            "type": "null"
+          },
+          "error": {
+            "type": "object"
+          }
+        },
+        "required": [
+          "error"
+        ]
+      },
+      "else": {
         "if": {
           "properties": {
             "status": {
@@ -670,7 +653,7 @@
           }
         }
       }
-    ]
+    }
   },
   "annotations": {
     "readOnlyHint": false,

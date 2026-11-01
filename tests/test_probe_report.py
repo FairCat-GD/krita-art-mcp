@@ -3,7 +3,14 @@ import re
 
 import pytest
 
+from krita_art_mcp.probe import PREFIX, _created_here
 from krita_art_mcp.probe.report import Report
+
+
+def test_a_file_the_owner_opened_is_not_the_probes_whatever_its_name() -> None:
+    entry = {"name": f"{PREFIX} art.png", "mode": "read_only"}
+    assert not _created_here(entry)
+    assert _created_here({**entry, "mode": "new"})
 
 
 def test_a_stage_is_measured_once_with_its_time() -> None:

@@ -235,101 +235,97 @@
       "error"
     ],
     "additionalProperties": false,
-    "allOf": [
-      {
-        "if": {
-          "properties": {
-            "status": {
-              "const": "completed"
-            }
-          }
-        },
-        "then": {
-          "properties": {
-            "data": {
-              "type": "object",
-              "properties": {
-                "layer_id": {
-                  "type": "string",
-                  "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
-                },
-                "parent_id": {
-                  "type": "string",
-                  "minLength": 1
-                },
-                "above_id": {
-                  "anyOf": [
-                    {
-                      "type": "string",
-                      "minLength": 1
-                    },
-                    {
-                      "type": "null"
-                    }
-                  ]
-                },
-                "type": {
-                  "type": "string",
-                  "enum": [
-                    "paint",
-                    "group"
-                  ]
-                },
-                "name": {
-                  "type": "string",
-                  "minLength": 1
-                },
-                "protected": {
-                  "const": false
-                },
-                "undo_steps": {
-                  "type": "integer",
-                  "minimum": 0
-                }
-              },
-              "required": [
-                "layer_id",
-                "parent_id",
-                "above_id",
-                "type",
-                "name",
-                "protected",
-                "undo_steps"
-              ],
-              "additionalProperties": false
-            },
-            "error": {
-              "type": "null"
-            }
-          }
+    "if": {
+      "properties": {
+        "status": {
+          "const": "completed"
         }
-      },
-      {
-        "if": {
+      }
+    },
+    "then": {
+      "properties": {
+        "data": {
+          "type": "object",
           "properties": {
-            "status": {
-              "enum": [
-                "failed",
-                "cancelled"
-              ]
-            }
-          }
-        },
-        "then": {
-          "properties": {
-            "data": {
-              "type": "null"
+            "layer_id": {
+              "type": "string",
+              "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
             },
-            "error": {
-              "type": "object"
+            "parent_id": {
+              "type": "string",
+              "minLength": 1
+            },
+            "above_id": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "minLength": 1
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "type": {
+              "type": "string",
+              "enum": [
+                "paint",
+                "group"
+              ]
+            },
+            "name": {
+              "type": "string",
+              "minLength": 1
+            },
+            "protected": {
+              "const": false
+            },
+            "undo_steps": {
+              "type": "integer",
+              "minimum": 0
             }
           },
           "required": [
-            "error"
-          ]
+            "layer_id",
+            "parent_id",
+            "above_id",
+            "type",
+            "name",
+            "protected",
+            "undo_steps"
+          ],
+          "additionalProperties": false
+        },
+        "error": {
+          "type": "null"
+        }
+      }
+    },
+    "else": {
+      "if": {
+        "properties": {
+          "status": {
+            "enum": [
+              "failed",
+              "cancelled"
+            ]
+          }
         }
       },
-      {
+      "then": {
+        "properties": {
+          "data": {
+            "type": "null"
+          },
+          "error": {
+            "type": "object"
+          }
+        },
+        "required": [
+          "error"
+        ]
+      },
+      "else": {
         "if": {
           "properties": {
             "status": {
@@ -355,7 +351,7 @@
           }
         }
       }
-    ]
+    }
   },
   "annotations": {
     "readOnlyHint": false,

@@ -6,6 +6,22 @@ All notable changes to krita-art-mcp are documented here. The format follows
 
 ## [Unreleased]
 
+## [0.15.0] — 2026-11-01
+
+An agent's first calls now work in Codex, without learning the arguments from refusals. This release
+needs `install-plugin`, a Krita restart and a restart of the MCP client.
+
+### Fixed
+
+- **Codex sees every tool's whole schema.** It reached `krita_capture`, `krita_sample` and
+  `krita_document_open` as `args: unknown`, lost two fields of `krita_preview_render`, showed every
+  fixed-length list as a list of strings, and lost every tool's result. Each rule now has a form
+  Codex renders. Every tool accepts and refuses exactly what it did.
+- **An argument error names every problem in one answer,** up to 200. `details` lists them, and
+  `omitted` counts any beyond that.
+- **A file opened in Krita lists under its file's name.** Krita leaves such a document's title
+  empty, so `krita_document_list` showed an empty `name`.
+
 ## [0.14.0] — 2026-11-01
 
 Phase 1 meets the contract's acceptance exercises, and the agent instructions are final. This

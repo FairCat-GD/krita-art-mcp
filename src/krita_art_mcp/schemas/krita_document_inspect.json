@@ -108,17 +108,10 @@
               },
               "canvas_px": {
                 "type": "array",
-                "prefixItems": [
-                  {
-                    "type": "integer",
-                    "minimum": 1
-                  },
-                  {
-                    "type": "integer",
-                    "minimum": 1
-                  }
-                ],
-                "items": false,
+                "items": {
+                  "type": "integer",
+                  "minimum": 1
+                },
                 "minItems": 2,
                 "maxItems": 2
               },
@@ -201,15 +194,9 @@
                     },
                     "offset_px": {
                       "type": "array",
-                      "prefixItems": [
-                        {
-                          "type": "integer"
-                        },
-                        {
-                          "type": "integer"
-                        }
-                      ],
-                      "items": false,
+                      "items": {
+                        "type": "integer"
+                      },
                       "minItems": 2,
                       "maxItems": 2
                     },
@@ -515,234 +502,278 @@
       "error"
     ],
     "additionalProperties": false,
-    "allOf": [
-      {
-        "if": {
+    "if": {
+      "properties": {
+        "status": {
+          "const": "completed"
+        }
+      }
+    },
+    "then": {
+      "properties": {
+        "data": {
+          "type": "object",
           "properties": {
-            "status": {
-              "const": "completed"
-            }
-          }
-        },
-        "then": {
-          "properties": {
-            "data": {
-              "type": "object",
-              "properties": {
-                "mode": {
-                  "type": "string",
-                  "enum": [
-                    "new",
-                    "working_copy",
-                    "read_only"
-                  ]
-                },
-                "path": {
-                  "anyOf": [
-                    {
-                      "type": "string",
-                      "minLength": 1
-                    },
-                    {
-                      "type": "null"
-                    }
-                  ]
-                },
-                "source_path": {
-                  "anyOf": [
-                    {
-                      "type": "string",
-                      "minLength": 1
-                    },
-                    {
-                      "type": "null"
-                    }
-                  ]
-                },
-                "baseline_id": {
-                  "anyOf": [
-                    {
-                      "type": "string",
-                      "pattern": "^baseline-[0-9a-f]{12}$"
-                    },
-                    {
-                      "type": "null"
-                    }
-                  ]
-                },
-                "canvas_px": {
-                  "type": "array",
-                  "prefixItems": [
-                    {
-                      "type": "integer",
-                      "minimum": 1
-                    },
-                    {
-                      "type": "integer",
-                      "minimum": 1
-                    }
-                  ],
-                  "items": false,
-                  "minItems": 2,
-                  "maxItems": 2
-                },
-                "frame": {
-                  "type": "integer",
-                  "minimum": 0
-                },
-                "color_model": {
-                  "type": "string"
-                },
-                "depth": {
-                  "type": "string"
-                },
-                "profile_id": {
-                  "type": "string"
-                },
-                "dirty": {
-                  "type": "boolean"
-                },
-                "unsafe": {
-                  "type": "boolean"
-                },
-                "root_layer_id": {
+            "mode": {
+              "type": "string",
+              "enum": [
+                "new",
+                "working_copy",
+                "read_only"
+              ]
+            },
+            "path": {
+              "anyOf": [
+                {
                   "type": "string",
                   "minLength": 1
                 },
-                "active_layer_id": {
-                  "anyOf": [
-                    {
-                      "type": "string",
-                      "minLength": 1
-                    },
-                    {
-                      "type": "null"
-                    }
-                  ]
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "source_path": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "minLength": 1
                 },
-                "layers": {
-                  "type": "array",
-                  "items": {
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "baseline_id": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "pattern": "^baseline-[0-9a-f]{12}$"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "canvas_px": {
+              "type": "array",
+              "items": {
+                "type": "integer",
+                "minimum": 1
+              },
+              "minItems": 2,
+              "maxItems": 2
+            },
+            "frame": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "color_model": {
+              "type": "string"
+            },
+            "depth": {
+              "type": "string"
+            },
+            "profile_id": {
+              "type": "string"
+            },
+            "dirty": {
+              "type": "boolean"
+            },
+            "unsafe": {
+              "type": "boolean"
+            },
+            "root_layer_id": {
+              "type": "string",
+              "minLength": 1
+            },
+            "active_layer_id": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "minLength": 1
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "layers": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "id": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "parent_id": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "name": {
+                    "type": "string"
+                  },
+                  "type": {
+                    "type": "string"
+                  },
+                  "order": {
+                    "type": "integer",
+                    "minimum": 0
+                  },
+                  "visible": {
+                    "type": "boolean"
+                  },
+                  "opacity": {
+                    "type": "number",
+                    "minimum": 0,
+                    "maximum": 1
+                  },
+                  "blend_mode": {
+                    "type": "string"
+                  },
+                  "locked": {
+                    "type": "boolean"
+                  },
+                  "alpha_locked": {
+                    "type": "boolean"
+                  },
+                  "inherit_alpha": {
+                    "type": "boolean"
+                  },
+                  "offset_px": {
+                    "type": "array",
+                    "items": {
+                      "type": "integer"
+                    },
+                    "minItems": 2,
+                    "maxItems": 2
+                  },
+                  "bounds_px": {
                     "type": "object",
                     "properties": {
-                      "id": {
-                        "type": "string",
-                        "minLength": 1
+                      "x": {
+                        "type": "integer"
                       },
-                      "parent_id": {
-                        "type": "string",
-                        "minLength": 1
+                      "y": {
+                        "type": "integer"
                       },
-                      "name": {
-                        "type": "string"
-                      },
-                      "type": {
-                        "type": "string"
-                      },
-                      "order": {
+                      "width": {
                         "type": "integer",
                         "minimum": 0
                       },
-                      "visible": {
-                        "type": "boolean"
-                      },
-                      "opacity": {
-                        "type": "number",
-                        "minimum": 0,
-                        "maximum": 1
-                      },
-                      "blend_mode": {
-                        "type": "string"
-                      },
-                      "locked": {
-                        "type": "boolean"
-                      },
-                      "alpha_locked": {
-                        "type": "boolean"
-                      },
-                      "inherit_alpha": {
-                        "type": "boolean"
-                      },
-                      "offset_px": {
-                        "type": "array",
-                        "prefixItems": [
-                          {
-                            "type": "integer"
-                          },
-                          {
-                            "type": "integer"
-                          }
-                        ],
-                        "items": false,
-                        "minItems": 2,
-                        "maxItems": 2
-                      },
-                      "bounds_px": {
-                        "type": "object",
-                        "properties": {
-                          "x": {
-                            "type": "integer"
-                          },
-                          "y": {
-                            "type": "integer"
-                          },
-                          "width": {
-                            "type": "integer",
-                            "minimum": 0
-                          },
-                          "height": {
-                            "type": "integer",
-                            "minimum": 0
-                          }
-                        },
-                        "required": [
-                          "x",
-                          "y",
-                          "width",
-                          "height"
-                        ],
-                        "additionalProperties": false
-                      },
-                      "color_model": {
-                        "type": "string"
-                      },
-                      "depth": {
-                        "type": "string"
-                      },
-                      "profile_id": {
-                        "type": "string"
-                      },
-                      "protected": {
-                        "type": "boolean"
+                      "height": {
+                        "type": "integer",
+                        "minimum": 0
                       }
                     },
                     "required": [
-                      "id",
-                      "parent_id",
-                      "name",
-                      "type",
-                      "order",
-                      "visible",
-                      "opacity",
-                      "blend_mode",
-                      "locked",
-                      "alpha_locked",
-                      "inherit_alpha",
-                      "offset_px",
-                      "bounds_px",
-                      "color_model",
-                      "depth",
-                      "profile_id",
-                      "protected"
+                      "x",
+                      "y",
+                      "width",
+                      "height"
                     ],
                     "additionalProperties": false
+                  },
+                  "color_model": {
+                    "type": "string"
+                  },
+                  "depth": {
+                    "type": "string"
+                  },
+                  "profile_id": {
+                    "type": "string"
+                  },
+                  "protected": {
+                    "type": "boolean"
                   }
                 },
-                "selection": {
+                "required": [
+                  "id",
+                  "parent_id",
+                  "name",
+                  "type",
+                  "order",
+                  "visible",
+                  "opacity",
+                  "blend_mode",
+                  "locked",
+                  "alpha_locked",
+                  "inherit_alpha",
+                  "offset_px",
+                  "bounds_px",
+                  "color_model",
+                  "depth",
+                  "profile_id",
+                  "protected"
+                ],
+                "additionalProperties": false
+              }
+            },
+            "selection": {
+              "anyOf": [
+                {
+                  "type": "object",
+                  "properties": {
+                    "bounds_px": {
+                      "type": "object",
+                      "properties": {
+                        "x": {
+                          "type": "integer"
+                        },
+                        "y": {
+                          "type": "integer"
+                        },
+                        "width": {
+                          "type": "integer",
+                          "minimum": 0
+                        },
+                        "height": {
+                          "type": "integer",
+                          "minimum": 0
+                        }
+                      },
+                      "required": [
+                        "x",
+                        "y",
+                        "width",
+                        "height"
+                      ],
+                      "additionalProperties": false
+                    },
+                    "selected_pixels": {
+                      "type": "integer",
+                      "minimum": 0
+                    },
+                    "coverage_px": {
+                      "type": "number",
+                      "minimum": 0
+                    }
+                  },
+                  "required": [
+                    "bounds_px",
+                    "selected_pixels",
+                    "coverage_px"
+                  ],
+                  "additionalProperties": false
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "protection": {
+              "type": "object",
+              "properties": {
+                "allowed_change_mask": {
                   "anyOf": [
                     {
                       "type": "object",
                       "properties": {
+                        "sha256": {
+                          "type": "string",
+                          "pattern": "^[0-9a-f]{64}$"
+                        },
                         "bounds_px": {
                           "type": "object",
                           "properties": {
@@ -769,19 +800,15 @@
                           ],
                           "additionalProperties": false
                         },
-                        "selected_pixels": {
+                        "allowed_pixels": {
                           "type": "integer",
-                          "minimum": 0
-                        },
-                        "coverage_px": {
-                          "type": "number",
                           "minimum": 0
                         }
                       },
                       "required": [
+                        "sha256",
                         "bounds_px",
-                        "selected_pixels",
-                        "coverage_px"
+                        "allowed_pixels"
                       ],
                       "additionalProperties": false
                     },
@@ -790,147 +817,90 @@
                     }
                   ]
                 },
-                "protection": {
-                  "type": "object",
-                  "properties": {
-                    "allowed_change_mask": {
-                      "anyOf": [
-                        {
-                          "type": "object",
-                          "properties": {
-                            "sha256": {
-                              "type": "string",
-                              "pattern": "^[0-9a-f]{64}$"
-                            },
-                            "bounds_px": {
-                              "type": "object",
-                              "properties": {
-                                "x": {
-                                  "type": "integer"
-                                },
-                                "y": {
-                                  "type": "integer"
-                                },
-                                "width": {
-                                  "type": "integer",
-                                  "minimum": 0
-                                },
-                                "height": {
-                                  "type": "integer",
-                                  "minimum": 0
-                                }
-                              },
-                              "required": [
-                                "x",
-                                "y",
-                                "width",
-                                "height"
-                              ],
-                              "additionalProperties": false
-                            },
-                            "allowed_pixels": {
-                              "type": "integer",
-                              "minimum": 0
-                            }
-                          },
-                          "required": [
-                            "sha256",
-                            "bounds_px",
-                            "allowed_pixels"
-                          ],
-                          "additionalProperties": false
-                        },
-                        {
-                          "type": "null"
-                        }
-                      ]
-                    },
-                    "preserve_composite_alpha": {
-                      "type": "boolean"
-                    },
-                    "preserve_canvas": {
-                      "type": "boolean"
-                    }
-                  },
-                  "required": [
-                    "allowed_change_mask",
-                    "preserve_composite_alpha",
-                    "preserve_canvas"
-                  ],
-                  "additionalProperties": false
+                "preserve_composite_alpha": {
+                  "type": "boolean"
                 },
-                "history": {
-                  "type": "object",
-                  "properties": {
-                    "undo_available": {
-                      "type": "integer",
-                      "minimum": 0
-                    },
-                    "redo_available": {
-                      "type": "integer",
-                      "minimum": 0
-                    }
-                  },
-                  "required": [
-                    "undo_available",
-                    "redo_available"
-                  ],
-                  "additionalProperties": false
+                "preserve_canvas": {
+                  "type": "boolean"
                 }
               },
               "required": [
-                "mode",
-                "path",
-                "source_path",
-                "baseline_id",
-                "canvas_px",
-                "frame",
-                "color_model",
-                "depth",
-                "profile_id",
-                "dirty",
-                "unsafe",
-                "root_layer_id",
-                "active_layer_id",
-                "layers",
-                "selection",
-                "protection",
-                "history"
+                "allowed_change_mask",
+                "preserve_composite_alpha",
+                "preserve_canvas"
               ],
               "additionalProperties": false
             },
-            "error": {
-              "type": "null"
-            }
-          }
-        }
-      },
-      {
-        "if": {
-          "properties": {
-            "status": {
-              "enum": [
-                "failed",
-                "cancelled"
-              ]
-            }
-          }
-        },
-        "then": {
-          "properties": {
-            "data": {
-              "type": "null"
-            },
-            "error": {
-              "type": "object"
+            "history": {
+              "type": "object",
+              "properties": {
+                "undo_available": {
+                  "type": "integer",
+                  "minimum": 0
+                },
+                "redo_available": {
+                  "type": "integer",
+                  "minimum": 0
+                }
+              },
+              "required": [
+                "undo_available",
+                "redo_available"
+              ],
+              "additionalProperties": false
             }
           },
           "required": [
-            "error"
-          ]
+            "mode",
+            "path",
+            "source_path",
+            "baseline_id",
+            "canvas_px",
+            "frame",
+            "color_model",
+            "depth",
+            "profile_id",
+            "dirty",
+            "unsafe",
+            "root_layer_id",
+            "active_layer_id",
+            "layers",
+            "selection",
+            "protection",
+            "history"
+          ],
+          "additionalProperties": false
+        },
+        "error": {
+          "type": "null"
+        }
+      }
+    },
+    "else": {
+      "if": {
+        "properties": {
+          "status": {
+            "enum": [
+              "failed",
+              "cancelled"
+            ]
+          }
         }
       },
-      {
+      "then": {
+        "properties": {
+          "data": {
+            "type": "null"
+          },
+          "error": {
+            "type": "object"
+          }
+        },
+        "required": [
+          "error"
+        ]
+      },
+      "else": {
         "if": {
           "properties": {
             "status": {
@@ -956,7 +926,7 @@
           }
         }
       }
-    ]
+    }
   },
   "annotations": {
     "readOnlyHint": true,

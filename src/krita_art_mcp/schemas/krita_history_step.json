@@ -333,217 +333,213 @@
       "error"
     ],
     "additionalProperties": false,
-    "allOf": [
-      {
-        "if": {
+    "if": {
+      "properties": {
+        "status": {
+          "const": "completed"
+        }
+      }
+    },
+    "then": {
+      "properties": {
+        "data": {
+          "type": "object",
           "properties": {
-            "status": {
-              "const": "completed"
-            }
-          }
-        },
-        "then": {
-          "properties": {
-            "data": {
-              "type": "object",
-              "properties": {
-                "action": {
+            "action": {
+              "type": "string",
+              "enum": [
+                "undo",
+                "redo"
+              ]
+            },
+            "steps_applied": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "verified": {
+              "type": "boolean"
+            },
+            "stopped": {
+              "anyOf": [
+                {
                   "type": "string",
                   "enum": [
-                    "undo",
-                    "redo"
+                    "not_the_bridges_step",
+                    "unconfirmed",
+                    "document_unsafe"
                   ]
                 },
-                "steps_applied": {
-                  "type": "integer",
-                  "minimum": 0
-                },
-                "verified": {
-                  "type": "boolean"
-                },
-                "stopped": {
-                  "anyOf": [
-                    {
-                      "type": "string",
-                      "enum": [
-                        "not_the_bridges_step",
-                        "unconfirmed",
-                        "document_unsafe"
-                      ]
-                    },
-                    {
-                      "type": "null"
-                    }
-                  ]
-                },
-                "steps": {
-                  "type": "array",
-                  "items": {
-                    "type": "object",
-                    "properties": {
-                      "tool": {
-                        "type": "string",
-                        "minLength": 1
-                      },
-                      "operation_id": {
-                        "type": "string",
-                        "minLength": 1
-                      }
-                    },
-                    "required": [
-                      "tool",
-                      "operation_id"
-                    ],
-                    "additionalProperties": false
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "steps": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "tool": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "operation_id": {
+                    "type": "string",
+                    "minLength": 1
                   }
                 },
-                "undo_available": {
-                  "type": "integer",
-                  "minimum": 0
-                },
-                "redo_available": {
-                  "type": "integer",
-                  "minimum": 0
-                },
-                "region_px": {
-                  "anyOf": [
-                    {
-                      "type": "object",
-                      "properties": {
-                        "x": {
-                          "type": "integer",
-                          "minimum": 0
-                        },
-                        "y": {
-                          "type": "integer",
-                          "minimum": 0
-                        },
-                        "width": {
-                          "type": "integer",
-                          "minimum": 1
-                        },
-                        "height": {
-                          "type": "integer",
-                          "minimum": 1
-                        }
-                      },
-                      "required": [
-                        "x",
-                        "y",
-                        "width",
-                        "height"
-                      ],
-                      "additionalProperties": false
+                "required": [
+                  "tool",
+                  "operation_id"
+                ],
+                "additionalProperties": false
+              }
+            },
+            "undo_available": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "redo_available": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "region_px": {
+              "anyOf": [
+                {
+                  "type": "object",
+                  "properties": {
+                    "x": {
+                      "type": "integer",
+                      "minimum": 0
                     },
-                    {
-                      "type": "null"
+                    "y": {
+                      "type": "integer",
+                      "minimum": 0
+                    },
+                    "width": {
+                      "type": "integer",
+                      "minimum": 1
+                    },
+                    "height": {
+                      "type": "integer",
+                      "minimum": 1
                     }
-                  ]
+                  },
+                  "required": [
+                    "x",
+                    "y",
+                    "width",
+                    "height"
+                  ],
+                  "additionalProperties": false
                 },
-                "content_sha256": {
-                  "anyOf": [
-                    {
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "content_sha256": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "pattern": "^[0-9a-f]{64}$"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "capture": {
+              "anyOf": [
+                {
+                  "type": "object",
+                  "properties": {
+                    "uri": {
+                      "type": "string",
+                      "minLength": 2,
+                      "pattern": "^/"
+                    },
+                    "path": {
+                      "type": "string",
+                      "minLength": 2,
+                      "pattern": "^/"
+                    },
+                    "mime_type": {
+                      "const": "image/png"
+                    },
+                    "sha256": {
                       "type": "string",
                       "pattern": "^[0-9a-f]{64}$"
                     },
-                    {
-                      "type": "null"
-                    }
-                  ]
-                },
-                "capture": {
-                  "anyOf": [
-                    {
-                      "type": "object",
-                      "properties": {
-                        "uri": {
-                          "type": "string",
-                          "minLength": 2,
-                          "pattern": "^/"
-                        },
-                        "path": {
-                          "type": "string",
-                          "minLength": 2,
-                          "pattern": "^/"
-                        },
-                        "mime_type": {
-                          "const": "image/png"
-                        },
-                        "sha256": {
-                          "type": "string",
-                          "pattern": "^[0-9a-f]{64}$"
-                        },
-                        "size_bytes": {
-                          "type": "integer",
-                          "minimum": 1
-                        },
-                        "retention_days": {
-                          "type": "integer",
-                          "minimum": 1
-                        }
-                      },
-                      "required": [
-                        "uri",
-                        "path",
-                        "mime_type",
-                        "sha256",
-                        "size_bytes",
-                        "retention_days"
-                      ],
-                      "additionalProperties": false
+                    "size_bytes": {
+                      "type": "integer",
+                      "minimum": 1
                     },
-                    {
-                      "type": "null"
+                    "retention_days": {
+                      "type": "integer",
+                      "minimum": 1
                     }
-                  ]
+                  },
+                  "required": [
+                    "uri",
+                    "path",
+                    "mime_type",
+                    "sha256",
+                    "size_bytes",
+                    "retention_days"
+                  ],
+                  "additionalProperties": false
+                },
+                {
+                  "type": "null"
                 }
-              },
-              "required": [
-                "action",
-                "steps_applied",
-                "verified",
-                "stopped",
-                "steps",
-                "undo_available",
-                "redo_available",
-                "region_px",
-                "content_sha256",
-                "capture"
-              ],
-              "additionalProperties": false
-            },
-            "error": {
-              "type": "null"
-            }
-          }
-        }
-      },
-      {
-        "if": {
-          "properties": {
-            "status": {
-              "enum": [
-                "failed",
-                "cancelled"
               ]
-            }
-          }
-        },
-        "then": {
-          "properties": {
-            "data": {
-              "type": "null"
-            },
-            "error": {
-              "type": "object"
             }
           },
           "required": [
-            "error"
-          ]
+            "action",
+            "steps_applied",
+            "verified",
+            "stopped",
+            "steps",
+            "undo_available",
+            "redo_available",
+            "region_px",
+            "content_sha256",
+            "capture"
+          ],
+          "additionalProperties": false
+        },
+        "error": {
+          "type": "null"
+        }
+      }
+    },
+    "else": {
+      "if": {
+        "properties": {
+          "status": {
+            "enum": [
+              "failed",
+              "cancelled"
+            ]
+          }
         }
       },
-      {
+      "then": {
+        "properties": {
+          "data": {
+            "type": "null"
+          },
+          "error": {
+            "type": "object"
+          }
+        },
+        "required": [
+          "error"
+        ]
+      },
+      "else": {
         "if": {
           "properties": {
             "status": {
@@ -569,7 +565,7 @@
           }
         }
       }
-    ]
+    }
   },
   "annotations": {
     "readOnlyHint": false,

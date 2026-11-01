@@ -1,40 +1,50 @@
-Read block 14's done-note; `PDD.md` Part 7 and C1–C5; `SPEC.md` §5 (invariants 8, 11); `README.md`
-(*Registering the server*); `CLAUDE.md`; your block (14a) in docs/spec/SESSIONS.md; then this file.
-Do Session 14a: the fixes from the Codex agent's first capture. 14a has these parts:
-- find out why `krita_capture` reached Codex as `args: unknown`, then fix it with no schema
-  loosened;
-- an argument error that names every problem;
-- a file-name fallback for a document that lists an empty `name`.
+Read all of `SPEC.md`; `docs/DEVELOPMENT-WORKFLOW.md` (*Rounds*, step 5, and the `ARCHITECTURE.md`
+and between-rounds templates); every done-note and REVIEW file; `CLAUDE.md`; your block (15) in
+docs/spec/SESSIONS.md; then this file. Do Session 15: the documentation pass and the round's close.
+15 has these parts:
+- `docs/ARCHITECTURE.md`, from the template, with the baseline table;
+- `docs/USER-GUIDE.md`;
+- a truthful README, and `CLAUDE.md` repointed with the as-built paragraph;
+- `docs/BACKLOG.md`: everything still open;
+- review 13's amendments: F4, F11, F23, F25, F27, F31, F34, §8.8 items 10 and 11;
+- the release commit, then a separate `docs: close round 1` commit.
 
-Release 0.15.0.
+Release 0.16.0.
 
 ## State you need that is not in the specs
 
-- **Round 1 is the Phase 1 build.** Sessions 0 to 14 are done. 14a (0.15.0) and 15 (0.16.0, the
-  close) remain.
+- **Round 1 is the Phase 1 build.** Sessions 0 to 14a are done. 15 (0.16.0, the close) remains.
 - **The push status.** `origin` is the private GitHub repository. `origin/main` holds everything
-  through 14's "review: exercise 1 never confirmed its view moved, and 9 smaller". List
-  `origin/main..HEAD` before any push.
-- **What 14 left that 14a and 15 build on:**
+  through 14's "review: exercise 1 never confirmed its view moved, and 9 smaller". 14a is local:
+  list `origin/main..HEAD` before any push.
+- **What 14 and 14a left that 15 builds on:**
   - **`probe/acceptance.py`** holds the six exercises, inside `painting.run`'s brush-state window.
   - **`probe/writes.py`** is N-04: `places`, `take`, `strays`. Its limit is in 14's done-note, and
     `ARCHITECTURE.md` should carry it.
   - **`Report.timed`** prints each stage. `probe/common.py` also holds `add_layer`, `select` and
     `turned`.
   - **`Handle.before_change` announces each change** through `port.announce`.
-  - **For 15, F31's decision has more to weigh:** the probe now has 47 MEASURED lines, the stages
-    and the two "selection equal to the allowed polygon" lines among them.
+  - **For F31's decision:** the probe has 47 MEASURED lines, the stages and the two "selection equal
+    to the allowed polygon" lines among them.
   - **The dead `SILENT_S`** (`probe/saving.py`) is still there for the close's tidying.
-- **What the spec said that turned out wrong or harder:** seven amendments are in 14's done-note, the
-  selection's inset and the order of the probe's first sweep among them.
+- **For `ARCHITECTURE.md`, from 14a's done-note:**
+  - **Which forms reach Codex.** It shows its model a TypeScript declaration, never the schema.
+    `tests/test_schemas.py` holds the forms: no `allOf`, no `prefixItems`, no `items: false`, a union
+    with nothing beside it, and each branch typed. Add this to the deliberate decisions.
+  - **Codex's limits:** 5,000 bytes for a normalised input, 16,000 for a rendered one.
+  - **The semantic checks stop at their first refusal,** and the note says why.
+  - **"Field absent" is `{"not": {}}`,** because a bare `false` loses the error's path.
+  - **`MAX_REPORTED_PROBLEMS` is 200,** because of C4.
+- **What the spec said that turned out wrong or harder:** seven amendments are in 14's done-note,
+  and five are in 14a's.
 - **Decisions written down nowhere else:** H2's and H3's outcomes are in 14's done-note, and the H2
   outcome is on the backlog's sensor item. Review 13's §8.7 said Claude Code holds a registration;
   it does not, and `ARCHITECTURE.md` should not repeat that.
-- **Baseline** (14, 0.14.0):
+- **Baseline** (14a, 0.15.0):
   - `verify`: 6 stages, all PASS;
-  - 580 server tests passed, 0 skipped;
-  - 662 plugin-core tests passed, 0 skipped;
-  - `probe`: 129 PASS, 0 FAIL, 47 MEASURED; 113.1 s with 0 documents open;
+  - 661 server tests passed, 0 skipped;
+  - 665 plugin-core tests passed, 0 skipped;
+  - `probe`: 130 PASS, 0 FAIL, 47 MEASURED; 120.2 s with 0 documents open;
   - 19 registered tools; 19 schema files; instructions 3,901 characters (195 to spare); 30 error
     codes; 32 bridge ops.
 - **Not done:**
@@ -66,10 +76,12 @@ Release 0.15.0.
   step 5 passes. That includes the version bump, which changes the plugin's hash, so bump before
   the first live run. **`serve` refuses a plugin of another version:** a stale plugin fails every
   tool with `PROTOCOL_MISMATCH` until Krita restarts.
-- **A release restarts the MCP client too.** 0.15.0 stops the Codex agent's `serve` until its client
+- **A release restarts the MCP client too.** 0.16.0 stops the Codex agent's `serve` until its client
   restarts, so tell the owner before the restart.
 - **Registration in Codex is in place:** `~/.codex/config.toml` has the server, and the owner gave
   the ChatGPT app access to the repository's folder. Run its tests in a new chat, not one doing art.
+- **Its rollouts answer what its model saw:** `~/.codex/sessions/`. Read only the tool declarations
+  and calls.
 - **Before the probe's paint checks, the stock presets must be listed in Krita:**
   `b) Basic-2 Opacity`, `b) Airbrush Soft`, `y) Texture Spray`, `y) Texture Wood Fiber`.
 - **Brush state is window-wide (K3).** Any live run that paints changes the owner's current
@@ -79,7 +91,6 @@ Release 0.15.0.
 - **Krita's memory grows across large opens and saves** (2.8 GB after the long save in a probe
   run). Restart it, at 0 unsaved, before measuring.
 - **The instructions have 195 characters to spare.**
-- **`[0.15.0]`'s link** needs its own commit's hash, so it lands in the review commit.
 - **The docs describe what was built, not the plan.** Where they differ, the done-notes win.
 - **Comments state the present.** No session ids, no "used to", no review stories, no finding
   numbers in code.

@@ -27,7 +27,8 @@ from krita_art_mcp.tools import (
 )
 from krita_art_mcp.tools.dispatch import ToolCall
 
-MAX_REPORTED_PROBLEMS = 20
+# More is one mistake repeated, and the answer would pass Claude Code's 25,000 tokens (C4).
+MAX_REPORTED_PROBLEMS = 200
 # jsonschema quotes the offending value, which may be a 4096-point array.
 MAX_MESSAGE_CHARS = 200
 
@@ -129,16 +130,7 @@ def _checked(
     # "Error executing tool", without the envelope.
     problems = sorted(inputs.iter_errors(arguments), key=_pointer)
     if problems:
-        result = envelope.failure(
-            "INVALID_ARGUMENT",
-            f"{_pointer(problems[0]) or '/'}: {_short(problems[0].message)}",
-            details={
-                "errors": [
-                    {"path": _pointer(problem), "message": _short(problem.message)}
-                    for problem in problems[:MAX_REPORTED_PROBLEMS]
-                ]
-            },
-        )
+        result = _invalid(problems)
     else:
         try:
             result = run(arguments, client_name)
@@ -150,6 +142,19 @@ def _checked(
         return result
     log.error("%s returned a result that breaks its contract: %s", name, problem)
     return envelope.failure("INTERNAL_ERROR", details={"reason": problem})
+
+
+def _invalid(problems: list[ValidationError]) -> CallToolResult:
+    # One answer names every problem, so an agent fixes them together.
+    reported = [
+        {"path": _pointer(problem), "message": _short(problem.message)}
+        for problem in problems[:MAX_REPORTED_PROBLEMS]
+    ]
+    omitted = len(problems) - len(reported)
+    parts = [f"{problem['path'] or '/'}: {problem['message']}" for problem in reported]
+    parts += [f"and {omitted} more"] if omitted else []
+    details = {"errors": reported, "omitted": omitted}
+    return envelope.failure("INVALID_ARGUMENT", "; ".join(parts), details=details)
 
 
 def _client_name(ctx: Any) -> str | None:

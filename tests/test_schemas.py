@@ -1,5 +1,6 @@
 import json
 import shutil
+from collections.abc import Iterator
 from pathlib import Path
 from typing import Any
 
@@ -34,6 +35,79 @@ PHASE_1_TOOLS = sorted(
         "document_close",
     ]
 )
+
+
+OPEN = schemas.load("krita_document_open")["example"]["input"]
+NOT_YET_OPEN = {field: value for field, value in OPEN.items() if field != "working_dir"}
+READ_ONLY = {**NOT_YET_OPEN, "mode": "read_only"}
+LAYER_ID = "6f1c2d3e-4a5b-4c6d-8e9f-0a1b2c3d4e5f"
+PREVIEW = schemas.load("krita_preview_render")["example"]["input"]
+ERROR = {"code": "BUSY", "message": "Krita is busy.", "retryable": True, "details": {}}
+
+
+def _with(tool_name: str, **changes: Any) -> dict[str, Any]:
+    return {**schemas.load(tool_name)["example"]["input"], **changes}
+
+
+def _preview(source: dict[str, Any], recipe: dict[str, Any] | None = None) -> dict[str, Any]:
+    recipes = [recipe or PREVIEW["recipes"][0]]
+    return {**PREVIEW, "sources": [{**PREVIEW["sources"][0], **source}], "recipes": recipes}
+
+
+INPUT_RULES: list[tuple[str, dict[str, Any], bool]] = [
+    *[
+        (name, _with(name, target=target, layer_id=layer_id), valid)
+        for name in ("krita_capture", "krita_sample")
+        for target, layer_id, valid in [
+            ("layer", "layer-1", True),
+            ("layer", None, False),
+            ("composite", None, True),
+            ("composite", "layer-1", False),
+        ]
+    ],
+    ("krita_document_open", OPEN, True),
+    ("krita_document_open", NOT_YET_OPEN, False),
+    ("krita_document_open", READ_ONLY, True),
+    ("krita_document_open", {**READ_ONLY, "working_dir": "/projects/demo/work"}, False),
+    ("krita_document_open", {**OPEN, "editable_layer_ids": [LAYER_ID]}, True),
+    ("krita_document_open", {**READ_ONLY, "editable_layer_ids": [LAYER_ID]}, False),
+    ("krita_document_open", {**READ_ONLY, "editable_layer_names": ["paint"]}, False),
+    ("krita_preview_render", _preview({"target": "layer", "layer_id": "layer-1"}), True),
+    ("krita_preview_render", _preview({"target": "layer"}), False),
+    ("krita_preview_render", _preview({"layer_id": "layer-1"}), False),
+    ("krita_preview_render", _preview({}, {"id": "r", "target_size_px": [8, 8]}), True),
+    ("krita_preview_render", _preview({}, {"id": "r"}), False),
+    (
+        "krita_preview_render",
+        _preview({}, {"id": "r", "target_pixels_per_unit": 2, "target_size_px": [8, 8]}),
+        False,
+    ),
+    ("krita_document_create", _with("krita_document_create", size_px=[32]), False),
+    ("krita_document_create", _with("krita_document_create", size_px=[32, 32, 32]), False),
+    ("krita_document_create", _with("krita_document_create", size_px=["32", "32"]), False),
+    ("krita_document_create", _with("krita_document_create", size_px=[0, 32]), False),
+    ("krita_sample", _with("krita_sample", points=[[20]]), False),
+    ("krita_sample", _with("krita_sample", points=[[20, 20, 20]]), False),
+    *[
+        (
+            "krita_preview_render",
+            {**PREVIEW, "backgrounds": [{"space": "srgb", "rgba": rgba}]},
+            False,
+        )
+        for rgba in ([0, 0, 0], [0, 0, 0, 0, 0], ["0", "0", "0", "0"], [2, 0, 0, 0])
+    ],
+]
+OUTPUT_RULES: list[tuple[dict[str, Any], bool]] = [
+    ({}, True),
+    ({"data": None}, False),
+    ({"error": ERROR}, False),
+    ({"status": "failed", "data": None, "error": ERROR}, True),
+    ({"status": "failed", "data": None}, False),
+    ({"status": "cancelled", "error": ERROR}, False),
+    ({"status": "queued", "data": None, "operation_id": "op-1"}, True),
+    ({"status": "running", "data": None, "operation_id": None}, False),
+    ({"status": "queued", "data": None, "operation_id": "op-1", "error": ERROR}, False),
+]
 
 
 def test_one_schema_file_per_phase_1_tool() -> None:
@@ -114,9 +188,53 @@ def test_no_example_source_carries_revision() -> None:
 @pytest.mark.parametrize("tool_name", PHASE_1_TOOLS)
 def test_the_two_copies_of_data_in_an_output_schema_agree(tool_name: str) -> None:
     output = schemas.load(tool_name)["outputSchema"]
-    assert (
-        output["properties"]["data"]["anyOf"][0] == output["allOf"][0]["then"]["properties"]["data"]
-    )
+    assert output["properties"]["data"]["anyOf"][0] == output["then"]["properties"]["data"]
+
+
+def _shown(schema: dict[str, Any]) -> Iterator[dict[str, Any]]:
+    yield schema
+    branches = [*schema.get("anyOf", []), *schema.get("oneOf", [])]
+    for child in [*schema.get("properties", {}).values(), *branches, schema.get("items")]:
+        if isinstance(child, dict):
+            yield from _shown(child)
+
+
+def _hidden_from_codex(schema: dict[str, Any]) -> list[str]:
+    # Codex renders a composition ahead of the `type` beside it, drops `if`, `then` and `else` and
+    # `prefixItems`, and turns `items: false` into a list of strings.
+    hidden: list[str] = []
+    for node in _shown(schema):
+        hidden += [key for key in ("allOf", "prefixItems") if key in node]
+        hidden += ["items: false"] if node.get("items") is False else []
+        branches = [*node.get("anyOf", []), *node.get("oneOf", [])]
+        hidden += (
+            ["a union beside a type"] if branches and node.keys() & {"type", "properties"} else []
+        )
+        hidden += [
+            "an untyped branch" for branch in branches if not branch.keys() & {"type", "const"}
+        ]
+    return hidden
+
+
+@pytest.mark.parametrize("tool_name", PHASE_1_TOOLS)
+@pytest.mark.parametrize("schema_key", ["inputSchema", "outputSchema"])
+def test_a_schema_keeps_to_the_forms_codex_shows_its_model(tool_name: str, schema_key: str) -> None:
+    assert _hidden_from_codex(schemas.load(tool_name)[schema_key]) == []
+
+
+@pytest.mark.parametrize(("tool_name", "arguments", "valid"), INPUT_RULES)
+def test_the_input_rules_outside_a_schemas_properties_hold(
+    tool_name: str, arguments: dict[str, Any], valid: bool
+) -> None:
+    schema = schemas.load(tool_name)["inputSchema"]
+    assert Draft202012Validator(schema).is_valid(arguments) is valid
+
+
+@pytest.mark.parametrize(("changes", "valid"), OUTPUT_RULES)
+def test_the_output_rules_hold_for_every_status(changes: dict[str, Any], valid: bool) -> None:
+    tool = schemas.load("krita_capture")
+    result = {**tool["example"]["structuredContent"], **changes}
+    assert Draft202012Validator(tool["outputSchema"]).is_valid(result) is valid
 
 
 def test_a_stroke_reports_its_verification_in_layer_updates_shape() -> None:
@@ -134,12 +252,12 @@ def test_the_amendment_script_finds_a_shared_shape_that_drifted(tmp_path: Path) 
     folder = tmp_path / "schemas"
     shutil.copytree(amend_schemas.FOLDER, folder, ignore=shutil.ignore_patterns("*.py", "__*"))
     drifts: list[tuple[str, list[str | int]]] = [
-        ("krita_sample.json", ["outputSchema", "allOf", 0, "then"]),
+        ("krita_sample.json", ["outputSchema", "then"]),
         ("krita_document_close.json", ["inputSchema", "properties", "guard"]),
     ]
     # Both copies of the stroke's verification, so only the copy from layer_update restores it.
     stroke_data: list[str | int] = ["outputSchema", "properties", "data", "anyOf", 0]
-    rule_data: list[str | int] = ["outputSchema", "allOf", 0, "then", "properties", "data"]
+    rule_data: list[str | int] = ["outputSchema", "then", "properties", "data"]
     drifts += [
         ("krita_paint_stroke.json", [*data, "properties", "verification"])
         for data in (stroke_data, rule_data)

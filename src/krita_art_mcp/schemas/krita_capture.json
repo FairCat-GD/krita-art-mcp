@@ -103,29 +103,11 @@
               },
               "rgba": {
                 "type": "array",
-                "prefixItems": [
-                  {
-                    "type": "number",
-                    "minimum": 0,
-                    "maximum": 1
-                  },
-                  {
-                    "type": "number",
-                    "minimum": 0,
-                    "maximum": 1
-                  },
-                  {
-                    "type": "number",
-                    "minimum": 0,
-                    "maximum": 1
-                  },
-                  {
-                    "type": "number",
-                    "minimum": 0,
-                    "maximum": 1
-                  }
-                ],
-                "items": false,
+                "items": {
+                  "type": "number",
+                  "minimum": 0,
+                  "maximum": 1
+                },
                 "minItems": 4,
                 "maxItems": 4
               }
@@ -156,32 +138,28 @@
       "filter"
     ],
     "additionalProperties": false,
-    "allOf": [
-      {
-        "if": {
-          "properties": {
-            "target": {
-              "const": "layer"
-            }
-          }
-        },
-        "then": {
-          "properties": {
-            "layer_id": {
-              "type": "string",
-              "minLength": 1
-            }
-          }
-        },
-        "else": {
-          "properties": {
-            "layer_id": {
-              "type": "null"
-            }
-          }
+    "if": {
+      "properties": {
+        "target": {
+          "const": "layer"
         }
       }
-    ]
+    },
+    "then": {
+      "properties": {
+        "layer_id": {
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    },
+    "else": {
+      "properties": {
+        "layer_id": {
+          "type": "null"
+        }
+      }
+    }
   },
   "outputSchema": {
     "type": "object",
@@ -276,17 +254,10 @@
                   },
                   "output_size_px": {
                     "type": "array",
-                    "prefixItems": [
-                      {
-                        "type": "integer",
-                        "minimum": 1
-                      },
-                      {
-                        "type": "integer",
-                        "minimum": 1
-                      }
-                    ],
-                    "items": false,
+                    "items": {
+                      "type": "integer",
+                      "minimum": 1
+                    },
                     "minItems": 2,
                     "maxItems": 2
                   },
@@ -373,17 +344,10 @@
               },
               "output_size_px": {
                 "type": "array",
-                "prefixItems": [
-                  {
-                    "type": "integer",
-                    "minimum": 1
-                  },
-                  {
-                    "type": "integer",
-                    "minimum": 1
-                  }
-                ],
-                "items": false,
+                "items": {
+                  "type": "integer",
+                  "minimum": 1
+                },
                 "minItems": 2,
                 "maxItems": 2
               },
@@ -436,29 +400,11 @@
                       },
                       "rgba": {
                         "type": "array",
-                        "prefixItems": [
-                          {
-                            "type": "number",
-                            "minimum": 0,
-                            "maximum": 1
-                          },
-                          {
-                            "type": "number",
-                            "minimum": 0,
-                            "maximum": 1
-                          },
-                          {
-                            "type": "number",
-                            "minimum": 0,
-                            "maximum": 1
-                          },
-                          {
-                            "type": "number",
-                            "minimum": 0,
-                            "maximum": 1
-                          }
-                        ],
-                        "items": false,
+                        "items": {
+                          "type": "number",
+                          "minimum": 0,
+                          "maximum": 1
+                        },
                         "minItems": 4,
                         "maxItems": 4
                       }
@@ -589,181 +535,71 @@
       "error"
     ],
     "additionalProperties": false,
-    "allOf": [
-      {
-        "if": {
+    "if": {
+      "properties": {
+        "status": {
+          "const": "completed"
+        }
+      }
+    },
+    "then": {
+      "properties": {
+        "data": {
+          "type": "object",
           "properties": {
-            "status": {
-              "const": "completed"
-            }
-          }
-        },
-        "then": {
-          "properties": {
-            "data": {
+            "image": {
               "type": "object",
               "properties": {
-                "image": {
-                  "type": "object",
-                  "properties": {
-                    "uri": {
-                      "type": "string",
-                      "minLength": 2,
-                      "pattern": "^/"
-                    },
-                    "path": {
-                      "type": "string",
-                      "minLength": 2,
-                      "pattern": "^/"
-                    },
-                    "mime_type": {
-                      "const": "image/png"
-                    },
-                    "sha256": {
-                      "type": "string",
-                      "pattern": "^[0-9a-f]{64}$"
-                    },
-                    "size_bytes": {
-                      "type": "integer",
-                      "minimum": 1
-                    },
-                    "retention_days": {
-                      "type": "integer",
-                      "minimum": 1
-                    }
-                  },
-                  "required": [
-                    "uri",
-                    "path",
-                    "mime_type",
-                    "sha256",
-                    "size_bytes",
-                    "retention_days"
-                  ],
-                  "additionalProperties": false
-                },
-                "inline": {
-                  "type": "object",
-                  "properties": {
-                    "preview": {
-                      "type": "boolean"
-                    },
-                    "output_size_px": {
-                      "type": "array",
-                      "prefixItems": [
-                        {
-                          "type": "integer",
-                          "minimum": 1
-                        },
-                        {
-                          "type": "integer",
-                          "minimum": 1
-                        }
-                      ],
-                      "items": false,
-                      "minItems": 2,
-                      "maxItems": 2
-                    },
-                    "source_to_image": {
-                      "type": "array",
-                      "items": {
-                        "type": "number"
-                      },
-                      "minItems": 6,
-                      "maxItems": 6
-                    },
-                    "filter": {
-                      "anyOf": [
-                        {
-                          "type": "string",
-                          "enum": [
-                            "nearest",
-                            "box",
-                            "bilinear",
-                            "bicubic",
-                            "lanczos"
-                          ]
-                        },
-                        {
-                          "type": "null"
-                        }
-                      ]
-                    }
-                  },
-                  "required": [
-                    "preview",
-                    "output_size_px",
-                    "source_to_image",
-                    "filter"
-                  ],
-                  "additionalProperties": false
-                },
-                "target": {
+                "uri": {
                   "type": "string",
-                  "enum": [
-                    "composite",
-                    "layer",
-                    "selection"
-                  ]
+                  "minLength": 2,
+                  "pattern": "^/"
                 },
-                "layer_id": {
-                  "anyOf": [
-                    {
-                      "type": "string",
-                      "minLength": 1
-                    },
-                    {
-                      "type": "null"
-                    }
-                  ]
+                "path": {
+                  "type": "string",
+                  "minLength": 2,
+                  "pattern": "^/"
                 },
-                "source_rect": {
-                  "type": "object",
-                  "properties": {
-                    "x": {
-                      "type": "integer",
-                      "minimum": 0
-                    },
-                    "y": {
-                      "type": "integer",
-                      "minimum": 0
-                    },
-                    "width": {
-                      "type": "integer",
-                      "minimum": 1
-                    },
-                    "height": {
-                      "type": "integer",
-                      "minimum": 1
-                    }
-                  },
-                  "required": [
-                    "x",
-                    "y",
-                    "width",
-                    "height"
-                  ],
-                  "additionalProperties": false
+                "mime_type": {
+                  "const": "image/png"
+                },
+                "sha256": {
+                  "type": "string",
+                  "pattern": "^[0-9a-f]{64}$"
+                },
+                "size_bytes": {
+                  "type": "integer",
+                  "minimum": 1
+                },
+                "retention_days": {
+                  "type": "integer",
+                  "minimum": 1
+                }
+              },
+              "required": [
+                "uri",
+                "path",
+                "mime_type",
+                "sha256",
+                "size_bytes",
+                "retention_days"
+              ],
+              "additionalProperties": false
+            },
+            "inline": {
+              "type": "object",
+              "properties": {
+                "preview": {
+                  "type": "boolean"
                 },
                 "output_size_px": {
                   "type": "array",
-                  "prefixItems": [
-                    {
-                      "type": "integer",
-                      "minimum": 1
-                    },
-                    {
-                      "type": "integer",
-                      "minimum": 1
-                    }
-                  ],
-                  "items": false,
+                  "items": {
+                    "type": "integer",
+                    "minimum": 1
+                  },
                   "minItems": 2,
                   "maxItems": 2
-                },
-                "scale": {
-                  "type": "number",
-                  "exclusiveMinimum": 0
                 },
                 "source_to_image": {
                   "type": "array",
@@ -789,132 +625,206 @@
                       "type": "null"
                     }
                   ]
-                },
-                "background": {
-                  "anyOf": [
-                    {
-                      "type": "string",
-                      "enum": [
-                        "checker",
-                        "transparent"
-                      ]
-                    },
-                    {
-                      "type": "object",
-                      "properties": {
-                        "space": {
-                          "type": "string",
-                          "enum": [
-                            "srgb"
-                          ]
-                        },
-                        "rgba": {
-                          "type": "array",
-                          "prefixItems": [
-                            {
-                              "type": "number",
-                              "minimum": 0,
-                              "maximum": 1
-                            },
-                            {
-                              "type": "number",
-                              "minimum": 0,
-                              "maximum": 1
-                            },
-                            {
-                              "type": "number",
-                              "minimum": 0,
-                              "maximum": 1
-                            },
-                            {
-                              "type": "number",
-                              "minimum": 0,
-                              "maximum": 1
-                            }
-                          ],
-                          "items": false,
-                          "minItems": 4,
-                          "maxItems": 4
-                        }
-                      },
-                      "required": [
-                        "space",
-                        "rgba"
-                      ],
-                      "additionalProperties": false
-                    },
-                    {
-                      "type": "null"
-                    }
-                  ]
-                },
-                "greyscale": {
-                  "type": "boolean"
-                },
-                "profile_id": {
-                  "anyOf": [
-                    {
-                      "type": "string",
-                      "minLength": 1
-                    },
-                    {
-                      "type": "null"
-                    }
-                  ]
-                },
-                "fresh": {
-                  "const": true
                 }
               },
               "required": [
-                "image",
-                "inline",
-                "target",
-                "layer_id",
-                "source_rect",
+                "preview",
                 "output_size_px",
-                "scale",
                 "source_to_image",
-                "filter",
-                "background",
-                "greyscale",
-                "profile_id",
-                "fresh"
+                "filter"
               ],
               "additionalProperties": false
             },
-            "error": {
-              "type": "null"
-            }
-          }
-        }
-      },
-      {
-        "if": {
-          "properties": {
-            "status": {
+            "target": {
+              "type": "string",
               "enum": [
-                "failed",
-                "cancelled"
+                "composite",
+                "layer",
+                "selection"
               ]
-            }
-          }
-        },
-        "then": {
-          "properties": {
-            "data": {
-              "type": "null"
             },
-            "error": {
-              "type": "object"
+            "layer_id": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "minLength": 1
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "source_rect": {
+              "type": "object",
+              "properties": {
+                "x": {
+                  "type": "integer",
+                  "minimum": 0
+                },
+                "y": {
+                  "type": "integer",
+                  "minimum": 0
+                },
+                "width": {
+                  "type": "integer",
+                  "minimum": 1
+                },
+                "height": {
+                  "type": "integer",
+                  "minimum": 1
+                }
+              },
+              "required": [
+                "x",
+                "y",
+                "width",
+                "height"
+              ],
+              "additionalProperties": false
+            },
+            "output_size_px": {
+              "type": "array",
+              "items": {
+                "type": "integer",
+                "minimum": 1
+              },
+              "minItems": 2,
+              "maxItems": 2
+            },
+            "scale": {
+              "type": "number",
+              "exclusiveMinimum": 0
+            },
+            "source_to_image": {
+              "type": "array",
+              "items": {
+                "type": "number"
+              },
+              "minItems": 6,
+              "maxItems": 6
+            },
+            "filter": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "enum": [
+                    "nearest",
+                    "box",
+                    "bilinear",
+                    "bicubic",
+                    "lanczos"
+                  ]
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "background": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "enum": [
+                    "checker",
+                    "transparent"
+                  ]
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "space": {
+                      "type": "string",
+                      "enum": [
+                        "srgb"
+                      ]
+                    },
+                    "rgba": {
+                      "type": "array",
+                      "items": {
+                        "type": "number",
+                        "minimum": 0,
+                        "maximum": 1
+                      },
+                      "minItems": 4,
+                      "maxItems": 4
+                    }
+                  },
+                  "required": [
+                    "space",
+                    "rgba"
+                  ],
+                  "additionalProperties": false
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "greyscale": {
+              "type": "boolean"
+            },
+            "profile_id": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "minLength": 1
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "fresh": {
+              "const": true
             }
           },
           "required": [
-            "error"
-          ]
+            "image",
+            "inline",
+            "target",
+            "layer_id",
+            "source_rect",
+            "output_size_px",
+            "scale",
+            "source_to_image",
+            "filter",
+            "background",
+            "greyscale",
+            "profile_id",
+            "fresh"
+          ],
+          "additionalProperties": false
+        },
+        "error": {
+          "type": "null"
+        }
+      }
+    },
+    "else": {
+      "if": {
+        "properties": {
+          "status": {
+            "enum": [
+              "failed",
+              "cancelled"
+            ]
+          }
         }
       },
-      {
+      "then": {
+        "properties": {
+          "data": {
+            "type": "null"
+          },
+          "error": {
+            "type": "object"
+          }
+        },
+        "required": [
+          "error"
+        ]
+      },
+      "else": {
         "if": {
           "properties": {
             "status": {
@@ -940,7 +850,7 @@
           }
         }
       }
-    ]
+    }
   },
   "annotations": {
     "readOnlyHint": true,

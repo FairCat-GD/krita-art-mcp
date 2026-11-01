@@ -264,183 +264,179 @@
       "error"
     ],
     "additionalProperties": false,
-    "allOf": [
-      {
-        "if": {
+    "if": {
+      "properties": {
+        "status": {
+          "const": "completed"
+        }
+      }
+    },
+    "then": {
+      "properties": {
+        "data": {
+          "type": "object",
           "properties": {
-            "status": {
-              "const": "completed"
-            }
-          }
-        },
-        "then": {
-          "properties": {
-            "data": {
+            "session_id": {
+              "type": "string",
+              "minLength": 1
+            },
+            "server_version": {
+              "type": "string",
+              "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+$"
+            },
+            "plugin_version": {
+              "type": "string",
+              "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+$"
+            },
+            "protocol": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "krita_version": {
+              "type": "string",
+              "minLength": 1
+            },
+            "qt_major": {
+              "type": "integer",
+              "minimum": 5
+            },
+            "capabilities": {
+              "type": "object",
+              "propertyNames": {
+                "enum": [
+                  "stroke.native_brush",
+                  "stroke.per_point_input",
+                  "stroke.smoothing",
+                  "undo.grouping",
+                  "stroke.deterministic",
+                  "operation.cancel_running",
+                  "selection.enforced",
+                  "color_spaces",
+                  "filters",
+                  "animation"
+                ]
+              },
+              "additionalProperties": {
+                "type": "object",
+                "properties": {
+                  "supported": {
+                    "type": "boolean"
+                  },
+                  "since": {
+                    "anyOf": [
+                      {
+                        "type": "string",
+                        "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+$"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "notes": {
+                    "type": "string",
+                    "minLength": 1
+                  }
+                },
+                "required": [
+                  "supported",
+                  "since",
+                  "notes"
+                ],
+                "additionalProperties": false
+              },
+              "required": [
+                "stroke.native_brush",
+                "stroke.per_point_input",
+                "stroke.smoothing",
+                "undo.grouping",
+                "stroke.deterministic",
+                "operation.cancel_running",
+                "selection.enforced",
+                "color_spaces",
+                "filters",
+                "animation"
+              ]
+            },
+            "limits": {
               "type": "object",
               "properties": {
-                "session_id": {
-                  "type": "string",
-                  "minLength": 1
-                },
-                "server_version": {
-                  "type": "string",
-                  "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+$"
-                },
-                "plugin_version": {
-                  "type": "string",
-                  "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+$"
-                },
-                "protocol": {
+                "stroke_points": {
                   "type": "integer",
                   "minimum": 1
                 },
-                "krita_version": {
-                  "type": "string",
-                  "minLength": 1
-                },
-                "qt_major": {
+                "capture_pixels": {
                   "type": "integer",
-                  "minimum": 5
+                  "minimum": 1
                 },
-                "capabilities": {
-                  "type": "object",
-                  "propertyNames": {
-                    "enum": [
-                      "stroke.native_brush",
-                      "stroke.per_point_input",
-                      "stroke.smoothing",
-                      "undo.grouping",
-                      "stroke.deterministic",
-                      "operation.cancel_running",
-                      "selection.enforced",
-                      "color_spaces",
-                      "filters",
-                      "animation"
-                    ]
-                  },
-                  "additionalProperties": {
-                    "type": "object",
-                    "properties": {
-                      "supported": {
-                        "type": "boolean"
-                      },
-                      "since": {
-                        "anyOf": [
-                          {
-                            "type": "string",
-                            "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+$"
-                          },
-                          {
-                            "type": "null"
-                          }
-                        ]
-                      },
-                      "notes": {
-                        "type": "string",
-                        "minLength": 1
-                      }
-                    },
-                    "required": [
-                      "supported",
-                      "since",
-                      "notes"
-                    ],
-                    "additionalProperties": false
-                  },
-                  "required": [
-                    "stroke.native_brush",
-                    "stroke.per_point_input",
-                    "stroke.smoothing",
-                    "undo.grouping",
-                    "stroke.deterministic",
-                    "operation.cancel_running",
-                    "selection.enforced",
-                    "color_spaces",
-                    "filters",
-                    "animation"
-                  ]
+                "wait_budget_seconds": {
+                  "type": "integer",
+                  "minimum": 1
                 },
-                "limits": {
-                  "type": "object",
-                  "properties": {
-                    "stroke_points": {
-                      "type": "integer",
-                      "minimum": 1
-                    },
-                    "capture_pixels": {
-                      "type": "integer",
-                      "minimum": 1
-                    },
-                    "wait_budget_seconds": {
-                      "type": "integer",
-                      "minimum": 1
-                    },
-                    "capture_source_pixels": {
-                      "type": "integer",
-                      "minimum": 1
-                    }
-                  },
-                  "required": [
-                    "stroke_points",
-                    "capture_pixels",
-                    "wait_budget_seconds",
-                    "capture_source_pixels"
-                  ],
-                  "additionalProperties": false
-                },
-                "allowed_roots": {
-                  "type": "array",
-                  "items": {
-                    "type": "string",
-                    "pattern": "^/"
-                  }
+                "capture_source_pixels": {
+                  "type": "integer",
+                  "minimum": 1
                 }
               },
               "required": [
-                "session_id",
-                "server_version",
-                "plugin_version",
-                "protocol",
-                "krita_version",
-                "qt_major",
-                "capabilities",
-                "limits",
-                "allowed_roots"
+                "stroke_points",
+                "capture_pixels",
+                "wait_budget_seconds",
+                "capture_source_pixels"
               ],
               "additionalProperties": false
             },
-            "error": {
-              "type": "null"
-            }
-          }
-        }
-      },
-      {
-        "if": {
-          "properties": {
-            "status": {
-              "enum": [
-                "failed",
-                "cancelled"
-              ]
-            }
-          }
-        },
-        "then": {
-          "properties": {
-            "data": {
-              "type": "null"
-            },
-            "error": {
-              "type": "object"
+            "allowed_roots": {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "pattern": "^/"
+              }
             }
           },
           "required": [
-            "error"
-          ]
+            "session_id",
+            "server_version",
+            "plugin_version",
+            "protocol",
+            "krita_version",
+            "qt_major",
+            "capabilities",
+            "limits",
+            "allowed_roots"
+          ],
+          "additionalProperties": false
+        },
+        "error": {
+          "type": "null"
+        }
+      }
+    },
+    "else": {
+      "if": {
+        "properties": {
+          "status": {
+            "enum": [
+              "failed",
+              "cancelled"
+            ]
+          }
         }
       },
-      {
+      "then": {
+        "properties": {
+          "data": {
+            "type": "null"
+          },
+          "error": {
+            "type": "object"
+          }
+        },
+        "required": [
+          "error"
+        ]
+      },
+      "else": {
         "if": {
           "properties": {
             "status": {
@@ -466,7 +462,7 @@
           }
         }
       }
-    ]
+    }
   },
   "annotations": {
     "readOnlyHint": true,

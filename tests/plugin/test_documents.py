@@ -103,6 +103,22 @@ def test_documents_opened_by_hand_are_read_only_with_a_stable_id(world: World) -
     assert world.listed() == first
 
 
+@pytest.mark.parametrize(
+    ("title", "path", "listed"),
+    [
+        ("", "/owner/owner-art.png", "owner-art.png"),
+        ("A title", "/owner/owner-art.png", "A title"),
+        ("", None, ""),
+    ],
+)
+def test_a_document_with_no_title_lists_its_files_name(
+    world: World, title: str, path: str | None, listed: str
+) -> None:
+    key = world.port.open_by_hand("owner-art")
+    world.port.live[key].update(name=title, path=path)
+    assert [entry["name"] for entry in world.listed()] == [listed]
+
+
 def test_a_document_the_owner_opened_is_never_closed(world: World) -> None:
     world.port.open_by_hand("owner-art")
     owner_id = world.listed()[0]["document_id"]

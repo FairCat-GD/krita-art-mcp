@@ -186,15 +186,15 @@ def _create_args(name: str, request_id: str, **changes: Any) -> dict[str, Any]:
     }
 
 
+def _created_here(entry: dict[str, Any]) -> bool:
+    # Never one the owner opened: those are read_only, whatever their name.
+    return bool(entry["name"].startswith(PREFIX)) and entry["mode"] != "read_only"
+
+
 async def _probe_documents(mcp: Client) -> list[dict[str, Any]]:
     listed = await tool(mcp, "krita_document_list", {})
     entries = (listed.get("data") or {}).get("documents", [])
-    # Never one the owner opened: those are read_only, whatever their name.
-    return [
-        entry
-        for entry in entries
-        if entry["name"].startswith(PREFIX) and entry["mode"] != "read_only"
-    ]
+    return [entry for entry in entries if _created_here(entry)]
 
 
 async def _own_documents(mcp: Client, harness: Path) -> list[dict[str, Any]]:
@@ -205,7 +205,7 @@ async def _own_documents(mcp: Client, harness: Path) -> list[dict[str, Any]]:
     return [
         entry
         for entry in entries
-        if (entry["name"].startswith(PREFIX) and entry["mode"] != "read_only")
+        if _created_here(entry)
         or (entry["mode"] != "new" and (entry["path"] or "").startswith(folder))
     ]
 

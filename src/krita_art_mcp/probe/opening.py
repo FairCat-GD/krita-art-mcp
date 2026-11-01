@@ -72,6 +72,7 @@ async def run(report: Report, a: Client, b: Client, client: BridgeClient, harnes
                 opened[(label, mode)] = found
     _baselines(report, opened, composite)
     _layer_ids(report, opened)
+    await _file_name(report, a, png)
     await _editable(report, a, ora, kra, harness, opened)
     await _refusals(report, a, b, client, png, harness, allowed or [])
     report.check(
@@ -259,6 +260,19 @@ def _layer_ids(report: Report, opened: dict[tuple[str, str], Opened]) -> None:
     report.check(
         "an ORA's layers get new ids at every open",
         bool(ora[0]) and len(ora[1]) == len(ora[0]) and not set(ora[0]) & set(ora[1]),
+    )
+
+
+async def _file_name(report: Report, a: Client, png: Path) -> None:
+    opened = await tool(a, "krita_document_open", open_args(png, "read_only"))
+    document_id = opened.get("document_id")
+    listed = await tool(a, "krita_document_list", {})
+    documents = (listed.get("data") or {}).get("documents", [])
+    names = [entry["name"] for entry in documents if entry["document_id"] == document_id]
+    if document_id is not None:
+        await close(a, document_id)
+    report.check(
+        "a file with no title lists under its file's name", names == [png.name], str(names)
     )
 
 
