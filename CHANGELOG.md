@@ -31,6 +31,12 @@ restart of the MCP client.
   one read could carry a garbage collection of the probe's own process and report that the journal
   bites when it does not.
 
+### Fixed
+
+- **The save's limit is stated as what it is.** It is a pixel count, 67 megapixels, not a side of
+  8192, so a long narrow document saves. Agents are also told that a larger document can be painted
+  only in region scope.
+
 ### Removed
 
 - **Journal lines from before 0.9.0 are no longer read.** None can fall inside the 7-day window. A
@@ -596,6 +602,7 @@ The first release is the scaffold that the Phase 1 tools are built on.
   reports its version to the client; it offers no tools yet.
 - **`krita-art-mcp --version`.** It prints the installed version.
 
+[0.16.0]: https://github.com/FairCat-GD/krita-art-mcp/commit/04e9f6c5a91819ffa7452eef97fb53f400f8d207
 [0.15.0]: https://github.com/FairCat-GD/krita-art-mcp/commit/52113ab900602e3a85faa6fad2ddffadaca627a3
 [0.14.0]: https://github.com/FairCat-GD/krita-art-mcp/commit/9b6c6ccc10ae0fca01b5322850ed69f1cb9fa128
 [0.13.0]: https://github.com/FairCat-GD/krita-art-mcp/commit/61d3d861b8fa050329b66234052f6817a46a9701

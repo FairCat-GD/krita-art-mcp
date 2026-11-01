@@ -898,8 +898,8 @@ def _journal(report: Report, journal: Path, before: int, strokes: int) -> None:
     report.measured(
         "the journal after N-01, and a heavy week extrapolated",
         f"lines {size / 1e6:.2f} MB, {per_stroke / 1e3:.1f} KB per stroke, argument files "
-        f"{held / 1e6:.2f} MB, a fresh first lookup {lookup_s * 1000:.0f} ms; a week of "
-        f"{WEEK_STROKES} strokes: {week / 1e6:.0f} MB of lines and {week_s:.2f} s, so it "
+        f"{held / 1e6:.2f} MB, the fastest of {LOOKUPS} lookups {lookup_s * 1000:.0f} ms; "
+        f"a week of {WEEK_STROKES} strokes: {week / 1e6:.0f} MB of lines and {week_s:.2f} s, so it "
         f"{'bites' if bites else 'does not bite'}",
     )
 

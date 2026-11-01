@@ -182,4 +182,5 @@ def test_the_instructions_fit_in_4096_characters_and_name_the_wait_budget() -> N
 def test_the_instructions_name_the_saves_bound() -> None:
     side = math.isqrt(bridge_pixels.MAX_READ_PIXELS)
     assert side * side == bridge_pixels.MAX_READ_PIXELS
-    assert f"up to {side} x {side}" in INSTRUCTIONS
+    megapixels = round(bridge_pixels.MAX_READ_PIXELS / 1_000_000)
+    assert f"up to {megapixels} megapixels ({side} x {side})" in INSTRUCTIONS

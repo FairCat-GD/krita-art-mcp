@@ -11,15 +11,28 @@ and plan the round in `docs/spec/`, a Read line in every block (see
   (`04e9f6c`), and `docs/BACKLOG.md`'s header says how to read them. The owner kept the contract
   package in the tree at the close: it moved to `docs/reference/contract-package/`, frozen, because
   Phase 2 starts from its draft shapes.
+- **Before anything else, finish the publishing steps the owner agreed at round 1's close:** the
+  targeted history rewrite, the push and the GitHub topics, as `docs/BACKLOG.md`'s *Publishing the
+  repository* item says. Do not push before the rewrite.
+- **Round 1's last review** (`/code-review high`), 9 findings, 9 fixed, no version: the handoff and
+  backlog name the rewrite; the instructions and the save's refusal state the bound as 67 megapixels,
+  and that a larger document paints in region scope only; the selection check compares pixel counts,
+  because grow and feather share their bounds; ARCHITECTURE says nothing re-checks the preset
+  fingerprint across restarts; `CLAUDE.md` records the copyright line; the journal measurement's label
+  is true; `_private_file` says what guards an older log; the `[0.16.0]` link; the journal refuses a
+  float version. Falsified: the float version, and feather sent as grow, live. The baseline holds at
+  670 server tests, 665 plugin-core tests, `probe` 131 PASS, 0 FAIL, 23 MEASURED, 113.6 s, 0 documents
+  open.
+- **The review changed the plugin,** so the MCP client needs one more restart.
 - **Push status:** `origin/main` holds everything through 14a's "review: a repeated mistake hid other
   problems, and 7 smaller". The release commit and `docs: close round 1` wait for the next approved
   push. List `origin/main..HEAD` before any push.
 - **Open items live in `docs/BACKLOG.md`,** including what this round added: the findings the owner
   did not take, the debts only done-notes held, and *Not yet checked by hand*.
 - **The trial and publishing** are the owner's, after the round.
-- **Baseline** (ARCHITECTURE's table, v0.16.0): `verify` 6 stages, all PASS; 669 server tests and 665
+- **Baseline** (ARCHITECTURE's table, v0.16.0): `verify` 6 stages, all PASS; 670 server tests and 665
   plugin-core tests, 0 skipped; `probe` 131 PASS, 0 FAIL, 23 MEASURED, about 114 s with 0 documents
-  open; 19 tools; 19 schema files; 30 error codes; 31 bridge ops; instructions 3,901 characters.
+  open; 19 tools; 19 schema files; 30 error codes; 31 bridge ops; instructions 3,906 characters.
 
 ## Watch for
 
@@ -52,6 +65,6 @@ and plan the round in `docs/spec/`, a Read line in every block (see
   the same: `harness.brush_state` read first, from a document in the harness folder (a created
   document has no path, so the read fails), and stop if the read fails.
 - **Krita's memory grows across large opens and saves.** Restart it, at 0 unsaved, before measuring.
-- **The instructions have 195 characters to spare.**
+- **The instructions have 190 characters to spare.**
 - **Comments state the present.** No session ids, no "used to", no review stories.
 - **Every push needs its own approval.** List `origin/main..HEAD` first.

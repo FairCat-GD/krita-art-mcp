@@ -284,21 +284,23 @@ async def _selections(
         "; ".join(problems),
     )
     problems = []
-    for name, bounds in (
-        ("grow_px", _rect(17, 11, 26, 22)),
-        ("shrink_px", _rect(23, 17, 14, 10)),
-        ("feather_px", _rect(17, 11, 26, 22)),
+    # Grow and feather share their bounds; only the pixel count tells them apart.
+    for name, bounds, pixels in (
+        ("grow_px", _rect(17, 11, 26, 22), 568),
+        ("shrink_px", _rect(23, 17, 14, 10), 140),
+        ("feather_px", _rect(17, 11, 26, 22), 572),
     ):
         selected = await tool(
             a,
             "krita_selection_set",
             _select(document_id, {"type": "rect", "rect": _rect(20, 14, 20, 16)}, **{name: 3}),
         )
-        found_bounds = (selected.get("data") or {}).get("bounds_px")
-        if found_bounds != bounds:
-            problems.append(f"{name}: {code(selected) or found_bounds}")
+        data = selected.get("data") or {}
+        found_pixels = data.get("selected_pixels")
+        if data.get("bounds_px") != bounds or found_pixels != pixels:
+            problems.append(f"{name}: {code(selected) or data.get('bounds_px')}, {found_pixels}")
     report.check(
-        "a 20 x 16 rect grown, shrunk and feathered by 3 lands on the bounds Krita gives each",
+        "a 20 x 16 rect grown, shrunk and feathered by 3 lands on the bounds and count Krita gives",
         not problems,
         "; ".join(problems),
     )

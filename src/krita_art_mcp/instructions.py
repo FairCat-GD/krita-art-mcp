@@ -47,7 +47,7 @@ its opacity, masks or inherit-alpha clip.
 explicit recipes; a source's baseline_id shows the document as opened beside it.
 - Keep work with krita_document_save to a new .kra path (it never overwrites); it reopens the \
 file to verify it and clears dirty. An .ora drops masks and adjustment layers. A save takes \
-documents up to 8192 x 8192; a larger one can be opened, painted and previewed, never saved.
+up to 67 megapixels (8192 x 8192); a larger document can be painted in region scope, never saved.
 - Use krita_sample for exact colours (RGBA 0-255, hex, L*a*b*, L*C*h); a radius averages a disc, \
 weighted by alpha. Never judge a colour from a capture.
 - krita_resource_list lists brush presets (their id and sha256 are what paint calls take), \

@@ -227,7 +227,7 @@ class Journal:
             log.warning("skipped a broken line in %s", path.name)
             return
         # A line skipped here could let a retry repeat the work it records.
-        if version != VERSION:
+        if not isinstance(version, int) or version != VERSION:
             raise JournalError(
                 f"{path.name} holds a journal line of version {version}; this server reads only "
                 f"version {VERSION}. Update krita-art-mcp, or move that file aside."

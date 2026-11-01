@@ -414,9 +414,11 @@ def test_cancel_reports_a_finished_operation_and_refuses_a_running_one(world: Wo
     assert cancelled["data"] == {"operation_id": queued.operation_id, "state": "cancelled"}
 
 
-@pytest.mark.parametrize("version", [journal.VERSION - 1, journal.VERSION + 1])
+@pytest.mark.parametrize(
+    "version", [journal.VERSION - 1, journal.VERSION + 1, float(journal.VERSION)]
+)
 def test_a_journal_of_another_version_is_refused_with_a_clear_error(
-    world: World, version: int
+    world: World, version: float
 ) -> None:
     folder = world.tmp_path / "a" / "journal"
     folder.mkdir(parents=True)

@@ -282,7 +282,7 @@ def _check_size(info: dict[str, Any]) -> None:
     width, height = info["size_px"]
     if width * height > MAX_READ_PIXELS:
         details = {"size_px": info["size_px"], "max_pixels": MAX_READ_PIXELS}
-        message = "Phase 1 saves documents of at most 8192 x 8192 pixels."
+        message = "Phase 1 saves at most 67 megapixels (8192 x 8192)."
         raise BridgeError("UNSUPPORTED_CAPABILITY", message, False, details)
 
 

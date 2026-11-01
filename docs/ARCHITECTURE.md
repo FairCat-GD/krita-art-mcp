@@ -321,7 +321,7 @@ schema maximum, of which it is the square.
 presets have no seed), `operation.cancel_running`, `color_spaces`, `filters` (Phase 2), `animation`
 (Phase 5). True since 0.9.0: `stroke.native_brush`, `stroke.smoothing`, `selection.enforced`.
 
-**The instructions.** `instructions.py` is 3,901 of Claude Code's 4,096 characters (C4), held by a
+**The instructions.** `instructions.py` is 3,906 of Claude Code's 4,096 characters (C4), held by a
 test, and states every rule an agent would otherwise learn from a refusal.
 
 ## The data layer
@@ -476,8 +476,10 @@ A still document whose timeline was scrubbed shows the same picture at every fra
 
 **Resources.** `preset_id` is the resource's file name (K36). The fingerprint is SHA-256 of `toXML()`
 canonicalised with C14N 2.0, leaving out what every stroke sets: opacity, flow, blend, eraser, and the
-tip's diameter, scale and angle. The raw XML digest changes across Krita restarts and the canonical
-one does not.
+tip's diameter, scale and angle. The raw XML digest changed at every restart measured and the canonical
+one held, on 5.3.4.1; nothing re-checks that now, because a probe run lists and paints within one
+Krita session. If it stopped holding, an agent's `preset_sha256` from an earlier session would answer
+`RESOURCE_HASH_MISMATCH`.
 
 ## Protection, selections and masks
 
@@ -801,8 +803,8 @@ retry of a batch; previews from explicit recipes; a `.kra` saved, closed and reo
 
 | Id | Requirement | Budget | Measured |
 |---|---|---|---|
-| N-01 | A stroke, 200 points, 40 px brush, 2000² with 20 protected layers | p95 < 1.5 s | 0.09 s; 0.10 s under a canvas-wide selection |
-| N-02 | `preview_render`, two recipes, 2000² master | p95 < 2.0 s | 0.33 s; first render 0.75 s |
+| N-01 | A stroke, 200 points, 40 px brush, 2000² with 20 protected layers | p95 < 1.5 s | 0.10 s; 0.09 s under a canvas-wide selection |
+| N-02 | `preview_render`, two recipes, 2000² master | p95 < 2.0 s | 0.33 s; first render 0.73 s |
 | N-03 | Idle CPU added by the plugin | < 1% | 0.0% in `top`; the look in Activity Monitor is on the backlog |
 | N-04 | Nothing written outside the roots, the data dir and Krita's own files | 0 | 0, within its limit above |
 | N-05 | Plugin unchanged on 5.3.x and 6.0.x | Both | Backlog |
@@ -911,7 +913,8 @@ the code is shaped as it is.
   is not marked modified, and has no selection.
 - `addChildNode` puts a node on top when `above_id` is `None`, and makes it active.
 - `setActiveNode` on the global selection's own mask leaves the previous layer active.
-- Preset XML: the raw digest changed at every restart, across six runs; the canonical one held.
+- Preset XML: the raw digest changed at every restart, across six runs; the canonical one held. No
+  run repeats this.
 - 144 stock presets, 21 RGBA / U8 profiles, 13 palettes.
 - A 20 × 16 rect grown, shrunk and feathered by 3 lands on {17, 11, 26, 22}, {23, 17, 14, 10} and
   {17, 11, 26, 22}.
@@ -931,7 +934,7 @@ depend on it: 87 open documents cost about 50 s more.
 | Check | Expected |
 |---|---|
 | `uv run scripts/verify.py` | 6 stages, all PASS |
-| Server tests (3.12) | 669 passed, 0 skipped |
+| Server tests (3.12) | 670 passed, 0 skipped |
 | Plugin-core tests (3.10) | 665 passed, 0 skipped |
 | `uv run krita-art-mcp probe` | 131 PASS, 0 FAIL, 23 MEASURED; about 114 s |
 | `uv run krita-art-mcp doctor` | 6 steps, all PASS, with a root allowed |
@@ -940,7 +943,7 @@ depend on it: 87 open documents cost about 50 s more.
 | Error codes | 30 |
 | Bridge ops | 31 |
 | Bridge protocol; `api_version` | 1; 0.2.0 |
-| Server instructions | 3,901 of 4,096 characters |
+| Server instructions | 3,906 of 4,096 characters |
 | CLI commands | 5 |
 
 A documentation or refactoring change should not move any of these. If one moves, that is the

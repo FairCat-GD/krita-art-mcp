@@ -41,6 +41,7 @@ def setup(log_dir: Path) -> logging.Logger:
 
 
 def _private_file(path: str) -> None:
+    # Sets the mode only on a new file; the data folder's 0700 guards one made any other way.
     os.close(os.open(path, os.O_WRONLY | os.O_CREAT | os.O_APPEND, 0o600))
 
 
