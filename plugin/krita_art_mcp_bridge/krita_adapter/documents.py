@@ -193,9 +193,8 @@ class KritaDocuments:
     def announce(self, document: Any) -> None:
         # Never raises, so the message cannot fail the job it announces.
         try:
-            views = Krita.instance().windows()[0].views()
-            view = next((view for view in views if view.document() == document), None)
-            if view is not None:
+            view = Krita.instance().windows()[0].activeView()
+            if view is not None and view.document() == document:
                 view.showFloatingMessage(
                     ANNOUNCEMENT, QIcon(), ANNOUNCEMENT_MS, ANNOUNCEMENT_PRIORITY
                 )

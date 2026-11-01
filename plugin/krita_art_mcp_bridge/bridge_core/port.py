@@ -61,7 +61,8 @@ class DocumentsPort(Protocol):
     # The document in the active view, or None.
     def front(self) -> Any: ...
 
-    # Shows the owner a floating message on the document's view; logs a failure and never raises.
+    # Shows the owner a floating message when the document is in front, the only view Krita
+    # shows one on; logs a failure and never raises.
     def announce(self, document: Any) -> None: ...
 
     # Makes a node the active one, in the document in front only, and waits.

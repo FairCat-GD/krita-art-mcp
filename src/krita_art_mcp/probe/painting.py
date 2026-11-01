@@ -30,6 +30,7 @@ from krita_art_mcp.probe.common import (
     megabytes,
     open_args,
     open_working,
+    protect,
     select,
     stroke_args,
     turned,
@@ -626,17 +627,7 @@ async def _masks(
     try:
         data = opened["data"]
         layer_id = await add_layer(a, document_id, data["root_layer_id"], "mask")
-        protected = await tool(
-            a,
-            "krita_protection_set",
-            {
-                "guard": guard(document_id),
-                "protected_layer_ids": [layer["id"] for layer in data["layers"]],
-                "allowed_change_mask": {"rect": allowed},
-                "preserve_composite_alpha": False,
-                "preserve_canvas": False,
-            },
-        )
+        protected = await protect(a, document_id, data["layers"], {"rect": allowed})
         if layer_id is None or protected.get("status") != "completed":
             report.check("N-08's layer and protection are set", False, str(code(protected)))
             return
@@ -724,21 +715,11 @@ async def _rim(report: Report, a: Client, rim: Path, harness: Path, hard: dict[s
     try:
         data = opened["data"]
         layers = data["layers"]
-        protect = await tool(
-            a,
-            "krita_protection_set",
-            {
-                "guard": guard(document_id),
-                "protected_layer_ids": [layer["id"] for layer in layers],
-                "allowed_change_mask": None,
-                "preserve_composite_alpha": True,
-                "preserve_canvas": False,
-            },
-        )
+        protected = await protect(a, document_id, layers, None, preserve_alpha=True)
         clipped = await add_layer(a, document_id, data["root_layer_id"], "rim clip")
         plain = await add_layer(a, document_id, data["root_layer_id"], "rim plain")
-        if clipped is None or plain is None or protect.get("status") != "completed":
-            report.check("the rim's layers and protection are set", False, str(code(protect)))
+        if clipped is None or plain is None or protected.get("status") != "completed":
+            report.check("the rim's layers and protection are set", False, str(code(protected)))
             return
         await tool(
             a,

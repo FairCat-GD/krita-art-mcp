@@ -13,9 +13,9 @@ release needs `install-plugin`, a Krita restart and a restart of the MCP client.
 
 ### Added
 
-- **Krita says when an agent is at work.** A call that changes a document shows a short floating
-  message on that document's view. It never fails a call, and it shows only while the document is
-  the one in front.
+- **Krita says when an agent is at work.** A call about to change a document shows a short
+  floating message on that document's view. A refused call shows none, and a message never fails a
+  call. It shows only while the document is the one in front.
 - **The probe runs the contract's six acceptance exercises** on fictional sprite and icon
   fixtures: a selected repair at two zoom and pan settings; a detail that keeps the base, the
   exterior and every alpha byte; soft and scatter brushes beside a boundary; undo and retry of a
@@ -35,9 +35,9 @@ release needs `install-plugin`, a Krita restart and a restart of the MCP client.
 
 ### Fixed
 
-- **The probe sweeps its own leftovers first.** A run that died with its documents unsaved used
-  to stop the next run at the unsaved-documents check, before the sweep that would have closed
-  them.
+- **The probe sweeps its own leftovers.** A run that died with its documents unsaved used to stop
+  the next run at the unsaved-documents check, before the sweep that would have closed them. It now
+  closes them first, when they are the only unsaved documents in Krita.
 
 ## [0.13.0] — 2026-10-30
 
@@ -550,6 +550,7 @@ The first release is the scaffold that the Phase 1 tools are built on.
   reports its version to the client; it offers no tools yet.
 - **`krita-art-mcp --version`.** It prints the installed version.
 
+[0.14.0]: https://github.com/FairCat-GD/krita-art-mcp/commit/9b6c6ccc10ae0fca01b5322850ed69f1cb9fa128
 [0.13.0]: https://github.com/FairCat-GD/krita-art-mcp/commit/61d3d861b8fa050329b66234052f6817a46a9701
 [0.12.0]: https://github.com/FairCat-GD/krita-art-mcp/commit/7d18a6a767f5ca3db9ff435b14aaafc5c84bd346
 [0.11.0]: https://github.com/FairCat-GD/krita-art-mcp/commit/0611f50b9f2a180e531c7152ab46dfa91eb777ab

@@ -84,7 +84,7 @@ def _probe(report: Report, client: BridgeClient, serve: list[str], harness: Path
     asyncio.run(_over_stdio(report, _server(serve, harness, "server-a"), info))
     _runtime(report, info)
     # First, because what a dead run left dirty would stop this one at the unsaved check.
-    asyncio.run(_close_leftovers(report, serve, harness))
+    asyncio.run(_close_leftovers(report, client, serve, harness))
     if _no_unsaved_documents(report, client):
         asyncio.run(_documents(report, client, serve, harness))
 
@@ -218,8 +218,21 @@ async def _sweep_documents(mcp: Client, harness: Path) -> int:
     return swept
 
 
-async def _close_leftovers(report: Report, serve: list[str], harness: Path) -> None:
+def _only_ours_unsaved(client: BridgeClient, own: list[dict[str, Any]]) -> bool:
+    # A close can crash Krita, so one runs only when that could cost the owner nothing.
+    outcome = client.call("bridge.unsaved_documents")
+    if not isinstance(outcome, Done):
+        return False
+    return int(outcome.result.get("unsaved", 1)) <= sum(bool(entry["dirty"]) for entry in own)
+
+
+async def _close_leftovers(
+    report: Report, client: BridgeClient, serve: list[str], harness: Path
+) -> None:
     async with Client(_server(serve, harness, "server-a")) as a:
+        own = await _own_documents(a, harness)
+        if not own or not _only_ours_unsaved(client, own):
+            return
         swept = await _sweep_documents(a, harness)
     if swept:
         report.note(f"Closed {swept} document(s) a dead probe run left open.")

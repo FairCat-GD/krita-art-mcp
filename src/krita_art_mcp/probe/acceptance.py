@@ -17,7 +17,6 @@ from krita_art_mcp.probe.common import (
     capture,
     capture_composite,
     close,
-    finished,
     guard,
     harness_call,
     history_args,
@@ -25,6 +24,7 @@ from krita_art_mcp.probe.common import (
     line_points,
     open_args,
     open_working,
+    protect,
     select,
     stroke_args,
     turned,
@@ -49,14 +49,18 @@ EDGE = (70.0, 6.0, 140.0, 52.0)
 BOUNDARY_BRUSH_PX = 24
 BATCH = ((20.0, 20.0, 140.0, 24.0), (20.0, 44.0, 140.0, 48.0), (20.0, 68.0, 140.0, 72.0))
 ROUND_TRIP_MASKS = ("transform_mask", "filter_mask")
-SAVE_LIMIT_S = 120.0
+
+
+@dataclass(frozen=True)
+class Fixture:
+    name: str
+    size: tuple[int, int]
+    stack: tuple[fixtures.Layer, ...]
 
 
 @dataclass(frozen=True)
 class Detail:
-    fixture: str
-    size: tuple[int, int]
-    stack: tuple[fixtures.Layer, ...]
+    fixture: Fixture
     base: str
     # Across the silhouette's edge: the rim is where alpha can move.
     allowed: dict[str, int]
@@ -65,9 +69,7 @@ class Detail:
 
 @dataclass(frozen=True)
 class Preview:
-    fixture: str
-    size: tuple[int, int]
-    stack: tuple[fixtures.Layer, ...]
+    fixture: Fixture
     recipes: tuple[dict[str, Any], ...]
     cells: tuple[list[int], ...]
     selection: dict[str, int]
@@ -75,21 +77,17 @@ class Preview:
     units: dict[str, Any] = field(default_factory=dict)
 
 
-SPRITE = (fixtures.SPRITE_WIDTH, fixtures.SPRITE_HEIGHT)
-ICON = (fixtures.ICON_SIDE, fixtures.ICON_SIDE)
+SPRITE = Fixture("sprite", (fixtures.SPRITE_WIDTH, fixtures.SPRITE_HEIGHT), fixtures.sprite_stack())
+ICON = Fixture("icon", (fixtures.ICON_SIDE, fixtures.ICON_SIDE), fixtures.icon_stack())
 DETAILS = (
     Detail(
-        "sprite",
         SPRITE,
-        fixtures.sprite_stack(),
         "probe hull",
         {"x": 80, "y": 40, "width": 36, "height": 16},
         (84.0, 48.0, 112.0, 48.0),
     ),
     Detail(
-        "icon",
         ICON,
-        fixtures.icon_stack(),
         "probe badge",
         {"x": 200, "y": 118, "width": 40, "height": 20},
         (204.0, 128.0, 236.0, 128.0),
@@ -97,9 +95,7 @@ DETAILS = (
 )
 PREVIEWS = (
     Preview(
-        "sprite",
         SPRITE,
-        fixtures.sprite_stack(),
         previews.GAME,
         # 128 x 0.36875 = 47.2 and 96 x 0.36875 = 35.4; 1.8 gives 28.8 and 21.6.
         ([47, 35], [29, 22]),
@@ -111,9 +107,7 @@ PREVIEWS = (
         },
     ),
     Preview(
-        "icon",
         ICON,
-        fixtures.icon_stack(),
         previews.ICONS[:2],
         ([128, 128], [256, 256]),
         {"x": 64, "y": 64, "width": 128, "height": 128},
@@ -135,6 +129,8 @@ async def run(
     assert hard is not None
     paint = folder / "paint.ora"
     fixtures.write_ora(paint, fixtures.paint_stack(), fixtures.PAINT_WIDTH, fixtures.PAINT_HEIGHT)
+    for fixture in (SPRITE, ICON):
+        fixtures.write_ora(_path(folder, fixture), fixture.stack, *fixture.size)
     await _repair(report, a, client, paint, harness, hard)
     for detail in DETAILS:
         await _detail(report, a, folder, harness, hard, detail)
@@ -144,6 +140,10 @@ async def run(
     for preview in PREVIEWS:
         await _previews(report, a, folder, harness, hard, preview)
     await _round_trip(report, a, client, folder, harness, hard)
+
+
+def _path(folder: Path, fixture: Fixture) -> Path:
+    return folder / f"{fixture.name}.ora"
 
 
 def _whole(size: tuple[int, int]) -> dict[str, int]:
@@ -176,26 +176,32 @@ async def _repair(
         first_view = read.result["view"]
         brush = brush_args(hard, size_px=REPAIR_BRUSH_PX)
         points = line_points(*REPAIR_LINE, 16)
-        painted, receipts = [], []
+        painted, receipts, views = [], [], []
         try:
             for view in (None, turned(first_view)):
                 if view is not None:
-                    harness_call(client, "harness.view", document_id=document_id, view=view)
+                    moved = harness_call(client, "harness.view", document_id=document_id, view=view)
+                    views.append(moved.result["view"] if isinstance(moved, Done) else None)
                 done = await tool(a, TOOL, stroke_args(document_id, layer_id, brush, points))
                 receipts.append(done)
                 painted.append(await capture(a, document_id, _whole(size), "layer", layer_id))
                 await tool(a, "krita_history_step", history_args(document_id, "undo"))
         finally:
             harness_call(client, "harness.view", document_id=document_id, view=first_view)
-        report.check(name, *_repair_verdict(painted, receipts))
+        report.check(name, *_repair_verdict(painted, receipts, first_view, views))
         await _pressure(report, a, document_id, layer_id, painted[0], size, hard)
     finally:
         await close(a, document_id)
 
 
 def _repair_verdict(
-    painted: list[np.ndarray | None], receipts: list[dict[str, Any]]
+    painted: list[np.ndarray | None],
+    receipts: list[dict[str, Any]],
+    first_view: dict[str, Any],
+    views: list[dict[str, Any] | None],
 ) -> tuple[bool, str]:
+    if views[0] is None or views[0] == first_view:
+        return False, f"the view did not move: {first_view} then {views[0]}"
     first, second = painted
     if first is None or second is None:
         return False, f"nothing captured: {[code(done) for done in receipts]}"
@@ -259,30 +265,22 @@ async def _detail(
     hard: dict[str, Any],
     case: Detail,
 ) -> None:
-    name = f"exercise 2, the {case.fixture}: a detail on a new layer keeps the base, the exterior "
-    name += "and every alpha byte"
-    source = folder / f"{case.fixture}.ora"
-    fixtures.write_ora(source, case.stack, *case.size)
+    name = f"exercise 2, the {case.fixture.name}: a detail on a new layer keeps every accepted "
+    name += "layer, the exterior and every alpha byte"
+    source = _path(folder, case.fixture)
     accepted = file_sha256(source)
     opened = await open_working(a, source, harness, FOLDER)
     document_id = opened.get("document_id")
     if opened.get("status") != "completed" or not document_id:
         report.check(name, False, str(opened.get("error")))
         return
-    whole = _whole(case.size)
+    whole = _whole(case.fixture.size)
     try:
         data = opened["data"]
-        base = by_name(data["layers"])[case.base]["id"]
-        protected = await tool(
-            a,
-            "krita_protection_set",
-            {
-                "guard": guard(document_id),
-                "protected_layer_ids": [layer["id"] for layer in data["layers"]],
-                "allowed_change_mask": {"rect": case.allowed},
-                "preserve_composite_alpha": True,
-                "preserve_canvas": False,
-            },
+        layers = data["layers"]
+        base = by_name(layers)[case.base]["id"]
+        protected = await protect(
+            a, document_id, layers, {"rect": case.allowed}, preserve_alpha=True
         )
         detail = await add_layer(a, document_id, data["root_layer_id"], "detail")
         if detail is None or protected.get("status") != "completed":
@@ -296,16 +294,18 @@ async def _detail(
         await tool(a, "krita_layer_update", clipped)
         await select(a, document_id, {"type": "rect", "rect": case.allowed})
         before = await capture(a, document_id, whole)
-        base_before = await capture(a, document_id, whole, "layer", base)
+        kept = {
+            layer["name"]: await capture(a, document_id, whole, "layer", layer["id"])
+            for layer in layers
+        }
         brush = brush_args(hard, size_px=8, color=brush_colour(DETAIL_RGB))
         points = line_points(*case.line)
         done = await tool(a, TOOL, stroke_args(document_id, detail, brush, points))
         after = await capture(a, document_id, whole)
-        base_after = await capture(a, document_id, whole, "layer", base)
         problems = _detail_problems(done, before, after, case.allowed)
-        problems += [f"the base {differs(base_after, base_before)}"] * bool(
-            differs(base_after, base_before)
-        )
+        for layer in layers:
+            now = await capture(a, document_id, whole, "layer", layer["id"])
+            problems += _pixel_problems(kept[layer["name"]], now, layer["name"])
         problems += ["the source's file changed"] * (file_sha256(source) != accepted)
         report.check(name, not problems, "; ".join(problems))
         await _refused(report, a, document_id, base, case, brush, after)
@@ -321,9 +321,14 @@ def _detail_problems(
 ) -> list[str]:
     if done.get("status") != "completed" or before is None or after is None:
         return [f"the stroke answered {code(done)}"]
-    checked = (done.get("data") or {}).get("verification") or {}
+    data = done.get("data") or {}
+    checked = data.get("verification") or {}
     problems = []
-    if checked.get("changed_outside_px") != 0 or checked.get("alpha_changed_px") != 0:
+    if (
+        checked.get("changed_outside_px") != 0
+        or checked.get("alpha_changed_px") != 0
+        or data.get("protected_pixels_changed") != 0
+    ):
         problems.append(f"the receipt says {checked}")
     outside = _outside(allowed, before.shape)
     if not np.array_equal(before[outside], after[outside]):
@@ -347,10 +352,10 @@ async def _refused(
     stroke = await tool(a, TOOL, stroke_args(document_id, base, brush, line_points(*case.line)))
     change = {"guard": guard(document_id), "layer_id": base, "properties": {"opacity": 0.5}}
     update = await tool(a, "krita_layer_update", change)
-    after = await capture(a, document_id, _whole(case.size))
+    after = await capture(a, document_id, _whole(case.fixture.size))
     report.check(
-        f"exercise 2, the {case.fixture}: a stroke and a property change on the protected base "
-        "are LOCKED_TARGET, and the composite stays",
+        f"exercise 2, the {case.fixture.name}: a stroke and a property change on the protected "
+        "base are LOCKED_TARGET, and the composite stays",
         code(stroke) == code(update) == "LOCKED_TARGET" and not differs(after, painted),
         f"{code(stroke)}, {code(update)}",
     )
@@ -388,17 +393,7 @@ async def _boundary(
     try:
         data = opened["data"]
         layer_id = await add_layer(a, document_id, data["root_layer_id"], "boundary")
-        protected = await tool(
-            a,
-            "krita_protection_set",
-            {
-                "guard": guard(document_id),
-                "protected_layer_ids": [layer["id"] for layer in data["layers"]],
-                "allowed_change_mask": {"polygon": DIAMOND},
-                "preserve_composite_alpha": False,
-                "preserve_canvas": False,
-            },
-        )
+        protected = await protect(a, document_id, data["layers"], {"polygon": DIAMOND})
         if layer_id is None or protected.get("status") != "completed":
             report.check(name, False, str(code(protected)))
             return
@@ -512,11 +507,9 @@ async def _batch(
 async def _previews(
     report: Report, a: Client, folder: Path, harness: Path, hard: dict[str, Any], case: Preview
 ) -> None:
-    name = f"exercise 5, the {case.fixture}: explicit recipes render at their exact sizes, fresh "
-    name += "after a stroke, with the overlay in the marked sheet only"
-    source = folder / f"{case.fixture}-preview.ora"
-    fixtures.write_ora(source, case.stack, *case.size)
-    opened = await open_working(a, source, harness, FOLDER)
+    name = f"exercise 5, the {case.fixture.name}: explicit recipes render at their exact sizes, "
+    name += "fresh after a stroke, with the overlay in the marked sheet only"
+    opened = await open_working(a, _path(folder, case.fixture), harness, FOLDER)
     document_id = opened.get("document_id")
     if opened.get("status") != "completed" or not document_id:
         report.check(name, False, str(opened.get("error")))
@@ -610,11 +603,7 @@ async def _round_trip(
             layer["id"]: await capture(a, document_id, whole, "layer", layer["id"])
             for layer in paints
         }
-        saved = await finished(
-            a,
-            await tool(a, "krita_document_save", saving.save_args(document_id, target)),
-            SAVE_LIMIT_S,
-        )
+        saved = await saving.save(a, document_id, target)
         closed = await close(a, document_id, "refuse")
     finally:
         await close(a, document_id)

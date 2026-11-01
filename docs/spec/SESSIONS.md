@@ -3956,37 +3956,39 @@ handoff assigns here.
   are refused; region scope needs the pixel engine and a readable tip and scatter; the save's
   8192 x 8192 bound (F4); and a selection a pixel inside the allowed mask. PDD Part 4's list was
   rechecked item by item.
-- **F-24.** `port.announce(document)` in `Registry.guarded` for writes; a close, with `writes=False`,
-  never announces. `KritaDocuments.announce` calls `View.showFloatingMessage` at Krita's lowest
-  priority for 1.5 s and never raises. Krita shows it only on the current view.
+- **F-24.** `Handle.before_change` calls `port.announce(document)`, so a refused call and a close
+  announce nothing, and a stroke announces with its view in front. `KritaDocuments.announce` calls
+  `View.showFloatingMessage` on the active view when it holds the document, at Krita's lowest
+  priority for 1.5 s, and never raises. A save changes nothing in the document, so it does not
+  announce.
 - **The probe.**
   - `Report.timed`: one MEASURED line per stage.
   - `probe/writes.py`, N-04: `places`, `take`, `strays`.
   - `probe/acceptance.py`, the six exercises, inside `painting.run`'s brush-state window, after the
     save checks.
   - `fixtures.sprite_stack` and `icon_stack`, fictional.
-  - `add_layer`, `select` and `turned` moved to `probe/common.py`; `saving.kra_differences` is
-    public.
+  - `add_layer`, `protect`, `select` and `turned` are in `probe/common.py`; `saving.save` and
+    `saving.kra_differences` are public.
   - `_selected`: N-01 and N-09 under a canvas-wide selection.
-  - `_close_leftovers` runs before the unsaved check.
+  - `_close_leftovers` runs before the unsaved check, and closes only when every unsaved document
+    is the probe's own.
 - **N-04's list, as checked.**
   - The data directory, recursive and strict, by `DATA_FILES`; `config.json` may not change.
-  - The server's cwd, new names, strict.
-  - The home folder, new names: every visible name counts, a hidden one only if it looks like ours.
-  - Krita's temp folder (from `getconf DARWIN_USER_TEMP_DIR`, since this shell's `TMPDIR` may
-    differ), `~/Library/Application Support` and `~/Library/Preferences`, new names that look like
-    ours.
+  - The server's cwd, the home folder, Krita's temp folder (from `getconf DARWIN_USER_TEMP_DIR`,
+    since this shell's `TMPDIR` may differ), `~/Library/Application Support` and
+    `~/Library/Preferences`: new names that look like ours, because other processes write in all
+    of them.
   - Krita's own names are allowed. `.krita-*-autosave.kra` is confirmed from `libkritaui`, which
     holds the glob `.krita-*-*-autosave.kra`; no run produced one.
-  - **Its limit:** it sees what stays after a run, not a file that came and went, and in the shared
-    folders only names that look like ours. `~/Desktop` and `~/Downloads` are left out, because
-    listing them can raise a permission prompt.
+  - **Its limit:** it sees what stays after a run, not a file that came and went, and outside the
+    data directory only names that look like ours. `~/Desktop` and `~/Downloads` are left out,
+    because listing them can raise a permission prompt.
 - **The exercises, each PASS in the probe:**
-  1. A selected repair at two zoom, rotation and pan settings lands on equal layer bytes, inside the
-     selection, at the requested row. Pressure is refused by name; `input_fallback` flat reports
+  1. A selected repair at two zoom, rotation and pan settings, the second confirmed to differ,
+     lands on equal layer bytes, inside the selection, at the requested row. Pressure is refused by name; `input_fallback` flat reports
      itself and paints the flat stroke's bytes.
   2. On the sprite and the icon, a detail across the silhouette's edge on a new inherit-alpha layer
-     keeps the base's bytes, the exterior, every alpha byte and the source's hash. A stroke and a
+     keeps every accepted layer's bytes, the exterior, every alpha byte and the source's hash. A stroke and a
      property change on the base are `LOCKED_TARGET`.
   3. Soft and scatter brushes beside an allowed polygon: no change outside, by the receipt and by
      the server's own compare; without the selection the leak is rolled back and confirmed.
@@ -4003,8 +4005,8 @@ handoff assigns here.
     gated** at their budgets (the owner's choice, once measured).
   - **H2 ran from a scratchpad driver,** with no new CLI command (plan time).
   - **H3 needed no root:** the pattern was opened in Krita directly, and listed as `read_only`.
-    The plan had the owner open it and edit `~/.codex/config.toml`; at the owner's word the session
-    did both.
+    The plan had the owner open it and edit `~/.codex/config.toml`. The owner told the session to
+    make the edit; the session reopened the pattern on its own decision, when the document had gone.
   - **The instructions gained the selection's inset,** which the block did not name. The session
     found the trap: a polygon or ellipse selection is antialiased and the allowed mask binary, so a
     selection on the mask's own edge paints pixels the mask forbids, and is refused and rolled back.
@@ -4068,6 +4070,37 @@ handoff assigns here.
   - `probe`: 129 PASS, 0 FAIL, 47 MEASURED, 112.7 s with 1 document open;
   - 19 registered tools; 19 schema files; instructions 3,901 characters (195 to spare); 30 error
     codes; 32 bridge ops.
+- **Review (`/code-review high`), 10 findings: 10 fixed.**
+  - **Exercise 1 never confirmed its view moved,** so a refused `harness.view` would have left two
+    strokes under one view and a pass. It now compares the view it got with the first.
+  - **The leftovers' sweep could close a document beside the owner's unsaved work,** which is what
+    the unsaved check exists to prevent. It now closes only when the unsaved count is no more than
+    the probe's own dirty documents, and stays put when the count cannot be read.
+  - **The announcement fired before the stroke's view came forward and before its refusals.** It
+    moved from `Registry.guarded` to `Handle.before_change`.
+  - **N-04 blamed other processes:** a new file from a parallel session in the checkout, or a Finder
+    `.DS_Store`. The cwd and the home folder now count only names that look like ours, `op-*`
+    among them, and `.DS_Store` is allowed. The check is weaker for it, and the limit above says so.
+  - **Exercise 6 skipped the save's `BUSY` retry;** it calls `saving.save`.
+  - **Exercise 2 compared one accepted layer and ignored `protected_pixels_changed`.** It now
+    compares every accepted layer and reads the receipt.
+  - **`places()` had no test;** one now runs it over temporary folders, both ways.
+  - **`announce` walked every view** to reach the one that can show a message; it reads the active
+    view.
+  - **The protection arguments and the fixtures were copied:** `common.protect`, used by the rim and
+    N-08 too, and one `Fixture` table written once.
+  - **README overstated a dialog's refusals,** since listing still answers, and the done-note
+    credited the owner with the session's own reopening of the pattern.
+  - **`[0.14.0]`'s link** landed here, as planned.
+  - **Falsified:** in the unit tests, the owner's unsaved documents and an unread count stopping a
+    close; the places watching the cwd and the home folder; the cwd filtered; `.DS_Store`; `op-*`;
+    `before_change` announcing; an announcement in the guard, against a change and against a
+    refused stroke. Live: the view not moving, the receipt, and a layer other than the accepted one
+    compared. N-04 caught real strays under its new rules, in all four kinds of place.
+  - **Numbers after the review:** `verify` 6 stages, all PASS; 580 server tests (+5); 662 plugin-core
+    tests (+2); `probe` 129 PASS, 0 FAIL, 47 MEASURED, 113.1 s with 0 documents open, on a fresh
+    Krita. Timings moved within noise: N-01 p95 0.10 s, selected 0.10 s; N-09 0.24 s, selected
+    0.28 s; acceptance stage 10.5 s. No warning or error in `plugin.log`.
 
 ---
 

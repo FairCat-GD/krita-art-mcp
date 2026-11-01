@@ -89,16 +89,43 @@ def test_a_shared_folder_counts_only_our_names_and_never_kritas_own(tmp_path: Pa
     assert found == {"stray.kra", ".copy.ab12.saving.ora", "krita-art-mcp", "probe.png"}
 
 
-def test_the_home_folder_counts_visible_names_and_only_our_hidden_ones(tmp_path: Path) -> None:
-    place = Place(tmp_path, allowed=writes.KRITA_FILES, ours=("[!.]*", *writes.OUR_NAMES))
-    before = writes.take([place])
-    _write(tmp_path, ".claude.json.tmp.1")
-    _write(tmp_path, ".krita-1-document_2-autosave.kra")
-    assert writes.strays(before, writes.take([place])) == []
-    _write(tmp_path, "Untitled.png")
-    _write(tmp_path, ".hidden.kra")
-    found = {Path(path).name for path in writes.strays(before, writes.take([place]))}
-    assert found == {"Untitled.png", ".hidden.kra"}
+def test_the_places_catch_our_names_in_every_folder_and_leave_other_processes_alone(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    home, temp, work = tmp_path / "home", tmp_path / "temp", tmp_path / "work"
+    support = home / "Library" / "Application Support"
+    preferences = home / "Library" / "Preferences"
+    data = support / "krita-art-mcp"
+    for folder in (temp, work, data, preferences):
+        folder.mkdir(parents=True)
+    monkeypatch.setenv("HOME", str(home))
+    monkeypatch.chdir(work)
+    monkeypatch.setattr(writes, "_krita_temp", lambda: temp)
+    places = writes.places(data)
+    before = writes.take(places)
+    for folder, name in (
+        (work, "notes.txt"),
+        (home, ".claude.json.tmp.1"),
+        (home, ".krita-1-document_2-autosave.kra"),
+        (temp, "com.other.app"),
+        (temp, "KRITA_SWAP_FILE_1a2b"),
+        (preferences, "com.other.plist"),
+        (data, ".DS_Store"),
+        (data, "logs/.DS_Store"),
+    ):
+        _write(folder, name)
+    assert writes.strays(before, writes.take(places)) == []
+    strays = [
+        data / "stray.txt",
+        work / "op-1.png",
+        home / "copy.kra",
+        temp / ".copy.ab12.saving.ora",
+        support / "krita-art-mcp-2",
+        preferences / "probe.plist",
+    ]
+    for path in strays:
+        _write(path.parent, path.name)
+    assert writes.strays(before, writes.take(places)) == sorted(map(str, strays))
 
 
 def test_a_folder_that_is_not_there_lists_empty(tmp_path: Path) -> None:

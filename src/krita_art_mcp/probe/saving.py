@@ -86,7 +86,7 @@ def _hidden(folder: Path) -> list[str]:
     return sorted(name for name in os.listdir(folder) if name.startswith("."))
 
 
-async def _save(a: Client, document_id: str, path: Path) -> dict[str, Any]:
+async def save(a: Client, document_id: str, path: Path) -> dict[str, Any]:
     arguments = save_args(document_id, path)
     saved = await finished(a, await tool(a, "krita_document_save", arguments), SAVE_LIMIT_S)
     if code(saved) == "BUSY":
@@ -202,7 +202,7 @@ async def _prepare(
 
 async def _ora(report: Report, a: Client, document_id: str, folder: Path) -> None:
     target = folder / "saved.ora"
-    saved = await _save(a, document_id, target)
+    saved = await save(a, document_id, target)
     result = saved.get("data") or {}
     lost = sorted((loss["type"], loss["lost"]) for loss in result.get("expected_losses", []))
     # The fixture's hidden layer is at 50%, 127, which Krita's ORA round trip makes 126.
@@ -341,7 +341,7 @@ async def _adjustment(
     )
     changed = isinstance(added, Done) and added.result.get("composite_changed") is True
     target = folder / "adjusted.ora"
-    refused = await _save(a, document_id, target)
+    refused = await save(a, document_id, target)
     mismatches = (refused.get("error") or {}).get("details", {}).get("mismatches", [])
     report.check(
         "a visible filter layer saved to ORA is SAVE_VERIFY_FAILED on the composite, with nothing "

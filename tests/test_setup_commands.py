@@ -300,6 +300,28 @@ def test_the_probe_closes_its_leftovers_before_it_counts_unsaved_documents(
     assert order == ["leftovers", "unsaved"]
 
 
+@pytest.mark.parametrize(
+    ("unsaved", "dirty", "closable"),
+    [
+        (2, [True, True], True),
+        (0, [False], True),
+        (2, [True], False),
+        (1, [False], False),
+    ],
+    ids=["only ours", "none", "one of the owner's too", "the owner's beside a clean one"],
+)
+def test_leftovers_close_only_when_every_unsaved_document_is_the_probes(
+    unsaved: int, dirty: list[bool], closable: bool
+) -> None:
+    client = _Client(_healthy(REPO_HASH), Done({"open": 3, "unsaved": unsaved}, "op-1"))
+    own = [{"dirty": value} for value in dirty]
+    assert probe._only_ours_unsaved(client, own) is closable
+
+
+def test_leftovers_stay_when_the_unsaved_count_cannot_be_read() -> None:
+    assert probe._only_ours_unsaved(_Client(_healthy(REPO_HASH), UNREACHABLE), []) is False
+
+
 def test_the_probe_prints_the_open_documents_it_read_beside_its_time() -> None:
     out = io.StringIO()
     report = Report(out)

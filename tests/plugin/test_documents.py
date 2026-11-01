@@ -194,25 +194,25 @@ def test_a_successful_mutation_dirties_and_close_then_refuses(world: World) -> N
     assert world.port.closed == [1]
 
 
-def test_a_write_is_announced_once_on_its_own_document_before_it_runs(world: World) -> None:
+def test_a_change_is_announced_once_on_its_own_document(world: World) -> None:
     first = world.create()
     world.create()
-    paint = world.registry.guarded(
-        lambda handle, args, call: {"announced": list(world.port.announced)}
-    )
-    done = paint({"document_id": first["document_id"]}, Call("op", "req", A))
-    assert done == {"announced": [1]}
-    assert world.port.announced == [1]
+    _guarded(world)({"document_id": first["document_id"]}, Call("op", "req", A))
+    assert [key for key, _ in world.port.announced] == [1]
 
 
-def test_a_refused_call_and_a_close_announce_nothing(world: World) -> None:
+def test_a_refused_call_a_call_that_changes_nothing_and_a_close_announce_nothing(
+    world: World,
+) -> None:
     created = world.create()
     handle = world.registry.add(world.port.create("fixture", 8, 8), registry.READ_ONLY, A)
+    paint = _guarded(world)
+    call = Call("op", "req", A)
     with pytest.raises(BridgeError):
-        _guarded(world)({"document_id": handle.document_id}, Call("op", "req", A))
-    world.registry.find(created["document_id"]).unsafe = True
+        paint({"document_id": handle.document_id}, call)
     with pytest.raises(BridgeError):
-        _guarded(world)({"document_id": created["document_id"]}, Call("op", "req", A))
+        paint({"document_id": created["document_id"], "refuse": True}, call)
+    paint({"document_id": created["document_id"], "active_only": True}, call)
     world.close(created["document_id"])
     assert world.port.announced == []
 

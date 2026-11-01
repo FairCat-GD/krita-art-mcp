@@ -217,6 +217,19 @@ DABS = _box(35, 55, 20, 10)
 # A stroke.
 
 
+def test_a_stroke_on_a_document_behind_announces_with_its_view_in_front(world: World) -> None:
+    document_id, handle = world.document()
+    world.port.front_key = 99
+    world.stroke(document_id)
+    assert world.port.announced == [(handle.document.key, handle.document.key)]
+
+
+def test_a_refused_stroke_announces_nothing(world: World) -> None:
+    document_id, _ = world.document()
+    assert world.stroke_refused(document_id, layer_id=layer_id(1, 99))["code"]
+    assert world.port.announced == []
+
+
 def test_a_stroke_is_painted_verified_over_r_and_reported(world: World) -> None:
     document_id, handle = world.document()
     done = world.stroke(document_id)

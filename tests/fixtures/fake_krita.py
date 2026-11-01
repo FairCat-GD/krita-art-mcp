@@ -96,8 +96,8 @@ class FakePort:
         self.node_canvas: dict[tuple[int, str], bytes] = {}
         # The document whose view is active; a new or opened document comes to the front.
         self.front_key: int | None = None
-        # The documents a floating message named, in order.
-        self.announced: list[int] = []
+        # Each floating message's document, and the document in front when it was asked for.
+        self.announced: list[tuple[int, int | None]] = []
         # The order of the K46 steps and reads.
         self.calls: list[str] = []
         # One BGRA pixel per layer id; a layer reads as that pixel everywhere.
@@ -309,7 +309,7 @@ class FakePort:
         return None if key is None or key not in self.live else FakeDocument(key)
 
     def announce(self, document: Any) -> None:
-        self.announced.append(document.key)
+        self.announced.append((document.key, self.front_key))
 
     def add_active_mask(self, document: Any, layer_id: str, rect: dict[str, int]) -> bool:
         if layer_id not in {node["id"] for node in self.tree(document)["nodes"]}:

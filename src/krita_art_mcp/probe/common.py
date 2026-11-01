@@ -38,6 +38,23 @@ async def add_layer(a: Client, document_id: str, parent_id: str, name: str) -> s
     return layer_id
 
 
+async def protect(
+    a: Client,
+    document_id: str,
+    layers: list[dict[str, Any]],
+    mask: dict[str, Any] | None,
+    preserve_alpha: bool = False,
+) -> dict[str, Any]:
+    arguments = {
+        "guard": guard(document_id),
+        "protected_layer_ids": [layer["id"] for layer in layers],
+        "allowed_change_mask": mask,
+        "preserve_composite_alpha": preserve_alpha,
+        "preserve_canvas": False,
+    }
+    return await tool(a, "krita_protection_set", arguments)
+
+
 async def select(a: Client, document_id: str, shape: dict[str, Any]) -> dict[str, Any]:
     arguments = {
         "guard": guard(document_id),

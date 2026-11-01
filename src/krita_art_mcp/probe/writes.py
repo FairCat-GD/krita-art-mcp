@@ -4,8 +4,10 @@ import subprocess
 from dataclasses import dataclass
 from pathlib import Path
 
-# N-04's list of what may be written: the data directory's own files, by path below it.
+# N-04's list of what may be written: the data directory's own files, by path below it. Finder
+# writes its own file in any folder opened in it.
 DATA_FILES = (
+    "*.DS_Store",
     "bridge.json",
     "logs/plugin.log*",
     "transfer/*",
@@ -24,8 +26,8 @@ KRITA_FILES = (
     ".krita-*-autosave.kra",
     "krita-*-autosave.kra",
 )
-# Names that can only be this project's or the documents it handles.
-OUR_NAMES = ("*krita-art*", "*krita_art*", "*probe*", "*.saving*", "*.ora", "*.kra")
+# Names that can only be this project's, the documents it handles, or an operation's files.
+OUR_NAMES = ("*krita-art*", "*krita_art*", "*probe*", "*.saving*", "*.ora", "*.kra", "op-*")
 
 
 @dataclass(frozen=True)
@@ -34,8 +36,8 @@ class Place:
     # Every file below it with its stat, or only its own entries' names.
     deep: bool = False
     allowed: tuple[str, ...] = ()
-    # Other apps write here too and a listing cannot say who wrote what, so only these names
-    # count; None counts every name.
+    # Other processes write here too and a listing cannot say who wrote what, so only these
+    # names count; None counts every name.
     ours: tuple[str, ...] | None = None
 
 
@@ -48,9 +50,8 @@ def places(data_dir: Path) -> list[Place]:
     return [
         Place(data_dir, deep=True, allowed=DATA_FILES),
         # A relative path lands here.
-        Place(Path.cwd()),
-        # Other apps keep hidden files in the home folder, and rarely anything else.
-        Place(home, allowed=KRITA_FILES, ours=("[!.]*", *OUR_NAMES)),
+        Place(Path.cwd(), ours=OUR_NAMES),
+        Place(home, allowed=KRITA_FILES, ours=OUR_NAMES),
         Place(_krita_temp(), allowed=KRITA_FILES, ours=OUR_NAMES),
         Place(library / "Application Support", ours=OUR_NAMES),
         Place(library / "Preferences", ours=OUR_NAMES),

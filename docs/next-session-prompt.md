@@ -13,28 +13,28 @@ Release 0.15.0.
 - **Round 1 is the Phase 1 build.** Sessions 0 to 14 are done. 14a (0.15.0) and 15 (0.16.0, the
   close) remain.
 - **The push status.** `origin` is the private GitHub repository. `origin/main` holds everything
-  through 13a's "review: a blend's moved check reads after the refresh, and 7 smaller". List
-  `origin/main..HEAD` before any push; 14's commits are not pushed.
+  through 14's "review: exercise 1 never confirmed its view moved, and 9 smaller". List
+  `origin/main..HEAD` before any push.
 - **What 14 left that 14a and 15 build on:**
   - **`probe/acceptance.py`** holds the six exercises, inside `painting.run`'s brush-state window.
   - **`probe/writes.py`** is N-04: `places`, `take`, `strays`. Its limit is in 14's done-note, and
     `ARCHITECTURE.md` should carry it.
   - **`Report.timed`** prints each stage. `probe/common.py` also holds `add_layer`, `select` and
     `turned`.
-  - **`Registry.guarded` announces each write** through `port.announce`.
+  - **`Handle.before_change` announces each change** through `port.announce`.
   - **For 15, F31's decision has more to weigh:** the probe now has 47 MEASURED lines, the stages
     and the two "selection equal to the allowed polygon" lines among them.
   - **The dead `SILENT_S`** (`probe/saving.py`) is still there for the close's tidying.
-- **What the spec said that turned out wrong or harder:** six amendments are in 14's done-note, the
+- **What the spec said that turned out wrong or harder:** seven amendments are in 14's done-note, the
   selection's inset and the order of the probe's first sweep among them.
 - **Decisions written down nowhere else:** H2's and H3's outcomes are in 14's done-note, and the H2
   outcome is on the backlog's sensor item. Review 13's §8.7 said Claude Code holds a registration;
   it does not, and `ARCHITECTURE.md` should not repeat that.
 - **Baseline** (14, 0.14.0):
   - `verify`: 6 stages, all PASS;
-  - 575 server tests passed, 0 skipped;
-  - 660 plugin-core tests passed, 0 skipped;
-  - `probe`: 129 PASS, 0 FAIL, 47 MEASURED; 112.7 s with 1 document open;
+  - 580 server tests passed, 0 skipped;
+  - 662 plugin-core tests passed, 0 skipped;
+  - `probe`: 129 PASS, 0 FAIL, 47 MEASURED; 113.1 s with 0 documents open;
   - 19 registered tools; 19 schema files; instructions 3,901 characters (195 to spare); 30 error
     codes; 32 bridge ops.
 - **Not done:**
@@ -79,7 +79,7 @@ Release 0.15.0.
 - **Krita's memory grows across large opens and saves** (2.8 GB after the long save in a probe
   run). Restart it, at 0 unsaved, before measuring.
 - **The instructions have 195 characters to spare.**
-- **`[0.14.0]`'s link** needs its own commit's hash, so it lands in the review commit.
+- **`[0.15.0]`'s link** needs its own commit's hash, so it lands in the review commit.
 - **The docs describe what was built, not the plan.** Where they differ, the done-notes win.
 - **Comments state the present.** No session ids, no "used to", no review stories, no finding
   numbers in code.

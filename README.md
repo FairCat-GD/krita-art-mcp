@@ -148,7 +148,7 @@ KRA and PNG files, and it never changes your roots. Its document checks run only
 of your Krita documents has unsaved changes, and close only the documents the probe made. They
 include the contract's six acceptance exercises and a check that a run leaves nothing outside
 that data folder and Krita's own files. Leave Krita alone while it runs: a dialog open in Krita
-refuses every call until it closes, and fails the checks it overlaps. The probe ends with its
+refuses calls that read or change a document until it closes, and fails the checks it overlaps. The probe ends with its
 PASS, FAIL and MEASURED counts and how long it ran.
 
 ## Documentation

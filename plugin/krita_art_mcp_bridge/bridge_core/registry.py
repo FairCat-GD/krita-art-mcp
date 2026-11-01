@@ -23,12 +23,20 @@ class Port(Protocol):
 
 class Handle:
     # One open document, as every client and server process sees it (PDD Part 6).
-    def __init__(self, document_id: str, document: Any, owned: bool, mode: str) -> None:
+    def __init__(
+        self,
+        document_id: str,
+        document: Any,
+        owned: bool,
+        mode: str,
+        announce: Callable[[Any], None] = lambda document: None,
+    ) -> None:
         self.document_id = document_id
         # For a document the bridge made, the only strong reference to its wrapper (K6).
         self.document = document
         self.owned = owned
         self.mode = mode
+        self._announce = announce
         self.dirty = False
         self.unsafe = False
         self.lease: dict[str, Any] | None = None
@@ -60,6 +68,8 @@ class Handle:
         self.dirty = True
         self.changes += 1
         self.touched()
+        # Here, because a refused call changes nothing and a stroke has its view in front by now.
+        self._announce(self.document)
         return was
 
     def lost(self) -> None:
@@ -101,7 +111,7 @@ class Registry:
         self._handles: list[Handle] = []
 
     def add(self, document: Any, mode: str, client: dict[str, Any]) -> Handle:
-        handle = Handle(self._new_id(), document, True, mode)
+        handle = Handle(self._new_id(), document, True, mode, self._port.announce)
         handle.lease = dict(client)
         self._handles.append(handle)
         return handle
@@ -178,8 +188,6 @@ class Registry:
                 message = "A rollback on this document failed; reopen it."
                 raise BridgeError("DOCUMENT_UNSAFE", message, False, details)
             self._lease(handle, call.client)
-            if writes:
-                self._port.announce(handle.document)
             return handler(handle, args, call)
 
         return run
