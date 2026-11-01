@@ -61,6 +61,9 @@ class DocumentsPort(Protocol):
     # The document in the active view, or None.
     def front(self) -> Any: ...
 
+    # Shows the owner a floating message on the document's view; logs a failure and never raises.
+    def announce(self, document: Any) -> None: ...
+
     # Makes a node the active one, in the document in front only, and waits.
     def activate(self, document: Any, node_id: str) -> None: ...
 

@@ -18,6 +18,8 @@ class Port(Protocol):
 
     def refusal(self) -> BridgeError | None: ...
 
+    def announce(self, document: Any) -> None: ...
+
 
 class Handle:
     # One open document, as every client and server process sees it (PDD Part 6).
@@ -176,6 +178,8 @@ class Registry:
                 message = "A rollback on this document failed; reopen it."
                 raise BridgeError("DOCUMENT_UNSAFE", message, False, details)
             self._lease(handle, call.client)
+            if writes:
+                self._port.announce(handle.document)
             return handler(handle, args, call)
 
         return run

@@ -278,6 +278,28 @@ def test_doctor_and_the_probe_reach_a_stale_plugin_to_judge_it_by_hash(
     assert [options.get("any_plugin") for options in made] == [True, True]
 
 
+def test_the_probe_closes_its_leftovers_before_it_counts_unsaved_documents(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    order: list[str] = []
+
+    async def nothing(*args: Any) -> None:
+        pass
+
+    async def leftovers(*args: Any) -> None:
+        order.append("leftovers")
+
+    def unsaved(*args: Any) -> bool:
+        order.append("unsaved")
+        return False
+
+    monkeypatch.setattr(probe, "_over_stdio", nothing)
+    monkeypatch.setattr(probe, "_close_leftovers", leftovers)
+    monkeypatch.setattr(probe, "_no_unsaved_documents", unsaved)
+    probe._probe(Report(io.StringIO()), _Client(_healthy(REPO_HASH)), ["/nonexistent"], tmp_path)
+    assert order == ["leftovers", "unsaved"]
+
+
 def test_the_probe_prints_the_open_documents_it_read_beside_its_time() -> None:
     out = io.StringIO()
     report = Report(out)

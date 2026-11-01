@@ -1,3 +1,6 @@
+import contextlib
+import time
+from collections.abc import Iterator
 from typing import Any, TextIO
 
 import numpy as np
@@ -26,6 +29,14 @@ class Report:
     def measured(self, name: str, detail: str) -> None:
         self.measured_count += 1
         self._line("MEASURED", name, detail)
+
+    @contextlib.contextmanager
+    def timed(self, stage: str) -> Iterator[None]:
+        started = time.perf_counter()
+        try:
+            yield
+        finally:
+            self.measured(f"the {stage} stage", f"{time.perf_counter() - started:.1f} s")
 
     def note(self, text: str) -> None:
         print(text, file=self._out, flush=True)

@@ -6,7 +6,7 @@ size, and undo or keep it. It is for painted (non-pixel) 2D game art.
 
 ## Status
 
-Phase 1 is being built. Version 0.13.0 connects the server to a running Krita through the plugin
+Phase 1 is being built. Version 0.14.0 connects the server to a running Krita through the plugin
 and offers these tools:
 
 - `krita_server_info`: Krita's version, what this build can do, and the folders agents may use;
@@ -42,6 +42,7 @@ and offers these tools:
   cancelling one still queued.
 
 Every change is journaled before it is sent and is safe to retry with the same `request_id`.
+While one runs, Krita shows a short floating message on the document's view.
 `CHANGELOG.md` lists what each release adds.
 
 ## Requirements
@@ -109,6 +110,11 @@ tool_timeout_sec = 300
 Then ask the agent to call `krita_server_info`. It returns Krita's version and the capability
 matrix, or names the setup step that is missing.
 
+macOS keeps an app out of `~/Documents` until you allow it. With the repository there, a client
+that cannot read it fails the server's handshake, or reports `Operation not permitted`: allow the
+app under System Settings > Privacy & Security > Files and Folders, or open the folder in the app,
+then restart the app.
+
 ## Running it
 
 ```bash
@@ -139,8 +145,11 @@ uv run krita-art-mcp serve
 repository, then drives a real `serve` over stdio against your running Krita. It works only in
 `~/Library/Application Support/krita-art-mcp/harness/`, where it writes its own fictional ORA,
 KRA and PNG files, and it never changes your roots. Its document checks run only when none
-of your Krita documents has unsaved changes, and close only the documents the probe made. It
-ends with its PASS, FAIL and MEASURED counts and how long it ran.
+of your Krita documents has unsaved changes, and close only the documents the probe made. They
+include the contract's six acceptance exercises and a check that a run leaves nothing outside
+that data folder and Krita's own files. Leave Krita alone while it runs: a dialog open in Krita
+refuses every call until it closes, and fails the checks it overlaps. The probe ends with its
+PASS, FAIL and MEASURED counts and how long it ran.
 
 ## Documentation
 

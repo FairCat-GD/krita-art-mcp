@@ -10,7 +10,7 @@ try:
         pyqtSignal,
         pyqtSlot,
     )
-    from PyQt6.QtGui import QPainterPath
+    from PyQt6.QtGui import QIcon, QPainterPath
     from PyQt6.QtWidgets import QAbstractScrollArea, QApplication, QMdiArea
 
     # The one enum the bridge needs, scoped in PyQt6 and flat in PyQt5.
@@ -26,7 +26,7 @@ except ImportError:
         pyqtSignal,
         pyqtSlot,
     )
-    from PyQt5.QtGui import QPainterPath
+    from PyQt5.QtGui import QIcon, QPainterPath
     from PyQt5.QtWidgets import QAbstractScrollArea, QApplication, QMdiArea
 
     EXCLUDE_USER_INPUT = QEventLoop.ExcludeUserInputEvents
@@ -38,6 +38,7 @@ __all__ = [
     "QAbstractScrollArea",
     "QApplication",
     "QCoreApplication",
+    "QIcon",
     "QMdiArea",
     "QObject",
     "QPainterPath",

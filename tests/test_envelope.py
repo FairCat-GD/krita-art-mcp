@@ -1,5 +1,6 @@
 import json
 import logging
+import math
 from typing import Any
 
 import bridge_core
@@ -177,3 +178,9 @@ def test_a_cancelled_operation_reports_status_cancelled() -> None:
 def test_the_instructions_fit_in_4096_characters_and_name_the_wait_budget() -> None:
     assert 0 < len(INSTRUCTIONS) <= 4096
     assert f"{WAIT_BUDGET_S:.0f}-second wait" in INSTRUCTIONS
+
+
+def test_the_instructions_name_the_saves_bound() -> None:
+    side = math.isqrt(bridge_pixels.MAX_READ_PIXELS)
+    assert side * side == bridge_pixels.MAX_READ_PIXELS
+    assert f"up to {side} x {side}" in INSTRUCTIONS

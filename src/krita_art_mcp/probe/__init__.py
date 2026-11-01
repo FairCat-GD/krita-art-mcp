@@ -16,7 +16,7 @@ from mcp import Client, StdioServerParameters
 from krita_art_mcp import __version__, paths, schemas, setup_checks
 from krita_art_mcp.bridge_client import BridgeClient, Done
 from krita_art_mcp.instructions import INSTRUCTIONS
-from krita_art_mcp.probe import changes, opening, painting, pixels, previews, updates
+from krita_art_mcp.probe import changes, opening, painting, pixels, previews, updates, writes
 from krita_art_mcp.probe.common import close
 from krita_art_mcp.probe.report import Report, code, tool
 from krita_art_mcp.tools import BUILT_TOOLS
@@ -83,6 +83,8 @@ def _probe(report: Report, client: BridgeClient, serve: list[str], harness: Path
     )
     asyncio.run(_over_stdio(report, _server(serve, harness, "server-a"), info))
     _runtime(report, info)
+    # First, because what a dead run left dirty would stop this one at the unsaved check.
+    asyncio.run(_close_leftovers(report, serve, harness))
     if _no_unsaved_documents(report, client):
         asyncio.run(_documents(report, client, serve, harness))
 
@@ -216,28 +218,51 @@ async def _sweep_documents(mcp: Client, harness: Path) -> int:
     return swept
 
 
+async def _close_leftovers(report: Report, serve: list[str], harness: Path) -> None:
+    async with Client(_server(serve, harness, "server-a")) as a:
+        swept = await _sweep_documents(a, harness)
+    if swept:
+        report.note(f"Closed {swept} document(s) a dead probe run left open.")
+
+
 async def _documents(report: Report, client: BridgeClient, serve: list[str], harness: Path) -> None:
     async with (
         Client(_server(serve, harness, "server-a")) as a,
         Client(_server(serve, harness, "server-b")) as b,
     ):
-        swept = await _sweep_documents(a, harness) + await _sweep_documents(b, harness)
-        if swept:
-            report.note(f"Closed {swept} document(s) a killed probe run left open.")
         before = _transfer_files(harness)
+        listed = writes.take(writes.places(harness.parent))
         try:
-            await _document_checks(report, a, b, harness)
-            await _cycles(report, a)
-            await opening.run(report, a, b, client, harness)
-            await pixels.run(report, a, client, harness)
-            await previews.run(report, a, harness)
-            await changes.run(report, a, b, client, harness)
-            await updates.run(report, a, client, harness)
+            with report.timed("document"):
+                await _document_checks(report, a, b, harness)
+            with report.timed("cycle"):
+                await _cycles(report, a)
+            with report.timed("open"):
+                await opening.run(report, a, b, client, harness)
+            with report.timed("pixel"):
+                await pixels.run(report, a, client, harness)
+            with report.timed("preview"):
+                await previews.run(report, a, harness)
+            with report.timed("change"):
+                await changes.run(report, a, b, client, harness)
+            with report.timed("update"):
+                await updates.run(report, a, client, harness)
             await painting.run(report, a, b, client, harness)
             await _no_leftovers(report, a, harness, before)
+            _nothing_stray(report, listed)
         finally:
             await _sweep_documents(a, harness)
             await _sweep_documents(b, harness)
+
+
+def _nothing_stray(report: Report, listed: writes.Listing) -> None:
+    # Before the final sweeps, as the leftovers are.
+    stray = writes.strays(listed, writes.take(list(listed)))
+    report.check(
+        "N-04: nothing is written outside the data directory and Krita's own files",
+        not stray,
+        "; ".join(stray[:5]) or f"{len(listed)} places listed",
+    )
 
 
 def _transfer_files(harness: Path) -> set[str]:

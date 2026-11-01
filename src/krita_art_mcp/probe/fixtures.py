@@ -13,6 +13,8 @@ from krita_art_mcp.transfer import Pixels
 # differ, so a missed B, G, R, A swap shows.
 WIDTH, HEIGHT = 64, 48
 PAINT_WIDTH, PAINT_HEIGHT = 160, 96
+SPRITE_WIDTH, SPRITE_HEIGHT = 128, 96
+ICON_SIDE = 256
 # Past the strokes' area on each side: more than any benchmark stroke's region reaches.
 BENCHMARK_PAD = 96
 
@@ -99,6 +101,31 @@ def rim_stack() -> tuple[Layer, ...]:
 def paint_stack() -> tuple[Layer, ...]:
     # The paint checks' canvas: an opaque base under the strokes.
     return (Layer("probe base", rect(PAINT_WIDTH, PAINT_HEIGHT, (30, 110, 200))),)
+
+
+def sprite_stack() -> tuple[Layer, ...]:
+    # A crate on a transparent canvas: a strap over a hull whose edge fades through two rings of
+    # partial alpha.
+    hull = np.zeros((SPRITE_HEIGHT, SPRITE_WIDTH, 4), dtype=np.uint8)
+    for inset, alpha in ((0, 64), (1, 160), (2, 255)):
+        hull[16 + inset : 80 - inset, 24 + inset : 104 - inset] = (150, 96, 48, alpha)
+    return (
+        Layer("probe strap", rect(8, 60, (70, 40, 120)), x=60, y=18),
+        Layer("probe hull", hull),
+    )
+
+
+def icon_stack() -> tuple[Layer, ...]:
+    # A badge on a transparent canvas: a mark over a disc with an antialiased edge.
+    ys, xs = np.indices((ICON_SIDE, ICON_SIDE))
+    distance = np.hypot(xs + 0.5 - ICON_SIDE / 2, ys + 0.5 - ICON_SIDE / 2)
+    badge = np.zeros((ICON_SIDE, ICON_SIDE, 4), dtype=np.uint8)
+    badge[...] = (200, 60, 90, 0)
+    badge[..., 3] = np.rint(np.clip(100.5 - distance, 0, 1) * 255).astype(np.uint8)
+    return (
+        Layer("probe mark", rect(48, 48, (240, 160, 30)), x=104, y=104),
+        Layer("probe badge", badge),
+    )
 
 
 def benchmark_stack(count: int, area: dict[str, int]) -> tuple[Layer, ...]:

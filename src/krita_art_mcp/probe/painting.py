@@ -12,8 +12,9 @@ from mcp import Client
 
 from krita_art_mcp.bridge_client import BridgeClient, Done
 from krita_art_mcp.journal import Journal
-from krita_art_mcp.probe import fixtures, previews, saving
+from krita_art_mcp.probe import acceptance, fixtures, previews, saving
 from krita_art_mcp.probe.common import (
+    add_layer,
     brush_args,
     brush_colour,
     by_name,
@@ -29,7 +30,9 @@ from krita_art_mcp.probe.common import (
     megabytes,
     open_args,
     open_working,
+    select,
     stroke_args,
+    turned,
 )
 from krita_art_mcp.probe.pixels import brushes
 from krita_art_mcp.probe.report import Report, code, differs, sheet_cell, tool
@@ -126,19 +129,24 @@ async def run(report: Report, a: Client, b: Client, client: BridgeClient, harnes
         data = opened["data"]
         root = data["root_layer_id"]
         base = by_name(data["layers"])["probe base"]["id"]
-        await _colours(report, a, document_id, root, hard)
-        await _one_step(report, a, b, client, document_id, root, hard)
-        await _view(report, a, client, document_id, root, hard)
-        await _witness(report, a, client, document_id, root, hard)
-        await _tall_tip(report, a, folder, harness, presets["tall"])
-        await _beside(report, a, folder, harness, hard)
-        await _refusals(report, a, client, paint, harness, document_id, root, base, hard)
-        await _masks(report, a, client, paint, harness, presets)
-        await _rim(report, a, rim, harness, hard)
-        for spec in BENCHMARKS:
-            await _benchmark(report, a, client, harness, folder, spec, hard)
+        with report.timed("paint"):
+            await _colours(report, a, document_id, root, hard)
+            await _one_step(report, a, b, client, document_id, root, hard)
+            await _view(report, a, client, document_id, root, hard)
+            await _witness(report, a, client, document_id, root, hard)
+            await _tall_tip(report, a, folder, harness, presets["tall"])
+            await _beside(report, a, folder, harness, hard)
+            await _refusals(report, a, client, paint, harness, document_id, root, base, hard)
+            await _masks(report, a, client, paint, harness, presets)
+            await _rim(report, a, rim, harness, hard)
+        with report.timed("benchmark"):
+            for spec in BENCHMARKS:
+                await _benchmark(report, a, client, harness, folder, spec, hard)
         # Inside the window whose brush state this function writes back.
-        await saving.run(report, a, client, harness, hard)
+        with report.timed("save"):
+            await saving.run(report, a, client, harness, hard)
+        with report.timed("acceptance"):
+            await acceptance.run(report, a, client, harness, presets)
     finally:
         if isinstance(saved, Done):
             put_back = harness_call(
@@ -166,19 +174,6 @@ async def run(report: Report, a: Client, b: Client, client: BridgeClient, harnes
         await close(a, document_id)
 
 
-async def _layer(a: Client, document_id: str, root: str, name: str) -> str | None:
-    arguments = {
-        "guard": guard(document_id),
-        "parent_id": root,
-        "above_id": None,
-        "type": "paint",
-        "name": f"krita-art-mcp probe {name}",
-    }
-    made = await tool(a, "krita_layer_create", arguments)
-    layer_id: str | None = (made.get("data") or {}).get("layer_id")
-    return layer_id
-
-
 async def _capabilities(report: Report, a: Client) -> None:
     data = (await tool(a, "krita_server_info", {})).get("data") or {}
     matrix = data.get("capabilities") or {}
@@ -199,7 +194,7 @@ async def _capabilities(report: Report, a: Client) -> None:
 async def _colours(
     report: Report, a: Client, document_id: str, root: str, hard: dict[str, Any]
 ) -> None:
-    layer_id = await _layer(a, document_id, root, "colours")
+    layer_id = await add_layer(a, document_id, root, "colours")
     if layer_id is None:
         report.check("N-06's layer is added", False)
         return
@@ -247,7 +242,7 @@ async def _one_step(
     root: str,
     hard: dict[str, Any],
 ) -> None:
-    layer_id = await _layer(a, document_id, root, "undo")
+    layer_id = await add_layer(a, document_id, root, "undo")
     if layer_id is None:
         report.check("the undo check's layer is added", False)
         return
@@ -294,7 +289,7 @@ async def _view(
     root: str,
     hard: dict[str, Any],
 ) -> None:
-    layer_id = await _layer(a, document_id, root, "view")
+    layer_id = await add_layer(a, document_id, root, "view")
     if layer_id is None:
         report.check("N-07's layer is added", False)
         return
@@ -307,7 +302,7 @@ async def _view(
     rect = {"x": 0, "y": 0, "width": fixtures.PAINT_WIDTH, "height": fixtures.PAINT_HEIGHT}
     hashes, views = [], []
     try:
-        for view in (None, _turned(first_view)):
+        for view in (None, turned(first_view)):
             if view is not None:
                 moved = harness_call(client, "harness.view", document_id=document_id, view=view)
                 views.append(moved.result["view"] if isinstance(moved, Done) else str(moved))
@@ -325,13 +320,6 @@ async def _view(
     )
 
 
-def _turned(view: dict[str, Any]) -> dict[str, Any]:
-    turned: dict[str, Any] = {"zoom": view["zoom"] * 2.5, "rotation_deg": 30.0}
-    if view.get("pan_px") is not None:
-        turned["pan_px"] = [view["pan_px"][0] + 40, view["pan_px"][1] + 25]
-    return turned
-
-
 async def _witness(
     report: Report,
     a: Client,
@@ -340,7 +328,7 @@ async def _witness(
     root: str,
     hard: dict[str, Any],
 ) -> None:
-    layer_id = await _layer(a, document_id, root, "witness")
+    layer_id = await add_layer(a, document_id, root, "witness")
     if layer_id is None:
         report.check("the witness check's layer is added", False)
         return
@@ -392,7 +380,7 @@ async def _tall_tip(
     try:
         root = opened["data"]["root_layer_id"]
         for label, points in lines.items():
-            layer_id = await _layer(a, document_id, root, f"tip {label}")
+            layer_id = await add_layer(a, document_id, root, f"tip {label}")
             brush = brush_args(tall, size_px=TIP_BRUSH_PX)
             arguments = stroke_args(document_id, layer_id or "", brush, points, verify="full")
             data = (await tool(a, TOOL, arguments)).get("data") or {}
@@ -431,7 +419,7 @@ async def _beside(
         units = {"export_pixels_per_unit": previews.EXPORT_PER_UNIT, "master_to_export_scale": 0.5}
         alone = previews.arguments([previews.source(document_id)], previews.GAME[:1], **units)
         before = await tool(a, previews.TOOL, alone)
-        layer_id = await _layer(a, document_id, data["root_layer_id"], "beside")
+        layer_id = await add_layer(a, document_id, data["root_layer_id"], "beside")
         line = line_points(20, 48, fixtures.PAINT_WIDTH - 20, 48)
         painted = await tool(
             a, TOOL, stroke_args(document_id, layer_id or "", brush_args(hard), line)
@@ -480,7 +468,7 @@ async def _refusals(
     base: str,
     hard: dict[str, Any],
 ) -> None:
-    layer_id = await _layer(a, document_id, root, "refusals")
+    layer_id = await add_layer(a, document_id, root, "refusals")
     group = await tool(
         a,
         "krita_layer_create",
@@ -637,7 +625,7 @@ async def _masks(
     allowed = {"x": 40, "y": 24, "width": 60, "height": 40}
     try:
         data = opened["data"]
-        layer_id = await _layer(a, document_id, data["root_layer_id"], "mask")
+        layer_id = await add_layer(a, document_id, data["root_layer_id"], "mask")
         protected = await tool(
             a,
             "krita_protection_set",
@@ -659,7 +647,7 @@ async def _masks(
                 report.check(f"N-08: a {role} stock preset is listed", False)
                 continue
             brush = brush_args(preset, size_px=24)
-            await _select(a, document_id, {"type": "rect", "rect": allowed})
+            await select(a, document_id, {"type": "rect", "rect": allowed})
             kept = {
                 mode: await tool(
                     a, TOOL, stroke_args(document_id, layer_id, brush, edge, verify=mode)
@@ -672,7 +660,7 @@ async def _masks(
                 )
                 for mode, content in kept.items()
             }
-            await _select(a, document_id, {"type": "none"})
+            await select(a, document_id, {"type": "none"})
             before = await capture_composite(a, document_id, width, height)
             leaked = {
                 mode: await tool(
@@ -727,20 +715,6 @@ async def _k43(report: Report, a: Client, client: BridgeClient, document_id: str
     )
 
 
-async def _select(a: Client, document_id: str, shape: dict[str, Any]) -> None:
-    await tool(
-        a,
-        "krita_selection_set",
-        {
-            "guard": guard(document_id),
-            "combine": "replace",
-            "shape": shape,
-            "feather_px": 0,
-            "invert": False,
-        },
-    )
-
-
 async def _rim(report: Report, a: Client, rim: Path, harness: Path, hard: dict[str, Any]) -> None:
     opened = await open_working(a, rim, harness, "painting")
     document_id = opened.get("document_id")
@@ -761,8 +735,8 @@ async def _rim(report: Report, a: Client, rim: Path, harness: Path, hard: dict[s
                 "preserve_canvas": False,
             },
         )
-        clipped = await _layer(a, document_id, data["root_layer_id"], "rim clip")
-        plain = await _layer(a, document_id, data["root_layer_id"], "rim plain")
+        clipped = await add_layer(a, document_id, data["root_layer_id"], "rim clip")
+        plain = await add_layer(a, document_id, data["root_layer_id"], "rim plain")
         if clipped is None or plain is None or protect.get("status") != "completed":
             report.check("the rim's layers and protection are set", False, str(code(protect)))
             return
@@ -842,31 +816,20 @@ async def _benchmark(
         return
     try:
         data = opened["data"]
-        layer_id = await _layer(a, document_id, data["root_layer_id"], "bench")
+        layer_id = await add_layer(a, document_id, data["root_layer_id"], "bench")
         if layer_id is None:
             report.check(f"{name}'s layer is added", False)
             return
         journal = harness / "server-a" / "journal"
         logged, rss = _lines_size(journal), krita_rss_kb()
         brush = brush_args(hard, size_px=BRUSH_PX)
-        took, scopes, failures = [], [], []
-        for index in range(STROKES):
-            points = _s_curve(corner + index * 3, corner + index * 3)
-            started = time.perf_counter()
-            done = await tool(a, TOOL, stroke_args(document_id, layer_id, brush, points))
-            took.append(time.perf_counter() - started)
-            if done.get("status") != "completed":
-                failures.append(f"stroke {index}: {code(done) or done.get('status')}")
-            rect = ((done.get("data") or {}).get("verification") or {}).get("rect") or {}
-            scopes.append(f"{rect.get('width')}x{rect.get('height')}")
-        p95 = statistics.quantiles(took, n=20)[18]
+        took, scopes, failures = await _timed_strokes(a, document_id, layer_id, brush, corner)
         report.check(
             f"{name}: {STROKES} strokes of {POINTS} points with a {BRUSH_PX} px brush on a "
             f"{size} x {size} master with {spec['layers']} protected layers, p95 under "
             f"{spec['budget_s']} s",
-            not failures and p95 < spec["budget_s"],
-            f"p95 {p95:.2f} s, mean {statistics.mean(took):.2f} s, max {max(took):.2f} s, "
-            f"R {scopes[0]}; " + "; ".join(failures[:3]),
+            not failures and _p95(took) < spec["budget_s"],
+            f"{_timing(took)}, R {scopes[0]}; " + "; ".join(failures[:3]),
         )
         long_took = []
         for index in range(LONG_STROKES):
@@ -880,8 +843,58 @@ async def _benchmark(
         if name == "N-01":
             _retention(report, client, rss)
             _journal(report, journal, logged, STROKES + LONG_STROKES)
+        await _selected(report, a, document_id, layer_id, brush, corner, spec)
     finally:
         await close(a, document_id)
+
+
+async def _timed_strokes(
+    a: Client, document_id: str, layer_id: str, brush: dict[str, Any], corner: int
+) -> tuple[list[float], list[str], list[str]]:
+    took, scopes, failures = [], [], []
+    for index in range(STROKES):
+        points = _s_curve(corner + index * 3, corner + index * 3)
+        started = time.perf_counter()
+        done = await tool(a, TOOL, stroke_args(document_id, layer_id, brush, points))
+        took.append(time.perf_counter() - started)
+        if done.get("status") != "completed":
+            failures.append(f"stroke {index}: {code(done) or done.get('status')}")
+        rect = ((done.get("data") or {}).get("verification") or {}).get("rect") or {}
+        scopes.append(f"{rect.get('width')}x{rect.get('height')}")
+    return took, scopes, failures
+
+
+def _p95(took: list[float]) -> float:
+    return statistics.quantiles(took, n=20)[18]
+
+
+def _timing(took: list[float]) -> str:
+    return f"p95 {_p95(took):.2f} s, mean {statistics.mean(took):.2f} s, max {max(took):.2f} s"
+
+
+async def _selected(
+    report: Report,
+    a: Client,
+    document_id: str,
+    layer_id: str,
+    brush: dict[str, Any],
+    corner: int,
+    spec: dict[str, Any],
+) -> None:
+    # Every stroke fingerprints the selection, so a canvas-wide one is what that read costs most.
+    budget = spec["budget_s"]
+    name = f"{spec['name']} with a canvas-wide selection, p95 under {budget} s"
+    selected = await select(a, document_id, {"type": "all"})
+    if selected.get("status") != "completed":
+        report.check(name, False, str(code(selected)))
+        return
+    took, _, failures = await _timed_strokes(a, document_id, layer_id, brush, corner)
+    await select(a, document_id, {"type": "none"})
+    report.check(
+        name,
+        not failures and _p95(took) < budget,
+        f"{_timing(took)}; " + "; ".join(failures[:3]),
+    )
 
 
 def _retention(report: Report, client: BridgeClient, rss_before: int | None) -> None:

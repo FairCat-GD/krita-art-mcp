@@ -25,6 +25,30 @@ def by_name(layers: list[dict[str, Any]]) -> dict[str, dict[str, Any]]:
     return {layer["name"]: layer for layer in layers}
 
 
+async def add_layer(a: Client, document_id: str, parent_id: str, name: str) -> str | None:
+    arguments = {
+        "guard": guard(document_id),
+        "parent_id": parent_id,
+        "above_id": None,
+        "type": "paint",
+        "name": f"krita-art-mcp probe {name}",
+    }
+    made = await tool(a, "krita_layer_create", arguments)
+    layer_id: str | None = (made.get("data") or {}).get("layer_id")
+    return layer_id
+
+
+async def select(a: Client, document_id: str, shape: dict[str, Any]) -> dict[str, Any]:
+    arguments = {
+        "guard": guard(document_id),
+        "combine": "replace",
+        "shape": shape,
+        "feather_px": 0,
+        "invert": False,
+    }
+    return await tool(a, "krita_selection_set", arguments)
+
+
 async def close(mcp: Client, document_id: str, policy: str = "discard") -> dict[str, Any]:
     arguments = {"guard": guard(document_id), "dirty_policy": policy}
     return await tool(mcp, "krita_document_close", arguments)
@@ -144,6 +168,14 @@ def line_points(x0: float, y0: float, x1: float, y1: float, count: int = 8) -> l
         {"x": x0 + (x1 - x0) * index / (count - 1), "y": y0 + (y1 - y0) * index / (count - 1)}
         for index in range(count)
     ]
+
+
+def turned(view: dict[str, Any]) -> dict[str, Any]:
+    # A second view of the canvas, zoomed, rotated and panned away from the first.
+    moved: dict[str, Any] = {"zoom": view["zoom"] * 2.5, "rotation_deg": 30.0}
+    if view.get("pan_px") is not None:
+        moved["pan_px"] = [view["pan_px"][0] + 40, view["pan_px"][1] + 25]
+    return moved
 
 
 async def finished(a: Client, content: dict[str, Any], limit_s: float) -> dict[str, Any]:

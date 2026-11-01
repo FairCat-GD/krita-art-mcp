@@ -7,8 +7,12 @@ from krita import InfoObject, Krita, Selection
 from ..bridge_core import log
 from ..bridge_core.errors import BridgeError
 from . import painting, selections
-from .qt import EXCLUDE_USER_INPUT, QApplication, QCoreApplication
+from .qt import EXCLUDE_USER_INPUT, QApplication, QCoreApplication, QIcon
 
+ANNOUNCEMENT = "krita-art-mcp: an agent is working on this document"
+ANNOUNCEMENT_MS = 1500
+# Krita's lowest, so the message never displaces one of Krita's own.
+ANNOUNCEMENT_PRIORITY = 2
 INITIAL_LAYER = "Layer 1"
 PROBE_MASK = "krita-art-mcp probe mask"
 PROBE_NODE = "krita-art-mcp probe node"
@@ -185,6 +189,18 @@ class KritaDocuments:
         windows = Krita.instance().windows()
         view = windows[0].activeView() if windows else None
         return None if view is None else view.document()
+
+    def announce(self, document: Any) -> None:
+        # Never raises, so the message cannot fail the job it announces.
+        try:
+            views = Krita.instance().windows()[0].views()
+            view = next((view for view in views if view.document() == document), None)
+            if view is not None:
+                view.showFloatingMessage(
+                    ANNOUNCEMENT, QIcon(), ANNOUNCEMENT_MS, ANNOUNCEMENT_PRIORITY
+                )
+        except Exception:
+            logging.getLogger(log.NAME).exception("the floating message was not shown")
 
     def activate(self, document: Any, node_id: str) -> None:
         document.setActiveNode(_node(document, node_id))

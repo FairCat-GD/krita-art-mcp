@@ -127,3 +127,20 @@ def test_every_benchmark_layer_covers_the_strokes_area_and_its_margin() -> None:
         assert (
             layer.y <= area["y"] - reach and area["y"] + area["height"] + reach <= layer.y + height
         )
+
+
+@pytest.mark.parametrize(
+    ("stack", "side"),
+    [
+        (fixtures.sprite_stack(), (fixtures.SPRITE_WIDTH, fixtures.SPRITE_HEIGHT)),
+        (fixtures.icon_stack(), (fixtures.ICON_SIDE, fixtures.ICON_SIDE)),
+    ],
+    ids=["sprite", "icon"],
+)
+def test_an_acceptance_fixture_has_an_exterior_a_soft_edge_and_a_solid_inside(
+    stack: tuple[fixtures.Layer, ...], side: tuple[int, int]
+) -> None:
+    alpha = fixtures.composite(stack, *side)[..., 3]
+    assert alpha[0, 0] == alpha[-1, -1] == 0
+    assert alpha[side[1] // 2, side[0] // 2] == 255
+    assert np.any((alpha > 0) & (alpha < 255))

@@ -275,7 +275,7 @@ async def _kra(
         if reopened.get("status") == "completed"
         else {}
     )
-    differences = _kra_differences(live, back)
+    differences = kra_differences(live, back)
     report.check(
         "the saved KRA, opened read-only, keeps every layer id and every compared field, masks "
         "and the selection included",
@@ -294,7 +294,7 @@ async def _kra(
         await close(a, reopened["document_id"])
 
 
-def _kra_differences(live: dict[str, Any], back: dict[str, Any]) -> list[str]:
+def kra_differences(live: dict[str, Any], back: dict[str, Any]) -> list[str]:
     roots = (live.get("root_layer_id"), back.get("root_layer_id"))
     found = {layer["id"]: layer for layer in back.get("layers", [])}
     differences = []

@@ -41,7 +41,10 @@ runs; after it closes, read it from git history at round 1's release commit.
 - **Probes on a Krita development build** (PDD Q9). Throwaway documents only, for early Phase 6
   capability checks. Left out at the round 1 intake.
 - **The H2 sheet with sensors toggled.** Round 1 uses stock presets as shipped; turning Fade or
-  Distance on and off needs preset editing (Phase 2). Left out at the round 1 intake.
+  Distance on and off needs preset editing (Phase 2). Left out at the round 1 intake. Round 1's
+  sheet (0.14.0) passed, with five of six presets usable, but only
+  `j) WaterC Basic Round-Grunge` tapers, and only as it starts: a scripted stroke holds speed
+  sensors constant, so a tapered end still needs a sensor or per-point pressure.
 - **Windows and Linux.** The code stays portable, but nothing is tested there. Left out at the
   round 1 intake. On Linux the bridge needs its own guard against SIGPIPE: `SO_NOSIGPIPE` is
   Darwin's, so a reply to a client that has gone would still kill Krita there (0.12.0).
@@ -146,6 +149,10 @@ these are the parts only a person can see.
   tests hold the `layer_style` reason. Add a drop shadow by hand to a layer of an agent's working
   copy, then change its opacity with `krita_layer_update`: region scope should be refused, naming
   `layer_style`, and `verify: "full"` should pass.
+- **The floating message** (0.14.0). No harness op can see the widget, and no failure reached
+  `plugin.log` across the probe runs; the owner did not catch it by eye. Have an agent paint on the
+  document in front, and look for "krita-art-mcp: an agent is working on this document" on the
+  canvas. Krita's *Show on-canvas popup messages* setting can hide it.
 - **N-03 in Activity Monitor** (0.2.0). With the plugin loaded and Krita idle, Krita's CPU should
   stay under 1%. `top` measured 0.0% in six samples 5 s apart. Look at Krita's row in Activity
   Monitor for a minute while it is idle.

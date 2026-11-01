@@ -6,6 +6,39 @@ All notable changes to krita-art-mcp are documented here. The format follows
 
 ## [Unreleased]
 
+## [0.14.0] — 2026-11-01
+
+Phase 1 meets the contract's acceptance exercises, and the agent instructions are final. This
+release needs `install-plugin`, a Krita restart and a restart of the MCP client.
+
+### Added
+
+- **Krita says when an agent is at work.** A call that changes a document shows a short floating
+  message on that document's view. It never fails a call, and it shows only while the document is
+  the one in front.
+- **The probe runs the contract's six acceptance exercises** on fictional sprite and icon
+  fixtures: a selected repair at two zoom and pan settings; a detail that keeps the base, the
+  exterior and every alpha byte; soft and scatter brushes beside a boundary; undo and retry of a
+  batch; previews from explicit recipes; and a `.kra` saved, closed and reopened.
+- **The probe checks N-04.** A run must leave nothing outside the data folder and Krita's own
+  temp and autosave files. It lists those places before and after, so it sees what stays, not a
+  file that came and went.
+- **The probe gates strokes under a canvas-wide selection** at N-01's and N-09's budgets, and
+  prints each stage's time.
+
+### Changed
+
+- **The agent instructions are final.** They now name the save's 8192 x 8192 bound, that erasing
+  and a stroke under half a pixel are refused, when a preset needs `verify` full, and that an
+  ellipse or polygon selection must sit a pixel inside the allowed mask, because its antialiased
+  edge reaches past a mask drawn on the same line.
+
+### Fixed
+
+- **The probe sweeps its own leftovers first.** A run that died with its documents unsaved used
+  to stop the next run at the unsaved-documents check, before the sweep that would have closed
+  them.
+
 ## [0.13.0] — 2026-10-30
 
 A stale plugin now says so, the calls an agent makes most got lighter, and a failed save leaves

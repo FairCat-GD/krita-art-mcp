@@ -26,7 +26,8 @@ it and refuses every change.
 editable_layer_ids (KRA) or editable_layer_names (ORA, PNG).
 - krita_document_inspect shows layers, protection, the selection and how far history goes.
 - To repair several regions, allow their union once with krita_protection_set (it only \
-tightens), then confine each repair with krita_selection_set.
+tightens), then confine each repair with krita_selection_set. An ellipse or polygon selection \
+is antialiased: keep it a pixel inside the allowed mask.
 - Undo steps: layer creation, selection commits and blend changes; other property changes \
 cannot be undone. krita_history_step never goes below the last protection change.
 - krita_layer_update checks appearance changes over the layer's bounds and undoes a leak; if a \
@@ -35,7 +36,9 @@ are refused. To recolour a silhouette under preserve_composite_alpha, paint on a
 inherit_alpha layer.
 - krita_paint_stroke paints one stroke per call, one undo step, checked like a layer change \
 and undone on a leak. Per-point pressure, tilt or timing is refused unless input_fallback is \
-flat, which paints every point at pressure 1.
+flat, which paints every point at pressure 1. Erasing and a stroke under half a pixel are \
+refused. Region verification needs the pixel brush engine; another preset, or one whose tip or \
+scatter cannot be read, needs verify full.
 - krita_capture returns an image and its PNG's path. scale 1 is the native crop; other scales \
 resample with your filter onto a background, checker by default. max_px (1600, at most 4096) \
 bounds the long edge: capture tiles for more. A layer capture is the layer's own pixels, without \
@@ -43,7 +46,8 @@ its opacity, masks or inherit-alpha clip.
 - After every one to three strokes, check krita_preview_render at the asset's game sizes, from \
 explicit recipes; a source's baseline_id shows the document as opened beside it.
 - Keep work with krita_document_save to a new .kra path (it never overwrites); it reopens the \
-file to verify it and clears dirty. An .ora drops masks and adjustment layers.
+file to verify it and clears dirty. An .ora drops masks and adjustment layers. A save takes \
+documents up to 8192 x 8192; a larger one can be opened, painted and previewed, never saved.
 - Use krita_sample for exact colours (RGBA 0-255, hex, L*a*b*, L*C*h); a radius averages a disc, \
 weighted by alpha. Never judge a colour from a capture.
 - krita_resource_list lists brush presets (their id and sha256 are what paint calls take), \

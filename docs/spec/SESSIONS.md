@@ -51,14 +51,16 @@ Never push without being asked.
 | 13 | Architecture review: every tool built | 2 | — |
 | 13a | Review fixes: every tool built (inserted by review 13) | 2 | **0.13.0** |
 | 14 | Acceptance: the full harness, the contract's exercises, H2, H3, final server instructions | 28, 30, 31 | **0.14.0** |
-| 15 | Docs, changelog, manual runs; close the round | 2, 32 | **0.15.0** |
+| 14a | Fixes from the Codex agent's first capture (inserted by the owner) | 2 | **0.15.0** |
+| 15 | Docs, changelog, manual runs; close the round | 2, 32 | **0.16.0** |
 
 A review session (6, 10, 13) changes no product code and cuts no version. A session it inserts
 takes the next version, and every later version shifts by one; the handoff says so. Review 6
 inserted 6a on 2026-10-24, so sessions 7–15 moved from 0.6.0–0.12.0 to 0.7.0–0.13.0. The owner
 inserted 7a on 2026-10-24 with no version, so no version moved. Review 10 inserted 10a on
 2026-10-25, so sessions 11–15 moved from 0.10.0–0.13.0 to 0.11.0–0.14.0. Review 13 inserted 13a
-on 2026-10-30, so sessions 14–15 moved from 0.13.0–0.14.0 to 0.14.0–0.15.0.
+on 2026-10-30, so sessions 14–15 moved from 0.13.0–0.14.0 to 0.14.0–0.15.0. The owner inserted
+14a on 2026-11-01, so session 15 moved from 0.15.0 to 0.16.0.
 
 ---
 
@@ -3942,6 +3944,171 @@ handoff assigns here.
 - **The exercises' fixtures are fictional.** Never use the first game's art. The trial on real
   art comes after the round.
 
+**Done (2026-11-01, 0.14.0).**
+- **Decided with the owner at the start:**
+  - H2's six presets: `b) Basic-2 Opacity`, `d) Ink-1 Precision`, `d) Ink-2 Fineliner`,
+    `d) Ink-7 Brush Rough`, `j) WaterC Basic Round-Grunge`, `f) Bristles-1 Details`. Of the 136
+    stock presets whose settings could be read, these are the four that vary on anything but
+    pressure, a flat control and one with bristle edges.
+  - The session restarts Krita once `doctor` reports 0 unsaved; the owner cleared the one unsaved
+    document.
+- **The instructions, final at 3,901 characters.** They add: erasing and a stroke under half a pixel
+  are refused; region scope needs the pixel engine and a readable tip and scatter; the save's
+  8192 x 8192 bound (F4); and a selection a pixel inside the allowed mask. PDD Part 4's list was
+  rechecked item by item.
+- **F-24.** `port.announce(document)` in `Registry.guarded` for writes; a close, with `writes=False`,
+  never announces. `KritaDocuments.announce` calls `View.showFloatingMessage` at Krita's lowest
+  priority for 1.5 s and never raises. Krita shows it only on the current view.
+- **The probe.**
+  - `Report.timed`: one MEASURED line per stage.
+  - `probe/writes.py`, N-04: `places`, `take`, `strays`.
+  - `probe/acceptance.py`, the six exercises, inside `painting.run`'s brush-state window, after the
+    save checks.
+  - `fixtures.sprite_stack` and `icon_stack`, fictional.
+  - `add_layer`, `select` and `turned` moved to `probe/common.py`; `saving.kra_differences` is
+    public.
+  - `_selected`: N-01 and N-09 under a canvas-wide selection.
+  - `_close_leftovers` runs before the unsaved check.
+- **N-04's list, as checked.**
+  - The data directory, recursive and strict, by `DATA_FILES`; `config.json` may not change.
+  - The server's cwd, new names, strict.
+  - The home folder, new names: every visible name counts, a hidden one only if it looks like ours.
+  - Krita's temp folder (from `getconf DARWIN_USER_TEMP_DIR`, since this shell's `TMPDIR` may
+    differ), `~/Library/Application Support` and `~/Library/Preferences`, new names that look like
+    ours.
+  - Krita's own names are allowed. `.krita-*-autosave.kra` is confirmed from `libkritaui`, which
+    holds the glob `.krita-*-*-autosave.kra`; no run produced one.
+  - **Its limit:** it sees what stays after a run, not a file that came and went, and in the shared
+    folders only names that look like ours. `~/Desktop` and `~/Downloads` are left out, because
+    listing them can raise a permission prompt.
+- **The exercises, each PASS in the probe:**
+  1. A selected repair at two zoom, rotation and pan settings lands on equal layer bytes, inside the
+     selection, at the requested row. Pressure is refused by name; `input_fallback` flat reports
+     itself and paints the flat stroke's bytes.
+  2. On the sprite and the icon, a detail across the silhouette's edge on a new inherit-alpha layer
+     keeps the base's bytes, the exterior, every alpha byte and the source's hash. A stroke and a
+     property change on the base are `LOCKED_TARGET`.
+  3. Soft and scatter brushes beside an allowed polygon: no change outside, by the receipt and by
+     the server's own compare; without the selection the leak is rolled back and confirmed.
+  4. Three strokes undone, redone and undone land on the exact composites. Retried, they return
+     their receipts and paint nothing, even after being undone.
+  5. 2.95 and 1.8 px per unit on the sprite, 128 and 256 px on the icon: exact cells, fresh after a
+     stroke, the overlay in the marked sheet only.
+  6. A `.kra` saved, closed with `refuse` and reopened keeps every layer field, the transform and
+     filter masks, visibility, profile, size, each paint layer's pixels, the composite and the
+     selection.
+- **Amendments:**
+  - **The exercises stay in the probe,** so each later run repeats them (plan time, with the owner).
+  - **F8 was measured on N-09 too,** since its 64 MB case is the 8k one (plan time). **Both are
+    gated** at their budgets (the owner's choice, once measured).
+  - **H2 ran from a scratchpad driver,** with no new CLI command (plan time).
+  - **H3 needed no root:** the pattern was opened in Krita directly, and listed as `read_only`.
+    The plan had the owner open it and edit `~/.codex/config.toml`; at the owner's word the session
+    did both.
+  - **The instructions gained the selection's inset,** which the block did not name. The session
+    found the trap: a polygon or ellipse selection is antialiased and the allowed mask binary, so a
+    selection on the mask's own edge paints pixels the mask forbids, and is refused and rolled back.
+  - **`_close_leftovers` was not in the block.** A run that died with its documents dirty stopped
+    the next run at the unsaved check, before the sweep invariant 13 promises.
+  - **Session 14a is inserted** (the owner, 2026-11-01, after H3). The Codex agent's three comments
+    on its first capture are fixed before the close, not left in the backlog; session 15 moves to
+    0.16.0.
+- **Measured** (Krita 5.3.4.1 on macOS, Apple Silicon, one document open):
+  - **Stages:** document 1.3 s, cycle 14.4 s, open 8.0 s, pixel 3.7 s, preview 10.7 s, change 6.6 s,
+    update 2.9 s, paint 6.3 s, benchmark 27.6 s, save 15.4 s, acceptance 10.6 s.
+  - **H4 idle:** p50 4.6 ms, p95 5.2 ms, max 6.1 ms. **Create and close:** mean 718 ms.
+  - **N-01:** p95 0.08 s; **with a canvas-wide selection** 0.09 s (0.11 s on the two earlier runs);
+    corner to corner 0.37–0.39 s. **N-09:** p95 0.23 s; **selected** 0.26 s (0.28 s); corner to
+    corner 3.76–3.82 s. F8 does not bite.
+  - **N-02:** first render 0.76 s, 20 renders p95 0.32 s.
+  - **H4 long save:** 5.0 s, longest silence 2.87 s, median answer 4 ms; Krita 1,800 MB before and
+    2,831 MB after.
+  - **A selection on the allowed polygon's own edge:** 58 px changed outside it with the soft brush,
+    67 with the scatter brush, each refused and rolled back. A selection 1 px inside changed none.
+  - **Cell sizes round half up,** not up: 47.2 is 47.
+- **Checked by hand:**
+  - **H2: passes.** The owner would use five of the six for rims and seams, all but
+    `f) Bristles-1 Details`. Only `j) WaterC Basic Round-Grunge` varies along a stroke: it fades in
+    from nothing over the first third and then swells (8, 12, then 14 px at the 12 px setting).
+    `d) Ink-1 Precision` and `d) Ink-2 Fineliner` keep an even width, so a scripted stroke holds
+    their speed sensor constant. `d) Ink-7 Brush Rough` keeps its rough edge and even width. The
+    brush state came back exact.
+  - **H3: holds.** After the registration, a Codex agent found the pattern by path, called
+    `krita_capture` and described the returned image correctly from the image alone: the five bars
+    in order, the circle, the triangle, and the 4 x 4 board with its first square black.
+  - **The first H3 attempts failed before the server.** With the block missing from
+    `~/.codex/config.toml`, Codex listed no tools. With it, the handshake closed and the repository
+    answered `Operation not permitted`, because macOS kept the app out of `~/Documents`. The owner
+    granted access. README names the failure.
+  - **Registration in Claude Code:** README's JSON, from a temporary file with `--strict-mcp-config`,
+    answered `krita_server_info` with plugin 0.14.0. Claude Code holds no permanent registration
+    on this machine, whatever review 13's §8.7 listed. **In Codex:** README's TOML, verbatim.
+  - **One probe run failed, 12 checks, all after the long save,** with `KRITA_MODAL_DIALOG`: another
+    agent was working in Krita at the time. The next run, with no code change that touched it, was
+    green. Leaving Krita alone during a run is now in README.
+  - **F-24 by eye:** not confirmed; the owner did not catch it. No warning or error reached
+    `plugin.log`. In `docs/BACKLOG.md`.
+- **Falsified** (each broken once, the unit breaks with the file's bytes restored and the tree
+  compared equal; the live breaks in a temporary copy of the module):
+  - **Unit, 14:** a stray name, a changed file and a removed file counting; the list allowing; only
+    new names in a shallow place; `timed` surviving a raise, and its line; the instructions' bound;
+    a close announcing nothing; a write announcing, and before it runs; the sprite's and the icon's
+    soft edges; leftovers before the unsaved check.
+  - **Live, 13:** exercise 1's placement, its two views and its flat stroke; exercise 2's alpha, by
+    dropping inherit-alpha, and its refusals, by aiming at the agent's own layer; exercise 3's inset
+    and its leak; exercise 4's undo and its retry; exercise 5's freshness and its overlay; exercise
+    6's pixels and its hidden layer. Each failed at its own check.
+  - **F8:** the budget set to 0.05 s failed the selected line.
+  - **N-04:** real strays in the data directory, the home folder (one hidden), Krita's temp folder
+    and the cwd all failed the live check, and it passed once they were gone.
+- **Numbers:**
+  - `verify`: 6 stages, all PASS;
+  - 575 server tests passed (+22), 0 skipped;
+  - 660 plugin-core tests passed (+2), 0 skipped;
+  - `probe`: 129 PASS, 0 FAIL, 47 MEASURED, 112.7 s with 1 document open;
+  - 19 registered tools; 19 schema files; instructions 3,901 characters (195 to spare); 30 error
+    codes; 32 bridge ops.
+
+---
+
+## 14a: Fixes from the Codex agent's first capture
+
+Inserted by the owner on 2026-11-01, after H3, so an agent's first calls work before the round
+closes. Session 15 shifts to 0.16.0. 14's done-note, *Checked by hand*, has the run.
+
+**Read:** block 14's done-note; `PDD.md` Part 7 and C1–C5; `SPEC.md` §5 (invariants 8, 11); `README.md`
+(*Registering the server*).
+
+- **`krita_capture` reached Codex as `args: unknown`.** The agent found the arguments' shape through
+  refusals, though `tools/list` serves the whole schema (`tools/__init__.py:build`, and the probe's
+  `tools/list` check). First find out why, in Codex, with the owner: which tools lose their
+  schema, and whether a construct is the cause (`prefixItems`, `anyOf`, `oneOf`). Then either the
+  schemas reach Codex whole, by an equivalent form, or each tool's `description` carries a working
+  example. **No schema is loosened** to fit a client, and a change to a shared shape goes through
+  `amend_schemas.py`.
+- **An argument error names every problem.** `_checked` (`tools/__init__.py`) already collects them
+  with `iter_errors`, and its message names the first. An agent should see all of them in one
+  answer, within the 6 MB limit, and in `details` as the schema's error details allow. The plugin's
+  semantic checks stop at their first refusal; say in the done-note which stay that way, and why.
+- **A document opened in Krita lists an empty `name`.** `KritaDocuments.describe`
+  (`krita_adapter/documents.py:83`) reads `document.name()`. Fall back to the file's name when it is
+  empty, in the core so a unit test holds it. `probe._probe_documents` and `_own_documents` match on
+  `name`, and `read_only` must keep keeping the owner's documents out of them.
+- **Docs.**
+  - `CHANGELOG.md`: 0.15.0.
+  - README: the version line, and registration if it changes.
+
+**Gates:**
+- `uv run scripts/verify.py`, and `probe` green after `install-plugin` and a Krita restart.
+- The Codex agent, in a new chat, makes a first `krita_capture` of a known document with no refused
+  call, and the document lists by name.
+- Each new check falsified once.
+
+**Watch for:**
+- **The Codex agent works in Krita.** Ask the owner before each probe run and each restart.
+- **A release restarts the MCP client too.** Tell the owner before the Krita restart.
+- **Whatever Codex needs must not cost Claude Code:** check the registered tools in both clients.
+
 ---
 
 ## 15: Documentation pass, and the round's close
@@ -3971,8 +4138,8 @@ handoff assigns here.
   - **F34, §8.8 item 11:** the baseline table names the condition its numbers were taken under
     (an empty Krita, or the open-document count the probe prints from 13a).
 - **Docs.**
-  - `CHANGELOG.md`: 0.15.0 (0.12.0 before 6a, 0.13.0 before 10a, 0.14.0 before review 13
-    inserted 13a).
+  - `CHANGELOG.md`: 0.16.0 (0.12.0 before 6a, 0.13.0 before 10a, 0.14.0 before review 13
+    inserted 13a, 0.15.0 before the owner inserted 14a).
   - The release commit carries the last done-note.
   - Then a separate `docs: close round 1` commit deletes `docs/spec/` and rewrites the handoff
     from the between-rounds template, naming the release commit.
