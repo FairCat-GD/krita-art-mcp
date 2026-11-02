@@ -39,10 +39,10 @@ Never push without being asked.
 | C1 | `krita_paint_fill` | 1, 3 | **0.20.0** |
 | M1 | Transparency masks | 1, 3, 14 | **0.21.0** |
 | X1 | Architecture review: the frame and its first two tools | all | — |
-| E1 | Taper probe, then the proven subset | 9, 11, 16 | **0.22.0** |
+| E1 | Taper probe, then the proven subset | 16 | **0.22.0** |
 | L1 | Layers: duplicate, reorder, remove, group | 1, 3, 13 | **0.23.0** |
 | B1 | Document duplicate | 1, 3, 12 | **0.24.0** |
-| T1 | Translate, on a native route or not at all | 15 | **0.25.0** |
+| T1 | Translate, on a native route or not at all | 1, 15 | **0.25.0** |
 | S1 | Scale, rotate, shear; cut first if the round runs long | 1, 3 | **0.26.0** |
 | X2 | Architecture review: construction | all | — |
 | V1 | Re-measure, docs, full run, close the round | 18 | **0.27.0** |
@@ -73,7 +73,9 @@ state*, *Documents*, *The verification core*, *Painting*, *The undo ledger and h
   - `document.open`: `working_copy` at `files.working_copy` (`opening.py:89`), `read_only` at
     `port.open` (`:105`);
   - `document.create`: `port.create`;
-  - `document.close` and `document.save`: `drop_pending_save` (`documents.py:73`, `saving.py:90`);
+  - `document.close`: `drop_pending_save` (`documents.py:73`);
+  - `document.save`: `_make_folder` (`saving.py:91`), because the drop moves after the export
+    (below);
   - `document.save_finish`: `handle.pending_save = None` (`saving.py:169`);
   - `protection.set`: where the handle's state is written;
   - `selection.set`: both `before_change` sites (`selections.py:77,81`);
@@ -85,11 +87,23 @@ state*, *Documents*, *The verification core*, *Painting*, *The undo ledger and h
   explicit value; retryable or `rollback_verified: true` is `not_applied`; before the marker is
   `not_applied`; otherwise `uncertain`. An unexpected exception is `uncertain`. Every op is classed
   read, bounded or `harness.*`, the last pinned to its prefix so no tool op hides in it.
+- **Failures that never reach `Jobs._run`** state their outcome too, or every ordinary refusal would
+  read `uncertain`.
+  - An op that never ran is `not_applied`, set where `Jobs` finishes it: the conflict and the
+    unknown op in `submit`, and `cancel` and `stop` (`jobs.py:145,158,307,317`).
+  - The op stopped by an interrupt in `drain` (`jobs.py:186`) states nothing, so it is `uncertain`.
+  - On the server, `_checked` fills in the rest, for mutating tools: a failure with no
+    `operation_id` never went out, so it is `not_applied` (decision 8), and one with an
+    `operation_id` and no statement is `uncertain`.
+  - A read that leaves a document registered (`reopening.read_file`) states `uncertain`.
 - **Cleanups are verified** (decision 5). Without this, `SAVE_VERIFY_FAILED`, the commonest failure
   past a marker, reads `uncertain` and the field is noise.
   - `_remove` (`saving.py:510`) and its callers check `not lexists(written)`; `_Made.undo` checks
-    `kept is None`. Each reports `rollback_verified`.
-  - `rollback_verified` is the one key; `layers.py:58` moves to it.
+    `kept is None`. `_unmake` (`:248`) reports what stayed, and a folder something else has filled
+    counts as cleaned, since it is no longer ours to remove. Each reports `rollback_verified`.
+  - `_check_writable`'s refusals (`:257`) need the folder, so they stay past the marker and depend
+    on this.
+  - `rollback_verified` is the one key the rule reads; `layers.py:58` adds it beside `rolled_back`.
   - The open and create discard paths (`opening.py:51-54`, `documents.py:41-43`) state `uncertain`
     when the document stays.
 - **`BUSY` becomes true.** The drop at `saving.py:90` moves after a successful export, because
@@ -105,7 +119,11 @@ state*, *Documents*, *The verification core*, *Painting*, *The undo ledger and h
   - `details.outcome` is typed in the shared error shape through `scripts/amend_schemas.py`.
 - **`krita_operation_get`** gains `outcome`, `receipt_valid` and `receipt_problem`. It returns the
   raw receipt as structured data (its schema is a plain object), survives a receipt that raises, and
-  still settles the journal.
+  still settles the journal. `outcome` is null while the call is queued or running.
+  - **After a Krita restart it answers from the journal** (decision 5). `bridge_client.py:166-167`
+    returns `uncertain` as soon as the session differs, and `Journal.session_of` gives only a
+    session, so the journal needs a lookup by operation id. A finished line answers with its own
+    outcome; otherwise `uncertain`.
 - **Docs.**
   - `USER-GUIDE.md`: *Retries and long calls*, *Every error code*.
   - `ARCHITECTURE.md`: *The bridge contract*, *The tool contract*, *Painting*, *The save*, *The
@@ -122,7 +140,9 @@ state*, *Documents*, *The verification core*, *Painting*, *The undo ledger and h
   - every op classed; every retryable raise changing nothing;
   - `_checked`, `journaled` and `krita_operation_get` against a forced post-application failure,
     with ids, `applied`, and a settled journal;
-  - decision 7's resend rule: same session, restarted session, `no_effect`, `unregistered`.
+  - decision 7's resend rule: same session, restarted session, `no_effect`, `unregistered`;
+  - `not_applied` on a schema refusal, a tool's own refusal, a request conflict and a cancelled job;
+  - `krita_operation_get` after a restart, with and without a finished line.
 - `probe`, with these checks:
   - each edge and corner, with and without a selection, in both scopes, within the half-brush
     overhang: `changed_bounds_px` inside the canvas and true, `layer_bounds_px` reporting the
@@ -205,16 +225,23 @@ forms reach Codex, The instructions), *Reads, and K46* (Capture, Sample); `docs/
   the forms `tests/test_schemas.py` holds.
 - **Not-finite numbers** are refused in every tool, in one place on the server. `NaN`, `Infinity`
   and `1e400` pass a `number` schema's bounds.
+- **Refused values** (decision 11), for `krita_paint_stroke`, the schema this session amends. No
+  phase names these: `smooth: basic|stabilizer` and `antialias: false` leave the schema, and
+  `brush.eraser`, still required, becomes the constant `false`. Erasing, when it comes, puts it
+  back. This shares D1's `api_version` move. `krita_document_create`'s refused values stay: this
+  round does not amend that schema.
 - **The instructions.** Move what descriptions now carry out of `instructions.py`, because 190
   characters are spare and every later session needs some. Leave at least 500 spare.
 - **Docs.**
   - `USER-GUIDE.md`: *The core loop*, *Phase 1's limits*.
-  - `ARCHITECTURE.md`: *The tool contract*, the baseline's instructions count.
+  - `ARCHITECTURE.md`: *The tool contract* with its placeholder tables, the baseline's instructions
+    count.
   - `CHANGELOG.md`: 0.19.0.
 
 **Gates:**
 - `uv run scripts/verify.py`, with these tests: `color` round-trips into a stroke; each limit equals
-  its constant; every tool refuses a not-finite number; rendered inputs stay under Codex's limits.
+  its constant; every tool refuses a not-finite number; each removed value answers
+  `INVALID_ARGUMENT`; rendered inputs stay under Codex's limits.
 - `probe`: a colour sampled and painted back lands exactly (extends H6).
 - Each new check falsified once.
 
@@ -240,8 +267,8 @@ and §8.8 items 6, 8.
   - R1's markers become structural here.
 - **`paint.stroke`, `layer.update` and `layer.create` move onto it.** The save keeps its ladder.
 - **Parity tests for the six argument pairs** (decision 10), and a helper for each new pair.
-- **Docs.** `ARCHITECTURE.md`: *The verification core*, *Painting*, *Known debt*. No `CHANGELOG.md`
-  entry and no version: nobody can see it.
+- **Docs.** `ARCHITECTURE.md`: *The tool contract* (its note naming this session), *The verification
+  core*, *Painting*, *Known debt*. No `CHANGELOG.md` entry and no version: nobody can see it.
 
 **Gates:**
 - `uv run scripts/verify.py`: every existing test, with no count moved but the parity tests.
@@ -277,7 +304,11 @@ and §8.8 items 6, 8.
   `path`; colour, opacity, blend, alpha lock, verify.
   - Feathered selection coverage holds; a fill over a selection's bounds is confined by it (K10).
   - A shape off the canvas is refused, never clipped. `selection` with no selection is refused.
-  - The current preset stays. The reach is the shape's bounds plus an antialias margin.
+  - The current preset stays only if the measurement shows it cannot matter: run the fill under a
+    `paintbrush`, a MyPaint and a masked-brush preset, because `paintPath` snapshots the view's
+    preset. If the result differs, the fill activates one fixed stock preset, in K3's order, and
+    says so.
+  - The reach is the shape's bounds plus an antialias margin.
   - The receipt has the stroke's shape: `changed_bounds_px`, `layer_bounds_px`, `verification`, one
     undo step.
   - A `paint.fill` capability, and a `destructiveHint: true`: a fill overwrites.
@@ -291,7 +322,7 @@ and §8.8 items 6, 8.
   and the output schema over an edge fill.
 - `probe`: a polygon fill under a feathered selection; a leak refused and undone under a binary
   allowed mask; opacity and blend applied; alpha lock inside a silhouette; one undo step; the edges
-  as in R1.
+  as in R1; the same fill under a second preset, with equal bytes.
 - Each new check falsified once.
 
 **Watch for:**
@@ -326,7 +357,10 @@ save*.
 - **`krita_layer_update`** takes `visible` and `name` on masks (`layer_update.py:278-281` refuses
   them today), so a mask can be disabled and enabled.
 - **Invariant 1.** Its text in `CLAUDE.md` and `ARCHITECTURE.md`, and the scan in
-  `tests/plugin/test_source_scans.py`, name the one `setSelection` site, as they name `_from_mask`.
+  `tests/plugin/test_source_scans.py`, name the mask's one `setSelection` site. The name alone
+  cannot hold it: `Document.setSelection` (`krita_adapter/selections.py:13,40`) and the harness's
+  mask (`krita_adapter/documents.py:304`) use it too. So the AST test holds the function and its
+  receiver, as it does for `_from_mask`, with the other sites listed.
 - **Docs.**
   - `CLAUDE.md`: invariant 1.
   - `USER-GUIDE.md`: *The core loop*, the limits.
@@ -336,7 +370,7 @@ save*.
 
 **Gates:**
 - `uv run scripts/verify.py`, with these tests: coverage, the protected-ancestor refusals, the
-  channel count through the frame, a mask read, and the scan for the one site.
+  channel count through the frame, a mask read, and the scan for the mask's site and its receiver.
 - `probe`: a mask from a selection; reveal and hide, partial, by stroke and fill; a mask-only
   capture; the composite beside it; disable and enable; a leak undone; one undo step each; a KRA
   round trip; an ORA save listing the mask in `expected_losses`.
@@ -347,7 +381,8 @@ save*.
   `crop`, the witness.
 - **`selection()` is live,** so an edit through it bypasses undo. Never hold it.
 - **Existing masks are protected at open** (`opening.py:120`), and that must stay true.
-- **MyPaint presets refuse non-RGBA devices** (`libs/libkis/Node.cpp:852-856`).
+- **MyPaint presets refuse non-RGBA devices** (`libs/libkis/Node.cpp:852-856`). A fill on a mask
+  must not depend on whichever preset the owner left current; C1's measurement decides how.
 - **`reach()` counts a transparency mask as bounded;** confirm it, because a mask's own change now
   has a target.
 
@@ -375,8 +410,8 @@ plan.
 ## E1: Tapers
 
 **Read:** `FEATURE-recovery-and-construction.md` *The Codex agent's report* (Authoring, its
-answers), decisions 9, 11, 16; `ARCHITECTURE.md` *Painting*, *Reads, and K46* (Resources),
-*Reference* (K3, K4, K30, K36).
+answers), decision 16; `ARCHITECTURE.md` *Painting*, *Reads, and K46* (Resources), *Testing
+strategy* (Hypotheses), *Reference* (K3, K4, K30, K36).
 
 - **The go/no-go,** on a throwaway document, before any product code. Activate a preset, then
   `fromXML` with a Distance curve on size, paint, restore. Run short, long and curved strokes.
@@ -402,11 +437,9 @@ answers), decisions 9, 11, 16; `ARCHITECTURE.md` *Painting*, *Reads, and K46* (R
   backlog, and the session ships documentation alone, with no version.
 - **Either way:** `stroke.per_point_input` stays false. No joined segments or flat shapes are
   labelled as strokes (decision 16).
-- **On go, schema tidying** (decision 11): `smooth: basic|stabilizer` and `antialias: false` leave
-  the schema, which moves `api_version` (decision 9).
 - **Docs.**
   - `USER-GUIDE.md`: what `dynamics` is and is not.
-  - `ARCHITECTURE.md`: *Painting*, the matrix, the placeholder tables, *Reference*.
+  - `ARCHITECTURE.md`: *Painting*, the matrix, H2's row, *Reference*.
   - Server instructions, `CHANGELOG.md`: 0.22.0 on go.
 
 **Gates:**
@@ -438,9 +471,9 @@ answers), decisions 9, 11, 16; `ARCHITECTURE.md` *Painting*, *Reads, and K46* (R
 *Protection, selections and masks*, *The verification core*, *The undo ledger and history*,
 *Reference* (K22, K42).
 
-- **`krita_layer_duplicate`,** layers and groups, by `Node.duplicate()`
-  (`libs/libkis/Node.cpp:150,645`) and `addChildNode`, one undo step. Hidden by default, set before
-  attaching, so the composite does not change.
+- **`krita_layer_duplicate`,** layers and groups, by `Node.duplicate()` (`libs/libkis/Node.cpp:645`;
+  `clone()` at `:150` gives a node with no image) and `addChildNode`, one undo step. Hidden by
+  default, set before attaching, so the composite does not change.
   - A protected source is allowed (decision 13). The copy carries `derived_from`; a group reports an
     `id_map` of every copied node.
   - Proposed hint: `destructiveHint: false`, additive. Confirm at plan time.
@@ -483,10 +516,15 @@ baseline*, *The save*, *The server*.
 - **`krita_document_duplicate`** to a new `.kra` path inside a root. `.ora` is refused: ids do not
   persist (K39).
   - A verified save, through the save's own two ops.
-  - The placed file opened directly, so a branch is one file. `source_path` and `source_sha256` come
-    from the original, so `baseline_untouched` keeps meaning.
+  - The placed file opened directly, so a branch is one file. `source_path`, `source_sha256` and
+    `source_stat` come from the original, so `baseline_untouched` keeps meaning.
   - Protection, the allowed mask and the flags are copied equal, never looser. History starts empty.
-  - Its own baseline: `resolve_close` removes a baseline (`tools/documents.py:173-176`).
+  - Its own baseline: `resolve_close` removes a baseline (`tools/documents.py:173-176`). The lazy
+    baseline hashes `handle.path` against `handle.source_sha256` (`previews.py:115-120`), which
+    would refuse a branch, because its file is not the source. So `Handle` keeps the opened file's
+    own hash apart from the source's, and `_as_opened` reads that one.
+  - A branch of a created document has no source: both source fields stay null, the opened file's
+    hash serves the baseline, and `_as_opened` stops requiring a source.
   - Proposed hint: `destructiveHint: false`, additive. Confirm at plan time.
 - **Comparing branches** needs no new tool: `krita_preview_render` takes a `document_id` per source.
 - **Docs.**
@@ -495,10 +533,12 @@ baseline*, *The save*, *The server*.
   - Server instructions, the README's tool list, `CHANGELOG.md`: 0.24.0.
 
 **Gates:**
-- `uv run scripts/verify.py`, with these tests: inheritance, each refusal, the `.ora` refusal, and
-  each op's failure with its outcome.
-- `probe`: a branch painted differently from its source; both in one preview; each closed without
-  touching the other's baseline; protection inherited and unloosened; invariant 2's hash checks.
+- `uv run scripts/verify.py`, with these tests: inheritance, each refusal, the `.ora` refusal, each
+  op's failure with its outcome, and a branch's baseline read, from a working copy and from a
+  created document.
+- `probe`: a branch painted differently from its source; both in one preview, each with its own
+  `baseline_id`; each closed without touching the other's baseline; protection inherited and
+  unloosened; invariant 2's hash checks.
 - Each new check falsified once.
 
 **Watch for:**
@@ -517,9 +557,11 @@ baseline*, *The save*, *The server*.
 history, `git show 04e9f6c:docs/spec/PDD.md` Q13.
 
 - **The bounded probe, first, on a throwaway document.** `createTransformMask` and
-  `TransformMask.fromXML` exist in the 5.3.4.1 stubs (`krita.pyi:174,540-543`); set before
-  `addChildNode`, they should give one undo step (`libs/libkis/TransformMask.cpp:75-115`). A native
-  route must show one undo step, a confirmed rollback and a KRA round trip.
+  `TransformMask.fromXML` exist in the 5.3.4.1 stubs (`krita.pyi:174,540-543`). `fromXML` runs its
+  own command stroke, attached or not (`libs/libkis/TransformMask.cpp:75-115`), and `addChildNode`
+  pushes another, so expect two undo steps, stated in the receipt as L1's reorder does (decision
+  15). It does not wait, so `waitForDone()` follows it. A native route must show native undo of
+  every step, a confirmed rollback and a KRA round trip.
 - **If it holds,** `krita_layer_transform` with a `translate` operation, on unprotected layers,
   verified in full. Proposed hint: `destructiveHint: true`.
 - **If it does not,** translate waits for Phase 3's checkpoints, it goes to the backlog with what
@@ -551,10 +593,10 @@ Cut first if the round runs long: useful, not yet proven by real use.
 **Read:** `FEATURE-recovery-and-construction.md` *The Codex agent's report* (its answers), decisions
 1, 3; `ARCHITECTURE.md` *The verification core*, *The undo ledger and history*.
 
-- **`krita_layer_transform`,** on unprotected layers, one operation per call, one undo step,
-  verified in full: `scaleNode`, `rotateNode`, `shearNode` (`libs/libkis/Node.cpp:695-743`,
-  `libs/image/kis_image.cc:1000-1296`). Proposed hint: `destructiveHint: true`; resampling loses
-  pixels.
+- **`krita_layer_transform`,** created here, or extended if T1 shipped it, on unprotected layers,
+  one operation per call, one undo step, verified in full: `scaleNode`, `rotateNode`, `shearNode`
+  (`libs/libkis/Node.cpp:695-743`, `libs/image/kis_image.cc:1000-1296`). Proposed hint:
+  `destructiveHint: true`; resampling loses pixels.
 - **The filter name is validated by the tool,** because `scaleNode` silently falls back to Bicubic.
 - **The guide names duplicating first** (L1) as the reversible route.
 - **Docs.** `USER-GUIDE.md`; `ARCHITECTURE.md`: *The undo ledger and history*, the matrix, the

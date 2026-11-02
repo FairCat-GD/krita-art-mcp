@@ -73,9 +73,9 @@ contract", "Phase N" and "review N" mean.
   the export and the finish leaves it, and nothing sweeps the owner's folders.
 - **A plugin zip for other users,** importable through Krita's *Import Python Plugin from File*.
   Left out at the round 1 intake; round 1 installs with `install-plugin`.
-- **Layer reads of groups** (0.5.0). `krita_capture` and `krita_sample` read paint layers only, and
-  round 2 adds masks. A group has no pixels of its own, and could be read through
-  `Node.projectionPixelData`.
+- **Layer reads of groups and of masks in `krita_sample`** (0.5.0). `krita_capture` and `krita_sample`
+  read paint layers only, and round 2 adds masks to `krita_capture`. A group has no pixels of its own,
+  and could be read through `Node.projectionPixelData`.
 - **Colour maths for documents outside sRGB** (0.5.0). `krita_sample` gives L\*a\*b\* and
   L\*C\*h only for Krita's sRGB profiles, and greyscale captures need them. Converting through
   the document's ICC profile would lift that.

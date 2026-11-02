@@ -66,7 +66,8 @@ leave `target_rect` has its whole bounds unioned into `diff`. `target_rect` is c
 Wider than reported:
 - **Not only the overhanging stroke.** A layer that already has off-canvas paint trips it on every
   later `verify: full` stroke, wherever it lands. A KRA layer that overhangs, opened with
-  `editable_layer_ids`, starts broken. Of 614 strokes journaled on 0.16.0, 612 were full scope.
+  `editable_layer_ids`, starts broken. Of the 614 strokes in the journal's two days to 0.16.0, 612
+  report full scope.
 - **Right and bottom overhang lie silently.** The schema passes, and `changed_bounds_px` reports the
   layer's bounds, past the canvas, not what changed.
 - **Identity is lost at four levels:** the gate (`tools/__init__.py:141-145`); the lookup
@@ -107,7 +108,7 @@ true` carries about 2 s whatever it does, and every read-only tool carries none.
 That auto_review itself spends the 2 s is **inferred** from the code path and a perfect correlation,
 not observed. The Codex agent saw no denial or rewritten call, and cannot attribute it either.
 
-**Honest hints alone buy little:** strokes and selections are 981 of about 1,150 destructive calls
+**Honest hints alone buy little:** strokes and selections are 981 of 1,133 destructive calls
 and stay destructive, so decision 1 removes about 4 of the 47 minutes. The rest is the owner's
 client setting (decision 2).
 
@@ -172,6 +173,11 @@ client-side, and `exec` stops on a failed envelope.
     a native route gives one undo step, a confirmed rollback and a KRA round trip, it ships. If not,
     translate waits for Phase 3's checkpoints, and T1 ships no version: a non-undoable move
     compensated inside one call is not recovery. This settles PDD Q13.
+
+    **Amended 2026-11-02 by the user, at the intake's review.** "One undo step" becomes "native undo
+    steps, stated in the receipt". `TransformMask.fromXML` pushes its own step, attached or not, and
+    `addChildNode` pushes another, so one step would fail a fully native route. The point stands:
+    every step is native, and nothing is compensated by hand.
 16. **Tapers are a bounded native probe with an explicit unsupported result.** No joined segments or
     flat shapes are labelled as strokes. `stroke.per_point_input` stays false either way.
 17. **This file quotes the owner's request, with roles for private details, and summarises the

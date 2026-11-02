@@ -19,8 +19,9 @@ Release 0.17.0.
 
 - **Round 2 is recovery and construction.** The intake is done. R1, R2, D1, F1, C1, M1, X1, E1, L1,
   B1, T1, S1, X2 and V1 remain, in that order.
-- **The intake is committed locally, not pushed.** `origin/main` holds everything through "docs:
-  keep history as it is, and say what it holds". List `origin/main..HEAD` before any push.
+- **The intake and its review are pushed.** `origin/main` holds everything through "review: a branch
+  could not read its own baseline, and 9 smaller". `origin/main..HEAD` is empty. List it before any
+  push.
 - **What the feature file does not spell out for R1:**
   - The marker lives on the `Call`, which `move()` does not take, so `history.step`'s needs a flag
     or a callback. A marker cannot simply go at `before_change`: `protection.set`, the save's file
@@ -29,6 +30,8 @@ Release 0.17.0.
     (`opening.py:51-54`, `documents.py:41-43`). That key is what marks it `uncertain`.
   - After the move, `BUSY`'s raise sits past the save's marker. It is `not_applied` by the retryable
     rule and the verified cleanup, not by phase.
+  - `Jobs._run` is not every failure's path: `submit`, `cancel`, `stop` and the server's refusals
+    state their outcome where they finish. The block lists them.
 - **The evidence stays outside the repository.** The failing request's geometry is in the feature
   file; rebuild it fictionally and copy no receipt, path or id. The Codex agent holds the bundle and
   the agreed record.
@@ -40,6 +43,14 @@ Release 0.17.0.
 - **The first review of this plan rewrote it, and a second tightened it.** Their findings are in the
   decisions and the blocks. Do not reopen them: `Document.clone()`, `Node.move` as a fallback, a
   change counter as proof.
+- **The intake's own review, 10 findings, 10 fixed.** A branch could not read its own baseline,
+  because the lazy baseline hashes its file against the source's hash (B1). Refusals outside
+  `Jobs._run` had no outcome (R1). The save's marker moved to `_make_folder`, and `_unmake` is
+  verified (R1). `krita_operation_get` answers from the journal after a restart (R1). A transform
+  mask gives two native undo steps, so the owner amended decision 15. Refused values left E1 for D1,
+  with `eraser` among them. The mask's `setSelection` scan holds by receiver (M1). Fills are
+  measured under other presets (C1). Two figures in the feature file were corrected, and six small
+  doc details.
 - **Baseline** (ARCHITECTURE's table, v0.16.0): `verify` 6 stages, all PASS; 670 server tests and
   665 plugin-core tests, 0 skipped; `probe` 131 PASS, 0 FAIL, 23 MEASURED, about 114 s with 0
   documents open; 19 tools; 19 schema files; 30 error codes; 31 bridge ops; instructions 3,906
