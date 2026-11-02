@@ -14,19 +14,31 @@ contract", "Phase N" and "review N" mean.
 
 ## Deferred
 
-- **Phase 2, Construct.** Left out at the round 1 intake. It covers:
-  - project profiles (`krita_project_load`, profile schema 0.2.0, H9);
-  - explicit, profile-gated non-brush operations: `transform_apply`, `filter_apply`,
-    `color_convert`, `palette_manage`, `paint_shape`, `paint_fill`, `paint_path`, `paint_clone`
-    and `canvas_resize`;
-  - layer management: `layer_duplicate`, `layer_reorder`, `layer_remove`, `layer_import` and
-    `mask_edit`;
-  - `document_duplicate`, `reference_set`, `guides_set` and `view_set`;
-  - preset tuning, templates and derived copies.
-
-  The contract's acceptance exercise 5 (two profiles, no leakage) runs here. Still open is how
-  `transform_apply` translates a layer: through a transform mask, or as a journaled reverse move
-  (PDD Q13).
+- **Phase 2, the rest.** Round 2 took fills, masks, tapers, branching and layer construction. It
+  left:
+  - project profiles (`krita_project_load`, profile schema 0.2.0, H9), with `permitted_operations`,
+    which has no defined shape yet. The PDD gates every Phase 2 operation on it; the round 2 intake
+    amended that, so round 2's tools ship ungated, on protection and verification alone. The
+    contract's acceptance exercise 5 (two profiles, no leakage) runs with them;
+  - `filter_apply`, `color_convert`, `palette_manage`, `paint_clone` and `canvas_resize`;
+  - `paint_shape` and `paint_path`, which `krita_paint_stroke` and fills may already cover;
+  - `layer_import`, `reference_set`, `guides_set` and `view_set`;
+  - preset tuning beyond tapers, templates and derived copies.
+- **A server-side batch.** Left out at the round 2 intake, with the Codex agent's agreement. `exec`
+  already awaits calls and stops on a failed envelope: 1,253 of 1,377 consecutive calls were under
+  0.25 s apart. One would earn its cost through shared-context enforcement, durable partial receipts
+  and recovery across a client's interruption, never atomic rollback (K29). Round 2's last session
+  re-measures.
+- **Wrap authoring and a tiled preview.** Left out at the round 2 intake: Phase 5 owns tiling, and
+  paired shapes at opposite edges were workable. A scripted stroke honours wrap-around (K47) and
+  paints the opposite edge; `Canvas.setWrapAroundMode` is not axis-aware, and the actions
+  `wrap_around_hv_axis`, `wrap_around_h_axis` and `wrap_around_v_axis` set the axis. Enabling wrap
+  can push a "Crop Selections" undo step (`libs/image/kis_image.cc:2567-2580`). No textured
+  continuity is claimed without an edge and corner probe.
+- **Flood fill from a seed.** Left out at the round 2 intake: flat fills of a shape or a selection
+  replace the workaround real use needed.
+- **A closed-curve selection shape.** Left out at the round 2 intake. Raw polygons work;
+  `krita_paint_fill`'s closed `path` is the code to share if it is wanted.
 - **Phase 3, Integrity.** Left out at the round 1 intake. Revisions and stale-edit detection
   (`expected_revision`), checkpoints, edit transactions, `diff_measure`, recovery after a crash,
   `diagnostics_get`, and `krita-artifact://` resources. Interruption recovery for exercise 4 is
@@ -44,11 +56,6 @@ contract", "Phase N" and "review N" mean.
   round 1 tests 5.3.x only. The plugin keeps its PyQt6 import path for this.
 - **Probes on a Krita development build** (PDD Q9). Throwaway documents only, for early Phase 6
   capability checks. Left out at the round 1 intake.
-- **The H2 sheet with sensors toggled.** Round 1 uses stock presets as shipped; turning Fade or
-  Distance on and off needs preset editing (Phase 2). Left out at the round 1 intake. Round 1's
-  sheet (0.14.0) passed, with five of six presets usable, but only
-  `j) WaterC Basic Round-Grunge` tapers, and only as it starts: a scripted stroke holds speed
-  sensors constant, so a tapered end still needs a sensor or per-point pressure.
 - **Windows and Linux.** The code stays portable, but nothing is tested there. Left out at the
   round 1 intake. On Linux the bridge needs its own guard against SIGPIPE: `SO_NOSIGPIPE` is
   Darwin's, so a reply to a client that has gone would still kill Krita there (0.12.0).
@@ -57,20 +64,6 @@ contract", "Phase N" and "review N" mean.
   `krita_document_save` refuses a larger canvas with `UNSUPPORTED_CAPABILITY` while open, paint
   and preview take it. Banding the save's reads and hashes, as the stroke's compares are banded,
   lifts the bound; Phase 2's whole-canvas filters need the same banded reads (review 10, F13).
-- **One validator of argument shape, or parity tests** (review 13, F19 and §8.8 item 6). Six
-  argument rules are written on both sides with hand-copied messages and nothing holds the two
-  sides to the same code; Phase 2 adds about nineteen tools of such pairs. The intake decides
-  whether the plugin keeps its own checks (each pair then gets a parity test, as the roots have)
-  or the server becomes the one validator of shape while the plugin checks only what Krita's
-  state decides.
-- **Schemas that advertise what refuses** (review 13, F23 and §8.8 item 7). Phase 1's schemas
-  admit `transparency_mask`, `smooth: basic` and `stabilizer`, `antialias: false` and `eraser`,
-  and refuse each with a typed reason, as the contract's shape and PDD Part 7 want. The Phase 2
-  intake decides for the schemas it amends whether a refused value stays advertised.
-- **One verified-mutation frame** (review 10, F3; review 13, §8.8 item 8). The stroke,
-  `layer_update` and `layer_create` each hand-roll invariant 5's sequence, and the save has a
-  ladder of its own; Phase 2's filters, transforms and fills would each be another copy. The
-  intake extracts one guarded-mutation frame in `bridge_core` before the first new mutating op.
 - **A retention rule for the journal** (review 13, §8.8 item 9). The journal is permanent and
   unbounded (PDD Part 6): about 44 MB a heavy week of strokes, read in full by the first lookup
   of each server process (3 ms today). Fine for round 1; a painting year wants a rule.
@@ -80,9 +73,9 @@ contract", "Phase N" and "review N" mean.
   the export and the finish leaves it, and nothing sweeps the owner's folders.
 - **A plugin zip for other users,** importable through Krita's *Import Python Plugin from File*.
   Left out at the round 1 intake; round 1 installs with `install-plugin`.
-- **Layer reads of groups and masks** (0.5.0). `krita_capture` and `krita_sample` read paint
-  layers only: a group has no pixels of its own, and a mask is one channel. A group could be read
-  through `Node.projectionPixelData`, and a mask as a grey image.
+- **Layer reads of groups** (0.5.0). `krita_capture` and `krita_sample` read paint layers only, and
+  round 2 adds masks. A group has no pixels of its own, and could be read through
+  `Node.projectionPixelData`.
 - **Colour maths for documents outside sRGB** (0.5.0). `krita_sample` gives L\*a\*b\* and
   L\*C\*h only for Krita's sRGB profiles, and greyscale captures need them. Converting through
   the document's ICC profile would lift that.
@@ -100,16 +93,18 @@ contract", "Phase N" and "review N" mean.
   whenever a filter layer sits above the layer or a filter mask on it, whatever the filter. A
   per-pixel filter (levels, curves, HSV) cannot spread a change, so knowing the filter's kind
   would spare such documents `verify: "full"`.
-- **Krita's memory after an 8192 × 8192 document closes** (0.9.0). Opening the N-09 master
-  (30 layers) took 4.7–5.2 s and raised Krita's resident memory by 300–500 MB, which stayed after
-  the close; across a probe run Krita grew from about 0.9 GB to 1.5 GB. The 0.8.0 kill while
-  opening an 8k ORA did not recur in six 8k opens. By the end of a probe run Krita holds about 2.5 GB,
-  and a restart resets it. Whether Krita returns the memory later, or a painting day accumulates it,
-  is unmeasured.
+- **Krita's memory after an 8192 × 8192 document closes** (0.9.0). Opening the N-09 master (30
+  layers) took 4.7–5.2 s and raised Krita's resident memory by 300–500 MB, which stayed after the
+  close; across a probe run Krita grew from about 0.9 GB to 1.5 GB. The 0.8.0 kill while opening an
+  8k ORA did not recur in six 8k opens. By the end of a probe run Krita holds about 2.5 GB, and a
+  restart resets it. Whether Krita returns the memory later, or a painting day accumulates it, is
+  unmeasured.
 - **Erasing** (0.9.0). `eraser: true` is refused with `UNSUPPORTED_CAPABILITY`: on Krita 5.3.4.1,
-  `View.eraserMode()` read false after `setEraserMode(True)`, with `b) Basic-2 Opacity` and with
-  the stock `a) Eraser Soft`, so no stroke could be confirmed to erase. The order of the brush
-  setters and posted events are the first things to try.
+  `View.eraserMode()` read false after `setEraserMode(True)`, with `b) Basic-2 Opacity` and with the
+  stock `a) Eraser Soft`, so no stroke could be confirmed to erase. The order of the brush setters
+  and posted events are the first things to try. Left out at the round 2 intake: real use wants it
+  for transparent edges, because undo and painting over do not remove alpha, but masks cover the
+  immediate need. Preserve-alpha must go on refusing it.
 - **A single dab** (0.9.0). Krita paints no dab for a stroke without length: one point, two equal
   points and a 0.01 px segment each painted nothing; a 0.5 px segment painted one dab. A stroke
   shorter than half a pixel is refused; an agent wanting a dab sends two points half a pixel
@@ -118,10 +113,6 @@ contract", "Phase N" and "review N" mean.
   (`paintbrush`); Color Smudge, the Quick Brush (the stock `b) Basic-1`), MyPaint, spray, deform,
   tangent-normal and others need `verify: "full"`, since their reach is not parsed. Each engine
   could be measured and allowed as its reach is shown.
-- **Not-finite numbers in other tools' inputs** (0.9.0). The MCP server accepts `NaN`, `Infinity`
-  and `1e400`, and a `number` schema's `minimum` and `maximum` let NaN through. Only
-  `krita_paint_stroke` and `krita_preview_render` refuse them on the server;
-  `krita_layer_update`'s `opacity` and the other number inputs reach the plugin with them.
 - **Krita's preset history** (0.9.0). Activating a preset, through the bridge or the probe, makes
   Krita record it in `kritarc` (`LastPreset`, `presethistory`). The probe puts the owner's current
   preset back; the history keeps the presets it used. Accepted by the owner and recorded; a
@@ -134,34 +125,34 @@ contract", "Phase N" and "review N" mean.
 - **Composite reads in two Krita states** (0.5.0). "Isolate active layer" mode changes the
   composite a read sees, and a document with two views reports the first view's active node. Both
   are untested.
-- **Selection steps are confirmed by state alone** (0.7.0). Their Undo label is empty, and Krita keeps
-  Redo enabled as "Redo " with nothing to redo. A named step on top still stops history.
-- **A job interrupted before it runs** (0.6.0). An interrupt landing between taking a job and running
-  it fails that job, but the jobs queued behind it wait for the next call to wake the queue.
-- **A server killed mid-write** (0.6.0) leaves a `.mask-*.tmp` in `transfer/`, which only the bridge's
-  start sweeps.
+- **Selection steps are confirmed by state alone** (0.7.0). Their Undo label is empty, and Krita
+  keeps Redo enabled as "Redo " with nothing to redo. A named step on top still stops history.
+- **A job interrupted before it runs** (0.6.0). An interrupt landing between taking a job and
+  running it fails that job, but the jobs queued behind it wait for the next call to wake the queue.
+- **A server killed mid-write** (0.6.0) leaves a `.mask-*.tmp` in `transfer/`, which only the
+  bridge's start sweeps.
 - **The credit patterns name nine tools** (hygiene). A tool missing from them passes a "generated"
   line in a commit message.
-- **A replayed receipt loses its inline diff.** A retried failed stroke returns the artifact's path and
-  the counts, but not the image the first call carried. Cosmetic.
+- **A replayed receipt loses its inline diff.** A retried failed stroke returns the artifact's path
+  and the counts, but not the image the first call carried. Cosmetic.
 - **The reach analysis over-refuses a filter layer inside a closed group above the target,** which
   cannot see below its own group. It is safe, and costs such a document `verify: "full"`.
 - **Bounded growths, accepted.** The bridge's dedup state grows for the Krita session, about 1,000
   operations a probe run. History's region capture and a refusal's diff are bounded by the canvas,
   not by the read limit.
-- **A create's other colour models are refused twice,** by the schema's enum and by the plugin. Harmless.
-- **`limits.capture_pixels` is reported, and enforced only by `max_px`'s schema maximum.** It is that
-  maximum squared.
-- **`document.save_finish` sits outside the `RECEIPTS` completeness test,** which scans tool functions
-  for `call("…")` literals. A second two-op tool would need the test widened.
+- **A create's other colour models are refused twice,** by the schema's enum and by the plugin.
+  Harmless.
+- **`limits.capture_pixels` is reported, and enforced only by `max_px`'s schema maximum.** It is
+  that maximum squared.
 - **`effects` serialises every layer style on each region-scope call,** the only way libkis tells
   whether a style exists. It is inside N-09's budget with 30 layers.
 - **`Registry.sync` compares every handle with every document on each lookup.** Unmeasured as a cost
   at 87 documents; a Krita holding hundreds may feel it.
-- **`Jobs.follow` and `wait` take their deadline from `time.monotonic()`,** where every other time in
-  the class comes from the injectable clock. Nothing is wrong; it is the one seam.
-- **Test fixtures are repeated.** Eighteen test files define their own `world` around `running_world`,
-  `_render`, `_pixels` and `_document` appear four times each, and there is no `conftest.py`.
+- **`Jobs.follow` and `wait` take their deadline from `time.monotonic()`,** where every other time
+  in the class comes from the injectable clock. Nothing is wrong; it is the one seam.
+- **Test fixtures are repeated.** Eighteen test files define their own `world` around
+  `running_world`, `_render`, `_pixels` and `_document` appear four times each, and there is no
+  `conftest.py`.
 - **The plugin's eraser plumbing is unreachable** while the server refuses erasing, and
   `schemas.tool_names` is reached by tests only.
 
@@ -195,8 +186,8 @@ these are the parts only a person can see.
   Monitor for a minute while it is idle.
 - **A Krita that dies mid-call** (0.3.0). Unit tests hold the uncertain outcome, and each of the
   deaths found in 0.12.0 came back `INTERNAL_ERROR` with `outcome: uncertain`, but nobody has forced
-  one on purpose. Quit Krita hard during a long save through the tool, restart it, and retry with the
-  same `request_id`: expect `uncertain`, with nothing sent again.
+  one on purpose. Quit Krita hard during a long save through the tool, restart it, and retry with
+  the same `request_id`: expect `uncertain`, with nothing sent again.
 - **A lazy baseline from a file saved with a selection mask active** (0.11.0). The baseline is
   read from the working copy's file, opened again without a view, so Krita should draw no mask
   overlay into it (K46); the probe's fixtures never save one. Save a KRA by hand with a local
@@ -212,20 +203,22 @@ these are the parts only a person can see.
   hidden file when it finds the document gone; unit tests hold that, and the window is a few
   seconds. Save a large working copy through the tool, close its document in Krita before the save
   returns, and check that nothing hidden is left beside the path.
-- **Mirror painting and wrap-around put back after a stroke** (0.9.0). The adapter switches both
-  off for the stroke and back on in a `finally`; no harness op turns them on, so the probe never
-  sees the restore. With either on in Krita, paint one stroke and check both are on afterwards.
+- **Mirror painting and wrap-around put back after a stroke** (0.9.0). The adapter switches both off
+  for the stroke and back on in a `finally`; no harness op turns them on, so the probe never sees
+  the restore. With either on in Krita, paint one stroke and check both are on afterwards. With wrap
+  on and a selection held, also check `krita_history_step` still undoes that stroke: enabling wrap
+  can push a "Crop Selections" step, read from source at the round 2 intake, not seen.
 
 ## Directions
 
 - **The trial (H1, H7).** After round 1: a Codex agent and a fresh Claude Code session each fix a
   real review defect through krita-art-mcp. The owner compares the fixes with the scripted pass at
   game size, and the result shapes Phase 2's priorities.
-- **Publishing the repository.** When the owner decides, with the description "MCP server that
-  lets AI agents paint in Krita" and the topics `krita`, `krita-mcp`, `krita-plugin`, `mcp`,
-  `mcp-server`, `model-context-protocol`, `ai-agents`, `game-art` and `digital-painting`, both set on
-  the repository already. Turn on
-  private vulnerability reporting once it is public, since the README sends security reports there.
+- **Publishing the repository.** When the owner decides, with the description "MCP server that lets
+  AI agents paint in Krita" and the topics `krita`, `krita-mcp`, `krita-plugin`, `mcp`,
+  `mcp-server`, `model-context-protocol`, `ai-agents`, `game-art` and `digital-painting`, both set
+  on the repository already. Turn on private vulnerability reporting once it is public, since the
+  README sends security reports there.
   - **History stays as it is,** by the owner's decision on 2026-11-01, since none of it is a secret.
     It holds SHA-256 hashes of seven words the hygiene stage once checked, from the root (`98db9f5`)
     until they were deleted, five of them the owner's public identifiers and two never identified;
@@ -250,3 +243,8 @@ these are the parts only a person can see.
   bypass.
 - A separate private repository for the process documents: one repository, with private details
   kept out of it, decided at the round 1 intake.
+- `Document.clone()` for branching: it is never added to `KisPart`, which `Krita.documents()` reads,
+  so the registry would drop its handle. A verified save and a reopen give a real path and a
+  baseline.
+- Translate by a compensated `Node.move`: it has no undo, and putting it back inside one call is not
+  recovery. A native route ships, or translate waits for Phase 3's checkpoints.

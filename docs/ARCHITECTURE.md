@@ -250,7 +250,7 @@ schema, where a job ends at its first raise and each check reads what the one be
 document before the layer before the pixels.
 
 **Argument rules are written twice on purpose.** Each side trusts no caller, and a refusal the server
-makes carries no `operation_id`. Six such pairs have no parity test (see the backlog).
+makes carries no `operation_id`. Six such pairs have no parity test yet; round 2's F1 adds them.
 
 **The error codes: 30.** The default `retryable` is the server's; a site may override it, and
 `docs/USER-GUIDE.md` says what an agent should do with each.
@@ -282,12 +282,12 @@ makes carries no `operation_id`. Six such pairs have no parity test (see the bac
 
 **The contract's placeholders.** Phase 1 keeps the contract's shape, and the PDD wants refusals typed
 rather than fields hidden. So the schemas admit inputs that always refuse, and outputs carry fields
-with one value. The Phase 2 intake decides, for the schemas it amends, whether a refused value stays
-advertised.
+with one value. A refused value stays advertised only if a named phase will make it live, decided at
+the round 2 intake for the schemas that round amends.
 
 | Input | Today | Becomes live |
 |---|---|---|
-| `krita_layer_create` `type: transparency_mask` | `UNSUPPORTED_CAPABILITY` | Phase 2, with `mask_edit` |
+| `krita_layer_create` `type: transparency_mask` | `UNSUPPORTED_CAPABILITY` | Round 2's M1 |
 | `krita_paint_stroke` per-point pressure, tilt, rotation, tangential pressure, speed, time | `UNSUPPORTED_CAPABILITY`, unless `input_fallback: flat` | Phase 6, on Krita 6.1 / 5.4 (K30) |
 | `input_fallback`, which takes only `flat` | the one value | Phase 6 |
 | `smooth: basic`, `stabilizer` | `UNSUPPORTED_CAPABILITY` | Never: decided against; they belong to Krita's freehand tool |
@@ -790,7 +790,7 @@ retry of a batch; previews from explicit recipes; a `.kra` saved, closed and reo
 | Id | Hypothesis | Outcome at 0.16.0 |
 |---|---|---|
 | H1 | An agent fixes a real review defect better than a scripted correction | Open: the trial, after the round |
-| H2 | Flat `paintPath` strokes with stock presets read as hand-painted | Passed by hand, 0.14.0: five of six usable; the taper is on the backlog |
+| H2 | Flat `paintPath` strokes with stock presets read as hand-painted | Passed by hand, 0.14.0: five of six usable; the taper is round 2's E1 |
 | H3 | Codex shows MCP images to the model | Holds: its agent described a known pattern from the image alone, 0.14.0 and 0.15.0 |
 | H4 | The bridge answers while idle and recovers after a blocking call | Holds: idle p95 under 50 ms; a 5 s gradient save, chosen by the owner against the 20 s target, measured, with a queued retry run once |
 | H5 | The plugin runs on 5.3.x and 6.0.x | Backlog |
@@ -849,7 +849,7 @@ These span subsystems. A decision about one subsystem is in its section.
 
 ## Known debt, deliberately deferred
 
-Each has its detail in `docs/BACKLOG.md`.
+Each has its detail in `docs/BACKLOG.md`, or in `docs/spec/SESSIONS.md` where round 2 takes it up.
 
 - The save reads whole canvases unbanded, so it stops at 8192² pixels.
 - Three verified-mutation sequences are hand-rolled, and the save has a ladder of its own.
