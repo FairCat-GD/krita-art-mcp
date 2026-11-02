@@ -2,7 +2,7 @@ import functools
 from collections.abc import Callable
 from typing import Any, TypeVar
 
-from .errors import UNCERTAIN, BridgeError
+from .errors import UNCERTAIN, BridgeError, cleaned
 from .port import DocumentsPort
 from .registry import READ_ONLY, Registry
 
@@ -26,11 +26,13 @@ def read_file(
         found = read(document)
     except BaseException as raised:
         kept = registry.discard(document, close, READ_ONLY, client)
-        if kept is not None and isinstance(raised, BridgeError):
-            raised.body["details"].update(left_open=kept, outcome=UNCERTAIN)
+        if kept is not None:
+            cleaned(raised, False)
+            if isinstance(raised, BridgeError):
+                raised.body["details"].update(left_open=kept, outcome=UNCERTAIN)
         raise
     kept = registry.discard(document, close, READ_ONLY, client)
     if kept is not None:
-        details = {"document_id": kept, "outcome": UNCERTAIN}
+        details = {"document_id": kept, "outcome": UNCERTAIN, "rollback_verified": False}
         raise BridgeError("INTERNAL_ERROR", kept_message, False, details)
     return found

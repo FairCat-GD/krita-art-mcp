@@ -17,6 +17,7 @@ from krita_art_mcp.tools.dispatch import (
     ToolCall,
     contract_problem,
     failed_receipt,
+    identity,
     journaled,
     raw_receipt,
     record,
@@ -69,14 +70,13 @@ def operation_get(call: ToolCall, arguments: dict[str, Any]) -> CallToolResult:
     started = time.monotonic()
     try:
         sent_in = call.journal.session_of(operation_id)
-        line = call.journal.finished_line(operation_id)
     except (JournalError, OSError) as problem:
         return envelope.failure("INTERNAL_ERROR", f"The journal could not be read: {problem}")
     outcome = call.bridge.operation(operation_id, sent_in=sent_in)
     if isinstance(outcome, Failed) and outcome.op is None:
         # Not the operation's own outcome: the id is unknown, or Krita is gone, and only a
         # finished line can still say what became of it.
-        answered = None if line is None else _from_journal(operation_id, line)
+        answered = _from_journal(call, operation_id)
         return answered or envelope.failed(outcome.error, operation_id=operation_id)
     known = RECEIPTS.get(outcome.op or "")
     if outcome.op is not None and known is None:
@@ -115,7 +115,7 @@ def operation_get(call: ToolCall, arguments: dict[str, Any]) -> CallToolResult:
     _finish_journaled(call, outcome, receipt, operation_id)
     text = f"Operation {data['operation_id']} ({tool}) {data['state']}."
     result = envelope.completed(
-        data, text, document_id=_document_of(content), operation_id=data["operation_id"]
+        data, text, document_id=identity(content, "document_id"), operation_id=data["operation_id"]
     )
     # The receipt's own line and any image it carries, as the call itself would have shown.
     result.content.extend(receipt.content)
@@ -134,16 +134,22 @@ def _receipt(known: Known, outcome: Done | Failed) -> CallToolResult:
 def _outcome_of(outcome: Done | Failed) -> str:
     if isinstance(outcome, Done):
         return APPLIED
-    return _stated(outcome.error)
+    return _said(outcome.error)
 
 
-def _stated(error: Any) -> str:
+def _said(error: Any) -> str:
     said = error["details"].get("outcome") if isinstance(error, dict) else None
     return said if said in OUTCOMES else UNCERTAIN
 
 
-def _from_journal(operation_id: str, line: Finished) -> CallToolResult | None:
+def _from_journal(call: ToolCall, operation_id: str) -> CallToolResult | None:
     # The answer once Krita has moved on. An outcome is read from the line, never assumed.
+    try:
+        line = call.journal.finished_line(operation_id)
+    except (JournalError, OSError):
+        return None
+    if line is None:
+        return None
     content = (line.result or {}).get("structured")
     if not isinstance(content, dict) or line.tool not in schemas.tool_names():
         return None
@@ -162,7 +168,7 @@ def _from_journal(operation_id: str, line: Finished) -> CallToolResult | None:
     }
     text = f"Operation {operation_id} ({line.tool}) {state}, from the journal."
     return envelope.completed(
-        data, text, document_id=_document_of(content), operation_id=operation_id
+        data, text, document_id=identity(content, "document_id"), operation_id=operation_id
     )
 
 
@@ -171,12 +177,7 @@ def _journaled_outcome(line: Finished, state: str, content: dict[str, Any]) -> s
         return UNCERTAIN
     if line.outcome in (journal.NO_EFFECT, journal.NOT_SENT, journal.CONFLICT):
         return NOT_APPLIED
-    return APPLIED if state == "completed" else _stated(content.get("error"))
-
-
-def _document_of(content: dict[str, Any]) -> str | None:
-    found = content.get("document_id")
-    return found if isinstance(found, str) and found else None
+    return APPLIED if state == "completed" else _said(content.get("error"))
 
 
 def _state(outcome: Outcome) -> str:

@@ -18,16 +18,14 @@ from krita_art_mcp import (
     bridge_client,
     envelope,
     errors,
-    imaging,
     journal,
-    roots,
     schemas,
     verification,
 )
 from krita_art_mcp.bridge_client import BridgeClient, Done, Failed
 from krita_art_mcp.errors import error_body
 from krita_art_mcp.server import build_server
-from krita_art_mcp.tools import changes, dispatch, operations, painting, saving
+from krita_art_mcp.tools import changes, dispatch, operations, painting, pixels, saving
 
 CREATE = {
     "name": "sketch",
@@ -161,6 +159,11 @@ def _failed_receipt(said: str | None) -> dict[str, Any]:
 
 def test_the_two_lists_of_outcomes_are_equal() -> None:
     assert errors.OUTCOMES == plugin_errors.OUTCOMES
+
+
+def test_operation_get_takes_every_outcome() -> None:
+    data = schemas.load("krita_operation_get")["outputSchema"]["properties"]["data"]["anyOf"][0]
+    assert data["properties"]["outcome"]["anyOf"][0]["enum"] == list(errors.OUTCOMES)
 
 
 def test_every_schema_types_the_outcome() -> None:
@@ -304,12 +307,22 @@ def test_a_png_that_could_not_be_written_says_applied_not_retry(
         raise OSError(28, "No space left on device")
 
     monkeypatch.setattr(verification, "keep", full)
+    discarded: list[Any] = []
+    monkeypatch.setattr(changes, "discard", lambda places, spec: discarded.append(spec))
     done = Done({"document_id": "doc-1"}, "op-" + "a" * 32, "selection.set", "req-1", "krita-1")
     places: Any = SimpleNamespace()
-    failed = changes._kept_png(places, done, {}, "selection's mask")
+    failed = changes._kept_png(places, done, {"path": "x"}, "selection's mask")
     assert isinstance(failed, Failed)
     assert (failed.error["code"], failed.error["retryable"]) == ("IO_ERROR", False)
     assert failed.error["details"]["outcome"] == "applied"
+    assert discarded == [{"path": "x"}]
+
+
+def test_a_read_the_server_could_not_finish_changed_nothing() -> None:
+    done = Done({"document_id": "doc-1"}, "op-1", "capture.read", "req-1", "krita-1")
+    failed = pixels.failed(done, error_body("INTERNAL_ERROR", retryable=True))
+    assert failed.error["details"]["outcome"] == "not_applied"
+    assert (failed.operation_id, failed.op) == ("op-1", "capture.read")
 
 
 # What the journal makes of each outcome.
@@ -757,16 +770,3 @@ def test_the_journal_answers_while_krita_is_not_running(world: World) -> None:
     (world.data / "bridge.json").unlink()
     got = world.server().content("krita_operation_get", {"operation_id": operation_id})
     assert got["data"]["outcome"] == "not_applied"
-
-
-def test_a_merged_image_module_error_is_the_problem_the_finish_reports(
-    world: World, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    monkeypatch.setattr(imaging, "merged_image", _raises)
-    places = world.places()
-    written = world.tmp_path / "written.kra"
-    written.write_bytes(b"x")
-    monkeypatch.setattr(roots, "allowed", lambda *args: [str(world.tmp_path)])
-    result = {"written": str(written), "path": str(written), "sha256": "0", "size_px": [8, 4]}
-    merged, problem = saving._merged(places, result)
-    assert merged is None and problem is not None

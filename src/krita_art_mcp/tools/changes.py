@@ -280,6 +280,8 @@ def _kept_png(
             places, operation_id_of(outcome), ".png", today(), [spec], verification.image_of
         )
     except OSError as problem:
+        # No retry will come for it: the journal holds this answer.
+        discard(places, spec)
         return applied_failure(outcome, "IO_ERROR", f"The {what} could not be written: {problem}")
     if kept is not None:
         discard(places, spec)

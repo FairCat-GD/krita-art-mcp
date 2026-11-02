@@ -23,15 +23,18 @@ Release 0.18.0. **Ask at the start of R2:** has the owner run a Codex session wi
     changes the neighbouring `destructiveHint`. Leave `readOnlyHint` alone.
   - **The journal's finished line is read back** by `Journal.finished_line`. An added field needs no
     version, but check the reader, as the block says.
+  - **Every failed read from `pixels.failed` is `not_applied`,** so a new server step on a mutating
+    tool uses `applied_failure` instead.
   - **`changed_bounds_px` counts bytes,** so it can pass a selection's edge by colour under alpha 0,
     while no alpha does. The probe holds alpha to the selection.
 - **The evidence stays outside the repository.** The Codex agent holds the bundle.
 - **Decisions written down nowhere else:** whether the owner has set `default_tools_approval_mode` in
   Codex is open, and R2 asks.
-- **Baseline** (ARCHITECTURE's table, v0.17.0): `verify` 6 stages, all PASS; 731 server tests and 775
+- **Baseline** (ARCHITECTURE's table, v0.17.0): `verify` 6 stages, all PASS; 732 server tests and 781
   plugin-core tests, 0 skipped; `probe` 142 PASS, 0 FAIL, 23 MEASURED, about 120 s with 0 documents
   open; 19 tools; 19 schema files; 30 error codes; 31 bridge ops; instructions 3,970 characters.
 - **Not done:** nothing from R1's block.
+- **R1's review found 10, fixed 10.** They are in its done-note.
 
 ## Watch for
 

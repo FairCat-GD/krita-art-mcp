@@ -226,7 +226,8 @@ values are `applied`, `not_applied`, `uncertain` and `unregistered`.
   It is never retryable.
 - A failure is `not_applied` only on proof, and `uncertain` is the default (see *Bridge and jobs*).
 - `operation_id` exists from dispatch on, so a refusal before dispatch has none and is `not_applied`.
-- A read carries the field only where the plugin states it.
+- A read's failure from the bridge or from the server's work on its pixels states it too, always
+  `not_applied` unless a file stayed open. A refusal the server makes itself leaves it out.
 
 **`api_version` moves when a field or an input value is removed or renamed, or a field changes
 meaning.** Added fields and tools do not move it.
@@ -744,7 +745,7 @@ can differ from a fresh recomposite of the same layers, then `exportImage`s to
 written file with `reopening.read_file`, shared with the lazy baseline, and compares. A mismatch
 removes the file and is `SAVE_VERIFY_FAILED`, with up to 20 mismatches. Otherwise an earlier
 unfinished save is dropped, last, so a save that fails leaves it as it was, and the handle keeps a
-`Pending` save. Each failure past the folder reports its cleanup, and reads `not_applied` only if
+`Pending` save, which takes over any folders the dropped one made. Each failure past the folder reports its cleanup, and reads `not_applied` only if
 nothing of the save stays. An export that moved the document reads `uncertain`, however clean its
 file.
 
@@ -1039,8 +1040,8 @@ depend on it: 87 open documents cost about 50 s more.
 | Check | Expected |
 |---|---|
 | `uv run scripts/verify.py` | 6 stages, all PASS |
-| Server tests (3.12) | 731 passed, 0 skipped |
-| Plugin-core tests (3.10) | 775 passed, 0 skipped |
+| Server tests (3.12) | 732 passed, 0 skipped |
+| Plugin-core tests (3.10) | 781 passed, 0 skipped |
 | `uv run krita-art-mcp probe` | 142 PASS, 0 FAIL, 23 MEASURED; about 120 s |
 | `uv run krita-art-mcp doctor` | 6 steps, all PASS, with a root allowed |
 | Registered tools | 19 |

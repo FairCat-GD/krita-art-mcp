@@ -1,11 +1,12 @@
 import errno
 import hashlib
+import logging
 import os
 import secrets
 from pathlib import Path
 from typing import Any
 
-from . import files, nodes, reopening, roots
+from . import files, log, nodes, reopening, roots
 from .errors import UNCERTAIN, BridgeError, cleaned, exact
 from .inspection import TYPES, check_shown_frame
 from .jobs import Call, Handler
@@ -155,8 +156,12 @@ def handlers(registry: Registry, port: DocumentsPort, data: Path) -> dict[str, H
             "baseline_untouched": untouched,
             "expected_losses": losses,
         }
-        # Last, so a save that fails leaves an earlier unfinished one as it was.
+        # Last, so a save that fails leaves an earlier unfinished one as it was. Its folders may
+        # now hold this save's file, so they stay this save's to remove.
+        earlier = handle.pending_save
         handle.drop_pending_save()
+        if isinstance(earlier, Pending):
+            made = made + earlier.made
         handle.pending_save = Pending(
             call.operation_id, written, made, composite, handle.changes, receipt
         )
@@ -472,7 +477,9 @@ def _place(written: str, target: str) -> None:
             raise BridgeError("IO_ERROR", message) from problem
         _rename(written, target)
         return
-    files.remove(written)
+    if not files.remove(written):
+        # The save is in place, so this fails nothing, and nothing else tracks the file now.
+        logging.getLogger(log.NAME).warning("the save's hidden file stayed: %s", written)
 
 
 def _rename(written: str, target: str) -> None:

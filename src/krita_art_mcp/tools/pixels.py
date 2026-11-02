@@ -10,10 +10,10 @@ from mcp.types import CallToolResult, ImageContent
 
 from krita_art_mcp import colour, envelope, imaging, transfer
 from krita_art_mcp.bridge_client import Done, Failed, Outcome
-from krita_art_mcp.errors import error_body
+from krita_art_mcp.errors import NOT_APPLIED, error_body
 from krita_art_mcp.imaging import Render
 from krita_art_mcp.paths import Places
-from krita_art_mcp.tools.dispatch import ToolCall, from_outcome
+from krita_art_mcp.tools.dispatch import ToolCall, failed_after, from_outcome
 from krita_art_mcp.tools.documents import frame_refusal
 from krita_art_mcp.tools.observe import LIMITS
 
@@ -360,11 +360,6 @@ def discard(places: Places, spec: Any) -> None:
 
 
 def failed(outcome: Done, error: dict[str, Any]) -> Failed:
-    return Failed(
-        error,
-        outcome.operation_id,
-        submitted=True,
-        op=outcome.op,
-        request_id=outcome.request_id,
-        session_id=outcome.session_id,
-    )
+    # Only reads come here, and a read changes nothing.
+    details = {**error["details"], "outcome": NOT_APPLIED}
+    return failed_after(outcome, {**error, "details": details})

@@ -27,7 +27,7 @@ from krita_art_mcp.tools import (
     preview,
     saving,
 )
-from krita_art_mcp.tools.dispatch import ToolCall, contract_problem
+from krita_art_mcp.tools.dispatch import ToolCall, contract_problem, identity
 
 # An answer holds each problem three times, and stays well under Claude Code's 25,000 tokens (C4).
 MAX_REPORTED_PROBLEMS = 50
@@ -157,14 +157,9 @@ def _broken(result: CallToolResult, problem: str, mutating: bool) -> CallToolRes
     return envelope.failure(
         "INTERNAL_ERROR",
         details=details,
-        document_id=_identity(content, "document_id"),
-        operation_id=_identity(content, "operation_id"),
+        document_id=identity(content, "document_id"),
+        operation_id=identity(content, "operation_id"),
     )
-
-
-def _identity(content: dict[str, Any], field: str) -> str | None:
-    found = content.get(field)
-    return found if isinstance(found, str) and found else None
 
 
 def _stated(result: CallToolResult) -> CallToolResult:

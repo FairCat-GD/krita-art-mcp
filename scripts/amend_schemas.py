@@ -100,6 +100,8 @@ def amended(tools: dict[str, dict[str, Any]]) -> dict[str, dict[str, Any]]:
     # A stroke always reports its verification, so it takes only the object branch.
     checked = _data(tools["krita_layer_update"])["properties"]["verification"]["anyOf"][0]
     _data(tools["krita_paint_stroke"])["properties"]["verification"] = copy.deepcopy(checked)
+    said = _data(tools["krita_operation_get"])["properties"]["outcome"]["anyOf"][0]
+    said["enum"] = list(errors.OUTCOMES)
     for tool in tools.values():
         inputs = tool["inputSchema"]["properties"]
         for field, shape in SHARED_INPUTS.items():

@@ -1,4 +1,5 @@
 import ast
+import datetime
 import hashlib
 import json
 import logging
@@ -7,7 +8,17 @@ from pathlib import Path
 from typing import Any
 
 import pytest
-from bridge_core import documents, files, harness, jobs, painting, protection, resources
+from bridge_core import (
+    documents,
+    files,
+    harness,
+    jobs,
+    log,
+    opening,
+    painting,
+    protection,
+    resources,
+)
 from bridge_core.errors import OUTCOMES, BridgeError, cleaned
 from bridge_core.jobs import BOUNDED, HARNESS, READS, Call, Handler, Jobs
 from bridge_core.registry import Registry
@@ -26,6 +37,7 @@ CREATE = {
 }
 BASE, PAINT = layer_id(1, 0), layer_id(1, 1)
 ACCEPTED = b"accepted art"
+NOW = datetime.datetime(2026, 11, 2, 12, 0, tzinfo=datetime.timezone.utc)
 PLUGIN = Path(__file__).resolve().parents[2] / "plugin" / "krita_art_mcp_bridge"
 NOT_APPLIED, UNCERTAIN = "not_applied", "uncertain"
 # Each retryable raise in the plugin, by file and code; each has a test here that it changed
@@ -769,20 +781,12 @@ def test_an_activation_krita_refused_is_uncertain(
 
 def test_a_leak_rolled_back_is_not_applied_and_a_stuck_one_uncertain(world: World) -> None:
     document_id = world.document()
-    leak = {"x": 100, "y": 100, "width": 4, "height": 4}
-    world.done(
-        "protection.set",
-        world.protection_args(document_id, preserve_composite_alpha=False),
-    )
-    world.port.stray = [leak]
-    world.port.layer_pixels[BASE] = bytes(4)
-    args = world.stroke_args(document_id, verify="full")
-    handle = world.registry.find(document_id)
-    handle.allowed_mask = bytes(WIDTH * HEIGHT)
-    region = bytearray(WIDTH * HEIGHT)
+    allowed = bytearray(WIDTH * HEIGHT)
     for row in range(40, 80):
-        region[row * WIDTH + 20 : row * WIDTH + 80] = b"\xff" * 60
-    handle.allowed_mask = bytes(region)
+        allowed[row * WIDTH + 20 : row * WIDTH + 80] = b"\xff" * 60
+    world.registry.find(document_id).allowed_mask = bytes(allowed)
+    world.port.stray = [{"x": 100, "y": 100, "width": 4, "height": 4}]
+    args = world.stroke_args(document_id, verify="full")
     body = world.failure("paint.stroke", args)
     assert body["code"] == "PROTECTED_REGION_CHANGED" and _outcome(body) == NOT_APPLIED
     assert body["details"]["rollback_verified"] is True and body["retryable"] is False
@@ -828,6 +832,18 @@ def test_a_read_that_leaves_a_document_says_so(world: World) -> None:
     world.port.close_works = False
     body = world.failure("document.save", world.save_args(document_id))
     assert _outcome(body) == UNCERTAIN and isinstance(body["details"]["document_id"], str)
+    assert body["details"]["rollback_verified"] is False
+
+
+def test_a_save_whose_read_raised_and_stayed_open_is_no_clean_rollback(world: World) -> None:
+    document_id = world.document()
+    world.port.close_works = False
+    refused = BridgeError("BUSY", "Retry.", True)
+    world.port.on_open.append(lambda: world.port.fail.update(composite=refused))
+    body = world.failure("document.save", world.save_args(document_id))
+    del world.port.fail["composite"]
+    assert body["details"]["rollback_verified"] is False and body["retryable"] is False
+    assert _outcome(body) == UNCERTAIN
 
 
 def test_a_read_whose_file_stays_open_after_it_raised_says_so(world: World) -> None:
@@ -872,9 +888,9 @@ def test_every_retryable_raise_is_one_this_file_answers_for() -> None:
 
 def test_a_name_collision_is_retryable_and_changed_nothing(world: World) -> None:
     world.work.mkdir()
-    taken = world.work / files.copy_name("hero.kra", _now())
+    taken = world.work / files.copy_name("hero.kra", NOW)
     taken.write_bytes(b"someone's work")
-    ops = _opening_at(world)
+    ops = opening.handlers(world.registry, world.port, world.data, now=lambda: NOW)
     with pytest.raises(BridgeError) as refused:
         ops["document.open"](world.open_args(), Call("op-n", "req-n", A))
     body = refused.value.body
@@ -952,6 +968,44 @@ def test_a_harness_export_refused_is_retryable_and_wrote_nothing(tmp_path: Path)
     assert not (folder / "copy.kra").exists()
 
 
+def test_a_second_save_inherits_the_folder_the_first_one_made(world: World) -> None:
+    saved = world.saved()
+    again = world.done("document.save", world.save_args(saved["document_id"], "other.kra"))
+    assert not os.path.lexists(saved["written"]) and world.saves.is_dir()
+    args = world.finish_args(again, merged_sha256="0" * 64)
+    body = world.failure("document.save_finish", args)
+    assert _outcome(body) == NOT_APPLIED and not world.saves.exists()
+
+
+def test_a_hidden_file_that_stays_after_placing_is_logged(
+    world: World, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+) -> None:
+    saved = world.saved()
+    caplog.set_level(logging.WARNING, logger=log.NAME)
+    logging.getLogger(log.NAME).propagate = True
+    monkeypatch.setattr(files, "remove", lambda path: False)
+    finished = world.done("document.save_finish", world.finish_args(saved))
+    assert finished["dirty_cleared"] is True
+    assert any("hidden file stayed" in record.getMessage() for record in caplog.records)
+
+
+@pytest.mark.parametrize("deeper", [False, True], ids=["itself", "above it"])
+def test_a_file_in_the_folders_path_is_an_ordinary_refusal(world: World, deeper: bool) -> None:
+    (world.art / "taken").write_bytes(b"a file")
+    folder = world.art / "taken"
+    args = world.open_args(working_dir=str(folder / "work" if deeper else folder))
+    body = world.failure("document.open", args)
+    assert body["code"] == "IO_ERROR" and _outcome(body) == NOT_APPLIED
+    assert (world.art / "taken").read_bytes() == b"a file"
+
+
+def test_a_save_under_a_file_is_an_ordinary_refusal(world: World) -> None:
+    (world.art / "taken").write_bytes(b"a file")
+    args = {"document_id": world.document(), "path": str(world.art / "taken" / "hero.kra")}
+    body = world.failure("document.save", args)
+    assert body["code"] == "IO_ERROR" and _outcome(body) == NOT_APPLIED
+
+
 # The cleanup helpers.
 
 
@@ -1013,15 +1067,3 @@ def test_cleaned_only_narrows() -> None:
 
 def test_cleaned_leaves_an_unexpected_raise_alone() -> None:
     cleaned(RuntimeError("Krita raised"), False)
-
-
-def _now() -> Any:
-    import datetime
-
-    return datetime.datetime(2026, 11, 2, 12, 0, tzinfo=datetime.timezone.utc)
-
-
-def _opening_at(world: World) -> dict[str, Handler]:
-    from bridge_core import opening
-
-    return opening.handlers(world.registry, world.port, world.data, now=_now)

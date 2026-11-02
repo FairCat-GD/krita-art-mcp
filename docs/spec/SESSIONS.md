@@ -220,6 +220,24 @@ state*, *Documents*, *The verification core*, *Painting*, *The undo ledger and h
   - Every new probe check: its assertion broken in five runs, each failing at its own step.
 - **Numbers:** 731 server tests (+61), 775 plugin tests (+110), probe 142 PASS (+11), 0 FAIL, 23
   MEASURED, about 120 s. Instructions 3,970 characters (+64). 19 tools, 30 error codes, 31 ops.
+- **Review (`/code-review high`), 10 findings: 10 fixed and 0 skipped.**
+  - **A file in a folder's path read `uncertain`.** `unmake` took `ENOTDIR` for a folder of ours that
+    stayed, on an ordinary refusal.
+  - **Dropping the earlier save last lost its folders.** The new `Pending` now takes them over.
+  - **A read the server could not finish read `uncertain`.** `pixels.failed` now states `not_applied`.
+  - **A kept reopened file claimed a clean rollback.** `read_file` now reports it as not cleaned, on
+    both paths, which also clears `retryable`.
+  - **An applied PNG failure left its transfer file,** which no retry adopts now. It is discarded.
+  - **A hidden file that stays after placing went unreported.** It is logged; the save stands.
+  - **`krita_operation_get`'s outcome enum could drift.** `amend_schemas.py` writes it.
+  - **Duplication.** `identity` and `failed_after` in `dispatch.py` replace three id checks and two
+    `Failed` builders, and the two `_stated` functions no longer share a name.
+  - **The new tests lost dead setup and stray helpers,** including one repeated test.
+  - **`krita_operation_get` read the journal twice per poll.** It reads a line only when the bridge
+    cannot answer.
+  - **Falsified:** the seven checks the fixes added, each failing at its own step.
+  - **Numbers after the review:** 732 server tests, 781 plugin tests, probe 142 PASS, 0 FAIL, 23
+    MEASURED, about 118 s on a restarted Krita.
 
 ---
 

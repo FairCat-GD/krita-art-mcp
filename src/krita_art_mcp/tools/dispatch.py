@@ -192,40 +192,49 @@ def _after_send(outcome: Outcome | None, operation_id: str) -> tuple[Done | Fail
     return lost, failed_receipt(lost)
 
 
+def identity(content: dict[str, Any], field: str) -> str | None:
+    # An id as the envelope may carry it, from content nothing has validated.
+    found = content.get(field)
+    return found if isinstance(found, str) and found else None
+
+
 def raw_receipt(outcome: Done) -> CallToolResult:
     # What the bridge said, unshaped: a receipt that cannot be built loses none of it.
-    document_id = outcome.result.get("document_id")
     return envelope.completed(
         outcome.result,
         f"Operation {outcome.operation_id} finished; its receipt could not be built.",
-        document_id=document_id if isinstance(document_id, str) else None,
+        document_id=identity(outcome.result, "document_id"),
         operation_id=outcome.operation_id,
     )
 
 
 def failed_receipt(outcome: Failed) -> CallToolResult:
-    failed_on = outcome.error["details"].get("document_id")
     return envelope.failed(
         outcome.error,
-        document_id=failed_on if isinstance(failed_on, str) else None,
+        document_id=identity(outcome.error["details"], "document_id"),
         operation_id=outcome.operation_id,
     )
 
 
-def applied_failure(outcome: Done, code: str, message: str) -> Failed:
-    # The op finished and only the server's part of it did not: never retryable.
-    details: dict[str, Any] = {"outcome": APPLIED}
-    document_id = outcome.result.get("document_id")
-    if isinstance(document_id, str):
-        details["document_id"] = document_id
+def failed_after(outcome: Done, error: dict[str, Any]) -> Failed:
+    # The server's part of a finished op failed: the failure keeps the op's identity.
     return Failed(
-        error_body(code, message, retryable=False, details=details),
+        error,
         outcome.operation_id,
         submitted=True,
         op=outcome.op,
         request_id=outcome.request_id,
         session_id=outcome.session_id,
     )
+
+
+def applied_failure(outcome: Done, code: str, message: str) -> Failed:
+    # The op finished and only the server's part of it did not: never retryable.
+    details: dict[str, Any] = {"outcome": APPLIED}
+    document_id = identity(outcome.result, "document_id")
+    if document_id is not None:
+        details["document_id"] = document_id
+    return failed_after(outcome, error_body(code, message, retryable=False, details=details))
 
 
 def _uncertain(operation_id: str) -> Failed:

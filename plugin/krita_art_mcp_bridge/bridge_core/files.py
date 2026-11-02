@@ -60,11 +60,11 @@ def make_folder(folder: str, field: str) -> list[str]:
 
 def unmake(made: list[str]) -> bool:
     # Deepest first. A folder something else has filled stays, and is no longer ours to remove;
-    # False only when one that is ours stays.
+    # False only when one that is ours stays. A file in the path means there never was a folder.
     for folder in made:
         try:
             os.rmdir(folder)
-        except FileNotFoundError:
+        except (FileNotFoundError, NotADirectoryError):
             continue
         except OSError as problem:
             return problem.errno == errno.ENOTEMPTY
