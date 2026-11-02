@@ -9,7 +9,7 @@ from pathlib import Path
 from typing import Any
 
 from krita_art_mcp import __version__, paths, processes, setup_checks
-from krita_art_mcp.errors import CODES, PROTOCOL, error_body
+from krita_art_mcp.errors import CODES, PROTOCOL, UNCERTAIN, UNREGISTERED, error_body
 
 # The server owns the wait budget: the bridge cannot answer while a Krita call holds the GIL
 # (K40). 45 s stays under Codex's default 60 s tool timeout.
@@ -358,7 +358,8 @@ def _bridge_error(body: Any) -> dict[str, Any]:
         and isinstance(body.get("details"), dict)
     ):
         return {key: body[key] for key in ("code", "message", "retryable", "details")}
-    return error_body("INTERNAL_ERROR", "The bridge sent a malformed error.")
+    details = {"outcome": UNCERTAIN}
+    return error_body("INTERNAL_ERROR", "The bridge sent a malformed error.", details=details)
 
 
 def _other_version(found: Any) -> Failed:
@@ -372,8 +373,9 @@ def _other_version(found: Any) -> Failed:
 def _uncertain(operation_id: str, reason: str) -> Failed:
     # The call was sent, so it may have run; a retry could repeat it (invariant 9).
     message = f"Krita stopped answering mid-call ({reason}); whether the call ran is unknown."
-    details = {"outcome": "uncertain", "operation_id": operation_id}
-    return Failed(error_body("INTERNAL_ERROR", message, retryable=False, details=details))
+    details = {"outcome": UNCERTAIN, "operation_id": operation_id}
+    error = error_body("INTERNAL_ERROR", message, retryable=False, details=details)
+    return Failed(error, operation_id)
 
 
 def _unregistered(operation_id: str) -> Failed:
@@ -382,8 +384,9 @@ def _unregistered(operation_id: str) -> Failed:
         "Krita's bridge has no record of this call: it most likely never arrived and did not run, "
         "but it may still arrive. Retry it, with the same request_id if it has one."
     )
-    details = {"outcome": "unregistered", "operation_id": operation_id}
-    return Failed(error_body("INTERNAL_ERROR", message, retryable=True, details=details))
+    details = {"outcome": UNREGISTERED, "operation_id": operation_id}
+    error = error_body("INTERNAL_ERROR", message, retryable=True, details=details)
+    return Failed(error, operation_id)
 
 
 def _text(value: Any) -> str | None:
@@ -397,9 +400,8 @@ def _unknown_operation(operation_id: str) -> Failed:
 
 
 def _unexpected(status: int) -> Failed:
-    return Failed(
-        error_body("INTERNAL_ERROR", f"The bridge sent an unexpected reply (HTTP {status}).")
-    )
+    message = f"The bridge sent an unexpected reply (HTTP {status})."
+    return Failed(error_body("INTERNAL_ERROR", message, details={"outcome": UNCERTAIN}))
 
 
 def _step_details(step: setup_checks.Step) -> dict[str, Any]:

@@ -194,7 +194,18 @@
                 "type": "boolean"
               },
               "details": {
-                "type": "object"
+                "type": "object",
+                "properties": {
+                  "outcome": {
+                    "type": "string",
+                    "enum": [
+                      "applied",
+                      "not_applied",
+                      "uncertain",
+                      "unregistered"
+                    ]
+                  }
+                }
               }
             },
             "required": [

@@ -61,6 +61,7 @@ def handlers(registry: Registry, port: DocumentsPort, data: Path) -> dict[str, H
             was = handle.dirty
             handle.touched()
         else:
+            call.mark()
             was = handle.before_change()
         applied: dict[str, Any] = {}
         step: Step | None = None
@@ -111,6 +112,7 @@ def handlers(registry: Registry, port: DocumentsPort, data: Path) -> dict[str, H
         if args["properties"].get("active"):
             try:
                 with in_front(port, document):
+                    call.mark()
                     port.activate(document, layer_id)
             except BridgeError:
                 if not applied:

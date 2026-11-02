@@ -106,6 +106,43 @@
                     "type": "null"
                   }
                 ]
+              },
+              "outcome": {
+                "anyOf": [
+                  {
+                    "type": "string",
+                    "enum": [
+                      "applied",
+                      "not_applied",
+                      "uncertain",
+                      "unregistered"
+                    ]
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "receipt_valid": {
+                "anyOf": [
+                  {
+                    "type": "boolean"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "receipt_problem": {
+                "anyOf": [
+                  {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
               }
             },
             "required": [
@@ -113,7 +150,10 @@
               "tool",
               "state",
               "progress",
-              "receipt"
+              "receipt",
+              "outcome",
+              "receipt_valid",
+              "receipt_problem"
             ],
             "additionalProperties": false
           },
@@ -170,7 +210,18 @@
                 "type": "boolean"
               },
               "details": {
-                "type": "object"
+                "type": "object",
+                "properties": {
+                  "outcome": {
+                    "type": "string",
+                    "enum": [
+                      "applied",
+                      "not_applied",
+                      "uncertain",
+                      "unregistered"
+                    ]
+                  }
+                }
               }
             },
             "required": [
@@ -255,6 +306,43 @@
                   "type": "null"
                 }
               ]
+            },
+            "outcome": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "enum": [
+                    "applied",
+                    "not_applied",
+                    "uncertain",
+                    "unregistered"
+                  ]
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "receipt_valid": {
+              "anyOf": [
+                {
+                  "type": "boolean"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "receipt_problem": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "minLength": 1
+                },
+                {
+                  "type": "null"
+                }
+              ]
             }
           },
           "required": [
@@ -262,7 +350,10 @@
             "tool",
             "state",
             "progress",
-            "receipt"
+            "receipt",
+            "outcome",
+            "receipt_valid",
+            "receipt_problem"
           ],
           "additionalProperties": false
         },
@@ -354,7 +445,10 @@
             "documents": []
           },
           "error": null
-        }
+        },
+        "outcome": "applied",
+        "receipt_valid": true,
+        "receipt_problem": null
       },
       "error": null
     }

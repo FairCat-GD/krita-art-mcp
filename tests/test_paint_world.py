@@ -72,6 +72,53 @@ def test_a_stroke_reaches_the_plugin_and_comes_back_verified_with_its_pngs(world
     assert phases == ["dispatched", "finished"]
 
 
+def test_the_stroke_that_once_lost_its_receipt_comes_back_whole(world: World) -> None:
+    # An opaque master, a new layer, no selection, a 20 px brush and full verification.
+    side = 1254
+    created = world.server().content(
+        "krita_document_create", {**CREATE, "size_px": [side, side], "request_id": "req-c"}
+    )
+    world.port.canvas[1] = bytearray(bytes([16, 32, 48, 255]) * (side * side))
+    points = [(372, -8), (376, 4), (398, 28), (401, 55), (418, 78)]
+    arguments = _stroke(created["document_id"], "req-s")
+    arguments["brush"] = {**arguments["brush"], "size_px": 20}
+    arguments["points"] = [{"x": x, "y": y} for x, y in points]
+    arguments.update(verify="full", smooth="catmull_rom")
+    done = world.server().content("krita_paint_stroke", arguments)
+    assert done["status"] == "completed", done["error"]
+    assert not list(OUTPUT.iter_errors(done))
+    data = done["data"]
+    assert data["changed_bounds_px"] == {"x": 362, "y": 0, "width": 66, "height": 88}
+    assert data["layer_bounds_px"] == {"x": 362, "y": -18, "width": 66, "height": 106}
+    assert done["operation_id"] and done["document_id"]
+    composite = bytes(world.port.canvas[1])
+    assert composite[3::4] == b"\xff" * (side * side)
+    again = world.server().content("krita_paint_stroke", arguments)
+    assert again == done and len(world.port.paths) == 1
+
+
+@pytest.mark.parametrize(
+    "point",
+    [(-1.5, 8), (33.5, 8), (16, -1.5), (16, 17.5)],
+    ids=["left", "right", "top", "bottom"],
+)
+@pytest.mark.parametrize("verify", ["region", "full"])
+def test_each_edge_passes_the_output_schema(
+    world: World, point: tuple[float, float], verify: str
+) -> None:
+    document_id = _document(world)
+    arguments = _stroke(document_id, "req-s")
+    x, y = point
+    arguments["points"] = [{"x": x, "y": y}, {"x": x + (y in (-1.5, 17.5)), "y": y + (x != 16)}]
+    arguments["verify"] = verify
+    done = world.server().content("krita_paint_stroke", arguments)
+    assert done["status"] == "completed", done["error"]
+    assert not list(OUTPUT.iter_errors(done))
+    bounds = done["data"]["changed_bounds_px"]
+    assert bounds["x"] >= 0 and bounds["y"] >= 0
+    assert bounds["x"] + bounds["width"] <= 32 and bounds["y"] + bounds["height"] <= 16
+
+
 def test_a_leaking_stroke_is_undone_and_its_diff_shown_inline_and_by_operation_get(
     world: World,
 ) -> None:

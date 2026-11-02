@@ -133,6 +133,12 @@ class FakePort:
         self.stray: list[dict[str, int]] = []
         self.on_paint: list[Any] = []
         self.paths: list[dict[str, Any]] = []
+        # The call whose marker every mutating call here answers to, once a test sets it.
+        self.marker: Any = None
+
+    def _marked(self) -> None:
+        if self.marker is not None and not self.marker.changing:
+            raise AssertionError("a mutating port call came before the op's marker")
 
     def open_by_hand(self, name: str) -> int:
         key = self._add(name, 640, 480)
@@ -152,12 +158,14 @@ class FakePort:
         return self.refuse
 
     def create(self, name: str, width: int, height: int) -> Any:
+        self._marked()
         self.created += 1
         for hook in self.on_create:
             hook()
         return FakeDocument(self._add(name, width, height))
 
     def open(self, path: str) -> Any:
+        self._marked()
         for hook in self.on_open:
             hook()
         self._maybe_fail("open")
@@ -229,6 +237,7 @@ class FakePort:
         return tree
 
     def activate(self, document: Any, node_id: str) -> None:
+        self._marked()
         # setActiveNode acts on the document in front only.
         self.calls.append("activate")
         if self.front_key == document.key:
@@ -322,6 +331,7 @@ class FakePort:
     def create_layer(
         self, document: Any, parent_id: str, above_id: str | None, kind: str, name: str
     ) -> str:
+        self._marked()
         self._maybe_fail("create_layer")
         key = document.key
         before = self._state(key)
@@ -341,6 +351,7 @@ class FakePort:
         return str(node["id"])
 
     def set_selection(self, document: Any, recipe: list[tuple[Any, ...]]) -> None:
+        self._marked()
         self._maybe_fail("set_selection")
         key = document.key
         self.recipes.append(recipe)
@@ -375,6 +386,7 @@ class FakePort:
         self._push(key, history.LABELS["selection.set"], before)
 
     def set_blend(self, document: Any, layer_id: str, mode: str) -> None:
+        self._marked()
         self._maybe_fail("set_blend")
         self.calls.append("blend")
         node = self._layer(document.key, layer_id)
@@ -385,6 +397,7 @@ class FakePort:
         self._redraw(document.key)
 
     def set_properties(self, document: Any, layer_id: str, values: dict[str, Any]) -> None:
+        self._marked()
         self.calls.append("properties")
         self._layer(document.key, layer_id).update(values)
         self._maybe_fail("set_properties")
@@ -490,6 +503,7 @@ class FakePort:
         info["index"] = len(stack)
 
     def undo(self, document: Any) -> None:
+        self._marked()
         self.calls.append("undo")
         info = self.live.get(self.front_key or -1)
         if self.undo_works and info is not None and info.get("index", 0) > 0:
@@ -497,6 +511,7 @@ class FakePort:
             self._step(self.front_key or -1, info["stack"][info["index"]], "before")
 
     def redo(self, document: Any) -> None:
+        self._marked()
         self.calls.append("redo")
         info = self.live.get(self.front_key or -1)
         if info is not None and info.get("index", 0) < len(info.get("stack", [])):
@@ -532,6 +547,7 @@ class FakePort:
 
     def export(self, document: Any, target: str) -> bool:
         # Writes a zip with the document's mergedimage.png, and keeps what an open reads back.
+        self._marked()
         self.calls.append("export")
         if not self.export_works:
             return False
@@ -677,6 +693,7 @@ class FakePort:
         return self.cumulative
 
     def paint_path(self, document: Any, layer_id: str, path: dict[str, Any]) -> None:
+        self._marked()
         self.calls.append("paint")
         self._maybe_fail("paint_path")
         key = document.key
@@ -736,6 +753,7 @@ class FakePort:
         return f"root-{document.key}", [{"id": f"layer-{document.key}", **self.layer}]
 
     def close(self, document: Any, settle_s: float = 0.0) -> bool:
+        self._marked()
         self.closed.append(document.key)
         self.settled.append(settle_s)
         if self.close_works:

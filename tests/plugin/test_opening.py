@@ -125,7 +125,7 @@ def test_a_source_that_differs_from_its_hash_leaves_no_copy(world: World) -> Non
         world.open(source_path=path, source_sha256="0" * 64)
     assert refused.value.body["code"] == "SOURCE_HASH_MISMATCH"
     assert refused.value.body["details"]["file"] == "the source"
-    assert os.listdir(world.work) == []
+    assert not world.work.exists()
     assert world.code(
         source_path=path, source_sha256="0" * 64, mode="read_only", working_dir=None
     ) == ("SOURCE_HASH_MISMATCH")
@@ -140,7 +140,7 @@ def test_a_source_that_cannot_be_read_leaks_no_descriptor(world: World) -> None:
     finally:
         os.chmod(path, 0o644)
     assert len(os.listdir("/dev/fd")) == before
-    assert os.listdir(world.work) == []
+    assert not world.work.exists()
 
 
 def test_a_copy_that_reads_back_differently_is_removed(
@@ -151,7 +151,7 @@ def test_a_copy_that_reads_back_differently_is_removed(
         world.open()
     assert refused.value.body["code"] == "SOURCE_HASH_MISMATCH"
     assert refused.value.body["details"]["file"] == "the working copy"
-    assert os.listdir(world.work) == []
+    assert not world.work.exists()
 
 
 @pytest.mark.parametrize(
@@ -246,7 +246,7 @@ def test_the_editable_lists_and_the_mode_are_exact(
     _layers(world, name, ["base", "twice", "twice", "fix"])
     assert world.code(name=name, **changes) == code
     assert world.registry.sync() == []
-    assert not world.work.exists() or os.listdir(world.work) == []
+    assert not world.work.exists()
     assert world.transfer_files() == []
 
 
@@ -270,7 +270,7 @@ def test_a_failure_after_the_copy_undoes_everything_in_the_same_job(
         world.port.fail[step] = BridgeError("IO_ERROR", f"{step} failed")
         code = "IO_ERROR"
     assert world.code() == code
-    assert os.listdir(world.work) == []
+    assert not world.work.exists()
     assert world.transfer_files() == []
     assert world.registry.sync() == [] and world.port.live == {}
     assert world.port.closed == ([] if step == "open" else [1])
@@ -282,7 +282,7 @@ def test_a_failure_minting_the_baseline_id_undoes_everything(world: World) -> No
 
     world.ops.update(opening.handlers(world.registry, world.port, world.data, lambda: NOW, failing))
     assert world.code() == "INTERNAL_ERROR"
-    assert world.transfer_files() == [] and os.listdir(world.work) == []
+    assert world.transfer_files() == [] and not world.work.exists()
     assert world.registry.sync() == [] and world.port.closed == [1]
 
 

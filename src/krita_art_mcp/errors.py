@@ -5,6 +5,13 @@ PROTOCOL = 1
 # The tool contract's version, carried by every result envelope.
 API_VERSION = "0.2.0"
 
+# Whether a failure applied, in `details.outcome`; the plugin holds an equal copy.
+APPLIED = "applied"
+NOT_APPLIED = "not_applied"
+UNCERTAIN = "uncertain"
+UNREGISTERED = "unregistered"
+OUTCOMES = (APPLIED, NOT_APPLIED, UNCERTAIN, UNREGISTERED)
+
 # Each Phase 1 code with its default `retryable` and its one-line hint. The plugin holds an
 # equal list of codes (`bridge_core.errors.CODES`).
 CODES: dict[str, tuple[bool, str]] = {

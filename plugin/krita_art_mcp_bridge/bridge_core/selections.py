@@ -74,10 +74,12 @@ def handlers(registry: Registry, port: DocumentsPort, data: Path) -> dict[str, H
             raise BridgeError("INVALID_ARGUMENT", message, False, details)
         if shape["kind"] == "none" and not selected:
             # A successful guarded call dirties the document; Krita gets nothing.
+            call.mark()
             handle.before_change()
             return {"document_id": handle.document_id, "selection": None, "undo_steps": 0}
         label = LABELS["selection.clear" if shape["kind"] == "none" else "selection.set"]
         start = fingerprint(port, document)
+        call.mark()
         handle.before_change()
         try:
             port.set_selection(document, recipe(shape, args, rect, mask))

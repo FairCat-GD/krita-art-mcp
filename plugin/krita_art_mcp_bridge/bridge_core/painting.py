@@ -130,13 +130,16 @@ def handlers(
                 message = "Krita's brush changed after it was set, so the stroke was not painted."
                 raise BridgeError("INTERNAL_ERROR", message, False, {"layer_id": layer_id})
             start = fingerprint(port, document)
+            call.mark()
             was = handle.before_change()
             with unconfirmed(handle):
                 return painted(
                     handle,
                     args,
                     call,
-                    Stroke(mode, start, was, before, allowed, region, loose_ring, target_rect),
+                    Stroke(
+                        mode, start, was, before, allowed, region, loose_ring, target_rect, size
+                    ),
                     old_bounds,
                     protected,
                     _effective(asked, listed, effective, reach, tip, scatter, margin),
@@ -158,6 +161,7 @@ def handlers(
         verdict: verification.Verdict | None = None
         diff: dict[str, int] | None = None
         sealed = False
+        new: dict[str, int] | None = None
         problem: BridgeError | None = None
         try:
             port.paint_path(document, layer_id, args["path"])
@@ -201,10 +205,16 @@ def handlers(
             final = port.tree(document)
             problem = _verdict(final, layer_id, protected, verdict, diff, stroke, old_bounds)
             new = _box(_node_bounds(final, layer_id))
-            if stroke.mode == verification.FULL and new and not _inside(new, stroke.target_rect):
+            # Krita's bounds run past the canvas, where paint changes nothing anyone can see.
+            shown = None if new is None else _box(_clip(new, stroke.size))
+            if (
+                stroke.mode == verification.FULL
+                and shown
+                and not _inside(shown, stroke.target_rect)
+            ):
                 # Full scope does not hold the target to R; what it painted past the read shows
                 # in its bounds.
-                diff = union([diff, new])
+                diff = union([diff, shown])
         except BridgeError as raised:
             problem = raised
         except Exception as raised:
@@ -225,6 +235,7 @@ def handlers(
             "accepted_points": args["accepted_points"],
             "effective_brush": effective,
             "changed_bounds_px": diff,
+            "layer_bounds_px": new,
             "protected_pixels_changed": 0,
             "undo_label": LABELS["paint.stroke"],
             "undo_steps": 1,
@@ -370,6 +381,7 @@ class Stroke:
         region: dict[str, int],
         loose_ring: dict[str, int],
         target_rect: dict[str, int],
+        size: list[int],
     ) -> None:
         self.mode = mode
         self.start = start
@@ -380,6 +392,7 @@ class Stroke:
         self.region = region
         self.loose_ring = loose_ring
         self.target_rect = target_rect
+        self.size = size
 
 
 # Arguments.

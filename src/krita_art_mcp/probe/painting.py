@@ -12,7 +12,7 @@ from mcp import Client
 
 from krita_art_mcp.bridge_client import BridgeClient, Done
 from krita_art_mcp.journal import Journal
-from krita_art_mcp.probe import acceptance, fixtures, previews, saving
+from krita_art_mcp.probe import acceptance, edges, fixtures, previews, saving
 from krita_art_mcp.probe.common import (
     add_layer,
     brush_args,
@@ -137,6 +137,7 @@ async def run(report: Report, a: Client, b: Client, client: BridgeClient, harnes
             await _refusals(report, a, client, paint, harness, document_id, root, base, hard)
             await _masks(report, a, client, paint, harness, presets)
             await _rim(report, a, rim, harness, hard)
+            await edges.run(report, a, folder, harness, hard)
         with report.timed("benchmark"):
             for spec in BENCHMARKS:
                 await _benchmark(report, a, client, harness, folder, spec, hard)

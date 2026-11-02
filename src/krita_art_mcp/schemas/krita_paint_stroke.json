@@ -430,6 +430,39 @@
                   }
                 ]
               },
+              "layer_bounds_px": {
+                "anyOf": [
+                  {
+                    "type": "object",
+                    "properties": {
+                      "x": {
+                        "type": "integer"
+                      },
+                      "y": {
+                        "type": "integer"
+                      },
+                      "width": {
+                        "type": "integer",
+                        "minimum": 1
+                      },
+                      "height": {
+                        "type": "integer",
+                        "minimum": 1
+                      }
+                    },
+                    "required": [
+                      "x",
+                      "y",
+                      "width",
+                      "height"
+                    ],
+                    "additionalProperties": false
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
               "protected_pixels_changed": {
                 "const": 0
               },
@@ -641,6 +674,7 @@
               "input_applied",
               "effective_brush",
               "changed_bounds_px",
+              "layer_bounds_px",
               "protected_pixels_changed",
               "undo_label",
               "undo_steps",
@@ -701,7 +735,18 @@
                 "type": "boolean"
               },
               "details": {
-                "type": "object"
+                "type": "object",
+                "properties": {
+                  "outcome": {
+                    "type": "string",
+                    "enum": [
+                      "applied",
+                      "not_applied",
+                      "uncertain",
+                      "unregistered"
+                    ]
+                  }
+                }
               }
             },
             "required": [
@@ -902,6 +947,39 @@
                     "y": {
                       "type": "integer",
                       "minimum": 0
+                    },
+                    "width": {
+                      "type": "integer",
+                      "minimum": 1
+                    },
+                    "height": {
+                      "type": "integer",
+                      "minimum": 1
+                    }
+                  },
+                  "required": [
+                    "x",
+                    "y",
+                    "width",
+                    "height"
+                  ],
+                  "additionalProperties": false
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "layer_bounds_px": {
+              "anyOf": [
+                {
+                  "type": "object",
+                  "properties": {
+                    "x": {
+                      "type": "integer"
+                    },
+                    "y": {
+                      "type": "integer"
                     },
                     "width": {
                       "type": "integer",
@@ -1136,6 +1214,7 @@
             "input_applied",
             "effective_brush",
             "changed_bounds_px",
+            "layer_bounds_px",
             "protected_pixels_changed",
             "undo_label",
             "undo_steps",
@@ -1285,6 +1364,12 @@
           }
         },
         "changed_bounds_px": {
+          "x": 17,
+          "y": 21,
+          "width": 31,
+          "height": 13
+        },
+        "layer_bounds_px": {
           "x": 17,
           "y": 21,
           "width": 31,

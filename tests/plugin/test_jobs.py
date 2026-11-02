@@ -167,7 +167,7 @@ def test_a_raising_handler_becomes_internal_error_with_its_traceback_logged() ->
         "code": "BUSY",
         "message": "Try again.",
         "retryable": True,
-        "details": {"why": "test"},
+        "details": {"why": "test", "outcome": "not_applied"},
     }
 
 

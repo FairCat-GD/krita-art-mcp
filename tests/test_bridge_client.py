@@ -260,7 +260,10 @@ def test_a_long_call_returns_running_after_the_budget_then_its_result(live: Live
 def test_a_plugin_error_passes_through(live: Live) -> None:
     outcome = live.client().call("boom")
     assert _code(outcome) == "INTERNAL_ERROR"
-    assert isinstance(outcome, Failed) and outcome.error["details"] == {"op": "boom"}
+    assert isinstance(outcome, Failed) and outcome.error["details"] == {
+        "op": "boom",
+        "outcome": "uncertain",
+    }
     assert _code(live.client().call("paint_everything")) == "INVALID_ARGUMENT"
 
 

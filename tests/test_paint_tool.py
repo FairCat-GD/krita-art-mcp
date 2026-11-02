@@ -294,6 +294,7 @@ def _result(checked: dict[str, Any]) -> dict[str, Any]:
             "reach": {"tip": "round", "scatter": 0, "margin_px": 32},
         },
         "changed_bounds_px": {"x": 1, "y": 0, "width": 1, "height": 1},
+        "layer_bounds_px": {"x": 1, "y": 0, "width": 1, "height": 1},
         "protected_pixels_changed": 0,
         "undo_label": "Scripted Brush Stroke",
         "undo_steps": 1,

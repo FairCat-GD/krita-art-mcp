@@ -6,6 +6,48 @@ All notable changes to krita-art-mcp are documented here. The format follows
 
 ## [Unreleased]
 
+## [0.17.0] — 2026-11-02
+
+A stroke that applied can no longer come back as a failure with no ids, and every failed change now
+says whether it applied. This release needs `install-plugin`, a Krita restart and a restart of the
+MCP client.
+
+### Added
+
+- **`details.outcome` on every failed change:** `applied`, `not_applied`, `uncertain` or
+  `unregistered`. `not_applied` is said only on proof, and `applied` is never retryable.
+- **`layer_bounds_px` on a stroke's receipt.** It carries Krita's own extent, which can run past the
+  canvas.
+- **`outcome`, `receipt_valid` and `receipt_problem` on `krita_operation_get`.** A receipt that
+  breaks its contract comes back as plain data, and the journal is settled either way.
+- **`krita_operation_get` answers after a Krita restart,** from the journal, when the call's end was
+  recorded.
+- **The probe paints past every edge and corner,** with and without a selection, in both scopes. It
+  also checks a stroke wholly off the canvas, old overhang, same-request replay, and a save and
+  reopen after overhang, and that no call in its run was left uncertain.
+
+### Fixed
+
+- **A stroke past the top or left edge applied and then reported failure.** `changed_bounds_px` took
+  Krita's unclipped layer bounds, which broke its own schema, so the receipt, its ids and the
+  journal's record were lost. A layer that already held off-canvas paint failed the same way on
+  every later full-scope stroke, wherever it landed.
+- **Past the right or bottom edge, `changed_bounds_px` reported the layer's bounds** rather than what
+  changed. It is now always inside the canvas and true.
+- **A receipt that breaks its contract keeps the call's `document_id` and `operation_id`,** and a
+  completed change says `applied`. The error no longer quotes the whole receipt.
+- **Applied work is no longer reported as a plain failure.** A selection whose mask could not be made
+  and a history step whose capture could not be made say `applied`, keep their ids and are never
+  retryable. One of them used to say retry, though the undo step had already been pushed.
+- **`BUSY` from a save now changes nothing.** An earlier unfinished save used to be dropped first. It
+  now stays until a new save has verified.
+- **A raise after a call went out keeps its identity,** and the journal still records it.
+- **A failure reading a saved file no longer leaves its hidden file behind.**
+
+### Changed
+
+- **A refused open removes the working folder it made,** so a wrong hash leaves nothing.
+
 ## [0.16.0] — 2026-11-01
 
 Phase 1 is complete and documented. This release needs `install-plugin`, a Krita restart and a

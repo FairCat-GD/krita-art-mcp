@@ -1,8 +1,9 @@
 import datetime
+import errno
 import hashlib
 import os
 
-from .errors import BridgeError
+from .errors import BridgeError, cleaned
 
 CHUNK = 1 << 20
 Stat = tuple[int, int, int, int]
@@ -40,12 +41,47 @@ def copy_name(source: str, now: datetime.datetime) -> str:
     return f"{stamp:%Y%m%dT%H%M%S}.{stamp.microsecond // 1000:03d}Z-{os.path.basename(source)}"
 
 
+def make_folder(folder: str, field: str) -> list[str]:
+    # The folders it made, deepest first; a failure removes what it made.
+    missing = []
+    while not os.path.isdir(folder):
+        missing.append(folder)
+        folder = os.path.dirname(folder)
+    if not missing:
+        return missing
+    try:
+        os.makedirs(missing[0], exist_ok=True)
+    except OSError as problem:
+        failure = BridgeError("IO_ERROR", f"{field} cannot be made: {problem}")
+        cleaned(failure, unmake(missing))
+        raise failure from problem
+    return missing
+
+
+def unmake(made: list[str]) -> bool:
+    # Deepest first. A folder something else has filled stays, and is no longer ours to remove;
+    # False only when one that is ours stays.
+    for folder in made:
+        try:
+            os.rmdir(folder)
+        except FileNotFoundError:
+            continue
+        except OSError as problem:
+            return problem.errno == errno.ENOTEMPTY
+    return True
+
+
+def remove(path: str) -> bool:
+    # Whether nothing is left at the path.
+    try:
+        os.unlink(path)
+    except OSError:
+        pass
+    return not os.path.lexists(path)
+
+
 def working_copy(source: str, folder: str, expected: str, now: datetime.datetime) -> str:
     # The copy is made under its final name and never over another file; a failure removes it.
-    try:
-        os.makedirs(folder, exist_ok=True)
-    except OSError as problem:
-        raise BridgeError("IO_ERROR", f"working_dir cannot be made: {problem}") from problem
     target = os.path.join(folder, copy_name(source, now))
     try:
         fd = os.open(target, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o666)
@@ -64,10 +100,11 @@ def working_copy(source: str, folder: str, expected: str, now: datetime.datetime
         _matches(digest.hexdigest(), expected, "the source")
         _matches(sha256_of(target), expected, "the working copy")
     except OSError as problem:
-        _remove(target)
-        raise BridgeError("IO_ERROR", f"The source cannot be copied: {problem}") from problem
-    except BaseException:
-        _remove(target)
+        failure = BridgeError("IO_ERROR", f"The source cannot be copied: {problem}")
+        cleaned(failure, remove(target))
+        raise failure from problem
+    except BaseException as raised:
+        cleaned(raised, remove(target))
         raise
     return target
 
@@ -85,10 +122,3 @@ def _matches(actual: str, expected: str, which: str) -> None:
         details = {"file": which, "expected": expected, "actual": actual}
         message = f"The SHA-256 of {which} differs from source_sha256."
         raise BridgeError("SOURCE_HASH_MISMATCH", message, False, details)
-
-
-def _remove(path: str) -> None:
-    try:
-        os.unlink(path)
-    except FileNotFoundError:
-        pass

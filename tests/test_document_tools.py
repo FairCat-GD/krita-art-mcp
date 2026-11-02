@@ -534,7 +534,7 @@ def test_a_server_that_cannot_read_its_start_time_sends_nothing(
     assert (outcome.error["code"], outcome.error["retryable"]) == ("INTERNAL_ERROR", True)
 
 
-def test_a_receipt_that_breaks_its_tools_schema_is_an_internal_error(
+def test_a_receipt_that_breaks_its_tools_schema_comes_back_as_data(
     world: World, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     from krita_art_mcp import envelope
@@ -549,8 +549,10 @@ def test_a_receipt_that_breaks_its_tools_schema_is_an_internal_error(
     got = Server(build_server(client, world.journal(), world.places())).content(
         "krita_operation_get", {"operation_id": done.operation_id}
     )
-    assert got["error"]["code"] == "INTERNAL_ERROR"
-    assert "krita_document_list" in got["error"]["details"]["reason"]
+    assert got["status"] == "completed"
+    assert got["data"]["receipt"]["data"] == {"wrong": 1}
+    assert got["data"]["receipt_valid"] is False
+    assert "documents" not in got["data"]["receipt_problem"]
 
 
 def _attempt(journal_: Journal, operation_id: str, session_id: str = "s") -> None:
@@ -866,7 +868,7 @@ def test_the_working_dir_is_never_the_sources_folder(world: World) -> None:
     arguments = _open(world, working_dir=str(world.tmp_path / "art" / "accepted"))
     refused = world.server().content("krita_document_open", arguments)
     assert refused["error"]["code"] == "INVALID_ARGUMENT"
-    assert refused["error"]["details"] == {"field": "working_dir"}
+    assert refused["error"]["details"] == {"field": "working_dir", "outcome": "not_applied"}
     assert refused["operation_id"] is None and world.port.opened == []
 
 

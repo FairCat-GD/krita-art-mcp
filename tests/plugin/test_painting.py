@@ -826,20 +826,87 @@ def test_full_scope_widens_the_changed_bounds_by_what_it_painted_past_the_read(
     world: World,
 ) -> None:
     document_id, handle = world.document()
-    # Past R' on the canvas, and off it: neither is read, and both grow the bounds.
+    # Past R' on the canvas, and off it: neither is read. The first grows the changed bounds, and
+    # only the layer's own bounds show the second.
     world.port.stray = [_box(150, 60, 2, 2), _box(-60, 60, 2, 2)]
     done = world.stroke(document_id, verify="full")
-    assert done["changed_bounds_px"] == _box(-60, 55, 212, 10)
+    assert done["changed_bounds_px"] == _box(0, 55, 152, 10)
+    assert done["layer_bounds_px"] == _box(-60, 55, 212, 10)
     # The witness stays the diff over what was read.
     witness = handle.ledger.steps[-1].witness
     assert witness is not None and witness[1] == DABS
+
+
+EDGES = {
+    "top": ([100, -4], [110, -4]),
+    "bottom": ([100, 124], [110, 124]),
+    "left": ([-4, 60], [-4, 70]),
+    "right": ([204, 60], [204, 70]),
+    "top left": ([-4, -4], [-2, -2]),
+    "top right": ([204, -4], [202, -2]),
+    "bottom left": ([-4, 124], [-2, 122]),
+    "bottom right": ([204, 124], [202, 122]),
+}
+
+
+def _dabs(start: list[int], end: list[int]) -> dict[str, int]:
+    # What the fake paints with the default 10 px brush, unclipped.
+    left, right = min(start[0], end[0]) - 5, max(start[0], end[0]) + 5
+    top, bottom = min(start[1], end[1]) - 5, max(start[1], end[1]) + 5
+    return _box(left, top, right - left, bottom - top)
+
+
+@pytest.mark.parametrize("verify", ["region", "full"])
+@pytest.mark.parametrize("ends", EDGES.values(), ids=EDGES)
+def test_a_stroke_past_an_edge_reports_the_canvas_and_the_layer_apart(
+    world: World, ends: tuple[list[int], list[int]], verify: str
+) -> None:
+    document_id, _ = world.document()
+    start, end = ends
+    done = world.stroke(document_id, verify=verify, path={"start": start, "segments": [end]})
+    assert done["layer_bounds_px"] == _dabs(start, end)
+    assert done["changed_bounds_px"] == painting._clip(_dabs(start, end), [WIDTH, HEIGHT])
+
+
+def test_a_layer_that_already_overhangs_does_not_trip_a_stroke_far_from_it(world: World) -> None:
+    document_id, _ = world.document()
+    world.port._tree(1)["nodes"][1]["bounds_px"] = _box(-30, -20, 60, 50)
+    done = world.stroke(document_id, verify="full")
+    assert done["changed_bounds_px"] == DABS
+    assert done["layer_bounds_px"] == _box(-30, -20, 85, 85)
+
+
+@pytest.mark.parametrize("verify", ["region", "full"])
+def test_a_stroke_wholly_past_the_canvas_changes_nothing_on_it(world: World, verify: str) -> None:
+    document_id, _ = world.document()
+    path = {"start": [-5, 40], "segments": [[-5, 60]]}
+    done = world.stroke(document_id, verify=verify, path=path)
+    assert done["changed_bounds_px"] is None and done["history_sealed"] is True
+    assert done["layer_bounds_px"] == _box(-10, 35, 10, 30)
+    assert done["verification"]["changed_px"] == 0
+
+
+def test_an_undo_takes_the_overhang_back(world: World) -> None:
+    document_id, _ = world.document()
+    empty = world.port._tree(1)["nodes"][1]["bounds_px"]
+    world.stroke(document_id, path={"start": [-4, 60], "segments": [[-4, 70]]}, verify="full")
+    assert world.port._tree(1)["nodes"][1]["bounds_px"] != empty
+    assert world.history(document_id, "undo")["steps_applied"] == 1
+    assert world.port._tree(1)["nodes"][1]["bounds_px"] == empty
+
+
+def test_a_layer_with_no_paint_reports_no_bounds(world: World) -> None:
+    document_id, _ = world.document()
+    world.port.brush_now["eraser"] = True
+    done = world.stroke(document_id, brush={"eraser": True})
+    assert done["layer_bounds_px"] is None and done["changed_bounds_px"] is None
 
 
 def test_target_bounds_inside_the_unclipped_ring_pass(world: World) -> None:
     document_id, _ = world.document()
     edge = {"start": [2, 60], "segments": [[4, 60]]}
     done = world.stroke(document_id, path=edge)
-    assert world.port._tree(1)["nodes"][1]["bounds_px"]["x"] == -3
+    assert done["layer_bounds_px"]["x"] == -3
     assert done["changed_bounds_px"] == _box(0, 55, 9, 10)
 
 

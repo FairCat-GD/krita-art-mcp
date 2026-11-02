@@ -5,11 +5,13 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Any
 
+from jsonschema import Draft202012Validator
+from jsonschema.exceptions import best_match
 from mcp.types import CallToolResult, TextContent
 
 from krita_art_mcp import envelope, journal
 from krita_art_mcp.bridge_client import BeforeSend, BridgeClient, Done, Failed, Outcome, Pending
-from krita_art_mcp.errors import error_body
+from krita_art_mcp.errors import APPLIED, UNCERTAIN, UNREGISTERED, error_body
 from krita_art_mcp.journal import Journal, JournalError
 from krita_art_mcp.paths import Places
 
@@ -42,14 +44,24 @@ def outcome_of(outcome: Done | Failed) -> str:
         return journal.RECEIPT
     error = outcome.error
     # Neither says whether the call ran, so the attempt stays unsettled.
-    if error["details"].get("outcome") in ("uncertain", "unregistered"):
+    if error["details"].get("outcome") in (UNCERTAIN, UNREGISTERED):
         return journal.UNKNOWN
+    if error["details"].get("outcome") == APPLIED:
+        return journal.RECEIPT
     if not outcome.submitted:
         return journal.NOT_SENT
     if error["code"] == "REQUEST_ID_CONFLICT":
         return journal.CONFLICT
     # The bridge marks retryable only what changed nothing.
     return journal.NO_EFFECT if error["retryable"] else journal.RECEIPT
+
+
+def contract_problem(validator: Draft202012Validator, content: Any) -> str | None:
+    # Where and which rule, never jsonschema's message: that quotes the whole instance.
+    found = best_match(validator.iter_errors(content))
+    if found is None:
+        return None
+    return f"{found.json_path} breaks its {found.validator} rule"
 
 
 def stored(result: CallToolResult) -> dict[str, Any]:
@@ -116,8 +128,16 @@ def journaled(
         sent.update(session_id=session_id, operation_id=operation_id)
         return None
 
-    outcome = send(before_send)
-    result = receipt(outcome)
+    outcome: Outcome | None = None
+    try:
+        outcome = send(before_send)
+        result = receipt(outcome)
+    except Exception:
+        # With nothing sent, the catch-all's answer is true: the call changed nothing.
+        if not sent:
+            raise
+        log.exception("%s raised after it was sent", tool)
+        outcome, result = _after_send(outcome, sent["operation_id"])
     if sent and not isinstance(outcome, Pending):
         record(
             call,
@@ -154,9 +174,58 @@ def record(
             result=stored(result),
             bridge_operation_id=outcome.operation_id,
         )
-    except OSError:
+    except Exception:
         # The call is done either way; a retry will find its dispatched line and ask the bridge.
         log.exception("the journal's finished line for %s was not written", request_id)
+
+
+def _after_send(outcome: Outcome | None, operation_id: str) -> tuple[Done | Failed, CallToolResult]:
+    # A raise past dispatch keeps the call's identity, and only the bridge's done says it applied.
+    if isinstance(outcome, Done):
+        return outcome, raw_receipt(outcome)
+    if isinstance(outcome, Failed):
+        return outcome, failed_receipt(outcome)
+    message = "The server raised after sending the call; whether the call ran is unknown."
+    details = {"outcome": UNCERTAIN, "operation_id": operation_id}
+    error = error_body("INTERNAL_ERROR", message, retryable=False, details=details)
+    lost = Failed(error, operation_id, submitted=True)
+    return lost, failed_receipt(lost)
+
+
+def raw_receipt(outcome: Done) -> CallToolResult:
+    # What the bridge said, unshaped: a receipt that cannot be built loses none of it.
+    document_id = outcome.result.get("document_id")
+    return envelope.completed(
+        outcome.result,
+        f"Operation {outcome.operation_id} finished; its receipt could not be built.",
+        document_id=document_id if isinstance(document_id, str) else None,
+        operation_id=outcome.operation_id,
+    )
+
+
+def failed_receipt(outcome: Failed) -> CallToolResult:
+    failed_on = outcome.error["details"].get("document_id")
+    return envelope.failed(
+        outcome.error,
+        document_id=failed_on if isinstance(failed_on, str) else None,
+        operation_id=outcome.operation_id,
+    )
+
+
+def applied_failure(outcome: Done, code: str, message: str) -> Failed:
+    # The op finished and only the server's part of it did not: never retryable.
+    details: dict[str, Any] = {"outcome": APPLIED}
+    document_id = outcome.result.get("document_id")
+    if isinstance(document_id, str):
+        details["document_id"] = document_id
+    return Failed(
+        error_body(code, message, retryable=False, details=details),
+        outcome.operation_id,
+        submitted=True,
+        op=outcome.op,
+        request_id=outcome.request_id,
+        session_id=outcome.session_id,
+    )
 
 
 def _uncertain(operation_id: str) -> Failed:
@@ -164,8 +233,9 @@ def _uncertain(operation_id: str) -> Failed:
         "This request_id was sent to a Krita session that has ended without saying whether it "
         "ran, so it is never sent again. Inspect the document, then use a new request_id."
     )
-    details = {"outcome": "uncertain", "operation_id": operation_id}
-    return Failed(error_body("INTERNAL_ERROR", message, retryable=False, details=details))
+    details = {"outcome": UNCERTAIN, "operation_id": operation_id}
+    error = error_body("INTERNAL_ERROR", message, retryable=False, details=details)
+    return Failed(error, operation_id)
 
 
 def from_outcome(
@@ -178,12 +248,7 @@ def from_outcome(
     if isinstance(outcome, Pending):
         return envelope.pending(outcome.status, outcome.operation_id)
     if isinstance(outcome, Failed):
-        failed_on = outcome.error["details"].get("document_id")
-        return envelope.failed(
-            outcome.error,
-            document_id=failed_on if isinstance(failed_on, str) else None,
-            operation_id=outcome.operation_id,
-        )
+        return failed_receipt(outcome)
     result = outcome.result
     return envelope.completed(
         data(result),

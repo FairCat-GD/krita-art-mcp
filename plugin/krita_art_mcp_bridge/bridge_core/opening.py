@@ -9,7 +9,7 @@ from typing import Any
 
 from . import files, nodes, roots
 from .closing import settled_close
-from .errors import BridgeError, exact
+from .errors import UNCERTAIN, BridgeError, cleaned, exact
 from .inspection import check_shown_frame, layer_entries
 from .jobs import Call, Handler
 from .port import DocumentsPort
@@ -40,8 +40,9 @@ def utc_now() -> datetime.datetime:
 
 class _Made:
     # What a failing open has made so far, undone in the same job.
-    def __init__(self, copy: str | None) -> None:
-        self.copy = copy
+    def __init__(self) -> None:
+        self.folders: list[str] = []
+        self.copy: str | None = None
         self.document: Any = None
 
     def undo(
@@ -50,13 +51,14 @@ class _Made:
         kept = None
         if self.document is not None:
             kept = registry.discard(self.document, settled_close(port), mode, call.client)
-        if kept is not None and isinstance(raised, BridgeError):
-            raised.body["details"]["document_id"] = kept
-        if self.copy is not None and kept is None:
-            try:
-                os.unlink(self.copy)
-            except FileNotFoundError:
-                pass
+        if kept is not None:
+            cleaned(raised, False)
+            if isinstance(raised, BridgeError):
+                raised.body["details"].update(document_id=kept, outcome=UNCERTAIN)
+            return
+        removed = self.copy is None or files.remove(self.copy)
+        folders_gone = files.unmake(self.folders)
+        cleaned(raised, removed and folders_gone)
 
 
 def handlers(
@@ -84,11 +86,13 @@ def handlers(
         # Nothing has changed up to here, so only these refusals may be retryable.
         if working is None:
             files.check_source(source, args["source_sha256"])
-            path = source
-        else:
-            path = files.working_copy(source, working, args["source_sha256"], now())
-        made = _Made(None if working is None else path)
+        made = _Made()
         try:
+            path = source
+            if working is not None:
+                call.mark()
+                made.folders = files.make_folder(working, "working_dir")
+                path = made.copy = files.working_copy(source, working, args["source_sha256"], now())
             return _open(made, path, source, stat, args, call)
         except BaseException as raised:
             made.undo(registry, port, args["mode"], call, raised)
@@ -102,6 +106,7 @@ def handlers(
         args: dict[str, Any],
         call: Call,
     ) -> dict[str, Any]:
+        call.mark()
         document = made.document = port.open(path)
         port.show(document)
         info = port.describe(document)

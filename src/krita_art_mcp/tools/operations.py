@@ -1,3 +1,4 @@
+import logging
 import time
 from collections.abc import Callable
 from dataclasses import dataclass
@@ -5,12 +6,23 @@ from typing import Any
 
 from mcp.types import CallToolResult
 
-from krita_art_mcp import envelope, schemas
+from krita_art_mcp import envelope, journal, schemas
 from krita_art_mcp.bridge_client import BeforeSend, Done, Failed, Outcome
-from krita_art_mcp.journal import JournalError
+from krita_art_mcp.errors import APPLIED, NOT_APPLIED, OUTCOMES, UNCERTAIN
+from krita_art_mcp.journal import Finished, JournalError
 from krita_art_mcp.paths import Places
 from krita_art_mcp.tools import changes, documents, observe, painting, pixels, preview, saving
-from krita_art_mcp.tools.dispatch import Receipt, ToolCall, journaled, record
+from krita_art_mcp.tools.dispatch import (
+    Receipt,
+    ToolCall,
+    contract_problem,
+    failed_receipt,
+    journaled,
+    raw_receipt,
+    record,
+)
+
+log = logging.getLogger(__name__)
 
 Resolver = Callable[[Places, Outcome], Outcome]
 # Sends what an op's tool sends after it, with the budget left; a save's second half.
@@ -57,12 +69,15 @@ def operation_get(call: ToolCall, arguments: dict[str, Any]) -> CallToolResult:
     started = time.monotonic()
     try:
         sent_in = call.journal.session_of(operation_id)
+        line = call.journal.finished_line(operation_id)
     except (JournalError, OSError) as problem:
         return envelope.failure("INTERNAL_ERROR", f"The journal could not be read: {problem}")
     outcome = call.bridge.operation(operation_id, sent_in=sent_in)
     if isinstance(outcome, Failed) and outcome.op is None:
-        # Not the operation's own outcome: the id is unknown, or Krita is gone.
-        return envelope.failed(outcome.error, operation_id=operation_id)
+        # Not the operation's own outcome: the id is unknown, or Krita is gone, and only a
+        # finished line can still say what became of it.
+        answered = None if line is None else _from_journal(operation_id, line)
+        return answered or envelope.failed(outcome.error, operation_id=operation_id)
     known = RECEIPTS.get(outcome.op or "")
     if outcome.op is not None and known is None:
         details = {"operation_id": operation_id, "op": outcome.op}
@@ -81,26 +96,87 @@ def operation_get(call: ToolCall, arguments: dict[str, Any]) -> CallToolResult:
         "state": _state(outcome),
         "progress": None,
         "receipt": None,
+        "outcome": None,
+        "receipt_valid": None,
+        "receipt_problem": None,
     }
     if known is None or not isinstance(outcome, Done | Failed):
         text = f"Operation {data['operation_id']} is still {data['state']}."
         return envelope.completed(data, text, operation_id=data["operation_id"])
-    receipt = known.receipt(outcome)
-    validator = schemas.output_validator(known.tool)
-    mismatch = next(iter(validator.iter_errors(receipt.structured_content)), None)
-    if mismatch is not None:
-        reason = f"the receipt does not match {known.tool}'s output schema: {mismatch.message}"
-        return envelope.failure("INTERNAL_ERROR", details={"reason": reason})
-    data["receipt"] = receipt.structured_content
-    _finish_journaled(call, outcome, receipt, operation_id)
+    receipt = _receipt(known, outcome)
     content = receipt.structured_content or {}
+    broken = contract_problem(schemas.output_validator(known.tool), content)
+    data.update(
+        receipt=content,
+        outcome=_outcome_of(outcome),
+        receipt_valid=broken is None,
+        receipt_problem=broken,
+    )
+    _finish_journaled(call, outcome, receipt, operation_id)
     text = f"Operation {data['operation_id']} ({tool}) {data['state']}."
     result = envelope.completed(
-        data, text, document_id=content.get("document_id"), operation_id=data["operation_id"]
+        data, text, document_id=_document_of(content), operation_id=data["operation_id"]
     )
     # The receipt's own line and any image it carries, as the call itself would have shown.
     result.content.extend(receipt.content)
     return result
+
+
+def _receipt(known: Known, outcome: Done | Failed) -> CallToolResult:
+    # A receipt that raises is one more bad receipt: what the call did still stands.
+    try:
+        return known.receipt(outcome)
+    except Exception:
+        log.exception("the receipt of %s raised", outcome.operation_id)
+        return raw_receipt(outcome) if isinstance(outcome, Done) else failed_receipt(outcome)
+
+
+def _outcome_of(outcome: Done | Failed) -> str:
+    if isinstance(outcome, Done):
+        return APPLIED
+    return _stated(outcome.error)
+
+
+def _stated(error: Any) -> str:
+    said = error["details"].get("outcome") if isinstance(error, dict) else None
+    return said if said in OUTCOMES else UNCERTAIN
+
+
+def _from_journal(operation_id: str, line: Finished) -> CallToolResult | None:
+    # The answer once Krita has moved on. An outcome is read from the line, never assumed.
+    content = (line.result or {}).get("structured")
+    if not isinstance(content, dict) or line.tool not in schemas.tool_names():
+        return None
+    state = content.get("status")
+    state = state if state in ("completed", "failed", "cancelled") else "failed"
+    problem = contract_problem(schemas.output_validator(line.tool), content)
+    data = {
+        "operation_id": operation_id,
+        "tool": line.tool,
+        "state": state,
+        "progress": None,
+        "receipt": content,
+        "outcome": _journaled_outcome(line, state, content),
+        "receipt_valid": problem is None,
+        "receipt_problem": problem,
+    }
+    text = f"Operation {operation_id} ({line.tool}) {state}, from the journal."
+    return envelope.completed(
+        data, text, document_id=_document_of(content), operation_id=operation_id
+    )
+
+
+def _journaled_outcome(line: Finished, state: str, content: dict[str, Any]) -> str:
+    if line.outcome == journal.UNKNOWN:
+        return UNCERTAIN
+    if line.outcome in (journal.NO_EFFECT, journal.NOT_SENT, journal.CONFLICT):
+        return NOT_APPLIED
+    return APPLIED if state == "completed" else _stated(content.get("error"))
+
+
+def _document_of(content: dict[str, Any]) -> str | None:
+    found = content.get("document_id")
+    return found if isinstance(found, str) and found else None
 
 
 def _state(outcome: Outcome) -> str:

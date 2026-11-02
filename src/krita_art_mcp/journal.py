@@ -39,6 +39,16 @@ def utc_now() -> datetime.datetime:
     return datetime.datetime.now(datetime.UTC)
 
 
+@dataclass(frozen=True)
+class Finished:
+    # One finished line, as it was written: "finished" alone never means applied.
+    outcome: str
+    session_id: str
+    request_id: str
+    tool: str
+    result: dict[str, Any] | None
+
+
 @dataclass
 class Attempt:
     operation_id: str
@@ -81,6 +91,7 @@ class Journal:
         self._offsets: dict[Path, int] = {}
         self._requests: dict[str, Prior] = {}
         self._sessions: dict[str, str] = {}
+        self._finished: dict[str, Finished] = {}
         # The argument folders this process has made private, so each is made so once.
         self._private: set[Path] = set()
 
@@ -91,6 +102,10 @@ class Journal:
     def session_of(self, operation_id: str) -> str | None:
         self._refresh()
         return self._sessions.get(operation_id)
+
+    def finished_line(self, operation_id: str) -> Finished | None:
+        self._refresh()
+        return self._finished.get(operation_id)
 
     def dispatched(
         self,
@@ -264,3 +279,8 @@ class Journal:
                 attempt.outcome = outcome
         if outcome == RECEIPT:
             prior.receipt = result
+        # A retry's line names the operation the bridge answered with too.
+        finished = Finished(outcome, session_id, request_id, tool, result)
+        for named_id in (operation_id, line.get("bridge_operation_id")):
+            if isinstance(named_id, str) and (outcome != UNKNOWN or named_id not in self._finished):
+                self._finished[named_id] = finished

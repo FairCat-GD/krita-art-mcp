@@ -14,6 +14,7 @@ from mcp.types import CallToolResult, ImageContent, ToolAnnotations
 from krita_art_mcp import envelope, schemas
 from krita_art_mcp.bridge_client import BridgeClient
 from krita_art_mcp.envelope import MAX_RESULT_BYTES
+from krita_art_mcp.errors import APPLIED, NOT_APPLIED, UNCERTAIN
 from krita_art_mcp.journal import Journal
 from krita_art_mcp.paths import Places
 from krita_art_mcp.tools import (
@@ -26,7 +27,7 @@ from krita_art_mcp.tools import (
     preview,
     saving,
 )
-from krita_art_mcp.tools.dispatch import ToolCall
+from krita_art_mcp.tools.dispatch import ToolCall, contract_problem
 
 # An answer holds each problem three times, and stays well under Claude Code's 25,000 tokens (C4).
 MAX_REPORTED_PROBLEMS = 50
@@ -99,12 +100,13 @@ def build(name: str, run: Run) -> Tool:
     spec = schemas.load(name)
     inputs = Draft202012Validator(spec["inputSchema"])
     outputs = schemas.output_validator(name)
+    mutating = not spec["annotations"]["readOnlyHint"]
 
     # Sync on purpose: mcp runs it on a worker thread, so a 45 s bridge wait never stalls stdio.
     def call(arguments: dict[str, Any], ctx: Context) -> CallToolResult:
         client_name = _client_name(ctx)
         with CALLS:
-            return _checked(name, arguments, client_name, run, inputs, outputs)
+            return _checked(name, arguments, client_name, run, inputs, outputs, mutating)
 
     return Tool(
         fn=call,
@@ -126,6 +128,7 @@ def _checked(
     run: Run,
     inputs: Draft202012Validator,
     outputs: Draft202012Validator,
+    mutating: bool,
 ) -> CallToolResult:
     # Errors are returned, never raised: a raise reaches the client as a bare
     # "Error executing tool", without the envelope.
@@ -139,10 +142,41 @@ def _checked(
             log.exception("%s raised", name)
             result = envelope.failure("INTERNAL_ERROR")
     problem = _result_problem(result, outputs)
-    if problem is None:
+    if problem is not None:
+        log.error("%s returned a result that breaks its contract: %s", name, problem)
+        result = _broken(result, problem, mutating)
+    return _stated(result) if mutating else result
+
+
+def _broken(result: CallToolResult, problem: str, mutating: bool) -> CallToolResult:
+    # What the call did does not depend on its receipt, so its identity survives one that is bad.
+    content = result.structured_content or {}
+    details: dict[str, Any] = {"reason": problem}
+    if mutating and content.get("status") == "completed":
+        details["outcome"] = APPLIED
+    return envelope.failure(
+        "INTERNAL_ERROR",
+        details=details,
+        document_id=_identity(content, "document_id"),
+        operation_id=_identity(content, "operation_id"),
+    )
+
+
+def _identity(content: dict[str, Any], field: str) -> str | None:
+    found = content.get(field)
+    return found if isinstance(found, str) and found else None
+
+
+def _stated(result: CallToolResult) -> CallToolResult:
+    # Every mutating failure says whether it applied. One with no operation_id never went out,
+    # and one that went out and says nothing is unproven.
+    content = result.structured_content or {}
+    error = content.get("error")
+    if not isinstance(error, dict) or "outcome" in error["details"]:
         return result
-    log.error("%s returned a result that breaks its contract: %s", name, problem)
-    return envelope.failure("INTERNAL_ERROR", details={"reason": problem})
+    said = UNCERTAIN if content.get("operation_id") else NOT_APPLIED
+    error = {**error, "details": {**error["details"], "outcome": said}}
+    return result.model_copy(update={"structured_content": {**content, "error": error}})
 
 
 def _invalid(problems: list[ValidationError]) -> CallToolResult:
@@ -192,9 +226,9 @@ def _client_name(ctx: Any) -> str | None:
 
 
 def _result_problem(result: CallToolResult, outputs: Draft202012Validator) -> str | None:
-    first = next(iter(outputs.iter_errors(result.structured_content)), None)
-    if first is not None:
-        return f"the result does not match its output schema: {first.message}"
+    found = contract_problem(outputs, result.structured_content)
+    if found is not None:
+        return f"the result does not match its output schema: {found}"
     size = _size(result)
     if size >= MAX_RESULT_BYTES:
         return f"the result is {size} bytes, over the {MAX_RESULT_BYTES}-byte limit"

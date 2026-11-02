@@ -167,6 +167,60 @@ state*, *Documents*, *The verification core*, *Painting*, *The undo ledger and h
 - **Version first.** Bump before the first live run: the plugin's hash and `serve`'s gate both read
   it.
 
+**Done (2026-11-02, 0.17.0).**
+- **Decided with the user at the start:**
+  - The plan's amendments below, approved in plan mode.
+  - The owner restarted Krita for the live run, because it held unsaved documents.
+- **The bounds.** `changed_bounds_px` is canvas-clipped, and only the clipped layer bounds widen it in
+  full scope. `layer_bounds_px` is new, nullable, and takes any integer `x` and `y`.
+- **The rule.** `Call.mark()`, `READS`, `BOUNDED`, `HARNESS` and `jobs.stated`. `details.outcome` is
+  typed through `scripts/amend_schemas.py`. `api_version` stays 0.2.0.
+- **Cleanups.** `errors.cleaned`, and `files.remove`, `unmake` and `make_folder`, moved from
+  `saving.py`. `_Made` undoes the folder, the copy and the document.
+- **The server.** `_checked` keeps ids and fills in a statement. `journaled` catches any raise after
+  dispatch. `applied_failure`, `raw_receipt` and `contract_problem` are new. `_merged` never raises.
+- **`krita_operation_get`** gains `outcome`, `receipt_valid` and `receipt_problem`, returns a raw
+  receipt as data, and answers from `Journal.finished_line` once the bridge cannot.
+- **`probe/edges.py`** holds the block's live checks, and `_nothing_uncertain` reads the run's journals.
+- **Amendments:**
+  - **The open cleans up its own folder,** which the block did not list. `working_copy` hashes as it
+    copies, so an ordinary wrong hash lands past the marker, and an empty folder would have stayed
+    behind a claimed rollback. Amended at plan time, with the user.
+  - **An earlier pending save is dropped last,** just before the new `Pending`, not right after the
+    export. A failed verify then leaves it too, so `rollback_verified: true` is the whole truth.
+    Amended at plan time, with the user.
+  - **"The export moved the document to its file" states `uncertain`,** because removing the file
+    cannot undo it. Amended at plan time, with the user.
+  - **`drain` and the replaced not-JSON failure state `uncertain`** rather than nothing, so the journal
+    agrees with the reply. Amended at plan time, with the user.
+  - **Sites the block did not list,** at plan time, with the user: `submit`'s taken `operation_id`;
+    `_bridge_error` and `_unexpected`; "The save was not finished."; a finish that says nothing;
+    `operation_id` on `_uncertain` and `_unregistered`.
+  - **A receipt that raises takes the raw path,** so one route serves bad and missing receipts, and
+    `record` catches `Exception`, since a raise there would reach a catch-all that says `not_applied`.
+    Amended at plan time, with the user.
+  - **A journal check that no call in the run was left uncertain.** Amended at plan time, with the
+    user.
+  - **A kept document also clears `retryable`** and reports `rollback_verified: false`, at the open
+    and the create. Falsification found it; the session's own finding.
+- **Measured,** on Krita 5.3.4.1:
+  - The failing request's geometry with `b) Basic-2 Opacity`: `changed_bounds_px` {364,0,64,87}, equal
+    to the layer's own bytes; `layer_bounds_px` {362,-17,65,104}; alpha unchanged.
+  - Off-canvas paint survives a KRA save and reopen, with every layer's bounds equal.
+  - Under a selection, Krita can write colour under alpha 0 past its edge, so `changed_bounds_px`
+    reached 2 px past a rect selection while no alpha did.
+  - No call in the probe's run was left `uncertain`.
+- **Falsified:**
+  - 103 product mutations, one at a time, in a scratchpad driver: 100 caught at their own tests.
+    The first pass found four gaps in the tests, each now covered, and the kept document's
+    `retryable`, now fixed.
+  - Three stay equivalent. Removing `if not sent: raise` reaches the same catch-all through a
+    `KeyError`. The kept document's explicit `uncertain`, at the open and the create, repeats what
+    `rollback_verified: false` past the marker already gives.
+  - Every new probe check: its assertion broken in five runs, each failing at its own step.
+- **Numbers:** 731 server tests (+61), 775 plugin tests (+110), probe 142 PASS (+11), 0 FAIL, 23
+  MEASURED, about 120 s. Instructions 3,970 characters (+64). 19 tools, 30 error codes, 31 ops.
+
 ---
 
 ## R2: Truthful hints, timing, Hamming

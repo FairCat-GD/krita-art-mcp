@@ -12,11 +12,10 @@ from PIL import Image
 
 from krita_art_mcp import envelope, imaging, masks, roots, transfer, verification
 from krita_art_mcp.bridge_client import BeforeSend, Done, Failed, Outcome, Pending
-from krita_art_mcp.errors import error_body
 from krita_art_mcp.paths import Places
-from krita_art_mcp.tools.dispatch import ToolCall, from_outcome, journaled
+from krita_art_mcp.tools.dispatch import ToolCall, applied_failure, from_outcome, journaled
 from krita_art_mcp.tools.observe import LIMITS
-from krita_art_mcp.tools.pixels import IMAGE_META, discard, failed, operation_id_of, today
+from krita_art_mcp.tools.pixels import IMAGE_META, discard, operation_id_of, today
 
 log = logging.getLogger(__name__)
 
@@ -244,7 +243,7 @@ def resolve_selection(places: Places, outcome: Outcome) -> Outcome:
         log.exception("the selection %s was not made into a mask", outcome.operation_id)
         selection = outcome.result.get("selection") or {}
         discard(places, selection.get("pixels"))
-        return failed(outcome, error_body("INTERNAL_ERROR", "The selection's mask was not made."))
+        return applied_failure(outcome, "INTERNAL_ERROR", "The selection's mask was not made.")
 
 
 def _selection_files(places: Places, outcome: Done) -> Outcome:
@@ -281,8 +280,7 @@ def _kept_png(
             places, operation_id_of(outcome), ".png", today(), [spec], verification.image_of
         )
     except OSError as problem:
-        message = f"The {what} could not be written: {problem}"
-        return failed(outcome, error_body("IO_ERROR", message, retryable=True))
+        return applied_failure(outcome, "IO_ERROR", f"The {what} could not be written: {problem}")
     if kept is not None:
         discard(places, spec)
     return kept
@@ -380,7 +378,7 @@ def resolve_history(places: Places, outcome: Outcome) -> Outcome:
     except Exception:
         log.exception("the history step %s was not captured", outcome.operation_id)
         discard(places, outcome.result.get("pixels"))
-        return failed(outcome, error_body("INTERNAL_ERROR", "The step's capture was not made."))
+        return applied_failure(outcome, "INTERNAL_ERROR", "The step's capture was not made.")
 
 
 def _history_files(places: Places, outcome: Done) -> Outcome:

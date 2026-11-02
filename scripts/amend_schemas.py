@@ -34,7 +34,12 @@ ENVELOPE: dict[str, Any] = {
                     "code": {"type": "string", "enum": list(errors.CODES)},
                     "message": {"type": "string", "minLength": 1},
                     "retryable": {"type": "boolean"},
-                    "details": {"type": "object"},
+                    "details": {
+                        "type": "object",
+                        "properties": {
+                            "outcome": {"type": "string", "enum": list(errors.OUTCOMES)}
+                        },
+                    },
                 },
                 "required": ["code", "message", "retryable", "details"],
                 "additionalProperties": False,

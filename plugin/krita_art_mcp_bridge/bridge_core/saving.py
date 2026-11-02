@@ -6,7 +6,7 @@ from pathlib import Path
 from typing import Any
 
 from . import files, nodes, reopening, roots
-from .errors import BridgeError, exact
+from .errors import UNCERTAIN, BridgeError, cleaned, exact
 from .inspection import TYPES, check_shown_frame
 from .jobs import Call, Handler
 from .pixels import MAX_READ_PIXELS
@@ -74,10 +74,12 @@ class Pending:
         self.changes = changes
         self.receipt = receipt
 
-    def discard(self) -> None:
-        # Whatever the file holds now: its hidden name carries this save's own token.
-        _remove(self.written)
-        _unmake(self.made)
+    def discard(self) -> bool:
+        # Whatever the file holds now: its hidden name carries this save's own token. Whether
+        # nothing of this save stays.
+        removed = files.remove(self.written)
+        folders_gone = files.unmake(self.made)
+        return removed and folders_gone
 
 
 def handlers(registry: Registry, port: DocumentsPort, data: Path) -> dict[str, Handler]:
@@ -87,8 +89,8 @@ def handlers(registry: Registry, port: DocumentsPort, data: Path) -> dict[str, H
         _check_space(info)
         _check_size(info)
         check_shown_frame(info)
-        handle.drop_pending_save()
-        made = _make_folder(os.path.dirname(target))
+        call.mark()
+        made = files.make_folder(os.path.dirname(target), "path's folder")
         written = _written_name(target)
         try:
             _check_writable(written, target)
@@ -102,7 +104,10 @@ def handlers(registry: Registry, port: DocumentsPort, data: Path) -> dict[str, H
                 message = "Krita did not export; an autosave may hold the document. Retry."
                 raise BridgeError("BUSY", message, True, {"document_id": handle.document_id})
             if port.describe(handle.document)["path"] != info["path"]:
-                raise BridgeError("INTERNAL_ERROR", "The export moved the document to its file.")
+                # Removing the file cannot undo this.
+                moved = {"outcome": UNCERTAIN}
+                message = "The export moved the document to its file."
+                raise BridgeError("INTERNAL_ERROR", message, False, moved)
             live = port.tree(handle.document)
             composite = _sha256(port.composite(handle.document))
 
@@ -129,9 +134,10 @@ def handlers(registry: Registry, port: DocumentsPort, data: Path) -> dict[str, H
                 message = "The saved file, reopened in Krita, differs from the document."
                 raise BridgeError("SAVE_VERIFY_FAILED", message, False, details)
             sha = files.sha256_of(written)
-        except BaseException:
-            _remove(written)
-            _unmake(made)
+        except BaseException as raised:
+            removed = files.remove(written)
+            folders_gone = files.unmake(made)
+            cleaned(raised, removed and folders_gone)
             raise
         untouched = None
         if handle.source_path is not None and handle.source_sha256 is not None:
@@ -149,6 +155,8 @@ def handlers(registry: Registry, port: DocumentsPort, data: Path) -> dict[str, H
             "baseline_untouched": untouched,
             "expected_losses": losses,
         }
+        # Last, so a save that fails leaves an earlier unfinished one as it was.
+        handle.drop_pending_save()
         handle.pending_save = Pending(
             call.operation_id, written, made, composite, handle.changes, receipt
         )
@@ -166,14 +174,15 @@ def handlers(registry: Registry, port: DocumentsPort, data: Path) -> dict[str, H
             details = {"document_id": handle.document_id, "save_id": args["save_id"]}
             message = "No save of this document waits for that save_id."
             raise BridgeError("INVALID_ARGUMENT", message, False, details)
+        call.mark()
         handle.pending_save = None
         details = {"document_id": handle.document_id, "path": pending.target}
         if _stat(pending.written) != pending.stat:
-            pending.discard()
+            details["rollback_verified"] = pending.discard()
             message = "The saved file changed or went before its mergedimage.png was checked."
             raise BridgeError("SAVE_VERIFY_FAILED", message, False, details)
         if args["merged_problem"] is not None or args["merged_sha256"] != pending.composite_sha256:
-            pending.discard()
+            details["rollback_verified"] = pending.discard()
             details["mismatches"] = [
                 {
                     "field": "mergedimage",
@@ -186,8 +195,8 @@ def handlers(registry: Registry, port: DocumentsPort, data: Path) -> dict[str, H
             raise BridgeError("SAVE_VERIFY_FAILED", message, False, details)
         try:
             _place(pending.written, pending.target)
-        except BaseException:
-            _unmake(pending.made)
+        except BaseException as raised:
+            cleaned(raised, pending.discard())
             raise
         # A change since the save read the document keeps its dirt.
         cleared = handle.changes == pending.changes
@@ -227,31 +236,6 @@ def _target(data: Path, path: Any) -> tuple[str, str]:
         message = "path exists; nothing is overwritten."
         raise BridgeError("FILE_EXISTS", message, False, {"path": target})
     return target, kind
-
-
-def _make_folder(folder: str) -> list[str]:
-    # Made only once the document can be saved; a failure removes what it made.
-    missing = []
-    while not os.path.isdir(folder):
-        missing.append(folder)
-        folder = os.path.dirname(folder)
-    if not missing:
-        return missing
-    try:
-        os.makedirs(missing[0], exist_ok=True)
-    except OSError as problem:
-        _unmake(missing)
-        raise BridgeError("IO_ERROR", f"path's folder cannot be made: {problem}") from problem
-    return missing
-
-
-def _unmake(made: list[str]) -> None:
-    # Deepest first; a folder something else has filled since stays.
-    for folder in made:
-        try:
-            os.rmdir(folder)
-        except OSError:
-            return
 
 
 def _check_writable(written: str, target: str) -> None:
@@ -475,43 +459,32 @@ def _differs(node: dict[str, Any] | None, field: str, live: Any, saved: Any) -> 
 
 def _place(written: str, target: str) -> None:
     # A hard link never replaces a file, and the target appears whole; a filesystem without them
-    # takes a rename, checked first within this one job.
+    # takes a rename, checked first within this one job. A failure leaves the file to its caller.
     try:
         os.link(written, target)
     except FileExistsError as problem:
-        _remove(written)
         details = {"path": target}
         message = "path appeared while the save was checked; nothing is overwritten."
         raise BridgeError("FILE_EXISTS", message, False, details) from problem
     except OSError as problem:
         if problem.errno not in NO_LINKS:
-            _remove(written)
             message = f"The saved file cannot be put in place: {problem}"
             raise BridgeError("IO_ERROR", message) from problem
         _rename(written, target)
         return
-    _remove(written)
+    files.remove(written)
 
 
 def _rename(written: str, target: str) -> None:
     if os.path.lexists(target):
-        _remove(written)
         details = {"path": target}
         message = "path appeared while the save was checked; nothing is overwritten."
         raise BridgeError("FILE_EXISTS", message, False, details)
     try:
         os.rename(written, target)
     except OSError as problem:
-        _remove(written)
         message = f"The saved file cannot be put in place: {problem}"
         raise BridgeError("IO_ERROR", message) from problem
-
-
-def _remove(path: str) -> None:
-    try:
-        os.unlink(path)
-    except OSError:
-        pass
 
 
 def _pixels_sha256(

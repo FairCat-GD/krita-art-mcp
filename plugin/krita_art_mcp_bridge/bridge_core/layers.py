@@ -20,6 +20,7 @@ def handlers(registry: Registry, port: DocumentsPort) -> dict[str, Handler]:
         before = port.tree(document)
         _placement(before, parent_id, above_id)
         start = fingerprint(port, document)
+        call.mark()
         was = handle.before_change()
         try:
             layer_id = port.create_layer(
@@ -55,10 +56,15 @@ def handlers(registry: Registry, port: DocumentsPort) -> dict[str, Handler]:
         if outcome == DONE:
             handle.ledger.rolled_back()
             handle.dirty = was
-            problem.body["details"]["rolled_back"] = True
+            problem.body["details"].update(rolled_back=True, rollback_verified=True)
             raise problem
         handle.unsafe = True
-        details = {**problem.body["details"], **seen, "rolled_back": False}
+        details = {
+            **problem.body["details"],
+            **seen,
+            "rolled_back": False,
+            "rollback_verified": False,
+        }
         message = "A layer Krita added wrongly could not be undone; the document is unsafe."
         raise BridgeError("ROLLBACK_FAILED", message, False, details)
 

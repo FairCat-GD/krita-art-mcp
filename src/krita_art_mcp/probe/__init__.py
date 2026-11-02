@@ -13,7 +13,7 @@ from typing import Any, TextIO
 from jsonschema import Draft202012Validator
 from mcp import Client, StdioServerParameters
 
-from krita_art_mcp import __version__, paths, schemas, setup_checks
+from krita_art_mcp import __version__, journal, paths, schemas, setup_checks
 from krita_art_mcp.bridge_client import BridgeClient, Done
 from krita_art_mcp.instructions import INSTRUCTIONS
 from krita_art_mcp.probe import changes, opening, painting, pixels, previews, updates, writes
@@ -87,6 +87,7 @@ def _probe(report: Report, client: BridgeClient, serve: list[str], harness: Path
     asyncio.run(_close_leftovers(report, client, serve, harness))
     if _no_unsaved_documents(report, client):
         asyncio.run(_documents(report, client, serve, harness))
+        _nothing_uncertain(report, harness)
 
 
 async def _over_stdio(
@@ -266,6 +267,21 @@ async def _documents(report: Report, client: BridgeClient, serve: list[str], har
         finally:
             await _sweep_documents(a, harness)
             await _sweep_documents(b, harness)
+
+
+def _nothing_uncertain(report: Report, harness: Path) -> None:
+    # A failed call the run provoked proves what it did, so a misplaced marker shows here.
+    uncertain = []
+    for path in sorted(harness.glob("server-*/journal/*.jsonl")):
+        for line in path.read_text(encoding="utf-8").splitlines():
+            found = json.loads(line)
+            if found["phase"] == "finished" and found["outcome"] == journal.UNKNOWN:
+                uncertain.append(found["tool"])
+    report.check(
+        "no call in this run was left uncertain",
+        not uncertain,
+        ", ".join(uncertain),
+    )
 
 
 def _nothing_stray(report: Report, listed: writes.Listing) -> None:

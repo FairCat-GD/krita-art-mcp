@@ -1,6 +1,6 @@
 # krita-art-mcp — architecture, as built
 
-This is the system as it stands at 0.16.0, the end of round 1, which built Phase 1. Every session
+This is the system as it stands at 0.17.0, in round 2, on the Phase 1 round 1 built. Every session
 keeps it true, in the same commit as the change. Each section stands on its own: a session reads
 the overview, the invariants and the baseline, then only the sections its work touches.
 `docs/USER-GUIDE.md` is the same system from the user's side.
@@ -180,7 +180,8 @@ It polls with 2 s waits and a socket timeout 3 s longer, and after the budget re
   `{op, args}`. A duplicate returns the original operation, and its own `operation_id` becomes an
   alias of it; other arguments answer `REQUEST_ID_CONFLICT`.
 - A retryable failure releases the id but keeps its hash bound. *Retryable means the op changed
-  nothing.*
+  nothing,* a rule the outcome rule (see *Bridge and jobs*) reads and a test holds at every
+  retryable raise.
 - Finished operations keep their results and drop their arguments. Requests an agent named stay for
   the session. Reads, which the server names itself, are `ephemeral`: pruned at most once a minute,
   10 minutes after delivery or an hour after finishing undelivered.
@@ -188,7 +189,8 @@ It polls with 2 s waits and a socket timeout 3 s longer, and after the budget re
 **A 404 while following a call.** A prompt 404 for 2 s (`REGISTER_GRACE_S`) before the bridge has
 said `running` ends the follow with `outcome: "unregistered"`, retryable. A timeout, a reset or a
 reply slower than 0.5 s restarts the window, because a POST stuck behind a long Krita call does
-register later.
+register later. `unregistered` means the bridge has no entry, and it says nothing of the call's
+arrival, so the journal keeps the attempt unsettled.
 
 **One lock in each server.** `tools.CALLS` serialises every tool call in a server process, so a
 client cannot inspect while its own 45-second save runs. That is right for one agent making
@@ -215,12 +217,27 @@ with `_meta: {"codex/imageDetail": "original"}` (C2), so they are built directly
 `Image` takes no `_meta`. Errors come back as `CallToolResult(is_error=True, …)` with the envelope,
 because a raised exception reaches the client only as "Error executing tool X" (C1).
 
+**`details.outcome` says whether a failure applied.** It is typed in the shared error shape, and its
+values are `applied`, `not_applied`, `uncertain` and `unregistered`.
+- Application, rollback, verification and receipt validity are separate fields: `outcome`;
+  `rolled_back` and `rollback_verified`; the receipt's `verification`; `receipt_valid` and
+  `receipt_problem`.
+- `applied` means the handler returned and the bridge holds it `done`, and nothing else may say it.
+  It is never retryable.
+- A failure is `not_applied` only on proof, and `uncertain` is the default (see *Bridge and jobs*).
+- `operation_id` exists from dispatch on, so a refusal before dispatch has none and is `not_applied`.
+- A read carries the field only where the plugin states it.
+
+**`api_version` moves when a field or an input value is removed or renamed, or a field changes
+meaning.** Added fields and tools do not move it.
+
 **Schemas are data.** Each of the 19 `schemas/krita_<tool>.json` holds `name`, `description`,
 `inputSchema`, `outputSchema`, `annotations` and `example`. `MCPServer` tools are built by hand with
 `FuncMetadata`, so the contract's exact JSON Schema is published and no pydantic model filters
 arguments; `ExactArguments` passes them through and the runner validates with Draft 2020-12.
-`scripts/amend_schemas.py` writes the shapes the files share (the envelope, `guard`, `source`, the
-completed rule's copy of `data`, inspect's `layers`) and formats them; a test holds the files to it.
+`scripts/amend_schemas.py` writes the shapes the files share (the envelope with its typed error,
+`guard`, `source`, the completed rule's copy of `data`, inspect's `layers`) and formats them; a test
+holds the files to it.
 
 **Which forms reach Codex.** Codex shows its model a TypeScript declaration, never the schema, so a
 valid schema can still arrive as `unknown`. `tests/test_schemas.py` holds these forms:
@@ -278,7 +295,7 @@ makes carries no `operation_id`. Six such pairs have no parity test yet; round 2
 | `FILE_EXISTS` | no | plugin (retryable when a working copy's name collides) |
 | `IO_ERROR` | no | both sides (retryable when a transfer file or mask is gone) |
 | `ROLLBACK_FAILED` | no | plugin; the document is then unsafe |
-| `INTERNAL_ERROR` | no | anywhere; `details.outcome` is `uncertain` or `unregistered` for a call whose fate is unknown |
+| `INTERNAL_ERROR` | no | anywhere; `details.outcome` is `uncertain` or `unregistered` for a call whose fate is unknown, and `applied` for a finished call whose answer failed |
 
 **The contract's placeholders.** Phase 1 keeps the contract's shape, and the PDD wants refusals typed
 rather than fields hidden. So the schemas admit inputs that always refuse, and outputs carry fields
@@ -321,7 +338,7 @@ schema maximum, of which it is the square.
 presets have no seed), `operation.cancel_running`, `color_spaces`, `filters` (Phase 2), `animation`
 (Phase 5). True since 0.9.0: `stroke.native_brush`, `stroke.smoothing`, `selection.enforced`.
 
-**The instructions.** `instructions.py` is 3,906 of Claude Code's 4,096 characters (C4), held by a
+**The instructions.** `instructions.py` is 3,970 of Claude Code's 4,096 characters (C4), held by a
 test, and states every rule an agent would otherwise learn from a refusal.
 
 ## The data layer
@@ -362,6 +379,16 @@ lines other processes append. Each attempt's outcome is one of:
 | `not_sent`, `conflict` | Its own attempt alone |
 | `unknown` | Nothing yet; an attempt unknown in another Krita session is never re-sent |
 
+`outcome_of` makes `details.outcome` `applied` a `receipt`, and `uncertain` and `unregistered`
+`unknown`. A resend needs a request proven never dispatched, a retryable failure, or a live Krita
+session whose dedup state covers that exact `request_id`. Past the 7-day window nothing remembers a
+request, invariant 9's stated limit.
+
+The index also keeps each finished line by its `operation_id` and by the `bridge_operation_id` a
+retry was answered under, so `krita_operation_get` can answer once Krita has moved on. An `unknown`
+line never replaces a settled one, and "finished" alone never means applied: the line keeps its
+outcome, session, request and result.
+
 A heavy week is about 44 MB of lines, read by the first lookup of each server process; the probe
 watches it, and the backlog holds the retention rule.
 
@@ -386,6 +413,46 @@ timer would fire inside `waitForDone` and start a second job (K41). `Jobs.drain`
 **A raise in a job.** `_run` fails its op on any `BaseException`. `drain` fails an op it popped but
 never finished. `drain_in_slot` swallows and logs anything still escaping, because an exception
 escaping a PyQt5 slot, `SystemExit` included, ends Krita with the owner's unsaved work.
+
+**What a raise proves.** `jobs.stated` turns a `BridgeError` into `details.outcome`, in this order:
+1. an explicit value stands;
+2. retryable, or `rollback_verified: true`, is `not_applied`;
+3. a read, or a bounded op before its marker, is `not_applied`;
+4. anything else is `uncertain`.
+
+An unexpected exception is always `uncertain`, and so is a failure `drain` makes up for an op that
+never finished. A change counter proves nothing either way: `history.move` calls `before_change()`
+during confirmed rollbacks and reversed steps.
+
+**The marker.** `Call.mark()` goes by hand before an op's first change of any kind, on each path:
+document, protection state, file or registration. The window-wide brush is not a change here, because
+a stroke sets it before its marker. `move()` takes it as a callback that only `history.step` passes,
+because a rollback is already past its own op's marker.
+
+| Op | First change |
+|---|---|
+| `document.open` | the working folder, or `port.open` for a read-only open |
+| `document.create` | `port.create` |
+| `document.close` | dropping a pending save |
+| `document.save` | making the folder |
+| `document.save_finish` | clearing the pending save |
+| `protection.set` | writing the handle's state |
+| `selection.set`, `layer.create`, `paint.stroke` | `before_change` |
+| `layer.update` | `before_change`, or `port.activate` for `active` alone |
+| `history.step` | inside `move()`, past its `FOREIGN` return |
+
+**Every op has a class.** `READS` (9) change nothing. `BOUNDED` (11) carry a marker, and a test holds
+them equal to the mutating tools' ops and `document.save_finish`. `harness.*` has no marker, so a
+raise from one proves nothing, and the test pins each by name so no tool op hides under the prefix.
+An op in no class is `uncertain` too, so a new op that forgets its class fails safe.
+
+**Failures that never reach `_run`** state their own outcome where `Jobs` finishes them. A conflict,
+an unknown op, a taken `operation_id`, a cancel and a stop never ran, so they are `not_applied`.
+
+**A verified cleanup** reports through `errors.cleaned`, the one writer of `rollback_verified` for a
+cleanup, which also clears `retryable` when something stayed. `files.remove` checks that nothing is
+left, and `files.unmake` that no folder of ours stays; a folder something else has filled is no longer
+ours to remove. A rollback writes the key itself.
 
 **A result must survive `json.dumps(allow_nan=False)`.** It is stored as that snapshot, and an error
 body that cannot be sent becomes a plain `INTERNAL_ERROR`, so a bad result fails rather than loops.
@@ -429,10 +496,12 @@ raises and never fails a call. `Handle.lost()` seals the ledger and marks the do
 
 ## Documents
 
-**Open.** `opening.py` runs a fixed order: the argument rules and the roots; the copy, or the
-read-only hash; `port.open`; the show step (`addView`, under the core's cleanup); the colour space;
-the shown frame; K46; the tree; the editable lists; the baseline id; registering it, last. A document that cannot be
-closed after a failure stays owned and unsafe rather than stranded. Editable lists are tied to the
+**Open.** `opening.py` runs a fixed order: the argument rules and the roots; the working folder and
+the copy, or the read-only hash; `port.open`; the show step (`addView`, under the core's cleanup); the
+colour space; the shown frame; K46; the tree; the editable lists; the baseline id; registering it,
+last. A failure closes the document and removes the copy and any folder the open made, each checked,
+so an ordinary refusal such as a wrong hash reads `not_applied`. A document that cannot be closed
+after a failure stays owned and unsafe rather than stranded, and the failure reads `uncertain`. Editable lists are tied to the
 format: ids for KRA, whose layer ids persist (K39), names for ORA and PNG, whose ids are new at every
 open. Only RGBA / U8 opens; any RGB profile is accepted.
 
@@ -558,6 +627,15 @@ preset, which is why the fingerprint leaves them out. The bridge remembers its o
 for the Krita session, the digest a preset had before by the digest it has after, so a preset Krita
 fills in on first load keeps its listed hash and any other change still mismatches.
 
+**Two bounds.** `changed_bounds_px` is what changed on the canvas, inside it always; a full-scope
+stroke widens it only when the layer's *clipped* bounds leave what was read, so old overhang costs
+nothing. `layer_bounds_px` is Krita's unclipped extent after the stroke, or null for an empty layer.
+Its `x` and `y` take any integer, because a dab past the canvas is kept. A stroke wholly past the
+canvas changes nothing on it: `changed_bounds_px` is null and history stops there. Like the diff it
+comes from, `changed_bounds_px` counts every byte, and Krita can write colour under alpha 0 past a
+selection's edge, so it can run a dab's box past the selection while no visible paint does. The
+probe holds alpha to the selection.
+
 **Mirror and wrap-around** go off for the stroke and back on in a `finally`, each noted before it is
 turned off (K2, K47).
 
@@ -664,8 +742,11 @@ unbanded. Inside `unmasked_view` it recomposes the projection, because after a s
 can differ from a fresh recomposite of the same layers, then `exportImage`s to
 `<dir>/.<stem>.<token>.saving<ext>`. `False` is `BUSY`, with nothing left (K45). It reopens the
 written file with `reopening.read_file`, shared with the lazy baseline, and compares. A mismatch
-removes the file and is `SAVE_VERIFY_FAILED`, with up to 20 mismatches. Otherwise the handle keeps a
-`Pending` save.
+removes the file and is `SAVE_VERIFY_FAILED`, with up to 20 mismatches. Otherwise an earlier
+unfinished save is dropped, last, so a save that fails leaves it as it was, and the handle keeps a
+`Pending` save. Each failure past the folder reports its cleanup, and reads `not_applied` only if
+nothing of the save stays. An export that moved the document reads `uncertain`, however clean its
+file.
 
 **What is compared.** Both formats: size, colour space, the composite. KRA: nodes by id, every `tree`
 field (the root's own id changes), and each node's own pixels over the union of both bounds. ORA: nodes
@@ -683,8 +764,11 @@ from the save's (`finish_operation_id`), so every poll and retry gets the finish
 compares the written file's inode, size and modification time with what the save took, and the server's
 `mergedimage.png` hash with the live composite's. It then `os.link`s the file into place and unlinks it,
 or, where links fail, checks `lexists` and renames. It clears dirt only if `Handle.changes` is
-unchanged. A new save, a close or a document gone from `sync` drops a save never finished, and folders
-the save made go with it, deepest first and only while empty.
+unchanged. A new verified save, a close or a document gone from `sync` drops a save never finished,
+and folders the save made go with it, deepest first and only while empty.
+
+The server's `_merged` never raises, so the finish always runs and no hidden file stays. A problem
+reading the file goes to the plugin as `merged_problem`, which discards it.
 
 ## The server
 
@@ -692,6 +776,22 @@ the save made go with it, deepest first and only while empty.
 journal; an attempt unknown under another Krita session, checked in `before_send`; otherwise it
 journals and sends. The journal line is written inside `before_send`, after the bridge is pinned and
 before the POST.
+
+**A raise after dispatch keeps the call's identity.** `journaled` catches it and still records. With
+nothing sent it re-raises, and the catch-all's answer is true. With no outcome yet the call is
+`uncertain`, with its `operation_id`. A `Done` whose receipt raised goes on as `raw_receipt`, the
+bridge's own result in a completed envelope, so one route serves a bad receipt and a missing one.
+
+**`_checked` is the last gate.**
+- A result that breaks its contract keeps its `document_id` and `operation_id`, and a completed one
+  from a mutating tool becomes `outcome: applied`. "Mutating" is `readOnlyHint: false`.
+- The reason names the rule and its path, never jsonschema's message, which quotes the whole instance.
+- A mutating failure with no statement gets one: no `operation_id` means it never went out, so it is
+  `not_applied`, and an `operation_id` means `uncertain`.
+
+So a retry of a stroke whose receipt was bad keeps failing, now with ids: the journal holds that
+receipt, and nothing is painted twice. Applied work the server cannot finish (a selection's mask, a
+step's capture) is `applied_failure`: ids kept, never retryable.
 
 **`bridge_client.py`** re-reads `bridge.json` on every call and pins it for that call. It returns
 `Done`, `Failed` or `Pending`. A refused connection is retryable; after a send, a lost bridge is
@@ -702,6 +802,11 @@ the outcome, and `krita_operation_get` can rebuild one. `RECEIPTS` maps each op 
 `Known(tool, receipt, resolve, finish)`, and a test holds it complete. Images are found by operation
 id before they are made. A second server that took part in a retry gets a null image rather than a
 failure, because the first server took the pixels.
+
+**`krita_operation_get`** adds `outcome`, `receipt_valid` and `receipt_problem`, all null while the
+call is queued or running. It returns a raw receipt as data, survives one that raises, and settles the
+journal on every path. When the bridge cannot answer, because Krita restarted or has gone, a finished
+line answers with its own outcome; with no line it stays `uncertain`.
 
 **Serve.** Orphaned baselines are swept on a daemon thread under `CALLS`, with a 2 s budget, so a busy
 Krita never delays the client's handshake.
@@ -925,25 +1030,25 @@ the code is shaped as it is.
   it. A Krita holding 87 documents ran document ops about three times slower, and left the paint
   benchmarks, the preview benchmark and H4 idle alone.
 
-## Baseline (v0.16.0)
+## Baseline (v0.17.0)
 
-Taken on 2026-11-01 on Krita 5.3.4.1, macOS, Apple Silicon, on a Krita restarted that session, with
+Taken on 2026-11-02 on Krita 5.3.4.1, macOS, Apple Silicon, on a Krita restarted that session, with
 **0 documents open**. The probe prints the open-document count beside its time, because document ops
 depend on it: 87 open documents cost about 50 s more.
 
 | Check | Expected |
 |---|---|
 | `uv run scripts/verify.py` | 6 stages, all PASS |
-| Server tests (3.12) | 670 passed, 0 skipped |
-| Plugin-core tests (3.10) | 665 passed, 0 skipped |
-| `uv run krita-art-mcp probe` | 131 PASS, 0 FAIL, 23 MEASURED; about 114 s |
+| Server tests (3.12) | 731 passed, 0 skipped |
+| Plugin-core tests (3.10) | 775 passed, 0 skipped |
+| `uv run krita-art-mcp probe` | 142 PASS, 0 FAIL, 23 MEASURED; about 120 s |
 | `uv run krita-art-mcp doctor` | 6 steps, all PASS, with a root allowed |
 | Registered tools | 19 |
 | Schema files | 19 |
 | Error codes | 30 |
 | Bridge ops | 31 |
 | Bridge protocol; `api_version` | 1; 0.2.0 |
-| Server instructions | 3,906 of 4,096 characters |
+| Server instructions | 3,970 of 4,096 characters |
 | CLI commands | 5 |
 
 A documentation or refactoring change should not move any of these. If one moves, that is the

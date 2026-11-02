@@ -9,6 +9,7 @@ from mcp.types import CallToolResult
 
 from krita_art_mcp import envelope, imaging, roots
 from krita_art_mcp.bridge_client import BeforeSend, Done, Outcome, Pending
+from krita_art_mcp.errors import UNCERTAIN
 from krita_art_mcp.paths import Places
 from krita_art_mcp.tools.dispatch import ToolCall, from_outcome, journaled
 from krita_art_mcp.tools.documents import inside_roots
@@ -87,9 +88,15 @@ def finish_save(call: ToolCall, outcome: Outcome, left_s: float) -> Outcome:
         return replace(
             finished, operation_id=operation_id, request_id=request_id, session_id=session_id
         )
-    # The save itself reached Krita, whatever became of the finish.
+    # The save itself reached Krita, whatever became of the finish, so a finish that says nothing
+    # leaves its file's fate unknown.
+    error = finished.error
+    if "outcome" not in error["details"]:
+        details = {**error["details"], "outcome": UNCERTAIN}
+        error = {**error, "retryable": False, "details": details}
     return replace(
         finished,
+        error=error,
         submitted=True,
         operation_id=operation_id,
         request_id=request_id,
@@ -103,6 +110,14 @@ def finish_operation_id(save_id: str) -> str:
 
 
 def _merged(places: Places, result: dict[str, Any]) -> tuple[str | None, str | None]:
+    # Never raises: a finish that does not run leaves the hidden file behind.
+    try:
+        return _merged_sha256(places, result)
+    except Exception as problem:
+        return None, f"The saved file cannot be read: {problem}"
+
+
+def _merged_sha256(places: Places, result: dict[str, Any]) -> tuple[str | None, str | None]:
     # The written file's mergedimage.png, hashed as the plugin hashes the live composite; once
     # the finish has moved it, the target holds the same bytes.
     written, target = Path(result["written"]), Path(result["path"])
@@ -136,7 +151,13 @@ def file_sha256(path: Path) -> str:
 def save_receipt(outcome: Outcome) -> CallToolResult:
     if isinstance(outcome, Done) and "dirty_cleared" not in outcome.result:
         # Only the finish's result describes a file in place.
-        return envelope.failure("INTERNAL_ERROR", "The save was not finished.")
+        return envelope.failure(
+            "INTERNAL_ERROR",
+            "The save was not finished.",
+            details={"outcome": UNCERTAIN},
+            document_id=outcome.result.get("document_id"),
+            operation_id=outcome.operation_id,
+        )
 
     def data(result: dict[str, Any]) -> dict[str, Any]:
         return {key: result[key] for key in SAVE_DATA}

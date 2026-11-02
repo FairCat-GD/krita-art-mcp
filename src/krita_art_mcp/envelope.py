@@ -70,5 +70,11 @@ def failure(
     *,
     retryable: bool | None = None,
     details: dict[str, Any] | None = None,
+    document_id: str | None = None,
+    operation_id: str | None = None,
 ) -> CallToolResult:
-    return failed(error_body(code, message, retryable=retryable, details=details))
+    return failed(
+        error_body(code, message, retryable=retryable, details=details),
+        document_id=document_id,
+        operation_id=operation_id,
+    )

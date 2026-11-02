@@ -1,7 +1,7 @@
 import contextlib
 import hashlib
 import logging
-from collections.abc import Iterator
+from collections.abc import Callable, Iterator
 from pathlib import Path
 from typing import Any
 
@@ -75,6 +75,7 @@ def move(
     step: Step,
     direction: str,
     known: Fingerprint | None = None,
+    acting: Callable[[], None] | None = None,
 ) -> tuple[str, dict[str, Any], Fingerprint | None]:
     # Undoes or redoes one ledger step, inside in_front(). Krita must show the step on top, by
     # its label, the document's state and any witness pixels, before and after; a move that
@@ -82,7 +83,8 @@ def move(
     # confirmed either. known is the state the previous move confirmed in this job, so it is not
     # read again (pixels always are); the state now confirmed comes back. A raise before Krita
     # is asked to move leaves it as it was; once asked, a raise is LOST, or re-raised if it is
-    # not an Exception.
+    # not an Exception. acting runs just before that: history.step's marker, which a rollback
+    # has no use for, being past its own op's.
     document = handle.document
     back = direction == UNDO
     now, then = (step.after, step.before) if back else (step.before, step.after)
@@ -90,6 +92,8 @@ def move(
     seen = _shows(port, document, step.label, UNDO if back else REDO, now, known, shown)
     if seen is not None:
         return FOREIGN, seen, None
+    if acting is not None:
+        acting()
     was = handle.before_change()
     try:
         _act(port, document, back)
@@ -182,7 +186,7 @@ def handlers(registry: Registry, port: DocumentsPort, data: Path) -> dict[str, H
                 index = ledger.applied - 1 if action == UNDO else ledger.applied
                 try:
                     outcome, seen, current = move(
-                        port, handle, ledger.steps[index], action, current
+                        port, handle, ledger.steps[index], action, current, call.mark
                     )
                 except Exception as raised:
                     # Before Krita was asked to move: the document is as it was.

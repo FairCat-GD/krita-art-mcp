@@ -154,7 +154,8 @@ leaks.
 `preset_id` and `preset_sha256` come from `krita_resource_list`, and a pixel-engine preset's receipt
 says what Krita applied. A stroke is checked over its reach by default. A preset on another brush
 engine, or a filter, mask, style or clone that could spread a change, needs `verify: "full"`, which
-checks the whole canvas.
+checks the whole canvas. A path may run half a brush past the canvas: `changed_bounds_px` is what
+changed on the canvas, and `layer_bounds_px` is the layer's whole extent, past it included.
 
 **7. Check it at game size.** After every one to three strokes, call `krita_preview_render` with
 explicit recipes. A source's `baseline_id` shows the document as opened beside it.
@@ -190,16 +191,33 @@ verified save; `"discard"` drops it.
 - **Give every `request_id` a fresh UUID.** Reuse one only to retry the same call: the retry returns
   the original receipt and never runs twice.
 - **Retry only when `retryable` is true.** Otherwise act on the message.
+- **Every failed change says whether it applied,** in `details.outcome`:
+
+  | `outcome` | What it means | What to do |
+  |---|---|---|
+  | `applied` | The change is in the document. Only what the server does after it failed | Never retry. Inspect, then go on |
+  | `not_applied` | Proven: the call never went out, it stopped before its first change, or its rollback or cleanup was verified | Fix the call, or retry if `retryable` |
+  | `uncertain` | Nothing proves it either way | Inspect the document first. It is never sent to another Krita session |
+  | `unregistered` | The bridge has no record of the call, which most likely never arrived | Retry with the same `request_id`. It is never sent to another Krita session |
+
+  `rolled_back`, `rollback_verified` and the receipt's own `verification` are separate facts beside
+  it.
 - **`status: running` means Krita was still busy** when the server's 45-second wait ran out. Call
   `krita_operation_get` with its `operation_id`; never repeat the call.
+- **`krita_operation_get` says what became of a call:** `outcome` is as above and null while the call
+  is queued or running. A receipt that breaks its tool's contract still comes back, as plain data,
+  with `receipt_valid: false` and `receipt_problem` naming the rule. After a Krita restart it answers
+  from the journal, if the call's end was recorded, and otherwise `uncertain`.
 - **`krita_operation_cancel` stops only a queued call.** A running Krita call cannot be interrupted.
-- **If a retry reports `outcome: "uncertain"`,** the call was sent and Krita ended before saying what
-  happened. It is never re-sent. Inspect the document first.
+- **A retry of an `applied` or `uncertain` failure paints nothing new.** The first returns the same
+  failure from the journal, with its ids. The second goes to the same Krita session, which answers
+  with what it already holds.
 
 ## Every error code
 
 Every failure returns `error: {code, message, retryable, details}`. The table gives the usual
-`retryable`; the field in the answer is what counts.
+`retryable`; the field in the answer is what counts. A failed change also has `details.outcome` (see
+*Retries and long calls*).
 
 | Code | Retryable | What it means | What to do |
 |---|---|---|---|
@@ -232,7 +250,7 @@ Every failure returns `error: {code, message, retryable, details}`. The table gi
 | `FILE_EXISTS` | no | The target exists; nothing overwrites | Pick a new path |
 | `IO_ERROR` | no | A disk or format error | Read the message. Retry only if `retryable` is true |
 | `ROLLBACK_FAILED` | no | A change leaked and the undo could not be confirmed; the document is now unsafe | As `DOCUMENT_UNSAFE` |
-| `INTERNAL_ERROR` | no | Something unexpected. Read `details.outcome`: `uncertain` was sent and its fate is unknown, `unregistered` never reached the bridge and is retryable | Inspect first after `uncertain`. Otherwise see `logs/plugin.log` |
+| `INTERNAL_ERROR` | no | Something unexpected. Read `details.outcome`: `applied` is done, however the answer reads; `uncertain` was sent and its fate is unknown; `unregistered` never reached the bridge and is retryable | Inspect first after `applied` or `uncertain`. Otherwise see `logs/plugin.log` |
 
 ## Phase 1's limits
 

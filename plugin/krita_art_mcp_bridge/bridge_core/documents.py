@@ -15,7 +15,7 @@ from . import (
     selections,
 )
 from .closing import settle_s, settled_close
-from .errors import BridgeError, exact, integer, no_arguments
+from .errors import UNCERTAIN, BridgeError, cleaned, exact, integer, no_arguments
 from .jobs import Call, Handler
 from .port import DocumentsPort
 from .registry import NEW, Handle, Registry
@@ -32,6 +32,7 @@ def handlers(registry: Registry, port: DocumentsPort, data: Path) -> dict[str, H
     def create(args: dict[str, Any], call: Call) -> dict[str, Any]:
         width, height = _create_args(args)
         registry.refuse_at_job_start()
+        call.mark()
         document = port.create(args["name"], width, height)
         try:
             info = port.describe(document)
@@ -39,8 +40,9 @@ def handlers(registry: Registry, port: DocumentsPort, data: Path) -> dict[str, H
             _check_created(info, children, width, height)
         except BaseException as raised:
             kept = registry.discard(document, settled_close(port), NEW, call.client)
+            cleaned(raised, kept is None)
             if kept is not None and isinstance(raised, BridgeError):
-                raised.body["details"]["document_id"] = kept
+                raised.body["details"].update(document_id=kept, outcome=UNCERTAIN)
             raise
         handle = registry.add(document, NEW, call.client)
         return {
@@ -70,6 +72,7 @@ def handlers(registry: Registry, port: DocumentsPort, data: Path) -> dict[str, H
             untouched = files.unchanged(
                 handle.source_path, handle.source_sha256, handle.source_stat
             )
+        call.mark()
         handle.drop_pending_save()
         closed = port.close(handle.document, settle_s(handle, port.front() == handle.document))
         still_open = any(h is handle for h in registry.sync())

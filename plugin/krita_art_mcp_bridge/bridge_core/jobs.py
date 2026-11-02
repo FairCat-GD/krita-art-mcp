@@ -8,13 +8,46 @@ from collections import deque
 from collections.abc import Callable, Mapping
 from typing import Any
 
-from .errors import BridgeError, error
+from .errors import NOT_APPLIED, UNCERTAIN, BridgeError, error
 
 # A read's request_id was minted by its server and is never retried, so its operation is kept only
 # for late polls: this long after its final reply was sent, or after it finished unsent.
 READ_KEEP_S = 600.0
 READ_UNSENT_S = 3600.0
 PRUNE_EVERY_S = 60.0
+
+# Every op is one of three kinds, which says what a raise from it proves. A read changes nothing.
+READS = frozenset(
+    {
+        "server_info",
+        "bridge.unsaved_documents",
+        "document.list",
+        "document.baselines",
+        "document.inspect",
+        "resource.list",
+        "capture.read",
+        "sample.read",
+        "preview.read",
+    }
+)
+# Each of these marks its call before its first change, so a refusal before that changed nothing.
+BOUNDED = frozenset(
+    {
+        "document.open",
+        "document.create",
+        "document.close",
+        "document.save",
+        "document.save_finish",
+        "layer.create",
+        "layer.update",
+        "selection.set",
+        "protection.set",
+        "history.step",
+        "paint.stroke",
+    }
+)
+# Fixture ops have no marker, so a raise from one proves nothing.
+HARNESS = "harness."
 
 
 class Call:
@@ -23,6 +56,11 @@ class Call:
         self.operation_id = operation_id
         self.request_id = request_id
         self.client = client
+        # Set just before the op's first change of any kind but the window-wide brush.
+        self.changing = False
+
+    def mark(self) -> None:
+        self.changing = True
 
 
 Handler = Callable[[dict[str, Any], Call], dict[str, Any]]
@@ -38,6 +76,20 @@ def args_sha256(op: str, args: dict[str, Any]) -> str:
         {"op": op, "args": args}, sort_keys=True, separators=(",", ":"), ensure_ascii=False
     )
     return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
+
+
+def stated(op: str, call: Call, body: dict[str, Any]) -> dict[str, Any]:
+    # Whether a raise applied, on proof: anything unproven is uncertain.
+    details = body["details"]
+    if "outcome" in details:
+        return body
+    proven = (
+        body["retryable"]
+        or details.get("rollback_verified") is True
+        or op in READS
+        or (op in BOUNDED and not call.changing)
+    )
+    return {**body, "details": {**details, "outcome": NOT_APPLIED if proven else UNCERTAIN}}
 
 
 class Operation:
@@ -135,13 +187,14 @@ class Jobs:
                     return known
                 refused = Operation(operation_id, request_id, op, {}, client)
                 message = "That operation_id already names another request."
-                refused.fail(error("INVALID_ARGUMENT", message, False, {"op": op}))
+                details = {"op": op, "outcome": NOT_APPLIED}
+                refused.fail(error("INVALID_ARGUMENT", message, False, details))
                 return refused
             bound = self._bound.get(request_id)
             if bound is not None and bound != digest:
                 conflict = Operation(operation_id, request_id, op, {}, client, ephemeral)
                 message = "That request_id was used with different arguments."
-                details = {"request_id": request_id}
+                details = {"request_id": request_id, "outcome": NOT_APPLIED}
                 self._finish_failed(conflict, error("REQUEST_ID_CONFLICT", message, False, details))
                 self._operations[operation_id] = conflict
                 return conflict
@@ -154,7 +207,8 @@ class Jobs:
             self._requests[request_id] = operation
             self._bound[request_id] = digest
             if op not in self._handlers:
-                unknown = error("INVALID_ARGUMENT", f"Unknown op {op!r}.", False, {"op": op})
+                details = {"op": op, "outcome": NOT_APPLIED}
+                unknown = error("INVALID_ARGUMENT", f"Unknown op {op!r}.", False, details)
                 self._finish_failed(operation, unknown)
                 return operation
             self._queue.append(operation)
@@ -183,21 +237,24 @@ class Jobs:
             with self._lock:
                 # An interrupt between taking a job and running it must not strand it running.
                 if operation is not None and operation.state == RUNNING:
+                    details = {"outcome": UNCERTAIN}
                     self._finish_failed(
-                        operation, error("INTERNAL_ERROR", "The op did not finish.")
+                        operation, error("INTERNAL_ERROR", "The op did not finish.", False, details)
                     )
                     self._lock.notify_all()
                 self._job_active = False
 
     def _run(self, operation: Operation) -> None:
         result = None
-        failure: dict[str, Any] | None = error("INTERNAL_ERROR", "The op did not finish.")
+        failure: dict[str, Any] | None = error(
+            "INTERNAL_ERROR", "The op did not finish.", False, {"outcome": UNCERTAIN}
+        )
         call = Call(operation.operation_id, operation.request_id, operation.client)
         try:
             result = _sendable(self._handlers[operation.op](operation.args, call))
             failure = None
         except BridgeError as raised:
-            failure = raised.body
+            failure = stated(operation.op, call, raised.body)
         except BaseException:
             # Even an interrupt fails only its own op: anything leaving the Qt slot ends Krita.
             self._log.error(
@@ -207,7 +264,8 @@ class Jobs:
                 traceback.format_exc(),
             )
             message = "The plugin raised an unexpected error; see plugin.log."
-            failure = error("INTERNAL_ERROR", message, False, {"op": operation.op})
+            details = {"op": operation.op, "outcome": UNCERTAIN}
+            failure = error("INTERNAL_ERROR", message, False, details)
         finally:
             with self._lock:
                 if failure is None:
@@ -230,7 +288,8 @@ class Jobs:
                 operation.operation_id,
             )
             message = "The op failed with an error the bridge could not send; see plugin.log."
-            failure = error("INTERNAL_ERROR", message, False, {"op": operation.op})
+            details = {"op": operation.op, "outcome": UNCERTAIN}
+            failure = error("INTERNAL_ERROR", message, False, details)
         operation.fail(failure)
         operation.finished_at = self._clock()
         # Retryable means the op changed nothing, so a retry under the same id runs again.
@@ -304,7 +363,8 @@ class Jobs:
             if cancelled:
                 self._queue.remove(operation)
                 message = "The operation was cancelled before it ran."
-                self._finish_failed(operation, error("CANCELLED", message, True))
+                details = {"outcome": NOT_APPLIED}
+                self._finish_failed(operation, error("CANCELLED", message, True, details))
                 self._lock.notify_all()
             return operation.reply(), cancelled
 
@@ -314,7 +374,8 @@ class Jobs:
             while self._queue:
                 operation = self._queue.popleft()
                 message = "Krita is quitting; the operation never ran."
-                self._finish_failed(operation, error("CANCELLED", message, True))
+                details = {"outcome": NOT_APPLIED}
+                self._finish_failed(operation, error("CANCELLED", message, True, details))
             self._lock.notify_all()
 
 

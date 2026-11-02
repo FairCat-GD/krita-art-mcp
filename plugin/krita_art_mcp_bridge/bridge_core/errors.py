@@ -34,6 +34,12 @@ CODES = (
     "ROLLBACK_FAILED",
     "INTERNAL_ERROR",
 )
+# Whether a failure applied; the server holds an equal copy.
+APPLIED = "applied"
+NOT_APPLIED = "not_applied"
+UNCERTAIN = "uncertain"
+UNREGISTERED = "unregistered"
+OUTCOMES = (APPLIED, NOT_APPLIED, UNCERTAIN, UNREGISTERED)
 
 
 def error(
@@ -55,6 +61,15 @@ class BridgeError(Exception):
     ) -> None:
         super().__init__(message)
         self.body = error(code, message, retryable, details)
+
+
+def cleaned(raised: BaseException, verified: bool) -> None:
+    # A failure's cleanup, in the one key the outcome rule reads. A retry leaves nothing behind.
+    if isinstance(raised, BridgeError):
+        body = raised.body
+        verified = verified and body["details"].get("rollback_verified", True)
+        body["details"]["rollback_verified"] = verified
+        body["retryable"] = body["retryable"] and verified
 
 
 def no_arguments(args: dict[str, Any]) -> None:

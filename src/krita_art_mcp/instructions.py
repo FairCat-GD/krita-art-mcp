@@ -14,8 +14,8 @@ is true; otherwise act on the message.
 ran out: call krita_operation_get with its operation_id, never repeat the call. \
 krita_operation_cancel stops only a queued call.
 - Give every request_id a fresh UUID. Reuse one only to retry the same call: the retry returns \
-the original receipt and never runs twice. If a retry reports outcome uncertain, inspect the \
-document first.
+the original receipt and never runs twice. A failure's details.outcome says what happened: \
+applied (never retry it), not_applied, or uncertain (inspect the document first).
 - Work on your own working copy. Another agent's document answers DOCUMENT_IN_USE; documents \
 the owner opened by hand are read_only.
 - Open accepted art with krita_document_open, mode working_copy, and a working_dir inside one of \

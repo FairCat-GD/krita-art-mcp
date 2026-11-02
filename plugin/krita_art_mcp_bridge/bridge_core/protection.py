@@ -100,6 +100,7 @@ def handlers(registry: Registry, port: DocumentsPort, data: Path) -> dict[str, H
             details = {"loosened_px": extra}
             message = "The new allowed mask allows pixels the current one does not."
             raise BridgeError("INVALID_ARGUMENT", message, False, details)
+        call.mark()
         # A protected node that has gone (a deselect removes the global selection's mask) is
         # dropped; every other one is in wanted.
         handle.protected = wanted
