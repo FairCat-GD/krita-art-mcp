@@ -455,7 +455,7 @@ async def _long_save(
         )
         report.measured(
             f"H4: saving the {LONG_SIZE} x {LONG_SIZE} working copy with {LONG_LAYERS} gradient "
-            f"{LONG_SIDE} px layers",
+            f"{LONG_SIDE} px layers and an empty one of the agent's",
             f"{took:.1f} s; longest silence {silences[0]:.2f} s, median answer "
             f"{statistics.median(silences) * 1000:.0f} ms; Krita {megabytes(rss_before)} before, "
             f"{megabytes(krita_rss_kb())} after",

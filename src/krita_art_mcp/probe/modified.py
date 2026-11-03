@@ -13,6 +13,7 @@ from krita_art_mcp.probe.common import (
     harness_call,
     inspect_data,
     line_points,
+    listed_entry,
     open_args,
     stroke_args,
 )
@@ -58,12 +59,6 @@ async def _sources(
     return sources
 
 
-async def _listed(a: Client, document_id: str) -> dict[str, Any]:
-    listed = (await tool(a, "krita_document_list", {})).get("data") or {}
-    entries = listed.get("documents", [])
-    return next((entry for entry in entries if entry["document_id"] == document_id), {})
-
-
 async def _saved(
     report: Report, a: Client, kind: str, source: Path, folder: Path, hard: dict[str, Any]
 ) -> None:
@@ -90,7 +85,7 @@ async def _saved(
         target = folder / f"flags-{kind}.kra"
         sent = await tool(a, "krita_document_save", save_args(document_id, target))
         saved = await finished(a, sent, SAVE_LIMIT_S)
-        found = [saved.get("data") or {}, await _listed(a, document_id)]
+        found = [saved.get("data") or {}, await listed_entry(a, document_id)]
         found.append(await inspect_data(a, document_id))
         closed = await close(a, document_id, "refuse")
     finally:
@@ -130,9 +125,9 @@ async def _krita_only(
             kind="clone_layer",
             layer_id=data["layers"][0]["id"],
         )
-        entry = await _listed(a, document_id)
+        entry = await listed_entry(a, document_id)
         refused = await close(a, document_id, "refuse")
-        still = await _listed(a, document_id)
+        still = await listed_entry(a, document_id)
     finally:
         await close(a, document_id)
     listed = (entry.get("dirty"), entry.get("krita_modified"))

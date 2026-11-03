@@ -232,21 +232,48 @@ def _layer_style(world: World, document_id: str, layers: dict[str, str]) -> None
     world.port._push(key, "Layer Style", before)
 
 
-@pytest.mark.parametrize("change", [_visible_stroke, _hidden_stroke, _new_node, _layer_style])
-def test_a_hand_change_after_a_save_is_refused(world: World, change: Any) -> None:
+def _mask_edit(world: World, document_id: str, layers: dict[str, str]) -> None:
+    # A mask ORA drops, edited where no composite shows it: its layer is hidden.
+    key = world.key(document_id)
+    before = world.port._state(key)
+    world.port.node_canvas[(key, layers["mask"])] = bytes([0]) + b"\xff" * 31
+    world.port._push(key, "Transparency Mask", before)
+
+
+@pytest.mark.parametrize("name", ["hero-r02.kra", "hero-r02.ora"])
+@pytest.mark.parametrize(
+    "change", [_visible_stroke, _hidden_stroke, _new_node, _layer_style, _mask_edit]
+)
+def test_a_hand_change_after_a_save_is_refused(world: World, change: Any, name: str) -> None:
     document_id = world.open()
     layers = {
         "shown": world.add(document_id, "shown", bounds_px=WHOLE),
         "hidden": world.add(document_id, "hidden", visible=False, bounds_px=WHOLE),
     }
+    layers["mask"] = world.add(
+        document_id, "mask", layers["hidden"], type="transparencymask", bounds_px=WHOLE
+    )
     world.change(document_id)
-    world.finish(world.save(document_id))
+    finished = world.finish(world.save(document_id, name))
+    assert finished["dirty"] is False
     change(world, document_id, layers)
     assert world.flags(document_id) == (False, True)
     body = world.refused("close", document_id)
     assert body["code"] == "DOCUMENT_DIRTY"
     assert body["details"] == {"document_id": document_id, "dirty": False, "krita_modified": True}
     assert world.close(document_id, "discard")["closed"] is True
+
+
+@pytest.mark.parametrize("name", ["hero-r02.kra", "hero-r02.ora"])
+def test_refuse_closes_a_saved_document_nothing_changed_since(world: World, name: str) -> None:
+    document_id = world.open()
+    hidden = world.add(document_id, "hidden", visible=False, bounds_px=WHOLE)
+    world.add(document_id, "mask", hidden, type="transparencymask", bounds_px=WHOLE)
+    world.add(document_id, "group", type="grouplayer")
+    world.change(document_id)
+    world.finish(world.save(document_id, name))
+    assert world.flags(document_id) == (False, True)
+    assert world.close(document_id)["closed"] is True
 
 
 def test_a_hand_change_before_the_finish_is_refused_at_the_close(world: World) -> None:

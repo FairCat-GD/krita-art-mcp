@@ -546,12 +546,14 @@ opacity, its alpha and that it is active.
 
 **The close.** `refuse` answers `DOCUMENT_DIRTY` while `dirty` is set, and while Krita holds the
 document modified unless it still matches its last verified save: `saving.matches_saved` reads the
-composite, then the tree's nodes, then each pixel range that save compared, and stops at the first
-difference. The save takes that state from its own read, so a hand change before its finish is
-caught too. Both refusals name `dirty` and `krita_modified`, and come before anything changes.
-`port.close` then clears Krita's flag, so Krita never asks: it is reached only under `discard`, or
-when nothing would be lost. A hand change to what no save compares, such as guides, is not seen.
-Comparing an 8192² working copy with eight 4096² layers took 0.4 s.
+composite, then the tree's nodes, then every node's own pixels, and stops at the first difference.
+A KRA save hashed each node already; an ORA save, which stores fewer nodes and compares projections,
+hashes each node's own pixels once more for it. The save takes that state from its own read, so a
+hand change before its finish is caught too. Both refusals name `dirty` and `krita_modified`, and
+come before anything changes. `port.close` then clears Krita's flag, so Krita never asks: it is
+reached only under `discard`, or when nothing would be lost. A hand change to guides, and perhaps to
+the global selection alone, is not seen. Comparing an 8192² working copy with eight 4096² layers
+took 0.4 s.
 
 **The settled close.** On Krita 5.3.4.1, closing a document within about half a second of a selection
 change crashes in `KisNodeModel::processUpdateQueue`, a null pointer from the layer docker's update
@@ -1095,7 +1097,7 @@ depend on it: 87 open documents cost about 50 s more.
 |---|---|
 | `uv run scripts/verify.py` | 6 stages, all PASS |
 | Server tests (3.12) | 742 passed, 0 skipped |
-| Plugin-core tests (3.10) | 791 passed, 0 skipped |
+| Plugin-core tests (3.10) | 799 passed, 0 skipped |
 | `uv run krita-art-mcp probe` | 147 PASS, 0 FAIL, 24 MEASURED; about 125 s |
 | `uv run krita-art-mcp doctor` | 6 steps, all PASS, with a root allowed |
 | Registered tools | 19 |

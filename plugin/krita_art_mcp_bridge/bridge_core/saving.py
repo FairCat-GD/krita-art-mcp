@@ -60,7 +60,6 @@ class Pending:
         save_id: str,
         written: str,
         made: list[str],
-        composite_sha256: str,
         changes: int,
         receipt: dict[str, Any],
         state: dict[str, Any],
@@ -72,10 +71,10 @@ class Pending:
         # Checked again by the finish; hashed once already, so its stat is enough.
         self.stat = _stat(written)
         self.target = receipt["path"]
-        self.composite_sha256 = composite_sha256
         self.changes = changes
         self.receipt = receipt
-        # What this save compared, which becomes the handle's saved state once it lands.
+        # What this save compared, its composite's hash included, which becomes the handle's saved
+        # state once it lands.
         self.state = state
 
     def discard(self) -> bool:
@@ -137,6 +136,7 @@ def handlers(registry: Registry, port: DocumentsPort, data: Path) -> dict[str, H
                 }
                 message = "The saved file, reopened in Krita, differs from the document."
                 raise BridgeError("SAVE_VERIFY_FAILED", message, False, details)
+            owned = _own_pixels(port, handle.document, kind, live, saved["pairs"])
             sha = files.sha256_of(written)
         except BaseException as raised:
             removed = files.remove(written)
@@ -165,17 +165,9 @@ def handlers(registry: Registry, port: DocumentsPort, data: Path) -> dict[str, H
         handle.drop_pending_save()
         if isinstance(earlier, Pending):
             made = made + earlier.made
-        state = {
-            "nodes": live["nodes"],
-            "composite_sha256": composite,
-            "pixels": [
-                (pair["live"]["id"], pair["rect"], kind == ".ora", pair["live_sha256"])
-                for pair in saved["pairs"]
-                if pair["rect"] is not None
-            ],
-        }
+        state = {"nodes": live["nodes"], "composite_sha256": composite, "pixels": owned}
         handle.pending_save = Pending(
-            call.operation_id, written, made, composite, handle.changes, receipt, state
+            call.operation_id, written, made, handle.changes, receipt, state
         )
         return {
             **receipt,
@@ -198,12 +190,15 @@ def handlers(registry: Registry, port: DocumentsPort, data: Path) -> dict[str, H
             details["rollback_verified"] = pending.discard()
             message = "The saved file changed or went before its mergedimage.png was checked."
             raise BridgeError("SAVE_VERIFY_FAILED", message, False, details)
-        if args["merged_problem"] is not None or args["merged_sha256"] != pending.composite_sha256:
+        if (
+            args["merged_problem"] is not None
+            or args["merged_sha256"] != pending.state["composite_sha256"]
+        ):
             details["rollback_verified"] = pending.discard()
             details["mismatches"] = [
                 {
                     "field": "mergedimage",
-                    "live": pending.composite_sha256,
+                    "live": pending.state["composite_sha256"],
                     "saved": args["merged_sha256"],
                     "problem": args["merged_problem"],
                 }
@@ -261,9 +256,31 @@ def matches_saved(port: DocumentsPort, handle: Handle) -> bool:
     if port.tree(handle.document)["nodes"] != state["nodes"]:
         return False
     return all(
-        _pixels_sha256(port, handle.document, node_id, rect, projection) == sha
-        for node_id, rect, projection, sha in state["pixels"]
+        _pixels_sha256(port, handle.document, node_id, rect, False) == sha
+        for node_id, rect, sha in state["pixels"]
     )
+
+
+def _own_pixels(
+    port: DocumentsPort,
+    document: Any,
+    kind: str,
+    live: dict[str, Any],
+    pairs: list[dict[str, Any]],
+) -> list[tuple[str, dict[str, int], str]]:
+    # Every node's own pixels, so the close sees a change to any of them. A KRA save hashed each
+    # node already; an ORA save hashed only what ORA stores, and as projections.
+    if kind == ".kra":
+        return [(pair["live"]["id"], pair["rect"], pair["live_sha256"]) for pair in pairs]
+    return [
+        (
+            node["id"],
+            node["bounds_px"],
+            _pixels_sha256(port, document, node["id"], node["bounds_px"], False),
+        )
+        for node in live["nodes"]
+        if node["type"] != "grouplayer"
+    ]
 
 
 def _target(data: Path, path: Any) -> tuple[str, str]:

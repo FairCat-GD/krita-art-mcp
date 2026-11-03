@@ -104,12 +104,15 @@ async def inspect_data(a: Client, document_id: str) -> dict[str, Any]:
     return data
 
 
-async def document_dirty(a: Client, document_id: str) -> bool | None:
+async def listed_entry(a: Client, document_id: str) -> dict[str, Any]:
     listed = (await tool(a, "krita_document_list", {})).get("data") or {}
-    for entry in listed.get("documents", []):
-        if entry["document_id"] == document_id:
-            return bool(entry["dirty"])
-    return None
+    entries = listed.get("documents", [])
+    return next((entry for entry in entries if entry["document_id"] == document_id), {})
+
+
+async def document_dirty(a: Client, document_id: str) -> bool | None:
+    entry = await listed_entry(a, document_id)
+    return bool(entry["dirty"]) if entry else None
 
 
 async def capture(

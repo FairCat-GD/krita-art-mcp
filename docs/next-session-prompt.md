@@ -27,14 +27,16 @@ Release 0.20.0, with `api_version` 0.4.0.
   - **Every document now reports two flags.** `dirty` is the bridge's own changes since the last
     verified save. `krita_modified` is Krita's own flag, which a verified save leaves set.
     `refuse` reads both.
-  - **A handle keeps `saved_state`,** what its last verified save compared. A tool that changes a
-    document marks it through `before_change` as before, and needs nothing new.
+  - **A handle keeps `saved_state`,** what its last verified save compared: the composite, the
+    tree's nodes and every node's own pixels. A tool that changes a document marks it through
+    `before_change` as before, and needs nothing new.
   - **A property write through libkis leaves Krita's flag clear,** while `dirty` is set; it is in
     the backlog. `doctor`'s unsaved count reads Krita's flag, so a saved working copy counts as
     unsaved until it closes.
   - **`probe/modified.py`** holds the flag checks, and `opening.harness_export` is now public.
-- **R1, R2 and the R3 amendment are pushed.** R3's commits are local until the owner approves a
-  push. List `origin/main..HEAD` before any push.
+- **R1, R2 and R3 are pushed,** with the owner's approval on 2026-11-03. `origin/main` stops at
+  "review: ORA saves kept no pixels for dropped masks, and 5 smaller". List `origin/main..HEAD`
+  before any push.
 - **What R2 left for later sessions:**
   - **Every tool's hints are in a table,** `HINTS` in `tests/test_tools.py`. A new tool needs its
     row, chosen from its worst permitted behaviour (decision 1). C1, M1, L1, B1, T1 and S1 each add
@@ -48,7 +50,7 @@ Release 0.20.0, with `api_version` 0.4.0.
     native capture given a `background`, and a brush size over 1000. Each was a clear refusal.
 - **The evidence stays outside the repository.** The Codex agent holds its bundles.
 - **Baseline** (ARCHITECTURE's table, v0.19.0): `verify` 6 stages, all PASS; 742 server tests and
-  791 plugin-core tests, 0 skipped; `probe` 147 PASS, 0 FAIL, 24 MEASURED, about 125 s with 0
+  799 plugin-core tests, 0 skipped; `probe` 147 PASS, 0 FAIL, 24 MEASURED, about 125 s with 0
   documents open; 19 tools; 19 schema files; 30 error codes; 31 bridge ops; instructions 3,970
   characters.
 - **Not done:** nothing from R3's block.

@@ -522,6 +522,23 @@ handoff. Its second report, read at the same review, added the close below and a
 - **Numbers:** 742 server tests (+1), 791 plugin tests (+10), probe 147 PASS (+4), 0 FAIL, 24
   MEASURED (+1), about 125 s with 0 documents open. 19 tools, 19 schema files, 30 error codes, 31
   ops, instructions 3,970 characters. The 8192² comparison took 0.4 s.
+- **Review (`/code-review high`), 6 findings: 6 fixed and 0 skipped.**
+  - **An ORA save kept no pixels for what ORA drops.** Its state held only the stored layers'
+    projections, so a hand edit to a hidden layer's mask closed under `refuse`. An ORA save now
+    hashes every node's own pixels; a KRA save already did.
+  - **The guide said `refuse` catches any hand change.** It now names what the close compares, and
+    that guides, and perhaps the global selection alone, are not seen.
+  - **H4's save changed its conditions unannounced.** Its MEASURED line now names the agent's empty
+    layer.
+  - **No unit test held the ORA compare.** The hand-change cases now run for KRA and ORA, with a
+    mask edit, and a saved KRA and ORA close under `refuse`.
+  - **`Pending` kept the composite's hash twice.** It now lives in the state alone.
+  - **`probe/modified.py` repeated the list lookup.** `common.listed_entry` serves it and
+    `document_dirty`.
+  - **Falsified:** the ORA state limited to its pairs, where only the ORA mask case failed; the
+    close never matching, where both saved closes failed.
+  - **Numbers after the review:** 742 server tests, 799 plugin tests, probe 147 PASS, 0 FAIL, 24
+    MEASURED, about 125 s with 0 documents open.
 
 ---
 

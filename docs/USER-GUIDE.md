@@ -218,9 +218,10 @@ PNG export dialog, and its warning that the image will lose information means th
 flattened.
 
 **10. Close.** `dirty_policy: "refuse"` fails with `DOCUMENT_DIRTY` while the bridge or Krita holds a
-change since the last verified save, a change made by hand included. After a verified save with
-nothing changed since, it closes, though Krita still marks the document modified. `"discard"` drops
-everything.
+change since the last verified save. A change made by hand counts when it changes the layers, any
+layer's or mask's pixels, or the composite. A hand change to guides, and perhaps to the global
+selection alone, is not seen. After a verified save with nothing changed since, it closes, though
+Krita still marks the document modified. `"discard"` drops everything.
 
 ## Retries and long calls
 
