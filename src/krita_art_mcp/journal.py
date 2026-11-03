@@ -47,6 +47,7 @@ class Finished:
     request_id: str
     tool: str
     result: dict[str, Any] | None
+    elapsed_ms: int | None
 
 
 @dataclass
@@ -172,6 +173,7 @@ class Journal:
         bridge_operation_id: str | None = None,
         document_path: str | None = None,
         layer_names: Sequence[str] = (),
+        elapsed_ms: int | None = None,
     ) -> None:
         self._append(
             {
@@ -185,6 +187,8 @@ class Journal:
                 "phase": "finished",
                 "outcome": outcome,
                 "result": result,
+                # The server's time on the call, from its arrival; null when no one call spans it.
+                "elapsed_ms": elapsed_ms,
                 "document_path": document_path,
                 "layer_names": list(layer_names),
             }
@@ -263,7 +267,7 @@ class Journal:
             self._sessions[operation_id] = session_id
             prior.attempts.append(Attempt(operation_id, session_id, tool, digest))
             return
-        outcome, result = line["outcome"], line.get("result")
+        outcome, result, elapsed_ms = line["outcome"], line.get("result"), line.get("elapsed_ms")
         if phase != "finished" or outcome not in OUTCOMES:
             raise KeyError(phase)
         named = {operation_id, line.get("bridge_operation_id")} if outcome == NO_EFFECT else set()
@@ -280,7 +284,7 @@ class Journal:
         if outcome == RECEIPT:
             prior.receipt = result
         # A retry's line names the operation the bridge answered with too.
-        finished = Finished(outcome, session_id, request_id, tool, result)
+        finished = Finished(outcome, session_id, request_id, tool, result, elapsed_ms)
         for named_id in (operation_id, line.get("bridge_operation_id")):
             if isinstance(named_id, str) and (outcome != UNKNOWN or named_id not in self._finished):
                 self._finished[named_id] = finished

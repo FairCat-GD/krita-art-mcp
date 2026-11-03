@@ -1,6 +1,7 @@
 import functools
 import logging
 import threading
+import time
 from collections import Counter
 from collections.abc import Callable
 from typing import Any
@@ -35,8 +36,8 @@ MAX_REPORTED_PROBLEMS = 50
 MAX_MESSAGE_CHARS = 200
 
 ToolFunction = Callable[[ToolCall, dict[str, Any]], CallToolResult]
-# The arguments, and the MCP client's name for the journal.
-Run = Callable[[dict[str, Any], str | None], CallToolResult]
+# The arguments, the MCP client's name and the call's arrival, for the journal.
+Run = Callable[[dict[str, Any], str | None, float], CallToolResult]
 
 # A tool is registered only once it is built and tested (invariant 10).
 TOOLS: dict[str, ToolFunction] = {
@@ -92,8 +93,9 @@ def _bound(
     places: Places,
     arguments: dict[str, Any],
     client_name: str | None,
+    started: float,
 ) -> CallToolResult:
-    return tool(ToolCall(bridge, journal, places, client_name), arguments)
+    return tool(ToolCall(bridge, journal, places, client_name, started), arguments)
 
 
 def build(name: str, run: Run) -> Tool:
@@ -104,9 +106,11 @@ def build(name: str, run: Run) -> Tool:
 
     # Sync on purpose: mcp runs it on a worker thread, so a 45 s bridge wait never stalls stdio.
     def call(arguments: dict[str, Any], ctx: Context) -> CallToolResult:
+        # Before the lock, so a call's time in the journal is all the server held it.
+        started = time.monotonic()
         client_name = _client_name(ctx)
         with CALLS:
-            return _checked(name, arguments, client_name, run, inputs, outputs, mutating)
+            return _checked(name, arguments, client_name, started, run, inputs, outputs, mutating)
 
     return Tool(
         fn=call,
@@ -125,6 +129,7 @@ def _checked(
     name: str,
     arguments: dict[str, Any],
     client_name: str | None,
+    started: float,
     run: Run,
     inputs: Draft202012Validator,
     outputs: Draft202012Validator,
@@ -137,7 +142,7 @@ def _checked(
         result = _invalid(problems)
     else:
         try:
-            result = run(arguments, client_name)
+            result = run(arguments, client_name, started)
         except Exception:
             log.exception("%s raised", name)
             result = envelope.failure("INTERNAL_ERROR")

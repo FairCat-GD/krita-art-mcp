@@ -1,8 +1,9 @@
 import hashlib
 import json
 import logging
+import time
 from collections.abc import Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any
 
 from jsonschema import Draft202012Validator
@@ -27,6 +28,8 @@ class ToolCall:
     places: Places
     # The MCP client's own name, from its initialize request, for the journal.
     client_name: str | None = None
+    # When the call reached the server, on the monotonic clock.
+    started: float = field(default_factory=time.monotonic)
 
 
 def args_sha256(tool: str, arguments: dict[str, Any]) -> str:
@@ -148,6 +151,7 @@ def journaled(
             sent["operation_id"],
             outcome,
             result,
+            elapsed_ms=round((time.monotonic() - call.started) * 1000),
         )
     return result
 
@@ -161,6 +165,7 @@ def record(
     operation_id: str | None,
     outcome: Done | Failed,
     result: CallToolResult,
+    elapsed_ms: int | None,
 ) -> None:
     try:
         call.journal.finished(
@@ -173,6 +178,7 @@ def record(
             outcome=outcome_of(outcome),
             result=stored(result),
             bridge_operation_id=outcome.operation_id,
+            elapsed_ms=elapsed_ms,
         )
     except Exception:
         # The call is done either way; a retry will find its dispatched line and ask the bridge.

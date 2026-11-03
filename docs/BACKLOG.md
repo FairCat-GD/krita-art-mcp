@@ -155,6 +155,14 @@ contract", "Phase N" and "review N" mean.
   `conftest.py`.
 - **The plugin's eraser plumbing is unreachable** while the server refuses erasing, and
   `schemas.tool_names` is reached by tests only.
+- **A client's `serve` runs this checkout as it stands** (0.18.0). Both registrations run
+  `uv run --project <repo>`, so an MCP client started mid-session imports that session's uncommitted
+  code. Once the version is bumped and the plugin installed, nothing refuses it. R2's Codex session
+  ran that way, on finished code. A released copy to serve from would keep a client off work in
+  progress.
+- **Codex's renderer is not re-measured.** The schema sizes `ARCHITECTURE.md` quotes for Codex's
+  limits come from a scratchpad port at 0.15.0. Every change since has been small beside the
+  margins, and nothing checks them.
 
 ## Not yet checked by hand
 

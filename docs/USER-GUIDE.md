@@ -73,6 +73,31 @@ tool_timeout_sec = 300
 Then ask the agent to call `krita_server_info`. It returns Krita's version and the capability
 matrix, or names the setup step that is missing.
 
+**What each tool says it can do.** MCP hints tell a client what a tool may change, and a client may
+ask you before any call it calls destructive. Each tool's hints follow the worst it is allowed to
+do. Undoable is not the same as additive, so a stroke stays destructive.
+
+| Hints | Tools | Worst it can do |
+|---|---|---|
+| Read-only | `krita_server_info`, `krita_document_list`, `krita_document_inspect`, `krita_resource_list`, `krita_capture`, `krita_sample`, `krita_preview_render`, `krita_operation_get` | Nothing: they change nothing |
+| Not destructive | `krita_layer_create`, `krita_protection_set`, `krita_document_open`, `krita_document_create`, `krita_document_save` | Add: a layer, tighter protection, a working copy, a document, a new file |
+| Destructive | `krita_paint_stroke`, `krita_selection_set`, `krita_layer_update`, `krita_history_step`, `krita_operation_cancel`, `krita_document_close` | Change what is there: pixels, the selection, a layer, history, a queued call, or unsaved changes a close discards |
+
+**Codex's approval setting.** By default Codex reviews every call a tool's hints call destructive.
+In two long sessions, each such call carried 2 to 3 s beyond the tool's own time, and each
+read-only or additive call none. Strokes and selections make most of those calls and stay
+destructive, so the five additive tools save only a few minutes in a long session. Trusting this
+server outright is your choice, set per server in `~/.codex/config.toml`:
+
+```toml
+[mcp_servers.krita-art]
+default_tools_approval_mode = "approve"
+```
+
+It removes Codex's review on every tool of this server, strokes and `krita_document_close`
+included. The server still protects, verifies and can undo; what goes is the question before each
+call.
+
 **macOS folder access.** macOS keeps an app out of `~/Documents` until you allow it. With the
 repository there, a client that cannot read it fails the server's handshake, or reports
 `Operation not permitted`. Allow the app under System Settings > Privacy & Security > Files and
@@ -106,9 +131,10 @@ the source itself and refuses every change. KRA, ORA and PNG open, RGBA 8-bit on
 
 **3. Look.** `krita_document_inspect` gives the layer tree, protection, the selection and how far
 history goes. `krita_capture` gives an image and its PNG's path: `scale: 1` is the native crop, and
-other scales resample with your filter onto a background. `krita_sample` gives exact colours; never
-judge a colour from a capture. `krita_resource_list` lists brush presets, blend modes, profiles and
-palettes.
+other scales resample with your filter onto a background. The filters are `nearest`, `box`,
+`bilinear`, `hamming`, `bicubic` and `lanczos`, the same for previews. `krita_sample` gives exact
+colours; never judge a colour from a capture. `krita_resource_list` lists brush presets, blend
+modes, profiles and palettes.
 
 **4. Add a layer of your own.** Protected layers refuse strokes, on purpose.
 

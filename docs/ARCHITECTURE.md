@@ -1,6 +1,6 @@
 # krita-art-mcp — architecture, as built
 
-This is the system as it stands at 0.17.0, in round 2, on the Phase 1 round 1 built. Every session
+This is the system as it stands at 0.18.0, in round 2, on the Phase 1 round 1 built. Every session
 keeps it true, in the same commit as the change. Each section stands on its own: a session reads
 the overview, the invariants and the baseline, then only the sections its work touches.
 `docs/USER-GUIDE.md` is the same system from the user's side.
@@ -240,6 +240,20 @@ arguments; `ExactArguments` passes them through and the runner validates with Dr
 `guard`, `source`, the completed rule's copy of `data`, inspect's `layers`) and formats them; a test
 holds the files to it.
 
+**Hints follow each tool's worst permitted behaviour.**
+- The eight reads are `readOnlyHint: true`.
+- Five mutating tools only add, and are `destructiveHint: false`: `krita_layer_create`,
+  `krita_protection_set`, `krita_document_open`, `krita_document_create` and `krita_document_save`.
+- The other six are destructive, because undoable is not additive.
+- `idempotentHint` is true and `openWorldHint` false on every tool.
+- `readOnlyHint` is load-bearing. `_checked` reads it to decide what mutates, and the `BOUNDED`
+  test holds the ops to it.
+- A table test in `tests/test_tools.py` holds all 19, so a new tool's hints are chosen, never
+  copied.
+
+Codex reviews every destructive call unless the owner sets the server's
+`default_tools_approval_mode`; the user guide says what that removes.
+
 **Which forms reach Codex.** Codex shows its model a TypeScript declaration, never the schema, so a
 valid schema can still arrive as `unknown`. `tests/test_schemas.py` holds these forms:
 - no `allOf`, no `prefixItems`, no `items: false`;
@@ -251,9 +265,12 @@ valid schema can still arrive as `unknown`. `tests/test_schemas.py` holds these 
   path;
 - outputs are one chain written by `amend_schemas.py`: completed, else failed, else pending.
 
-Codex's limits: a normalised input over 5,000 bytes is compacted (the largest here is 2,135), a
-rendered input or output over 16,000 bytes becomes `unknown` (the largest is 2,294), and
-`Array<number>` hides a tuple's length. `ALL_TOOLS` carries the declarations, so an agent reads one
+Codex's limits, measured at 0.15.0 with a scratchpad port of its renderer:
+- a normalised input over 5,000 bytes is compacted (the largest was 2,135);
+- a rendered input or output over 16,000 bytes becomes `unknown` (the largest was 2,294);
+- `Array<number>` hides a tuple's length.
+
+Nothing re-measures these. Every later schema change has been small beside the margins. `ALL_TOOLS` carries the declarations, so an agent reads one
 by filtering for it.
 
 **Argument errors name every problem,** up to `MAX_REPORTED_PROBLEMS` (50). The message joins them,
@@ -389,6 +406,15 @@ The index also keeps each finished line by its `operation_id` and by the `bridge
 retry was answered under, so `krita_operation_get` can answer once Krita has moved on. An `unknown`
 line never replaces a settled one, and "finished" alone never means applied: the line keeps its
 outcome, session, request and result.
+
+**A finished line carries `elapsed_ms`,** the server's own time on the call.
+- **Where the clock runs.** From the call's arrival at the tool, before `CALLS`, to the line. The
+  lock wait and the input check count, so a client's wall clock minus it is time outside the
+  server.
+- **When it is `null`.** On a line a later `krita_operation_get` writes for a call that came back
+  running, because no one call spans it.
+- **Older lines.** A line written without the field reads as `null`. The reader takes fields by
+  name, so the added field moves no version.
 
 A heavy week is about 44 MB of lines, read by the first lookup of each server process; the probe
 watches it, and the backlog holds the retention rule.
@@ -531,9 +557,11 @@ no overlay enters the bytes, so the probe measures the overlay rather than check
 stays for the mask display mode.
 
 **Capture.** Resample, then composite: a checker composited first averages to flat grey at small
-scales. Scale 1 is native, and `background` or `greyscale` there is refused. `max_px` bounds the
-image; `limits.capture_source_pixels` (8192²) bounds the area read. A layer capture is that layer's
-own paint device (K12), and is paint layers only. A larger image goes by path with a 1600 px inline
+scales. The filters are Pillow's `nearest`, `box`, `bilinear`, `hamming`, `bicubic` and `lanczos`,
+for previews too; `imaging.FILTERS` is the list, and a test holds every `filter` enum to it. Scale 1
+is native, and `background` or `greyscale` there is refused. `max_px` bounds the image;
+`limits.capture_source_pixels` (8192²) bounds the area read. A layer capture is that layer's own
+paint device (K12), and is paint layers only. A larger image goes by path with a 1600 px inline
 preview. Captures are `op-<id>` files, found before they are made, so `krita_operation_get` can
 rebuild a receipt.
 
@@ -1031,18 +1059,18 @@ the code is shaped as it is.
   it. A Krita holding 87 documents ran document ops about three times slower, and left the paint
   benchmarks, the preview benchmark and H4 idle alone.
 
-## Baseline (v0.17.0)
+## Baseline (v0.18.0)
 
-Taken on 2026-11-02 on Krita 5.3.4.1, macOS, Apple Silicon, on a Krita restarted that session, with
+Taken on 2026-11-03 on Krita 5.3.4.1, macOS, Apple Silicon, on a Krita restarted that session, with
 **0 documents open**. The probe prints the open-document count beside its time, because document ops
 depend on it: 87 open documents cost about 50 s more.
 
 | Check | Expected |
 |---|---|
 | `uv run scripts/verify.py` | 6 stages, all PASS |
-| Server tests (3.12) | 732 passed, 0 skipped |
+| Server tests (3.12) | 739 passed, 0 skipped |
 | Plugin-core tests (3.10) | 781 passed, 0 skipped |
-| `uv run krita-art-mcp probe` | 142 PASS, 0 FAIL, 23 MEASURED; about 120 s |
+| `uv run krita-art-mcp probe` | 143 PASS, 0 FAIL, 23 MEASURED; about 122 s |
 | `uv run krita-art-mcp doctor` | 6 steps, all PASS, with a root allowed |
 | Registered tools | 19 |
 | Schema files | 19 |

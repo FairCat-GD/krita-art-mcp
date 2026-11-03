@@ -214,6 +214,8 @@ def _finish_journaled(
         operation_id,
         outcome,
         receipt,
+        # No one call spans it: the poll's own time is not the tool's.
+        elapsed_ms=None,
     )
 
 

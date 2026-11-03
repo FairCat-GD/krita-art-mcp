@@ -72,6 +72,7 @@ async def run(report: Report, a: Client, harness: Path) -> None:
     fixtures.write_ora(icon, (fixtures.Layer("probe icon", disc),), ICON_PX, ICON_PX)
     await _game(report, a, master, harness)
     await _icons(report, a, icon, harness)
+    await _hamming(report, a, icon, harness)
     await _overlays(report, a, master, harness)
     await _n02(report, a, folder, harness)
 
@@ -144,6 +145,35 @@ async def _icons(report: Report, a: Client, icon: Path, harness: Path) -> None:
             and not problem,
             f"cells {sizes}, scales {transforms}" + (f"; {problem}" if problem else ""),
         )
+    finally:
+        await close(a, document_id)
+
+
+async def _hamming(report: Report, a: Client, icon: Path, harness: Path) -> None:
+    opened = await open_working(a, icon, harness, "previews")
+    document_id = opened.get("document_id")
+    name = "a Hamming preview is its own filter's, not bicubic's, at the disc's edge"
+    if opened.get("status") != "completed" or not document_id:
+        report.check(name, False, str(opened.get("error")))
+        return
+    try:
+        cells = {}
+        for chosen in ("hamming", "bicubic"):
+            rendered = await tool(
+                a,
+                TOOL,
+                arguments(
+                    [source(document_id)], ICONS[:1], filter=chosen, backgrounds=["transparent"]
+                ),
+            )
+            [sheet] = (rendered.get("data") or {}).get("sheets") or [None]
+            if sheet is None or sheet["columns"][0]["filter"] != chosen:
+                report.check(name, False, f"{chosen}: {code(rendered) or 'another filter'}")
+                return
+            cells[chosen] = sheet_cell(sheet, 0)
+        problem = differs(cells["hamming"], cells["bicubic"])
+        same_shape = cells["hamming"].shape == cells["bicubic"].shape
+        report.check(name, same_shape and bool(problem), problem or "the two cells are equal")
     finally:
         await close(a, document_id)
 

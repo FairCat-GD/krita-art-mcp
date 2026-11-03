@@ -24,6 +24,7 @@ FILTERS = {
     "nearest": Image.Resampling.NEAREST,
     "box": Image.Resampling.BOX,
     "bilinear": Image.Resampling.BILINEAR,
+    "hamming": Image.Resampling.HAMMING,
     "bicubic": Image.Resampling.BICUBIC,
     "lanczos": Image.Resampling.LANCZOS,
 }

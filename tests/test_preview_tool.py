@@ -194,6 +194,21 @@ def test_overlays_are_drawn_into_the_sheet_and_kept_out_of_the_clean_one(world: 
     assert result["data"]["source_pixels_changed"] == 0 and _transfer(world) == []
 
 
+def test_a_hamming_render_resamples_the_cell_with_hamming(world: World) -> None:
+    document_id = _created(world)
+    arguments = _render(
+        [_source(document_id)],
+        recipes=[{"id": "small", "target_size_px": [16, 8]}],
+        filter="hamming",
+    )
+    [sheet] = world.server().content("krita_preview_render", arguments)["data"]["sheets"]
+    assert (sheet["filter"], sheet["columns"][0]["filter"]) == ("hamming", "hamming")
+    native = Image.fromarray(_rgba(bgra(64, 32), 64, 32))
+    hamming = np.asarray(native.resize((16, 8), Image.Resampling.HAMMING))
+    assert (sheet_cell(sheet, 0) == hamming).all()
+    assert (hamming != np.asarray(native.resize((16, 8), Image.Resampling.BICUBIC))).any()
+
+
 def test_operation_get_finishes_a_render_that_came_back_running(world: World) -> None:
     document_id = _created(world)
     world.gate.clear()

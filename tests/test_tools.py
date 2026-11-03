@@ -38,7 +38,7 @@ def _server(run: tools.Run) -> MCPServer:
     return MCPServer("tools-test", tools=[tools.build("krita_server_info", run)])
 
 
-def _completed(arguments: dict[str, Any], client_name: str | None = None) -> CallToolResult:
+def _completed(arguments: dict[str, Any], *_: Any) -> CallToolResult:
     return envelope.completed(INFO_DATA, "ok")
 
 
@@ -84,10 +84,48 @@ def test_only_built_tools_are_registered_with_their_contract_schemas(tmp_path: P
         assert tool.annotations.model_dump(by_alias=True, exclude_none=True) == spec["annotations"]
 
 
+def _hints(read_only: bool, destructive: bool) -> dict[str, bool]:
+    return {
+        "readOnlyHint": read_only,
+        "destructiveHint": destructive,
+        "idempotentHint": True,
+        "openWorldHint": False,
+    }
+
+
+# Each tool's worst permitted behaviour: a read, an addition, or a change to what is there.
+READ, ADDS, CHANGES = _hints(True, False), _hints(False, False), _hints(False, True)
+HINTS = {
+    "krita_capture": READ,
+    "krita_document_close": CHANGES,
+    "krita_document_create": ADDS,
+    "krita_document_inspect": READ,
+    "krita_document_list": READ,
+    "krita_document_open": ADDS,
+    "krita_document_save": ADDS,
+    "krita_history_step": CHANGES,
+    "krita_layer_create": ADDS,
+    "krita_layer_update": CHANGES,
+    "krita_operation_cancel": CHANGES,
+    "krita_operation_get": READ,
+    "krita_paint_stroke": CHANGES,
+    "krita_preview_render": READ,
+    "krita_protection_set": ADDS,
+    "krita_resource_list": READ,
+    "krita_sample": READ,
+    "krita_selection_set": CHANGES,
+    "krita_server_info": READ,
+}
+
+
+def test_every_tool_keeps_its_hints() -> None:
+    assert {name: schemas.load(name)["annotations"] for name in tools.BUILT_TOOLS} == HINTS
+
+
 def test_arguments_reach_the_tool_exactly_as_sent() -> None:
     received: list[dict[str, Any]] = []
 
-    def record(arguments: dict[str, Any], client_name: str | None = None) -> CallToolResult:
+    def record(arguments: dict[str, Any], *_: Any) -> CallToolResult:
         received.append(arguments)
         return envelope.failure("INTERNAL_ERROR")
 
@@ -100,7 +138,7 @@ def test_arguments_reach_the_tool_exactly_as_sent() -> None:
 def test_an_unknown_field_is_an_invalid_argument_envelope() -> None:
     ran: list[dict[str, Any]] = []
 
-    def run(arguments: dict[str, Any], client_name: str | None = None) -> CallToolResult:
+    def run(arguments: dict[str, Any], *_: Any) -> CallToolResult:
         ran.append(arguments)
         return _completed(arguments)
 
@@ -220,7 +258,7 @@ def test_the_largest_report_stays_well_under_claude_codes_token_limit() -> None:
 
 
 def test_a_raising_tool_returns_internal_error() -> None:
-    def run(arguments: dict[str, Any], client_name: str | None = None) -> CallToolResult:
+    def run(arguments: dict[str, Any], *_: Any) -> CallToolResult:
         raise RuntimeError("boom")
 
     result = _call(_server(run), {})
@@ -229,7 +267,7 @@ def test_a_raising_tool_returns_internal_error() -> None:
 
 
 def test_a_result_that_breaks_its_schema_becomes_internal_error() -> None:
-    def run(arguments: dict[str, Any], client_name: str | None = None) -> CallToolResult:
+    def run(arguments: dict[str, Any], *_: Any) -> CallToolResult:
         return envelope.completed({"krita_version": "5.3.4"}, "incomplete data")
 
     result = _call(_server(run), {})
@@ -240,7 +278,7 @@ def test_a_result_that_breaks_its_schema_becomes_internal_error() -> None:
 
 
 def test_a_result_over_6_mb_becomes_internal_error() -> None:
-    def run(arguments: dict[str, Any], client_name: str | None = None) -> CallToolResult:
+    def run(arguments: dict[str, Any], *_: Any) -> CallToolResult:
         result = _completed(arguments)
         result.content[0].text = "x" * (6 * 1024 * 1024)  # type: ignore[union-attr]
         return result
@@ -271,7 +309,7 @@ def test_calls_from_one_server_process_run_one_at_a_time() -> None:
     overlaps = 0
     guard = threading.Lock()
 
-    def run(arguments: dict[str, Any], client_name: str | None = None) -> CallToolResult:
+    def run(arguments: dict[str, Any], *_: Any) -> CallToolResult:
         nonlocal active, overlaps
         with guard:
             active += 1

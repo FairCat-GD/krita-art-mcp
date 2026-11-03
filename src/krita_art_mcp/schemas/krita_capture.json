@@ -79,6 +79,7 @@
           "nearest",
           "box",
           "bilinear",
+          "hamming",
           "bicubic",
           "lanczos"
         ]
@@ -281,6 +282,7 @@
                           "nearest",
                           "box",
                           "bilinear",
+                          "hamming",
                           "bicubic",
                           "lanczos"
                         ]
@@ -375,6 +377,7 @@
                       "nearest",
                       "box",
                       "bilinear",
+                      "hamming",
                       "bicubic",
                       "lanczos"
                     ]
@@ -632,6 +635,7 @@
                         "nearest",
                         "box",
                         "bilinear",
+                        "hamming",
                         "bicubic",
                         "lanczos"
                       ]
@@ -726,6 +730,7 @@
                     "nearest",
                     "box",
                     "bilinear",
+                    "hamming",
                     "bicubic",
                     "lanczos"
                   ]

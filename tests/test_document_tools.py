@@ -336,6 +336,8 @@ def test_operation_get_finishes_a_call_that_came_back_running(world: World) -> N
     assert data["receipt"]["status"] == "completed"
     assert got["document_id"] == data["receipt"]["document_id"]
     assert [line["phase"] for line in _lines(world)] == ["dispatched", "finished"]
+    # The poll's own time is not the create's.
+    assert _lines(world)[-1]["elapsed_ms"] is None
     # The retry now has a receipt, so it is answered from the journal.
     assert server.content("krita_document_create", _create()) == data["receipt"]
     assert world.port.created == 1

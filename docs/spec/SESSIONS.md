@@ -276,6 +276,65 @@ K46* (Capture), *Previews and the lazy baseline*.
   1.
 - **The journal reader accepts version 2 only.** Check that an added field needs no version.
 
+**Done (2026-11-03, 0.18.0).**
+- **Decided with the user at the start:**
+  - **Whether `default_tools_approval_mode` was set:** the owner did not know. Codex's config holds
+    no such key under `[mcp_servers.krita-art]`, so the gate ran under Codex's default review.
+  - **The by-hand gate:** the owner would run the Codex session.
+  - **The plan,** approved in plan mode, including where the clock starts.
+- **Hints.** Five schema files set `destructiveHint: false`, and `HINTS` in `tests/test_tools.py`
+  holds all four hints of all 19 tools.
+- **Timing.**
+  - `tools.build`'s `call` stamps the arrival before `CALLS`, and `Run` and `ToolCall` carry it as
+    `started`.
+  - `journaled` writes `elapsed_ms` through `record` and `Journal.finished`.
+  - `Finished.elapsed_ms` is read with `.get`, so an older line reads `None`.
+  - A line `krita_operation_get` writes, for a call that came back running, has `null`.
+  - The journal's `VERSION` stays 2.
+- **Hamming.**
+  - `imaging.FILTERS` gains `hamming`, and so do both schemas' five `filter` enums each.
+  - A test holds every enum to `FILTERS`.
+  - The probe's `_hamming` renders the icon fixture with `hamming` and with `bicubic`.
+- **Docs.**
+  - The guide gains the hints table and Codex's setting.
+  - ARCHITECTURE gains the hints, the journal's `elapsed_ms` and the filter list, and marks
+    Codex's limits as measured at 0.15.0.
+  - Two backlog items.
+- **Amendments:**
+  - **The clock starts on arrival, before the lock,** so the lock wait and the input check count.
+    The block left the start open. Amended at plan time, with the user.
+  - **A parity test between the filter enums and `FILTERS`,** which the block did not list. Amended
+    at plan time, with the user.
+  - **Codex's schema sizes are not re-measured.** They came from a scratchpad port at 0.15.0, and
+    R1 had already changed every output since. They are labelled, and in the backlog. The
+    session's own finding.
+  - **The gate's Codex session was a long one, not a short one.** It ran on 0.18.0's code before
+    the docs were written, because a client's `serve` imports this checkout as it stands. The
+    session's own finding; in the backlog.
+- **Measured,** on Krita 5.3.4.1 and Codex, from the client's own records and the journal, as counts
+  and timings only:
+  - **The calls:** 911 over about two hours. 81 went to four of the five, 695 were destructive and
+    135 were reads. `krita_document_create` was not called.
+  - **The four:** Codex's wall clock met the server's `elapsed_ms` within a median of 3–4 ms. They
+    took 0.4 minutes of wall clock, none of it outside the server.
+  - **The destructive calls:** each spent a median of 2.8–3.0 s outside the server (selections
+    2.89 s, strokes 2.80 s). They took 41.9 minutes of wall clock, 2.0 of them in the server.
+  - **The reads:** Codex's wall clock equals its tool time.
+  - **The inference held.** Changing only the hint removed the cost from those tools. At this
+    session's rate the five saved about 4 minutes; the rest is the owner's setting.
+  - **The server's time:** Codex's own tool time and `elapsed_ms` agree within a few milliseconds.
+  - **The probe's Hamming cell** differs from bicubic in 765 pixels of the 128 px icon, by up to
+    255.
+- **Checked by hand:** the owner's Codex session above.
+- **Falsified:**
+  - **Eight unit checks,** each failing at its own step: the hint table, the read-back, the lock
+    wait, the poll's `null`, an older line, the enum parity, and the Hamming capture and preview.
+  - **The probe's Hamming check,** comparing a cell with itself: it alone failed, 142 PASS, 1 FAIL.
+    A first attempt met a Krita dialog left open at start, and does not count.
+- **Numbers:** 739 server tests (+7), 781 plugin tests (0), probe 143 PASS (+1), 0 FAIL, 23
+  MEASURED, about 122 s with 0 documents open. 19 tools, 19 schema files, 30 error codes, 31 ops,
+  instructions 3,970 characters.
+
 ---
 
 ## D1: Discovery

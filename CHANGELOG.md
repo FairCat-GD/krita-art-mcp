@@ -6,6 +6,29 @@ All notable changes to krita-art-mcp are documented here. The format follows
 
 ## [Unreleased]
 
+## [0.18.0] — 2026-11-03
+
+Five tools that only add no longer say they are destructive, the journal records the server's own
+time on each call, and captures and previews take the Hamming filter. This release needs
+`install-plugin`, a Krita restart and a restart of the MCP client.
+
+### Added
+
+- **The `hamming` filter** for `krita_capture` and `krita_preview_render`.
+- **`elapsed_ms` on each finished journal line:** the server's time on the call, from its arrival
+  to its record, so a client's wall clock can be told from the tool's own time. It is null on a
+  line written by a later `krita_operation_get` for a call that came back running.
+- **The user guide explains Codex's approval setting for this server,** what it removes, and each
+  tool's hints.
+
+### Changed
+
+- **`krita_layer_create`, `krita_protection_set`, `krita_document_open`, `krita_document_create` and
+  `krita_document_save` set `destructiveHint: false`.** Each only adds: a layer, tighter protection,
+  a working copy, a document or a new file. A client that asks before every destructive call stops
+  asking for these. Strokes, selections and the other changes stay destructive, so most of a
+  session's approvals remain.
+
 ## [0.17.0] — 2026-11-02
 
 A stroke that applied can no longer come back as a failure with no ids, and every failed change now

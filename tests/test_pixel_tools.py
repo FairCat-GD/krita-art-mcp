@@ -144,6 +144,22 @@ def test_a_resampled_capture_lands_on_a_checker_by_default(world: World) -> None
         assert image.size == (32, 16) and image.mode == "RGB"
 
 
+def test_a_hamming_capture_resamples_the_native_crop_with_hamming(world: World) -> None:
+    document_id, _ = _created(world)
+    rect = {"x": 0, "y": 0, "width": 64, "height": 32}
+    arguments = _capture(
+        document_id, rect=rect, scale=0.25, filter="hamming", background="transparent"
+    )
+    data = world.server().content("krita_capture", arguments)["data"]
+    assert data["filter"] == "hamming"
+    native = Image.fromarray(_expected(64, 32, rect))
+    hamming = np.asarray(native.resize((16, 8), Image.Resampling.HAMMING))
+    with Image.open(data["image"]["path"]) as image:
+        assert (np.asarray(image) == hamming).all()
+    # The fixture tells the filters apart, so one that fell back would show.
+    assert (hamming != np.asarray(native.resize((16, 8), Image.Resampling.BICUBIC))).any()
+
+
 @pytest.mark.parametrize(
     "changes",
     [

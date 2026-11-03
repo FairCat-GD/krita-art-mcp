@@ -1,4 +1,6 @@
 import json
+import threading
+import time
 from collections.abc import Iterator
 from pathlib import Path
 from types import SimpleNamespace
@@ -20,6 +22,7 @@ from krita_art_mcp import (
     errors,
     journal,
     schemas,
+    tools,
     verification,
 )
 from krita_art_mcp.bridge_client import BridgeClient, Done, Failed
@@ -340,6 +343,65 @@ def test_a_contract_problem_names_the_rule_and_never_the_instance() -> None:
     problem = dispatch.contract_problem(validator, {"found": TELLTALE})
     assert problem is not None and "$.found" in problem and TELLTALE not in problem
     assert dispatch.contract_problem(validator, {"found": 1}) is None
+
+
+# The server's own time on each call, so a client's wall clock can be told from it.
+
+
+def test_a_finished_line_carries_the_server_s_time_and_the_index_reads_it_back(
+    world: World,
+) -> None:
+    world.port.on_create.append(lambda: time.sleep(0.05))
+    created = world.server().content("krita_document_create", {**CREATE, "request_id": "req-c"})
+    [line] = [line for line in _lines(world) if line["phase"] == "finished"]
+    assert isinstance(line["elapsed_ms"], int) and line["elapsed_ms"] >= 50
+    found = world.journal().finished_line(created["operation_id"])
+    assert found is not None and found.elapsed_ms == line["elapsed_ms"]
+
+
+def test_a_call_s_time_counts_its_wait_for_the_lock(
+    world: World, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    arrived = threading.Event()
+    name_of = tools._client_name
+
+    def arriving(ctx: Any) -> str | None:
+        # Read on arrival, before the lock.
+        arrived.set()
+        return name_of(ctx)
+
+    monkeypatch.setattr(tools, "_client_name", arriving)
+    server = world.server()
+    caller = threading.Thread(
+        target=server.content, args=("krita_document_create", {**CREATE, "request_id": "req-c"})
+    )
+    with tools.CALLS:
+        caller.start()
+        assert arrived.wait(10)
+        time.sleep(0.1)
+    caller.join(10)
+    [line] = [line for line in _lines(world) if line["phase"] == "finished"]
+    assert line["elapsed_ms"] >= 100
+
+
+def test_a_line_written_without_the_time_reads_as_none(world: World) -> None:
+    folder = world.tmp_path / "a" / "journal"
+    folder.mkdir(parents=True)
+    line = {
+        "v": journal.VERSION,
+        "ts": NOW.isoformat(timespec="milliseconds"),
+        "request_id": "req-old",
+        "operation_id": "op-old",
+        "tool": "krita_paint_stroke",
+        "args_sha256": "0" * 64,
+        "session_id": "an-earlier-krita",
+        "phase": "finished",
+        "outcome": journal.RECEIPT,
+        "result": None,
+    }
+    (folder / f"{NOW.date().isoformat()}.jsonl").write_text(json.dumps(line) + "\n")
+    found = world.journal().finished_line("op-old")
+    assert found is not None and found.elapsed_ms is None
 
 
 # A resend needs proof.

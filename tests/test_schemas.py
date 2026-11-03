@@ -9,7 +9,7 @@ import pytest
 from amend_schemas import GUARD, SOURCE
 from jsonschema import Draft202012Validator
 
-from krita_art_mcp import schemas
+from krita_art_mcp import imaging, schemas
 
 PHASE_1_TOOLS = sorted(
     f"krita_{name}"
@@ -177,6 +177,17 @@ def test_every_copy_of_source_is_the_phase_1_source() -> None:
     }
     assert len(found["krita_capture"]) == len(found["krita_sample"]) == 1
     assert all(source == SOURCE for copies in found.values() for source in copies)
+
+
+def test_every_filter_enum_is_the_filters_imaging_applies() -> None:
+    enums = [
+        shape["enum"] if "enum" in shape else shape["anyOf"][0]["enum"]
+        for name in ("krita_capture", "krita_preview_render")
+        for key in ("inputSchema", "outputSchema")
+        for shape in _shapes(schemas.load(name)[key], "filter")
+    ]
+    assert len(enums) == 10
+    assert all(enum == list(imaging.FILTERS) for enum in enums)
 
 
 def test_no_example_source_carries_revision() -> None:
