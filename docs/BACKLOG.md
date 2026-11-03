@@ -35,6 +35,14 @@ contract", "Phase N" and "review N" mean.
   `wrap_around_hv_axis`, `wrap_around_h_axis` and `wrap_around_v_axis` set the axis. Enabling wrap
   can push a "Crop Selections" undo step (`libs/image/kis_image.cc:2567-2580`). No textured
   continuity is claimed without an edge and corner probe.
+  - **Proposed again after 0.18.0 by the Codex agent,** not yet decided: a protected, verified
+    integer wrap translation (a half-roll) and a tiled preview. In one session, every wrapped asset
+    needed a lossless half-roll made outside the tools, and a reopen. A wrap translation shares T1's
+    question of a native route.
+- **Target identity in receipts and guidance** (0.18.0). The Codex agent sent three strokes to the
+  wrong document through its own helper's default target; the server did what it was asked. Making
+  the document, layer and selection a mutation acted on prominent in each receipt, and in the
+  instructions, would make such a slip visible at once. Measure before proposing a batch.
 - **Flood fill from a seed.** Left out at the round 2 intake: flat fills of a shape or a selection
   replace the workaround real use needed.
 - **A closed-curve selection shape.** Left out at the round 2 intake. Raw polygons work;

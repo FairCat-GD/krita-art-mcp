@@ -2,14 +2,20 @@ Read `docs/ARCHITECTURE.md` *Registry, lease and document state* (Dirty), *Docum
 and K39 and K45 in *Reference*; `docs/USER-GUIDE.md` *The core loop* (save and close); then
 CLAUDE.md, docs/ARCHITECTURE.md's overview, invariants and baseline, your block in
 docs/spec/SESSIONS.md and R2's done-note with its Review section, then this file, and do Session R3:
-Krita's own modified state. R3 has three parts:
-- measure, live on harness documents, what Krita's own modified flag does around a verified save;
-- report that flag beside the bridge's `dirty` in inspect, list and the save's receipt, and say
-  which flag close reads;
-- after a verified save, clear Krita's flag or only report it, as the owner chooses.
+Krita's own modified state. R3 has four parts:
+- measure, live on harness documents, what Krita's own modified flag does around a verified save,
+  for PNG, KRA and ORA working copies;
+- report that flag beside the bridge's `dirty` in list, inspect and the save's receipt, with where
+  the save wrote and where the live document still points;
+- make `dirty_policy: "refuse"` refuse any unsaved change Krita holds, not only the bridge's;
+- check by hand, with the owner, that Krita's own prompts agree with what the tools report.
 
-Release 0.19.0. **Ask at the start of R3:** after a verified save, should the bridge clear Krita's
-flag (if the probe shows that is honest), or only report it?
+Release 0.19.0. **Ask at the start of R3:**
+- after a verified save, clear Krita's flag, or only report it?
+- does `refuse` change meaning, so `api_version` moves to 0.3.0 here, or does a new value carry the
+  native check?
+- may a separately named policy close after a verified save while Krita still holds the document
+  modified?
 
 ## State you need that is not in the specs
 
@@ -18,9 +24,13 @@ flag (if the probe shows that is honest), or only report it?
 - **R3 has no intake decision of its own.** It came from the Codex agent's report on 0.18.0. After
   a verified save the bridge said `dirty: false`, and Krita then asked to save the tab. The live
   pixels matched the saved KRA. The block holds the cause as the review read it: `dirty` is the
-  bridge's flag, and `exportImage` never clears Krita's (K45).
-- **Nothing from R1 or R2 is pushed.** `origin/main` stops at "review: a branch could not read its
-  own baseline, and 9 smaller". List `origin/main..HEAD` before any push.
+  bridge's flag, and `exportImage` never clears Krita's (K45). The agent's second report showed
+  the worse half: `refuse` reads only the bridge's flag, and `port.close` clears Krita's before
+  closing, so a close can drop changes only Krita holds. Its evidence bundle stays outside the
+  repository, with its file names; it advises against forcing a clean flag.
+- **R1, R2 and the R3 amendment are pushed,** with the owner's approval on 2026-11-03. `origin/main`
+  stops at "docs: R3 takes the Codex agent's save-state report". List `origin/main..HEAD` before
+  any push.
 - **What R2 measured, from the owner's Codex session on 0.18.0:**
   - The five additive tools now cost their tool time and no more.
   - Every destructive call still spends about 2.8–3.0 s outside the server.

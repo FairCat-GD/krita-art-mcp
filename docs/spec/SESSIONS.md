@@ -34,7 +34,7 @@ Never push without being asked.
 |---|---|---|---|
 | R1 | Mutation recovery | 4–9 | **0.17.0** |
 | R2 | Truthful hints, timing, Hamming | 1, 2 | **0.18.0** |
-| R3 | Krita's own modified state beside `dirty` | — (R2's review) | **0.19.0** |
+| R3 | Krita's own modified state, and the close guard | — (R2's review) | **0.19.0** |
 | D1 | Discovery: colours, limits, ranges, finite numbers | 9, 11 | **0.20.0** |
 | F1 | One verified-mutation frame, parity tests | 5, 10 | — |
 | C1 | `krita_paint_fill` | 1, 3 | **0.21.0** |
@@ -353,6 +353,11 @@ K46* (Capture), *Previews and the lazy baseline*.
   - **The owner inserted R3,** from the Codex agent's report on 0.18.0: after a verified save the
     bridge says `dirty: false` while Krita's own modified flag stays set. D1 and every later
     version shift by one.
+  - **The Codex agent's second report amended R3's block:** `refuse` closes over changes only
+    Krita holds, because close reads the bridge's flag and then clears Krita's. The block now
+    guards the close, measures PNG, KRA and ORA working copies, and asks how `refuse` changes. Two
+    backlog items take the rest: wrap translation, proposed again, and target identity in
+    receipts.
   - **The Codex agent's four refusals in R2's session** were all D1's ground: a sampled 0–255
     colour sent as a stroke's 0–1, a native capture given a `background` twice, and a brush size
     over 1000.
@@ -371,7 +376,8 @@ and K39 and K45 in *Reference*; `docs/USER-GUIDE.md` *The core loop* (save and c
 The owner inserted this session at R2's review, from the Codex agent's report on 0.18.0. After a
 verified save the bridge said `dirty: false`, and Krita then asked to save the tab. The live pixels
 matched the saved KRA, so nothing was lost, but the state the agent read did not guarantee a clean
-handoff.
+handoff. Its second report, read at the same review, added the close below and a regression matrix;
+**amended at R2's review, with the owner.**
 
 - **The cause, as R2's review read it.**
   - `dirty` is the bridge's own flag: a bridge change since the last verified save
@@ -380,20 +386,33 @@ handoff.
     save the two disagree, and no tool reports Krita's.
   - A change made by hand sets Krita's flag alone.
   - The document keeps pointing at its working copy (K39), so a Krita save from that prompt writes
-    the working copy, not the saved file.
-- **Measure first, live, on a harness document:**
-  - Krita's `modified()` after a verified save;
+    the working copy, not the saved file. For a PNG working copy that would flatten the layers into
+    it.
+  - **The close guard reads the bridge's flag alone, then clears Krita's.** `dirty_policy:
+    "refuse"` checks `handle.dirty` (`bridge_core/documents.py:67`), and `port.close` calls
+    `setModified(False)` before closing (`krita_adapter/documents.py:384`). So `refuse` closes,
+    silently, over any change only Krita holds. The agent saw it close a document Krita had just
+    asked to save. This is the part that can lose work.
+- **Measure first, live, on harness documents,** for PNG, KRA and ORA working copies:
+  - Krita's `modified()` after a verified save, after new paint following it, and after a refused
+    or failed save;
+  - what a selection-only or view-only change does to each flag;
   - what a Krita save over the working copy does to the lazy baseline's hash check and to the
     handle;
-  - whether `Document.setModified(False)` after a verified save is honest. The adapter already
-    calls it before a close (`krita_adapter/documents.py:384`).
+  - whether any harness op can make a change only Krita sees, so the probe can test the guard.
 - **Report it.**
   - Inspect and list gain Krita's own flag beside `dirty`, named so the two cannot be confused.
-  - The save's receipt says whether Krita still holds the document modified.
-  - Close's `dirty_policy` says which flag it reads.
-- **Ask at the start:** after a verified save, clear Krita's flag (if the probe shows that is
-  honest), or only report it? Clearing changes what Krita's own window shows, so it is the owner's
-  call.
+  - The save's receipt says where it wrote and that the live document still points at its working
+    copy, and whether Krita still holds it modified. The save stays a copy (K39) unless the owner
+    chooses otherwise.
+- **Guard the close.** `refuse` refuses any unsaved change Krita holds, not only the bridge's.
+- **Ask at the start:**
+  - **After a verified save, clear Krita's flag, or only report it?** The Codex agent advises
+    against forcing a clean flag: a verified copy and a clean live document are different facts.
+  - **Does `refuse` change meaning, or does a new value carry the native check?** A change of
+    meaning moves `api_version` to 0.3.0 here, and D1's move becomes 0.4.0 (decision 9).
+  - **May a separately named policy close after a verified save** while Krita still holds the
+    document modified?
 - **Docs.**
   - `USER-GUIDE.md`: *The core loop* (save and close), *Every error code* if close changes.
   - `ARCHITECTURE.md`: *Registry, lease and document state* (Dirty), *The save*.
@@ -402,12 +421,17 @@ handoff.
 **Gates:**
 - `uv run scripts/verify.py`, with these tests:
   - the fake models Krita's flag apart from `dirty`;
-  - a verified save reports both flags as they are;
-  - a change made by hand shows in Krita's flag only;
-  - close follows its documented flag.
+  - a verified save reports both flags as they are, and a refused or failed one clears neither;
+  - a change only Krita holds shows in its flag alone, and `refuse` refuses it;
+  - new paint after a save shows in both, and `refuse` refuses it.
 - `probe`, with these checks:
-  - a verified save, then inspect, reports both flags as Krita holds them;
-  - a close after a save behaves as documented.
+  - a verified save, then list and inspect, report both flags as Krita holds them, for a PNG, a KRA
+    and an ORA working copy;
+  - `refuse` refuses a change only Krita holds, if a harness op can make one; otherwise this moves
+    to *Checked by hand*.
+- **By hand, with the owner, on a harness document:** after a verified save, whether a tab close,
+  Close All and quit each prompt, and whether that agrees with what the tools report. Cancel every
+  prompt.
 - Each new check falsified once.
 
 **Watch for:**
@@ -417,6 +441,8 @@ handoff.
   What a hand save breaks is the baseline's hash check: measure it, do not assume it.
 - **Every live run is on harness documents.** The owner's documents are never saved, cleared or
   closed.
+- **The source's hash stays exact.** No path fix may redirect a write to an accepted source.
+- **The agent's evidence stays outside the repository,** and so do its file and folder names.
 
 ---
 
