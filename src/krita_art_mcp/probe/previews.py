@@ -30,6 +30,7 @@ ICONS = (
     {"id": "icon-256", "target_size_px": [256, 256]},
     {"id": "icon-256-x2", "target_size_px": [256, 256], "integer_zoom": 2},
 )
+HAMMING = "a Hamming preview is its own filter's, not bicubic's, at the disc's edge"
 # N-02's budget, gated on the first render and on the p95 of the renders after it.
 N02_SIZE = 2000
 N02_RENDERS = 20
@@ -72,7 +73,6 @@ async def run(report: Report, a: Client, harness: Path) -> None:
     fixtures.write_ora(icon, (fixtures.Layer("probe icon", disc),), ICON_PX, ICON_PX)
     await _game(report, a, master, harness)
     await _icons(report, a, icon, harness)
-    await _hamming(report, a, icon, harness)
     await _overlays(report, a, master, harness)
     await _n02(report, a, folder, harness)
 
@@ -125,57 +125,52 @@ async def _icons(report: Report, a: Client, icon: Path, harness: Path) -> None:
     name = "128 / 256 px icons fit their boxes, and integer_zoom 2 replicates the 256 px one"
     if opened.get("status") != "completed" or not document_id:
         report.check(name, False, str(opened.get("error")))
+        report.check(HAMMING, False, str(opened.get("error")))
         return
     try:
+        await _boxes(report, a, document_id, name)
+        await _hamming(report, a, document_id)
+    finally:
+        await close(a, document_id)
+
+
+async def _boxes(report: Report, a: Client, document_id: str, name: str) -> None:
+    rendered = await tool(
+        a, TOOL, arguments([source(document_id)], ICONS, backgrounds=["transparent"])
+    )
+    found = (rendered.get("data") or {}).get("sheets") or []
+    if len(found) != 3:
+        report.check(name, False, f"{code(rendered) or len(found)} sheets")
+        return
+    sizes = [sheet["cell_px"] for sheet in found]
+    replicated = np.repeat(np.repeat(sheet_cell(found[1], 0), 2, axis=0), 2, axis=1)
+    problem = differs(sheet_cell(found[2], 0), replicated)
+    transforms = [sheet["columns"][0]["document_to_cell"][0] for sheet in found]
+    report.check(
+        name,
+        sizes == [[128, 128], [256, 256], [512, 512]]
+        and transforms == [0.25, 0.5, 1]
+        and not problem,
+        f"cells {sizes}, scales {transforms}" + (f"; {problem}" if problem else ""),
+    )
+
+
+async def _hamming(report: Report, a: Client, document_id: str) -> None:
+    cells = {}
+    for chosen in ("hamming", "bicubic"):
         rendered = await tool(
-            a, TOOL, arguments([source(document_id)], ICONS, backgrounds=["transparent"])
+            a,
+            TOOL,
+            arguments([source(document_id)], ICONS[:1], filter=chosen, backgrounds=["transparent"]),
         )
-        found = (rendered.get("data") or {}).get("sheets") or []
-        if len(found) != 3:
-            report.check(name, False, f"{code(rendered) or len(found)} sheets")
+        [sheet] = (rendered.get("data") or {}).get("sheets") or [None]
+        if sheet is None or sheet["columns"][0]["filter"] != chosen:
+            report.check(HAMMING, False, f"{chosen}: {code(rendered) or 'another filter'}")
             return
-        sizes = [sheet["cell_px"] for sheet in found]
-        replicated = np.repeat(np.repeat(sheet_cell(found[1], 0), 2, axis=0), 2, axis=1)
-        problem = differs(sheet_cell(found[2], 0), replicated)
-        transforms = [sheet["columns"][0]["document_to_cell"][0] for sheet in found]
-        report.check(
-            name,
-            sizes == [[128, 128], [256, 256], [512, 512]]
-            and transforms == [0.25, 0.5, 1]
-            and not problem,
-            f"cells {sizes}, scales {transforms}" + (f"; {problem}" if problem else ""),
-        )
-    finally:
-        await close(a, document_id)
-
-
-async def _hamming(report: Report, a: Client, icon: Path, harness: Path) -> None:
-    opened = await open_working(a, icon, harness, "previews")
-    document_id = opened.get("document_id")
-    name = "a Hamming preview is its own filter's, not bicubic's, at the disc's edge"
-    if opened.get("status") != "completed" or not document_id:
-        report.check(name, False, str(opened.get("error")))
-        return
-    try:
-        cells = {}
-        for chosen in ("hamming", "bicubic"):
-            rendered = await tool(
-                a,
-                TOOL,
-                arguments(
-                    [source(document_id)], ICONS[:1], filter=chosen, backgrounds=["transparent"]
-                ),
-            )
-            [sheet] = (rendered.get("data") or {}).get("sheets") or [None]
-            if sheet is None or sheet["columns"][0]["filter"] != chosen:
-                report.check(name, False, f"{chosen}: {code(rendered) or 'another filter'}")
-                return
-            cells[chosen] = sheet_cell(sheet, 0)
-        problem = differs(cells["hamming"], cells["bicubic"])
-        same_shape = cells["hamming"].shape == cells["bicubic"].shape
-        report.check(name, same_shape and bool(problem), problem or "the two cells are equal")
-    finally:
-        await close(a, document_id)
+        cells[chosen] = sheet_cell(sheet, 0)
+    problem = differs(cells["hamming"], cells["bicubic"])
+    same_shape = cells["hamming"].shape == cells["bicubic"].shape
+    report.check(HAMMING, same_shape and bool(problem), problem or "the two cells are equal")
 
 
 async def _overlays(report: Report, a: Client, master: Path, harness: Path) -> None:

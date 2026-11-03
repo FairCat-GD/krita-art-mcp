@@ -79,18 +79,18 @@ do. Undoable is not the same as additive, so a stroke stays destructive.
 
 | Hints | Tools | Worst it can do |
 |---|---|---|
-| Read-only | `krita_server_info`, `krita_document_list`, `krita_document_inspect`, `krita_resource_list`, `krita_capture`, `krita_sample`, `krita_preview_render`, `krita_operation_get` | Nothing: they change nothing |
+| Read-only | `krita_server_info`, `krita_document_list`, `krita_document_inspect`, `krita_resource_list`, `krita_capture`, `krita_sample`, `krita_preview_render`, `krita_operation_get` | Change no document. Captures and previews write their PNGs to the data folder |
 | Not destructive | `krita_layer_create`, `krita_protection_set`, `krita_document_open`, `krita_document_create`, `krita_document_save` | Add: a layer, tighter protection, a working copy, a document, a new file |
 | Destructive | `krita_paint_stroke`, `krita_selection_set`, `krita_layer_update`, `krita_history_step`, `krita_operation_cancel`, `krita_document_close` | Change what is there: pixels, the selection, a layer, history, a queued call, or unsaved changes a close discards |
 
 **Codex's approval setting.** By default Codex reviews every call a tool's hints call destructive.
-In two long sessions, each such call carried 2 to 3 s beyond the tool's own time, and each
-read-only or additive call none. Strokes and selections make most of those calls and stay
-destructive, so the five additive tools save only a few minutes in a long session. Trusting this
-server outright is your choice, set per server in `~/.codex/config.toml`:
+Measured in two long sessions, each such call carried 2 to 3 s beyond the tool's own time, and each
+read-only call none. Since 0.18.0 the five additive tools carry none either. Strokes and selections
+make most of those calls and stay destructive, so that saves only a few minutes in a long session.
+Trusting this server outright is your choice: add one line to the `[mcp_servers.krita-art]` block
+above, not a second block, since TOML refuses a table defined twice.
 
 ```toml
-[mcp_servers.krita-art]
 default_tools_approval_mode = "approve"
 ```
 

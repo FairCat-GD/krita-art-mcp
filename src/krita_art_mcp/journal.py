@@ -270,6 +270,9 @@ class Journal:
         outcome, result, elapsed_ms = line["outcome"], line.get("result"), line.get("elapsed_ms")
         if phase != "finished" or outcome not in OUTCOMES:
             raise KeyError(phase)
+        # Timing alone: a bad value is dropped, never the outcome a retry depends on.
+        if not isinstance(elapsed_ms, int) or isinstance(elapsed_ms, bool):
+            elapsed_ms = None
         named = {operation_id, line.get("bridge_operation_id")} if outcome == NO_EFFECT else set()
         prior = self._requests.setdefault(request_id, Prior())
         for attempt in prior.attempts:

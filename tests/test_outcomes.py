@@ -359,32 +359,43 @@ def test_a_finished_line_carries_the_server_s_time_and_the_index_reads_it_back(
     assert found is not None and found.elapsed_ms == line["elapsed_ms"]
 
 
+class _Held:
+    # The calls' lock, held by the test, saying when a call starts to wait for it.
+    def __init__(self) -> None:
+        self.lock = threading.Lock()
+        self.waiting = threading.Event()
+
+    def __enter__(self) -> None:
+        self.waiting.set()
+        self.lock.acquire()
+
+    def __exit__(self, *raised: object) -> None:
+        self.lock.release()
+
+
 def test_a_call_s_time_counts_its_wait_for_the_lock(
     world: World, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    arrived = threading.Event()
-    name_of = tools._client_name
-
-    def arriving(ctx: Any) -> str | None:
-        # Read on arrival, before the lock.
-        arrived.set()
-        return name_of(ctx)
-
-    monkeypatch.setattr(tools, "_client_name", arriving)
+    held = _Held()
+    monkeypatch.setattr(tools, "CALLS", held)
     server = world.server()
     caller = threading.Thread(
         target=server.content, args=("krita_document_create", {**CREATE, "request_id": "req-c"})
     )
-    with tools.CALLS:
-        caller.start()
-        assert arrived.wait(10)
-        time.sleep(0.1)
+    held.lock.acquire()
+    caller.start()
+    assert held.waiting.wait(10)
+    time.sleep(0.1)
+    held.lock.release()
     caller.join(10)
     [line] = [line for line in _lines(world) if line["phase"] == "finished"]
     assert line["elapsed_ms"] >= 100
 
 
-def test_a_line_written_without_the_time_reads_as_none(world: World) -> None:
+@pytest.mark.parametrize("timing", [{}, {"elapsed_ms": "12"}, {"elapsed_ms": True}])
+def test_a_line_without_a_whole_number_of_ms_reads_as_none_and_still_settles(
+    world: World, timing: dict[str, Any]
+) -> None:
     folder = world.tmp_path / "a" / "journal"
     folder.mkdir(parents=True)
     line = {
@@ -398,10 +409,11 @@ def test_a_line_written_without_the_time_reads_as_none(world: World) -> None:
         "phase": "finished",
         "outcome": journal.RECEIPT,
         "result": None,
+        **timing,
     }
     (folder / f"{NOW.date().isoformat()}.jsonl").write_text(json.dumps(line) + "\n")
     found = world.journal().finished_line("op-old")
-    assert found is not None and found.elapsed_ms is None
+    assert found is not None and found.elapsed_ms is None and found.outcome == journal.RECEIPT
 
 
 # A resend needs proof.

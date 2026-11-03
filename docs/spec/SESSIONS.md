@@ -34,18 +34,19 @@ Never push without being asked.
 |---|---|---|---|
 | R1 | Mutation recovery | 4–9 | **0.17.0** |
 | R2 | Truthful hints, timing, Hamming | 1, 2 | **0.18.0** |
-| D1 | Discovery: colours, limits, ranges, finite numbers | 9, 11 | **0.19.0** |
+| R3 | Krita's own modified state beside `dirty` | — (R2's review) | **0.19.0** |
+| D1 | Discovery: colours, limits, ranges, finite numbers | 9, 11 | **0.20.0** |
 | F1 | One verified-mutation frame, parity tests | 5, 10 | — |
-| C1 | `krita_paint_fill` | 1, 3 | **0.20.0** |
-| M1 | Transparency masks | 1, 3, 14 | **0.21.0** |
+| C1 | `krita_paint_fill` | 1, 3 | **0.21.0** |
+| M1 | Transparency masks | 1, 3, 14 | **0.22.0** |
 | X1 | Architecture review: the frame and its first two tools | all | — |
-| E1 | Taper probe, then the proven subset | 16 | **0.22.0** |
-| L1 | Layers: duplicate, reorder, remove, group | 1, 3, 13 | **0.23.0** |
-| B1 | Document duplicate | 1, 3, 12 | **0.24.0** |
-| T1 | Translate, on a native route or not at all | 1, 15 | **0.25.0** |
-| S1 | Scale, rotate, shear; cut first if the round runs long | 1, 3 | **0.26.0** |
+| E1 | Taper probe, then the proven subset | 16 | **0.23.0** |
+| L1 | Layers: duplicate, reorder, remove, group | 1, 3, 13 | **0.24.0** |
+| B1 | Document duplicate | 1, 3, 12 | **0.25.0** |
+| T1 | Translate, on a native route or not at all | 1, 15 | **0.26.0** |
+| S1 | Scale, rotate, shear; cut first if the round runs long | 1, 3 | **0.27.0** |
 | X2 | Architecture review: construction | all | — |
-| V1 | Re-measure, docs, full run, close the round | 18 | **0.27.0** |
+| V1 | Re-measure, docs, full run, close the round | 18 | **0.28.0** |
 
 A review session changes no product code and cuts no version; a session it inserts takes the next
 version, and every later version shifts by one. E1 on a no-go and T1 without a native route ship no
@@ -334,6 +335,88 @@ K46* (Capture), *Previews and the lazy baseline*.
 - **Numbers:** 739 server tests (+7), 781 plugin tests (0), probe 143 PASS (+1), 0 FAIL, 23
   MEASURED, about 122 s with 0 documents open. 19 tools, 19 schema files, 30 error codes, 31 ops,
   instructions 3,970 characters.
+- **Review (`/code-review high`), 7 findings: 7 fixed and 0 skipped.**
+  - **The guide's Codex snippet repeated the server's TOML table.** Pasted as shown, it would
+    define `[mcp_servers.krita-art]` twice, which TOML refuses. It is now one line for the existing
+    block.
+  - **The guide said additive calls carried no delay in both sessions.** On 0.16.0 they were still
+    destructive and carried about 2 s; it now says so.
+  - **The hints table said reads change nothing.** It now says they change no document, and that
+    captures and previews write PNGs.
+  - **ARCHITECTURE named `_checked` as what reads `readOnlyHint`.** It is `tools.build`.
+  - **A finished line's `elapsed_ms` was taken unchecked.** A value that is not a whole number now
+    reads as `None`, and the line still settles.
+  - **The probe opened the icon fixture twice.** The Hamming check now runs in `_icons`'s document,
+    and a failed open fails both checks.
+  - **The lock-wait test depended on `_client_name`'s place.** It now holds a stand-in for `CALLS`
+    that says when a call starts to wait.
+  - **The owner inserted R3,** from the Codex agent's report on 0.18.0: after a verified save the
+    bridge says `dirty: false` while Krita's own modified flag stays set. D1 and every later
+    version shift by one.
+  - **The Codex agent's four refusals in R2's session** were all D1's ground: a sampled 0–255
+    colour sent as a stroke's 0–1, a native capture given a `background` twice, and a brush size
+    over 1000.
+  - **Falsified:** the lock-wait test, with the clock stamped inside the lock; the bad-value read,
+    with its guard removed. Each failed at its own step.
+  - **Numbers after the review:** 741 server tests, 781 plugin tests, probe 143 PASS, 0 FAIL, 23
+    MEASURED, about 122 s with 0 documents open.
+
+---
+
+## R3: Krita's own modified state
+
+**Read:** `ARCHITECTURE.md` *Registry, lease and document state* (Dirty), *Documents*, *The save*,
+and K39 and K45 in *Reference*; `docs/USER-GUIDE.md` *The core loop* (save and close).
+
+The owner inserted this session at R2's review, from the Codex agent's report on 0.18.0. After a
+verified save the bridge said `dirty: false`, and Krita then asked to save the tab. The live pixels
+matched the saved KRA, so nothing was lost, but the state the agent read did not guarantee a clean
+handoff.
+
+- **The cause, as R2's review read it.**
+  - `dirty` is the bridge's own flag: a bridge change since the last verified save
+    (`registry.py:66-68`, cleared at `saving.py:209`).
+  - Krita's modified flag is another, and `exportImage` never clears it (K45). After every verified
+    save the two disagree, and no tool reports Krita's.
+  - A change made by hand sets Krita's flag alone.
+  - The document keeps pointing at its working copy (K39), so a Krita save from that prompt writes
+    the working copy, not the saved file.
+- **Measure first, live, on a harness document:**
+  - Krita's `modified()` after a verified save;
+  - what a Krita save over the working copy does to the lazy baseline's hash check and to the
+    handle;
+  - whether `Document.setModified(False)` after a verified save is honest. The adapter already
+    calls it before a close (`krita_adapter/documents.py:384`).
+- **Report it.**
+  - Inspect and list gain Krita's own flag beside `dirty`, named so the two cannot be confused.
+  - The save's receipt says whether Krita still holds the document modified.
+  - Close's `dirty_policy` says which flag it reads.
+- **Ask at the start:** after a verified save, clear Krita's flag (if the probe shows that is
+  honest), or only report it? Clearing changes what Krita's own window shows, so it is the owner's
+  call.
+- **Docs.**
+  - `USER-GUIDE.md`: *The core loop* (save and close), *Every error code* if close changes.
+  - `ARCHITECTURE.md`: *Registry, lease and document state* (Dirty), *The save*.
+  - `CHANGELOG.md`: 0.19.0.
+
+**Gates:**
+- `uv run scripts/verify.py`, with these tests:
+  - the fake models Krita's flag apart from `dirty`;
+  - a verified save reports both flags as they are;
+  - a change made by hand shows in Krita's flag only;
+  - close follows its documented flag.
+- `probe`, with these checks:
+  - a verified save, then inspect, reports both flags as Krita holds them;
+  - a close after a save behaves as documented.
+- Each new check falsified once.
+
+**Watch for:**
+- **`dirty` keeps its name and meaning.** An added field moves no `api_version` (decision 9);
+  changing what `dirty` means would.
+- **The working copy is the agent's, never an accepted source,** so invariant 2 holds either way.
+  What a hand save breaks is the baseline's hash check: measure it, do not assume it.
+- **Every live run is on harness documents.** The owner's documents are never saved, cleared or
+  closed.
 
 ---
 
@@ -367,7 +450,7 @@ forms reach Codex, The instructions), *Reads, and K46* (Capture, Sample); `docs/
   - `USER-GUIDE.md`: *The core loop*, *Phase 1's limits*.
   - `ARCHITECTURE.md`: *The tool contract* with its placeholder tables, the baseline's instructions
     count.
-  - `CHANGELOG.md`: 0.19.0.
+  - `CHANGELOG.md`: 0.20.0.
 
 **Gates:**
 - `uv run scripts/verify.py`, with these tests: `color` round-trips into a stroke; each limit equals
@@ -446,7 +529,7 @@ and §8.8 items 6, 8.
 - **Docs.**
   - `USER-GUIDE.md`: *The core loop*; a line on when a fill beats a stroke.
   - `ARCHITECTURE.md`: *Painting*, the matrix, the baseline.
-  - Server instructions, the README's tool list, `CHANGELOG.md`: 0.20.0.
+  - Server instructions, the README's tool list, `CHANGELOG.md`: 0.21.0.
 
 **Gates:**
 - `uv run scripts/verify.py`, with these tests: every shape, the refusals, the reach, both scopes,
@@ -497,7 +580,7 @@ save*.
   - `USER-GUIDE.md`: *The core loop*, the limits.
   - `ARCHITECTURE.md`: the invariants, *Protection, selections and masks*, the placeholder tables,
     the baseline.
-  - Server instructions, `CHANGELOG.md`: 0.21.0.
+  - Server instructions, `CHANGELOG.md`: 0.22.0.
 
 **Gates:**
 - `uv run scripts/verify.py`, with these tests: coverage, the protected-ancestor refusals, the
@@ -571,7 +654,7 @@ strategy* (Hypotheses), *Reference* (K3, K4, K30, K36).
 - **Docs.**
   - `USER-GUIDE.md`: what `dynamics` is and is not.
   - `ARCHITECTURE.md`: *Painting*, the matrix, H2's row, *Reference*.
-  - Server instructions, `CHANGELOG.md`: 0.22.0 on go.
+  - Server instructions, `CHANGELOG.md`: 0.23.0 on go.
 
 **Gates:**
 - `uv run scripts/verify.py`, with these tests: curve shapes, the XML edit and its restore, the
@@ -617,7 +700,7 @@ strategy* (Hypotheses), *Reference* (K3, K4, K30, K36).
 - **Docs.**
   - `USER-GUIDE.md`: *The core loop*.
   - `ARCHITECTURE.md`: *The undo ledger and history*, the matrix, the baseline.
-  - Server instructions, the README's tool list, `CHANGELOG.md`: 0.23.0.
+  - Server instructions, the README's tool list, `CHANGELOG.md`: 0.24.0.
 
 **Gates:**
 - `uv run scripts/verify.py`, with these tests: each refusal, parity for each new pair, `id_map`
@@ -661,7 +744,7 @@ baseline*, *The save*, *The server*.
 - **Docs.**
   - `USER-GUIDE.md`: *The core loop*.
   - `ARCHITECTURE.md`: *Documents*, *The save*, *The server*, the matrix, the baseline.
-  - Server instructions, the README's tool list, `CHANGELOG.md`: 0.24.0.
+  - Server instructions, the README's tool list, `CHANGELOG.md`: 0.25.0.
 
 **Gates:**
 - `uv run scripts/verify.py`, with these tests: inheritance, each refusal, the `.ora` refusal, each
@@ -699,7 +782,7 @@ history, `git show 04e9f6c:docs/spec/PDD.md` Q13.
   was measured, and T1 ships no version. A non-undoable `Node.move` compensated inside one call is
   not recovery.
 - **Docs.** `USER-GUIDE.md`; `ARCHITECTURE.md`: *The verification core*, the matrix, the baseline;
-  server instructions; `CHANGELOG.md`: 0.25.0 if it ships.
+  server instructions; `CHANGELOG.md`: 0.26.0 if it ships.
 
 **Gates:**
 - `uv run scripts/verify.py`, with tests for the route chosen.
@@ -731,7 +814,7 @@ Cut first if the round runs long: useful, not yet proven by real use.
 - **The filter name is validated by the tool,** because `scaleNode` silently falls back to Bicubic.
 - **The guide names duplicating first** (L1) as the reversible route.
 - **Docs.** `USER-GUIDE.md`; `ARCHITECTURE.md`: *The undo ledger and history*, the matrix, the
-  baseline; server instructions; `CHANGELOG.md`: 0.26.0.
+  baseline; server instructions; `CHANGELOG.md`: 0.27.0.
 
 **Gates:**
 - `uv run scripts/verify.py`, with these tests: each refusal, parity, and the filter whitelist.
@@ -771,7 +854,7 @@ plan.
   client's own records, as counts and timings. That reopens or closes the batch question (decision
   18).
 - **Docs.** `ARCHITECTURE.md` and `USER-GUIDE.md` read through whole; "Phase 1" language corrected
-  where it is no longer true; the README; `CHANGELOG.md`: 0.27.0; the baseline.
+  where it is no longer true; the README; `CHANGELOG.md`: 0.28.0; the baseline.
 - **The close,** as the workflow says: the release commit with the last done-note, then
   `docs: close round 2` deleting `docs/spec/`'s files, and the handoff says no round is in progress.
 - **The backlog.** Anything left open moves there, with checks nobody did by hand.

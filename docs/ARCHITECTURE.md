@@ -246,8 +246,8 @@ holds the files to it.
   `krita_protection_set`, `krita_document_open`, `krita_document_create` and `krita_document_save`.
 - The other six are destructive, because undoable is not additive.
 - `idempotentHint` is true and `openWorldHint` false on every tool.
-- `readOnlyHint` is load-bearing. `_checked` reads it to decide what mutates, and the `BOUNDED`
-  test holds the ops to it.
+- `readOnlyHint` is load-bearing. `tools.build` reads it to decide what mutates, and the
+  `BOUNDED` test holds the ops to it.
 - A table test in `tests/test_tools.py` holds all 19, so a new tool's hints are chosen, never
   copied.
 
@@ -1068,7 +1068,7 @@ depend on it: 87 open documents cost about 50 s more.
 | Check | Expected |
 |---|---|
 | `uv run scripts/verify.py` | 6 stages, all PASS |
-| Server tests (3.12) | 739 passed, 0 skipped |
+| Server tests (3.12) | 741 passed, 0 skipped |
 | Plugin-core tests (3.10) | 781 passed, 0 skipped |
 | `uv run krita-art-mcp probe` | 143 PASS, 0 FAIL, 23 MEASURED; about 122 s |
 | `uv run krita-art-mcp doctor` | 6 steps, all PASS, with a root allowed |
