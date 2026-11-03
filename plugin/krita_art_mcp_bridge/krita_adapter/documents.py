@@ -89,6 +89,7 @@ class KritaDocuments:
             "current_time": current,
             # Only walked when it can matter: at frame 0 every document shows frame 0.
             "animated": current != 0 and _animated(document.rootNode()),
+            "modified": bool(document.modified()),
         }
 
     def layers(self, document: Any) -> tuple[str, list[dict[str, Any]]]:

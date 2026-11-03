@@ -1,6 +1,6 @@
 {
   "name": "krita_document_close",
-  "description": "Close a working document; refuse while it is dirty, or discard its changes.",
+  "description": "Close a working document; refuse while the bridge or Krita holds a change no verified save holds, or discard its changes.",
   "inputSchema": {
     "type": "object",
     "properties": {
@@ -40,7 +40,7 @@
     "type": "object",
     "properties": {
       "api_version": {
-        "const": "0.2.0"
+        "const": "0.3.0"
       },
       "status": {
         "type": "string",
@@ -297,7 +297,7 @@
       "dirty_policy": "refuse"
     },
     "structuredContent": {
-      "api_version": "0.2.0",
+      "api_version": "0.3.0",
       "status": "completed",
       "document_id": "doc-1",
       "revision": null,

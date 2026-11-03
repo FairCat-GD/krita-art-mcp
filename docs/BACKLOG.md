@@ -171,6 +171,10 @@ contract", "Phase N" and "review N" mean.
 - **Codex's renderer is not re-measured.** The schema sizes `ARCHITECTURE.md` quotes for Codex's
   limits come from a scratchpad port at 0.15.0. Every change since has been small beside the
   margins, and nothing checks them.
+- **A property write leaves Krita's flag clear.** A name, opacity, visibility or alpha-lock change
+  through libkis is no undo step (K22), so Krita does not mark the document modified, and a tab
+  close would drop it without asking; the bridge's `dirty` still holds it. Marking Krita's flag after
+  such a write is a separate choice from the one R3 made, which only reports it.
 
 ## Not yet checked by hand
 
@@ -189,6 +193,10 @@ these are the parts only a person can see.
   local mask only, and the choice of the top-most layer for the global mask is held by unit tests.
   With *Show Global Selection Mask* on in the Layers docker, select that mask by hand, then capture
   the document: the capture should match, and the top-most layer become active.
+- **A hand change only to what no save compares** (0.19.0). After a verified save, `refuse` closes
+  while the composite, the layer tree and the compared pixels match. A hand change to guides, or to
+  the global selection where no layer holds it, should still close under `refuse`; no harness op
+  makes one.
 - **A layer style spreading a change** (0.8.0). No harness op can add a layer style, so unit
   tests hold the `layer_style` reason. Add a drop shadow by hand to a layer of an agent's working
   copy, then change its opacity with `krita_layer_update`: region scope should be refused, naming

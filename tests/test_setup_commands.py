@@ -301,20 +301,28 @@ def test_the_probe_closes_its_leftovers_before_it_counts_unsaved_documents(
 
 
 @pytest.mark.parametrize(
-    ("unsaved", "dirty", "closable"),
+    ("unsaved", "flags", "closable"),
     [
-        (2, [True, True], True),
-        (0, [False], True),
-        (2, [True], False),
-        (1, [False], False),
+        (2, [(True, True), (True, True)], True),
+        (0, [(False, False)], True),
+        (1, [(False, True)], True),
+        (2, [(True, True)], False),
+        (1, [(True, False)], False),
     ],
-    ids=["only ours", "none", "one of the owner's too", "the owner's beside a clean one"],
+    ids=[
+        "only ours",
+        "none",
+        "ours after a verified save",
+        "one of the owner's too",
+        "the owner's beside a clean one",
+    ],
 )
 def test_leftovers_close_only_when_every_unsaved_document_is_the_probes(
-    unsaved: int, dirty: list[bool], closable: bool
+    unsaved: int, flags: list[tuple[bool, bool]], closable: bool
 ) -> None:
+    # Krita's unsaved count reads its own flag, which a verified save leaves set.
     client = _Client(_healthy(REPO_HASH), Done({"open": 3, "unsaved": unsaved}, "op-1"))
-    own = [{"dirty": value} for value in dirty]
+    own = [{"dirty": dirty, "krita_modified": held} for dirty, held in flags]
     assert probe._only_ours_unsaved(client, own) is closable
 
 
@@ -367,7 +375,7 @@ def test_the_probe_s_export_retries_one_busy_with_a_fresh_request_id(
                 return Done({"sha256": "0" * 64}, "op-1")
             return Failed(error_body(answer, "refused", retryable=answer == "BUSY"), "op-1", True)
 
-    outcome = opening._harness_export(Exporting(UNREACHABLE), "doc-1", tmp_path / "probe.kra")
+    outcome = opening.harness_export(Exporting(UNREACHABLE), "doc-1", tmp_path / "probe.kra")
     assert len(sent) == len(answers) and len(set(sent)) == len(sent)
     assert opening._failed_code(outcome) == found
 

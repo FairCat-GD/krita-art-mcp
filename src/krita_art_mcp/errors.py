@@ -3,7 +3,7 @@ from typing import Any
 # The bridge protocol; the plugin holds an equal copy (`bridge_core.PROTOCOL`).
 PROTOCOL = 1
 # The tool contract's version, carried by every result envelope.
-API_VERSION = "0.2.0"
+API_VERSION = "0.3.0"
 
 # Whether a failure applied, in `details.outcome`; the plugin holds an equal copy.
 APPLIED = "applied"

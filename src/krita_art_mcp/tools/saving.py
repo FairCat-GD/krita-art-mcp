@@ -24,6 +24,9 @@ SAVE_DATA = (
     "baseline_untouched",
     "composite_preserved",
     "expected_losses",
+    "dirty",
+    "krita_modified",
+    "document_path",
 )
 # What the finish may wait when the save used the whole budget; it is next in Krita's queue.
 MIN_FINISH_S = 5.0
@@ -166,9 +169,13 @@ def save_receipt(outcome: Outcome) -> CallToolResult:
         count = len(result["expected_losses"])
         losses = f"{count} expected loss{'' if count == 1 else 'es'}"
         stays = "" if result["dirty_cleared"] else "; it changed meanwhile, so it is still dirty"
+        held = ""
+        if result["krita_modified"]:
+            where = result["document_path"] or "no file of its own"
+            held = f" Krita still marks the document modified; it points at {where}."
         return (
             f"Saved {result['document_id']} to {result['path']} ({result['format'].upper()}), "
-            f"verified by reopening, {losses}{stays}."
+            f"verified by reopening, {losses}{stays}.{held}"
         )
 
     return from_outcome(outcome, data, text, lambda result: result["document_id"])

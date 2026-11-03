@@ -91,6 +91,12 @@ def test_a_save_lands_verified_and_clears_the_dirt(world: World) -> None:
     content = result.structured_content or {}
     assert content["status"] == "completed", content
     data = content["data"]
+    inspected = world.server().content(
+        "krita_document_inspect", {"document_id": document_id, "frame": 0}
+    )["data"]
+    # The export leaves Krita's own flag set, and the document on its working copy (K39, K45).
+    working_copy = inspected["path"]
+    assert working_copy.startswith(str(world.tmp_path / "art" / "work"))
     assert data == {
         "path": str(target),
         "sha256": hashlib.sha256(target.read_bytes()).hexdigest(),
@@ -99,10 +105,18 @@ def test_a_save_lands_verified_and_clears_the_dirt(world: World) -> None:
         "baseline_untouched": True,
         "composite_preserved": True,
         "expected_losses": [],
+        "dirty": False,
+        "krita_modified": True,
+        "document_path": working_copy,
     }
+    assert (inspected["dirty"], inspected["krita_modified"]) == (False, True)
+    listed = world.server().content("krita_document_list", {})["data"]["documents"]
+    assert [(entry["dirty"], entry["krita_modified"]) for entry in listed] == [(False, True)]
     assert content["document_id"] == document_id
     assert _saves(world) == ["hero-r02.kra"] and not _dirty(world, document_id)
-    assert "verified by reopening" in str(result.content[0].model_dump().get("text"))
+    text = str(result.content[0].model_dump().get("text"))
+    assert "verified by reopening" in text
+    assert f"Krita still marks the document modified; it points at {working_copy}." in text
     closed = world.server().content(
         "krita_document_close",
         {

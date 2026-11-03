@@ -95,6 +95,7 @@ def handlers(registry: Registry, port: DocumentsPort) -> dict[str, Handler]:
             "depth": info["depth"],
             "profile_id": info["profile_id"],
             "dirty": handle.dirty,
+            "krita_modified": info["modified"],
             "unsafe": handle.unsafe,
             "root_layer_id": tree["root_id"],
             "active_layer_id": tree["active_id"],

@@ -15,6 +15,7 @@ from krita_art_mcp.bridge_client import BridgeClient, Done, Outcome, Pending
 from krita_art_mcp.paths import Places
 from krita_art_mcp.probe import fixtures
 from krita_art_mcp.probe.common import (
+    add_layer,
     brush_args,
     by_name,
     close,
@@ -131,11 +132,14 @@ async def _round_trips(
         await _kra(report, a, document_id, data, folder)
         await _refusals(report, a, document_id, folder)
         await _adjustment(report, a, client, document_id, shape, folder)
-        closed = await close(a, document_id, "refuse")
+        refused = await close(a, document_id, "refuse")
+        details = (refused.get("error") or {}).get("details") or {}
         report.check(
-            "after a verified save, krita_document_close with refuse closes the document",
-            (closed.get("data") or {}).get("closed") is True,
-            str(code(closed) or ""),
+            "after a verified save, a filter layer only Krita holds makes refuse refuse the "
+            "close, with dirty false and krita_modified true",
+            code(refused) == "DOCUMENT_DIRTY"
+            and (details.get("dirty"), details.get("krita_modified")) == (False, True),
+            f"{code(refused)}: {details}",
         )
     finally:
         await close(a, document_id)
@@ -406,6 +410,8 @@ async def _long_save(
         return
     document_id, paint_id = opened["document_id"], painted.result["document_id"]
     try:
+        # A layer of its own, so Krita holds the working copy modified and refuse compares it.
+        await add_layer(a, document_id, opened["data"]["root_layer_id"], "h4")
         request_id = str(uuid.uuid4())
         stroke = {
             "guard": {"document_id": paint_id, "request_id": request_id},
@@ -453,6 +459,15 @@ async def _long_save(
             f"{took:.1f} s; longest silence {silences[0]:.2f} s, median answer "
             f"{statistics.median(silences) * 1000:.0f} ms; Krita {megabytes(rss_before)} before, "
             f"{megabytes(krita_rss_kb())} after",
+        )
+        held = (await inspect_data(a, document_id)).get("krita_modified")
+        started = time.monotonic()
+        closed = await close(a, document_id, "refuse")
+        took_close = time.monotonic() - started
+        report.measured(
+            f"refuse closing the {LONG_SIZE} x {LONG_SIZE} working copy after its verified save, "
+            "which reads it again while Krita holds it modified",
+            f"{took_close:.1f} s, {code(closed) or 'closed'}; krita_modified {held}",
         )
     finally:
         await close(a, document_id)

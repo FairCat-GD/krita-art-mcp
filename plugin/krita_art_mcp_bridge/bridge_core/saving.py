@@ -63,6 +63,7 @@ class Pending:
         composite_sha256: str,
         changes: int,
         receipt: dict[str, Any],
+        state: dict[str, Any],
     ) -> None:
         self.save_id = save_id
         self.written = written
@@ -74,6 +75,8 @@ class Pending:
         self.composite_sha256 = composite_sha256
         self.changes = changes
         self.receipt = receipt
+        # What this save compared, which becomes the handle's saved state once it lands.
+        self.state = state
 
     def discard(self) -> bool:
         # Whatever the file holds now: its hidden name carries this save's own token. Whether
@@ -162,8 +165,17 @@ def handlers(registry: Registry, port: DocumentsPort, data: Path) -> dict[str, H
         handle.drop_pending_save()
         if isinstance(earlier, Pending):
             made = made + earlier.made
+        state = {
+            "nodes": live["nodes"],
+            "composite_sha256": composite,
+            "pixels": [
+                (pair["live"]["id"], pair["rect"], kind == ".ora", pair["live_sha256"])
+                for pair in saved["pairs"]
+                if pair["rect"] is not None
+            ],
+        }
         handle.pending_save = Pending(
-            call.operation_id, written, made, composite, handle.changes, receipt
+            call.operation_id, written, made, composite, handle.changes, receipt, state
         )
         return {
             **receipt,
@@ -199,6 +211,7 @@ def handlers(registry: Registry, port: DocumentsPort, data: Path) -> dict[str, H
             message = "The saved file's mergedimage.png differs from the document."
             raise BridgeError("SAVE_VERIFY_FAILED", message, False, details)
         try:
+            info = port.describe(handle.document)
             _place(pending.written, pending.target)
         except BaseException as raised:
             cleaned(raised, pending.discard())
@@ -207,7 +220,15 @@ def handlers(registry: Registry, port: DocumentsPort, data: Path) -> dict[str, H
         cleared = handle.changes == pending.changes
         if cleared:
             handle.dirty = False
-        return {**pending.receipt, "dirty_cleared": cleared}
+            handle.saved_state = pending.state
+        # Krita's flag stays set and the document keeps its own file (K39, K45).
+        return {
+            **pending.receipt,
+            "dirty_cleared": cleared,
+            "dirty": handle.dirty,
+            "krita_modified": info["modified"],
+            "document_path": info["path"],
+        }
 
     guarded_save = registry.guarded(save)
     guarded_finish = registry.guarded(finish, allow_unsafe=True)
@@ -227,6 +248,22 @@ def handlers(registry: Registry, port: DocumentsPort, data: Path) -> dict[str, H
         return guarded_finish(args, call)
 
     return {"document.save": save_document, "document.save_finish": finish_save}
+
+
+def matches_saved(port: DocumentsPort, handle: Handle) -> bool:
+    # Whether the live document still holds exactly what its last verified save compared. The
+    # composite comes first, because its read waits for Krita.
+    state = handle.saved_state
+    if state is None:
+        return False
+    if _sha256(port.composite(handle.document)) != state["composite_sha256"]:
+        return False
+    if port.tree(handle.document)["nodes"] != state["nodes"]:
+        return False
+    return all(
+        _pixels_sha256(port, handle.document, node_id, rect, projection) == sha
+        for node_id, rect, projection, sha in state["pixels"]
+    )
 
 
 def _target(data: Path, path: Any) -> tuple[str, str]:

@@ -64,9 +64,8 @@ def handlers(registry: Registry, port: DocumentsPort, data: Path) -> dict[str, H
         return {"baseline_ids": [h.baseline_id for h in registry.sync() if h.baseline_id]}
 
     def close(handle: Handle, args: dict[str, Any], call: Call) -> dict[str, Any]:
-        if handle.dirty and args["dirty_policy"] == "refuse":
-            message = "The document has changes since its last verified save."
-            raise BridgeError("DOCUMENT_DIRTY", message, False, {"document_id": handle.document_id})
+        if args["dirty_policy"] == "refuse":
+            _refuse_unsaved(port, handle)
         untouched = None
         if handle.source_path is not None and handle.source_sha256 is not None:
             untouched = files.unchanged(
@@ -154,6 +153,19 @@ def _check_created(
         raise BridgeError("INTERNAL_ERROR", message, False, details)
 
 
+def _refuse_unsaved(port: DocumentsPort, handle: Handle) -> None:
+    # The bridge's changes, then Krita's own: its flag stays set after a verified save (K45), so
+    # it refuses only what that save does not hold.
+    modified = port.describe(handle.document)["modified"]
+    details = {"document_id": handle.document_id, "dirty": handle.dirty, "krita_modified": modified}
+    if handle.dirty:
+        message = "The document has changes since its last verified save."
+        raise BridgeError("DOCUMENT_DIRTY", message, False, details)
+    if modified and not saving.matches_saved(port, handle):
+        message = "Krita holds changes no verified save holds."
+        raise BridgeError("DOCUMENT_DIRTY", message, False, details)
+
+
 def _listed_name(info: dict[str, Any]) -> str:
     # Krita's name is the document's title, which a file opened in Krita usually leaves empty.
     return str(info["name"]) or Path(info["path"] or "").name
@@ -170,5 +182,6 @@ def _entry(handle: Handle, port: DocumentsPort) -> dict[str, Any]:
         "depth": info["depth"],
         "profile_id": info["profile_id"],
         "dirty": handle.dirty,
+        "krita_modified": info["modified"],
         "mode": handle.mode,
     }

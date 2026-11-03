@@ -209,8 +209,18 @@ then moved into place. It never overwrites.
 An `.ora` drops masks and adjustment layers, and lists what it lost in `expected_losses`; a visible
 loss fails the save. Prefer `.kra`.
 
-**10. Close.** `dirty_policy: "refuse"` fails with `DOCUMENT_DIRTY` if anything changed since the last
-verified save; `"discard"` drops it.
+The receipt says where the file went (`path`) and where the live document still points
+(`document_path`, its working copy). It also gives two flags: `dirty`, changes the bridge made since
+the last verified save, and `krita_modified`, Krita's own flag, which list and inspect show too. A
+save writes a copy, so Krita keeps the document marked modified and still asks to save it on a close.
+Krita's own Save writes the working copy, never the saved file. On a PNG working copy it opens the
+PNG export dialog, and its warning that the image will lose information means the layers are
+flattened.
+
+**10. Close.** `dirty_policy: "refuse"` fails with `DOCUMENT_DIRTY` while the bridge or Krita holds a
+change since the last verified save, a change made by hand included. After a verified save with
+nothing changed since, it closes, though Krita still marks the document modified. `"discard"` drops
+everything.
 
 ## Retries and long calls
 
@@ -267,7 +277,7 @@ Every failure returns `error: {code, message, retryable, details}`. The table gi
 | `RESOURCE_HASH_MISMATCH` | no | A preset or mask differs from the hash given | List it again, and do not edit presets during a session |
 | `SOURCE_HASH_MISMATCH` | no | The source or working copy differs from the hash given | Hash the file again, or find what changed it |
 | `COLOR_PROFILE_MISMATCH` | no | The document is not 8-bit RGBA, or this needs sRGB | Work on another document; Phase 1 does not convert |
-| `DOCUMENT_DIRTY` | no | A close with `refuse`, with changes since the last verified save | Save, or close with `discard` |
+| `DOCUMENT_DIRTY` | no | A close with `refuse` while the bridge or Krita holds a change no verified save holds; `details` names `dirty` and `krita_modified` | Save, or close with `discard` |
 | `DOCUMENT_UNSAFE` | no | A rollback could not be confirmed | Close it, and reopen from your last verified save |
 | `DOCUMENT_READ_ONLY` | no | The owner opened it by hand, or it opened `read_only` | Open a working copy |
 | `DOCUMENT_IN_USE` | no | Another live server process holds the document | Work on your own working copy |
@@ -366,7 +376,8 @@ because Krita started from the Dock never sees the variable.
 
 `uv run krita-art-mcp doctor` checks six steps in order and stops at the first that fails. If the
 bridge answers, it then prints how many documents are open and unsaved, whichever step failed, so you
-know whether Krita is safe to restart.
+know whether Krita is safe to restart. A working copy an agent saved still counts as unsaved until it
+is closed, because Krita keeps it marked modified.
 
 | Step | If it fails |
 |---|---|

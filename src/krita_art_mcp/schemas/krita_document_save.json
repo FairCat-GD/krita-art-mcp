@@ -45,7 +45,7 @@
     "type": "object",
     "properties": {
       "api_version": {
-        "const": "0.2.0"
+        "const": "0.3.0"
       },
       "status": {
         "type": "string",
@@ -148,6 +148,23 @@
                   ],
                   "additionalProperties": false
                 }
+              },
+              "dirty": {
+                "type": "boolean"
+              },
+              "krita_modified": {
+                "type": "boolean"
+              },
+              "document_path": {
+                "anyOf": [
+                  {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
               }
             },
             "required": [
@@ -157,7 +174,10 @@
               "layers_preserved",
               "baseline_untouched",
               "composite_preserved",
-              "expected_losses"
+              "expected_losses",
+              "dirty",
+              "krita_modified",
+              "document_path"
             ],
             "additionalProperties": false
           },
@@ -325,6 +345,23 @@
                 ],
                 "additionalProperties": false
               }
+            },
+            "dirty": {
+              "type": "boolean"
+            },
+            "krita_modified": {
+              "type": "boolean"
+            },
+            "document_path": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "minLength": 1
+                },
+                {
+                  "type": "null"
+                }
+              ]
             }
           },
           "required": [
@@ -334,7 +371,10 @@
             "layers_preserved",
             "baseline_untouched",
             "composite_preserved",
-            "expected_losses"
+            "expected_losses",
+            "dirty",
+            "krita_modified",
+            "document_path"
           ],
           "additionalProperties": false
         },
@@ -412,7 +452,7 @@
       "verify_reopen": true
     },
     "structuredContent": {
-      "api_version": "0.2.0",
+      "api_version": "0.3.0",
       "status": "completed",
       "document_id": "doc-1",
       "revision": null,
@@ -424,7 +464,10 @@
         "layers_preserved": true,
         "baseline_untouched": true,
         "composite_preserved": true,
-        "expected_losses": []
+        "expected_losses": [],
+        "dirty": false,
+        "krita_modified": true,
+        "document_path": "/projects/demo/work/20261024T120000.000Z-hero.kra"
       },
       "error": null
     }

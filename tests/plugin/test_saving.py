@@ -14,6 +14,8 @@ from fake_krita import FakePort, bgra, fake_node, layer_id
 
 A: dict[str, Any] = {"pid": 101, "started_at": "Sat Oct 24 10:00:00 2026"}
 B: dict[str, Any] = {"pid": 202, "started_at": "Sat Oct 24 10:05:00 2026"}
+WHOLE = {"x": 0, "y": 0, "width": 8, "height": 4}
+PIXEL = bytes([9, 8, 7, 255])
 
 
 class World:
@@ -65,6 +67,21 @@ class World:
             "merged_problem": problem,
         }
         return self.run("document.save_finish", args, "op-finish")
+
+    def change(self, document_id: str) -> None:
+        # A change through the bridge: the bridge marks it, and Krita pushes an undo step.
+        handle = self.handle(document_id)
+        handle.before_change()
+        root = self.port._tree(self.key(document_id))["root_id"]
+        self.port.create_layer(handle.document, root, None, "paintlayer", "agent")
+
+    def flags(self, document_id: str) -> tuple[bool, bool]:
+        listed = self.run("document.list", {})["documents"]
+        [entry] = [entry for entry in listed if entry["document_id"] == document_id]
+        return entry["dirty"], entry["krita_modified"]
+
+    def close(self, document_id: str, policy: str = "refuse") -> dict[str, Any]:
+        return self.run("document.close", {"document_id": document_id, "dirty_policy": policy})
 
     def code(self, op: str, *args: Any, **changes: Any) -> str:
         with pytest.raises(BridgeError) as refused:
@@ -140,6 +157,7 @@ def test_a_change_between_the_save_and_its_finish_keeps_the_dirt(world: World) -
     finished = world.finish(saved)
     assert world.files() == ["hero-r02.kra"]
     assert handle.dirty is True and finished["dirty_cleared"] is False
+    assert handle.saved_state is None
 
 
 def test_a_document_marked_unsafe_meanwhile_keeps_the_dirt(world: World) -> None:
@@ -150,6 +168,96 @@ def test_a_document_marked_unsafe_meanwhile_keeps_the_dirt(world: World) -> None
     handle.lost()
     handle.dirty = True
     assert world.finish(saved)["dirty_cleared"] is False
+
+
+def test_a_verified_save_reports_both_flags_and_where_the_document_points(world: World) -> None:
+    document_id = world.open()
+    world.change(document_id)
+    finished = world.finish(world.save(document_id))
+    working_copy = world.port.describe(world.handle(document_id).document)["path"]
+    assert working_copy.startswith(str(world.art / "work"))
+    assert (finished["dirty"], finished["krita_modified"]) == (False, True)
+    assert finished["document_path"] == working_copy
+    assert world.flags(document_id) == (False, True)
+    assert world.close(document_id)["closed"] is True
+
+
+def test_a_refused_or_failed_save_clears_neither_flag(world: World) -> None:
+    document_id = world.open()
+    world.change(document_id)
+    world.saves.mkdir()
+    (world.saves / "taken.kra").write_bytes(b"there")
+    assert world.code("save", document_id, "taken.kra") == "FILE_EXISTS"
+    assert world.flags(document_id) == (True, True)
+    saved = world.save(document_id)
+    assert world.code("finish", saved, "0" * 64) == "SAVE_VERIFY_FAILED"
+    assert world.flags(document_id) == (True, True)
+    assert world.handle(document_id).saved_state is None
+    assert world.code("close", document_id) == "DOCUMENT_DIRTY"
+
+
+def test_new_paint_after_a_save_shows_in_both_flags_and_refuse_refuses_it(world: World) -> None:
+    document_id = world.open()
+    world.change(document_id)
+    world.finish(world.save(document_id))
+    world.change(document_id)
+    assert world.flags(document_id) == (True, True)
+    body = world.refused("close", document_id)
+    assert body["code"] == "DOCUMENT_DIRTY"
+    assert body["details"] == {"document_id": document_id, "dirty": True, "krita_modified": True}
+
+
+def _visible_stroke(world: World, document_id: str, layers: dict[str, str]) -> None:
+    box = {"x": 1, "y": 1, "width": 2, "height": 2}
+    world.port.paint_by_hand(world.key(document_id), layers["shown"], box, PIXEL)
+
+
+def _hidden_stroke(world: World, document_id: str, layers: dict[str, str]) -> None:
+    box = {"x": 1, "y": 1, "width": 2, "height": 2}
+    world.port.paint_by_hand(world.key(document_id), layers["hidden"], box, PIXEL)
+
+
+def _new_node(world: World, document_id: str, layers: dict[str, str]) -> None:
+    world.port.add_fixture_node(world.handle(document_id).document, "clone_layer", layers["shown"])
+
+
+def _layer_style(world: World, document_id: str, layers: dict[str, str]) -> None:
+    # A change only the composite shows, as a layer style's would.
+    key = world.key(document_id)
+    world.port.paintable(key, None)
+    before = world.port._state(key)
+    composite = world.port.canvas[key]
+    assert isinstance(composite, bytearray)
+    composite[0] ^= 1
+    world.port._push(key, "Layer Style", before)
+
+
+@pytest.mark.parametrize("change", [_visible_stroke, _hidden_stroke, _new_node, _layer_style])
+def test_a_hand_change_after_a_save_is_refused(world: World, change: Any) -> None:
+    document_id = world.open()
+    layers = {
+        "shown": world.add(document_id, "shown", bounds_px=WHOLE),
+        "hidden": world.add(document_id, "hidden", visible=False, bounds_px=WHOLE),
+    }
+    world.change(document_id)
+    world.finish(world.save(document_id))
+    change(world, document_id, layers)
+    assert world.flags(document_id) == (False, True)
+    body = world.refused("close", document_id)
+    assert body["code"] == "DOCUMENT_DIRTY"
+    assert body["details"] == {"document_id": document_id, "dirty": False, "krita_modified": True}
+    assert world.close(document_id, "discard")["closed"] is True
+
+
+def test_a_hand_change_before_the_finish_is_refused_at_the_close(world: World) -> None:
+    document_id = world.open()
+    shown = world.add(document_id, "shown", bounds_px=WHOLE)
+    world.change(document_id)
+    saved = world.save(document_id)
+    box = {"x": 0, "y": 0, "width": 1, "height": 1}
+    world.port.paint_by_hand(world.key(document_id), shown, box, PIXEL)
+    assert world.finish(saved)["dirty_cleared"] is True
+    assert world.code("close", document_id) == "DOCUMENT_DIRTY"
 
 
 @pytest.mark.parametrize("problem", [None, "mergedimage.png is 16-bit"])

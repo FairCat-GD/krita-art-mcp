@@ -11,7 +11,7 @@
     "type": "object",
     "properties": {
       "api_version": {
-        "const": "0.2.0"
+        "const": "0.3.0"
       },
       "status": {
         "type": "string",
@@ -99,6 +99,9 @@
                     "dirty": {
                       "type": "boolean"
                     },
+                    "krita_modified": {
+                      "type": "boolean"
+                    },
                     "mode": {
                       "type": "string",
                       "enum": [
@@ -117,6 +120,7 @@
                     "depth",
                     "profile_id",
                     "dirty",
+                    "krita_modified",
                     "mode"
                   ],
                   "additionalProperties": false
@@ -277,6 +281,9 @@
                   "dirty": {
                     "type": "boolean"
                   },
+                  "krita_modified": {
+                    "type": "boolean"
+                  },
                   "mode": {
                     "type": "string",
                     "enum": [
@@ -295,6 +302,7 @@
                   "depth",
                   "profile_id",
                   "dirty",
+                  "krita_modified",
                   "mode"
                 ],
                 "additionalProperties": false
@@ -372,7 +380,7 @@
   "example": {
     "input": {},
     "structuredContent": {
-      "api_version": "0.2.0",
+      "api_version": "0.3.0",
       "status": "completed",
       "document_id": null,
       "revision": null,
@@ -391,6 +399,7 @@
             "depth": "U8",
             "profile_id": "sRGB-elle-V2-srgbtrc.icc",
             "dirty": false,
+            "krita_modified": false,
             "mode": "new"
           }
         ]

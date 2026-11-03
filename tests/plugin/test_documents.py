@@ -8,7 +8,9 @@ from bridge_core import documents, processes, registry
 from bridge_core.errors import BridgeError
 from bridge_core.jobs import Call, Handler
 from bridge_core.registry import Handle, Registry
-from fake_krita import FakePort
+from fake_krita import FakePort, layer_id
+
+PIXEL = bytes([9, 8, 7, 255])
 
 A: dict[str, Any] = {"pid": 101, "started_at": "Sat Oct 24 10:00:00 2026"}
 B: dict[str, Any] = {"pid": 202, "started_at": "Sat Oct 24 10:05:00 2026"}
@@ -84,6 +86,7 @@ def test_a_created_document_is_new_clean_and_listed(world: World) -> None:
             "depth": "U8",
             "profile_id": documents.SRGB_PROFILE,
             "dirty": False,
+            "krita_modified": False,
             "mode": "new",
         }
     ]
@@ -208,6 +211,36 @@ def test_a_successful_mutation_dirties_and_close_then_refuses(world: World) -> N
     assert _code(world, world.close, created["document_id"], "refuse") == "DOCUMENT_DIRTY"
     world.close(created["document_id"], "discard")
     assert world.port.closed == [1]
+
+
+def test_a_change_only_krita_holds_shows_in_its_flag_alone_and_refuse_refuses_it(
+    world: World,
+) -> None:
+    created = world.create()
+    document_id = created["document_id"]
+    world.port.paint_by_hand(1, layer_id(1, 0), {"x": 0, "y": 0, "width": 2, "height": 2}, PIXEL)
+    [entry] = world.listed()
+    assert (entry["dirty"], entry["krita_modified"]) == (False, True)
+    call = Call("op-close", "req-close", A)
+    args = {"document_id": document_id, "dirty_policy": "refuse"}
+    with pytest.raises(BridgeError) as refused:
+        world.ops["document.close"](args, call)
+    assert refused.value.body["code"] == "DOCUMENT_DIRTY"
+    expected = {"document_id": document_id, "dirty": False, "krita_modified": True}
+    assert refused.value.body["details"] == expected
+    # Refused before anything changed, and the document stays open.
+    assert not call.changing and world.port.closed == []
+    world.close(document_id, "discard")
+    assert world.port.closed == [1]
+
+
+def test_refuse_names_both_flags_when_the_bridge_holds_the_change(world: World) -> None:
+    created = world.create()
+    _guarded(world)({"document_id": created["document_id"]}, Call("op", "req", A))
+    with pytest.raises(BridgeError) as refused:
+        world.close(created["document_id"], "refuse")
+    expected = {"document_id": created["document_id"], "dirty": True, "krita_modified": False}
+    assert refused.value.body["details"] == expected
 
 
 def test_a_change_is_announced_once_on_its_own_document(world: World) -> None:

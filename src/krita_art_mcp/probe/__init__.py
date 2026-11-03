@@ -224,7 +224,9 @@ def _only_ours_unsaved(client: BridgeClient, own: list[dict[str, Any]]) -> bool:
     outcome = client.call("bridge.unsaved_documents")
     if not isinstance(outcome, Done):
         return False
-    return int(outcome.result.get("unsaved", 1)) <= sum(bool(entry["dirty"]) for entry in own)
+    # Krita counts its own flag, which a verified save leaves set.
+    held = sum(bool(entry["krita_modified"]) for entry in own)
+    return int(outcome.result.get("unsaved", 1)) <= held
 
 
 async def _close_leftovers(

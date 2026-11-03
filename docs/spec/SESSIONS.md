@@ -444,6 +444,85 @@ handoff. Its second report, read at the same review, added the close below and a
 - **The source's hash stays exact.** No path fix may redirect a write to an accepted source.
 - **The agent's evidence stays outside the repository,** and so do its file and folder names.
 
+**Done (2026-11-03, 0.19.0).**
+- **Decided with the owner at the start:**
+  - **Krita's flag is only reported,** never cleared after a verified save.
+  - **`refuse` changes meaning,** so `api_version` moves to 0.3.0 and D1's move to 0.4.0.
+  - **No new policy.** After a verified save, `refuse` closes while the live document still matches
+    what that save compared, and refuses otherwise.
+  - **The plan,** approved in plan mode, including the name `krita_modified`.
+- **Measured first, live, on 0.18.0.** A scratchpad driver read Krita's flag as
+  `bridge.unsaved_documents`' count, with one harness document open at a time:
+  - **PNG, KRA and ORA working copies alike:** 0 at the open; 1 after a layer and a stroke; still 1
+    after a verified save, with `dirty` false; 1 after a stroke after it, a refused save
+    (`FILE_EXISTS`), a failed one (`SAVE_VERIFY_FAILED`) and a second verified save.
+  - **On fresh copies:** a selection set it, with `dirty`; a view change left both clear; an opacity
+    change left it clear with `dirty` set; `harness.add_node` set it alone; a layer then an undo
+    cleared it, with `dirty` still set. Activating a protected layer was refused, so no cell.
+  - **A created document** is not modified at birth, so a create records no state.
+  - **Krita's source agrees:** `setImageModified` works the flag out from the undo stack's clean
+    state, which only a real save marks clean.
+- **Report.**
+  - `describe` gains `modified`, and list and inspect gain `krita_modified`.
+  - The finish returns `dirty`, `krita_modified` and `document_path`, and the save's data carries
+    them.
+- **Guard.**
+  - `documents._refuse_unsaved` refuses on `dirty`, then on Krita's flag unless
+    `saving.matches_saved` holds: composite, tree nodes, then the save's compared pixel ranges.
+  - `Handle.saved_state` is the save's own read, kept when the finish clears dirt.
+  - Both refusals name both flags.
+- **`api_version` 0.3.0:** `errors.API_VERSION`, every schema through `amend_schemas.py`, and
+  close's description.
+- **Probe.**
+  - `_only_ours_unsaved` counts `krita_modified`.
+  - `probe/modified.py` checks each format's flags after a verified save, and a change only Krita
+    holds.
+  - The round-trip document's last check now expects `refuse` to refuse the filter layer only
+    Krita holds.
+  - H4's working copy gains a layer of its own, so its `refuse` close compares 8192², timed as
+    MEASURED.
+  - `opening.harness_export` is public, for the new module.
+- **Docs.**
+  - ARCHITECTURE gains Krita's flag, the close and the saved state, the measured facts, and the
+    baseline.
+  - The guide gains the receipt's fields, the close, the `DOCUMENT_DIRTY` row and doctor's count.
+  - Two backlog items.
+- **Amendments:**
+  - **D1's `api_version` move is 0.4.0,** as R3's block said it would be; recorded in D1's block.
+  - **The probe tests the guard.** `harness.add_node` makes a change only Krita holds, so nothing
+    moved to *Checked by hand*.
+  - **A property write leaves Krita's flag clear.** The session's own finding; in the backlog,
+    since marking the flag is a different choice from reporting it.
+- **Checked by hand, with the owner, on harness documents:**
+  - **After a verified save:** a tab close, Close All, and quit with three documents open each asked
+    to save. Each was cancelled. The tools said `krita_modified: true`.
+  - **Krita's own Save on a KRA working copy** saved with no dialog and a `~` backup. The handle kept
+    its path, with `dirty` true and `krita_modified` false. The working copy no longer hashed to
+    its source, so the lazy baseline answered `SOURCE_HASH_MISMATCH`. `refuse` refused on `dirty`,
+    and `discard` closed it with `baseline_untouched: true`.
+  - **Save on a PNG working copy** opened the PNG export dialog: it warned that the image would
+    lose information, with "Also save as a Krita file" ticked. Cancelled.
+  - **Two attempts do not count.** In the first sitting, the documents were closed before the quit.
+    A driver run then removed its own folder with documents open. Each was redone.
+- **Falsified:**
+  - **The close guard turned off:** the Krita-only test, the four hand-change cases and the
+    before-finish test failed.
+  - **Each comparison removed in turn:** its own case alone failed, the composite with the layer
+    style, the tree with the new node, the pixels with the hidden stroke.
+  - **Seven more unit checks, each failing at its own step:**
+    - the details without `krita_modified`;
+    - the finish reporting the flag false;
+    - a failed finish clearing dirt;
+    - `refuse` never refusing;
+    - the state read at the finish;
+    - the state kept when dirt stays;
+    - the receipt's text.
+  - **The sweep counting `dirty`:** the saved case failed.
+  - **The probe's five new or changed checks, broken together:** 142 PASS and 5 FAIL, exactly those.
+- **Numbers:** 742 server tests (+1), 791 plugin tests (+10), probe 147 PASS (+4), 0 FAIL, 24
+  MEASURED (+1), about 125 s with 0 documents open. 19 tools, 19 schema files, 30 error codes, 31
+  ops, instructions 3,970 characters. The 8192² comparison took 0.4 s.
+
 ---
 
 ## D1: Discovery
@@ -454,7 +533,8 @@ forms reach Codex, The instructions), *Reads, and K46* (Capture, Sample); `docs/
 *Phase 1's limits*.
 
 - **Colours.** `krita_sample` gains `color`, the exact shape `brush.color` takes, and `rgba` becomes
-  `rgba_255`. `api_version` moves to 0.3.0 (decision 9). A sample-to-stroke example in the schema.
+  `rgba_255`. `api_version` moves to 0.4.0 (decision 9). A sample-to-stroke example in the schema.
+  **Amended at R3, with the owner:** R3 changed what `refuse` means and took 0.3.0.
 - **Limits.** `LIMITS` (`tools/observe.py:9`) gains the brush size range, the resource page size and
   the overhang rule, each held equal to its enforcing constant by a test.
 - **Ranges where the agent reads them.** Codex renders a property's `description` as a comment and

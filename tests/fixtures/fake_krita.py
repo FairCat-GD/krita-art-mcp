@@ -193,6 +193,20 @@ class FakePort:
         self.opened.append(path)
         return FakeDocument(key)
 
+    def paint_by_hand(self, key: int, layer_id: str, box: dict[str, int], pixel: bytes) -> None:
+        # The owner paints a layer in Krita: one undo step the bridge never sees.
+        self.paintable(key, None)
+        before = self._state(key)
+        node = self._layer(key, layer_id)
+        size = self.live[key]["size_px"]
+        _fill(self.buffers[layer_id], size, box, pixel)
+        if node["visible"]:
+            composite = self.canvas[key]
+            assert isinstance(composite, bytearray)
+            _fill(composite, size, box, pixel)
+        node["bounds_px"] = _span([node["bounds_px"], box])
+        self._push(key, "Freehand Brush Stroke", before)
+
     def mask(self, key: int, layer: str | None = None) -> str:
         # Makes a selection mask the active node: local on a layer (the top one by default), or
         # the global selection's, a child of the root, when layer is the root's id.
@@ -222,6 +236,9 @@ class FakePort:
             "profile_id": profile,
             "current_time": info.get("current_time", 0),
             "animated": info.get("animated", False),
+            # Krita's own flag follows its undo stack, which is clean at the open or create; an
+            # export and a property write leave it alone (measured on Krita 5.3.4.1).
+            "modified": info.get("index", 0) != 0,
         }
 
     def tree(self, document: Any) -> dict[str, Any]:

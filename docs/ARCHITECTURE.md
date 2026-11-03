@@ -1,6 +1,6 @@
 # krita-art-mcp — architecture, as built
 
-This is the system as it stands at 0.18.0, in round 2, on the Phase 1 round 1 built. Every session
+This is the system as it stands at 0.19.0, in round 2, on the Phase 1 round 1 built. Every session
 keeps it true, in the same commit as the change. Each section stands on its own: a session reads
 the overview, the invariants and the baseline, then only the sections its work touches.
 `docs/USER-GUIDE.md` is the same system from the user's side.
@@ -41,7 +41,7 @@ MCP client (Codex, Claude Code) ──stdio──▶ server: src/krita_art_mcp/ 
 
 **Three version numbers, kept apart.** The package version (`pyproject.toml`, with the plugin's
 copy held equal by a test), shown by `--version`, in the MCP `serverInfo` and by
-`krita_server_info`. The tool contract's `api_version`, `"0.2.0"`, in every envelope. The bridge
+`krita_server_info`. The tool contract's `api_version`, `"0.3.0"`, in every envelope. The bridge
 protocol, `1`. The protocol stays 1 while the server and the plugin are released together, because
 `serve` refuses a plugin of any other version (see *The bridge contract*).
 
@@ -501,8 +501,8 @@ logged at debug, so polls that time out during a long call do not flood the log.
 
 `bridge_core/registry.py` holds one `Handle` per open document: a random `doc-` id, a strong
 reference to the wrapper (K6), `owned`, `mode` (`new`, `working_copy`, `read_only`), `dirty`,
-`unsafe`, `lease`, paths and hashes, `protected`, `allowed_mask`, the flags, the ledger and any
-pending save. `sync()` matches wrappers by `==` (libkis compares by document), prunes documents that
+`unsafe`, `lease`, paths and hashes, `protected`, `allowed_mask`, the flags, the ledger, any
+pending save and the last verified save's `saved_state`. `sync()` matches wrappers by `==` (libkis compares by document), prunes documents that
 are gone, and gives the owner's documents `read_only` handles.
 
 **`guarded()` runs in one order:** the job-start refusal (a modal dialog or several windows), the
@@ -521,6 +521,14 @@ marks it before a handler's first libkis mutation, so an exception afterwards le
 stamps `changed_at`. It also announces the change with a low-priority floating message, which never
 raises and never fails a call. `Handle.lost()` seals the ledger and marks the document unsafe.
 
+**Krita's flag.** Krita keeps its own modified flag, which list and inspect report as
+`krita_modified` beside `dirty`. It follows Krita's undo stack, clean at the open or the create:
+every undo step sets it, an undo back to the open clears it, and no export clears it (K45). So after
+a verified save `dirty` is false and `krita_modified` stays true. A property write through libkis
+(K22) is no undo step and leaves it clear while `dirty` is set; a change made by hand sets it alone.
+The bridge reads it and never clears it, except in the close itself. `doctor`'s unsaved count and
+the restart rule read it too, so a saved working copy counts as unsaved until it closes.
+
 ## Documents
 
 **Open.** `opening.py` runs a fixed order: the argument rules and the roots; the working folder and
@@ -535,6 +543,15 @@ open. Only RGBA / U8 opens; any RGB profile is accepted.
 **Create.** `Krita.createDocument` makes an opaque white "Background" layer, so the plugin replaces it
 with a new paint layer through `Node.setChildNodes`, which pushes no undo step, and checks the layer's
 opacity, its alpha and that it is active.
+
+**The close.** `refuse` answers `DOCUMENT_DIRTY` while `dirty` is set, and while Krita holds the
+document modified unless it still matches its last verified save: `saving.matches_saved` reads the
+composite, then the tree's nodes, then each pixel range that save compared, and stops at the first
+difference. The save takes that state from its own read, so a hand change before its finish is
+caught too. Both refusals name `dirty` and `krita_modified`, and come before anything changes.
+`port.close` then clears Krita's flag, so Krita never asks: it is reached only under `discard`, or
+when nothing would be lost. A hand change to what no save compares, such as guides, is not seen.
+Comparing an 8192² working copy with eight 4096² layers took 0.4 s.
 
 **The settled close.** On Krita 5.3.4.1, closing a document within about half a second of a selection
 change crashes in `KisNodeModel::processUpdateQueue`, a null pointer from the layer docker's update
@@ -793,7 +810,9 @@ from the save's (`finish_operation_id`), so every poll and retry gets the finish
 compares the written file's inode, size and modification time with what the save took, and the server's
 `mergedimage.png` hash with the live composite's. It then `os.link`s the file into place and unlinks it,
 or, where links fail, checks `lexists` and renames. It clears dirt only if `Handle.changes` is
-unchanged. A new verified save, a close or a document gone from `sync` drops a save never finished,
+unchanged, and then keeps what the save compared as the handle's `saved_state`. Its receipt adds
+`dirty`, `krita_modified` and `document_path`, the file the live document still points at, since
+the export moves neither (K39, K45). A new verified save, a close or a document gone from `sync` drops a save never finished,
 and folders the save made go with it, deepest first and only while empty.
 
 The server's `_merged` never raises, so the finish always runs and no hidden file stays. A problem
@@ -1045,6 +1064,13 @@ the code is shaped as it is.
   `sRGB-elle-V2-srgbtrc.icc`.
 - A PNG opens as one layer named "Background". Krita's ORA loader sets the layer offset. A fresh open
   is not marked modified, and has no selection.
+- Krita's flag, measured on PNG, KRA and ORA working copies: a layer, a stroke, a selection and a
+  `harness.add_node` set it; a view or opacity change and every save, verified, refused or failed,
+  leave it; an undo back to the open clears it. A created document is not modified.
+- After a verified save, a tab close, Close All and quit each ask to save. Krita's own Save on a KRA
+  working copy writes it with a `~` backup beside it and clears the flag, `dirty` stays, and the
+  lazy baseline then answers `SOURCE_HASH_MISMATCH`. On a PNG working copy, Save opens the PNG
+  export dialog, which warns that the image loses information.
 - `addChildNode` puts a node on top when `above_id` is `None`, and makes it active.
 - `setActiveNode` on the global selection's own mask leaves the previous layer active.
 - Preset XML: the raw digest changed at every restart, across six runs; the canonical one held. No
@@ -1059,7 +1085,7 @@ the code is shaped as it is.
   it. A Krita holding 87 documents ran document ops about three times slower, and left the paint
   benchmarks, the preview benchmark and H4 idle alone.
 
-## Baseline (v0.18.0)
+## Baseline (v0.19.0)
 
 Taken on 2026-11-03 on Krita 5.3.4.1, macOS, Apple Silicon, on a Krita restarted that session, with
 **0 documents open**. The probe prints the open-document count beside its time, because document ops
@@ -1068,15 +1094,15 @@ depend on it: 87 open documents cost about 50 s more.
 | Check | Expected |
 |---|---|
 | `uv run scripts/verify.py` | 6 stages, all PASS |
-| Server tests (3.12) | 741 passed, 0 skipped |
-| Plugin-core tests (3.10) | 781 passed, 0 skipped |
-| `uv run krita-art-mcp probe` | 143 PASS, 0 FAIL, 23 MEASURED; about 122 s |
+| Server tests (3.12) | 742 passed, 0 skipped |
+| Plugin-core tests (3.10) | 791 passed, 0 skipped |
+| `uv run krita-art-mcp probe` | 147 PASS, 0 FAIL, 24 MEASURED; about 125 s |
 | `uv run krita-art-mcp doctor` | 6 steps, all PASS, with a root allowed |
 | Registered tools | 19 |
 | Schema files | 19 |
 | Error codes | 30 |
 | Bridge ops | 31 |
-| Bridge protocol; `api_version` | 1; 0.2.0 |
+| Bridge protocol; `api_version` | 1; 0.3.0 |
 | Server instructions | 3,970 of 4,096 characters |
 | CLI commands | 5 |
 

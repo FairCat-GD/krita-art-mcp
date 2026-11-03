@@ -23,7 +23,7 @@
     "type": "object",
     "properties": {
       "api_version": {
-        "const": "0.2.0"
+        "const": "0.3.0"
       },
       "status": {
         "type": "string",
@@ -129,6 +129,9 @@
                 "type": "string"
               },
               "dirty": {
+                "type": "boolean"
+              },
+              "krita_modified": {
                 "type": "boolean"
               },
               "unsafe": {
@@ -412,6 +415,7 @@
               "depth",
               "profile_id",
               "dirty",
+              "krita_modified",
               "unsafe",
               "root_layer_id",
               "active_layer_id",
@@ -589,6 +593,9 @@
               "type": "string"
             },
             "dirty": {
+              "type": "boolean"
+            },
+            "krita_modified": {
               "type": "boolean"
             },
             "unsafe": {
@@ -872,6 +879,7 @@
             "depth",
             "profile_id",
             "dirty",
+            "krita_modified",
             "unsafe",
             "root_layer_id",
             "active_layer_id",
@@ -951,7 +959,7 @@
       "frame": 0
     },
     "structuredContent": {
-      "api_version": "0.2.0",
+      "api_version": "0.3.0",
       "status": "completed",
       "document_id": "doc-1",
       "revision": null,
@@ -970,6 +978,7 @@
         "depth": "U8",
         "profile_id": "sRGB-elle-V2-srgbtrc.icc",
         "dirty": false,
+        "krita_modified": false,
         "unsafe": false,
         "root_layer_id": "9e2d7a14-6b3c-4f85-a1d9-5c7e2b8f0a36",
         "active_layer_id": "3b8f6c2e-4d1a-4e7b-9c5f-2a6d8e1b4c70",

@@ -87,9 +87,9 @@ async def _make_kra(report: Report, a: Client, client: BridgeClient, ora: Path, 
         return False
     document_id = opened["document_id"]
     try:
-        made = _harness_export(client, document_id, kra)
-        outside = _harness_export(client, document_id, UNWRITABLE / "probe.kra")
-        again = _harness_export(client, document_id, kra)
+        made = harness_export(client, document_id, kra)
+        outside = harness_export(client, document_id, UNWRITABLE / "probe.kra")
+        again = harness_export(client, document_id, kra)
     finally:
         await close(a, document_id)
     written = (
@@ -109,7 +109,7 @@ async def _make_kra(report: Report, a: Client, client: BridgeClient, ora: Path, 
     return written
 
 
-def _harness_export(client: BridgeClient, document_id: str, target: Path) -> Any:
+def harness_export(client: BridgeClient, document_id: str, target: Path) -> Any:
     arguments = {"document_id": document_id, "target_path": str(target)}
     outcome = harness_call(client, "harness.export_kra", **arguments)
     if _failed_code(outcome) == "BUSY":

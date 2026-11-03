@@ -60,6 +60,9 @@ class Handle:
         self.changes = 0
         # A save written and verified in Krita, waiting for the server's mergedimage.png check.
         self.pending_save: Any = None
+        # What the last verified save compared: Krita's own flag stays set after it (K45), so a
+        # close compares this to tell a hand change from what the save holds.
+        self.saved_state: Any = None
 
     def before_change(self) -> bool:
         # Called before a handler's first libkis mutation, so an exception after it leaves the

@@ -6,6 +6,32 @@ All notable changes to krita-art-mcp are documented here. The format follows
 
 ## [Unreleased]
 
+## [0.19.0] — 2026-11-03
+
+`krita_document_close` with `refuse` no longer closes over changes that only Krita holds, and the
+tools now report Krita's own modified flag beside `dirty`. `api_version` is now 0.3.0. This release
+needs `install-plugin`, a Krita restart and a restart of the MCP client.
+
+### Added
+
+- **`krita_modified` in `krita_document_list` and `krita_document_inspect`:** Krita's own modified
+  flag, beside the bridge's `dirty`. A verified save clears `dirty` and leaves Krita's flag set,
+  because it writes a copy and the document keeps pointing at its working copy.
+- **The save's receipt gives `dirty`, `krita_modified` and `document_path`,** the file the live
+  document still points at.
+
+### Changed
+
+- **`refuse` refuses any change Krita holds that no verified save holds,** a change made by hand
+  included. After a verified save with nothing changed since, it still closes, because the close
+  compares the document with what that save verified. Its error names both flags. This changes
+  what `refuse` means, so `api_version` moves to 0.3.0.
+
+### Fixed
+
+- **The probe's leftover sweep counts Krita's flag,** so a document a dead run saved no longer
+  stops it.
+
 ## [0.18.0] — 2026-11-03
 
 Five tools that only add no longer say they are destructive, the journal records the server's own

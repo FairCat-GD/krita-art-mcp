@@ -203,7 +203,7 @@
     "type": "object",
     "properties": {
       "api_version": {
-        "const": "0.2.0"
+        "const": "0.3.0"
       },
       "status": {
         "type": "string",
@@ -1325,7 +1325,7 @@
       "smooth": "catmull_rom"
     },
     "structuredContent": {
-      "api_version": "0.2.0",
+      "api_version": "0.3.0",
       "status": "completed",
       "document_id": "doc-1",
       "revision": null,
