@@ -198,39 +198,85 @@ async def _colours(
     if layer_id is None:
         report.check("N-06's layer is added", False)
         return
-    centres, problems = [], []
-    for index, rgb in enumerate(COLOURS):
-        x = 8 + index * 15
-        brush = brush_args(hard, size_px=10, color=brush_colour(rgb))
-        done = await tool(
-            a, TOOL, stroke_args(document_id, layer_id, brush, line_points(x, 20, x, 60))
-        )
-        if done.get("status") != "completed":
-            problems.append(f"#{bytes(rgb).hex().upper()}: {code(done)}")
-        centres.append([x, 40])
+    colours = [brush_colour(rgb) for rgb in COLOURS]
+    problems = await _paint_colours(a, document_id, layer_id, hard, colours, 20)
+    centres = [[8 + index * 15, 40] for index in range(len(COLOURS))]
+    on_layer: list[dict[str, Any]] = []
     for target, chosen in (("layer", layer_id), ("composite", None)):
-        sampled = await tool(
-            a,
-            "krita_sample",
-            {
-                "source": {"document_id": document_id, "frame": 0},
-                "target": target,
-                "layer_id": chosen,
-                "points": centres,
-            },
-        )
-        samples = (sampled.get("data") or {}).get("samples") or []
-        for rgb, sample in zip(COLOURS, samples, strict=False):
-            if sample["rgba"] != [*rgb, 255]:
-                problems.append(f"{target} #{bytes(rgb).hex().upper()}: {sample['rgba']}")
-        if len(samples) != len(COLOURS):
-            problems.append(f"{target}: {code(sampled)}")
+        samples, wrong = await _sampled(a, document_id, target, chosen, centres)
+        problems += wrong
+        on_layer = samples if target == "layer" else on_layer
     report.check(
         "H6 / N-06: a hard round brush at opacity 1 paints 10 colours, #A7C284 among them, "
         "exactly at the stroke centre, on the layer and in the composite",
         not problems,
         "; ".join(problems[:4]),
     )
+    # Each sample's color painted back as it came, 40 px below its source.
+    again = [sample.get("color") for sample in on_layer]
+    back = [
+        f"#{bytes(rgb).hex().upper()}: color {given}"
+        for rgb, given in zip(COLOURS, again, strict=False)
+        if given != brush_colour(rgb)
+    ]
+    if len(again) == len(COLOURS) and not back:
+        back = await _paint_colours(a, document_id, layer_id, hard, again, 60)
+        _, wrong = await _sampled(
+            a, document_id, "layer", layer_id, [[x, y + 40] for x, y in centres]
+        )
+        back += wrong
+    report.check(
+        "H6: each sampled color is the brush colour painted, and painted back unchanged it "
+        "samples as the same bytes",
+        len(again) == len(COLOURS) and not back,
+        "; ".join(back[:4]) or f"{len(again)} samples",
+    )
+
+
+async def _paint_colours(
+    a: Client,
+    document_id: str,
+    layer_id: str,
+    hard: dict[str, Any],
+    colours: list[Any],
+    top: int,
+) -> list[str]:
+    # One vertical 40 px stroke per colour, 15 px apart, from y = top.
+    problems = []
+    for index, (rgb, colour) in enumerate(zip(COLOURS, colours, strict=True)):
+        x = 8 + index * 15
+        brush = brush_args(hard, size_px=10, color=colour)
+        done = await tool(
+            a, TOOL, stroke_args(document_id, layer_id, brush, line_points(x, top, x, top + 40))
+        )
+        if done.get("status") != "completed":
+            problems.append(f"#{bytes(rgb).hex().upper()}: {code(done)}")
+    return problems
+
+
+async def _sampled(
+    a: Client, document_id: str, target: str, layer_id: str | None, centres: list[list[int]]
+) -> tuple[list[dict[str, Any]], list[str]]:
+    # The samples at each colour's centre, and what differs from the colour painted there.
+    sampled = await tool(
+        a,
+        "krita_sample",
+        {
+            "source": {"document_id": document_id, "frame": 0},
+            "target": target,
+            "layer_id": layer_id,
+            "points": centres,
+        },
+    )
+    samples = (sampled.get("data") or {}).get("samples") or []
+    problems = [
+        f"{target} #{bytes(rgb).hex().upper()}: {sample['rgba_255']}"
+        for rgb, sample in zip(COLOURS, samples, strict=False)
+        if sample["rgba_255"] != [*rgb, 255]
+    ]
+    if len(samples) != len(COLOURS):
+        problems.append(f"{target}: {code(sampled)}")
+    return samples, problems
 
 
 async def _one_step(
@@ -520,7 +566,7 @@ async def _refusals(
         ),
         "the eraser": (
             stroke_args(document_id, layer_id, brush_args(hard, eraser=True), line),
-            "UNSUPPORTED_CAPABILITY",
+            "INVALID_ARGUMENT",
         ),
         "a single point": (
             stroke_args(document_id, layer_id, brush_args(hard), line[:1]),
@@ -528,7 +574,7 @@ async def _refusals(
         ),
         "smooth stabilizer": (
             stroke_args(document_id, layer_id, brush_args(hard), line, smooth="stabilizer"),
-            "UNSUPPORTED_CAPABILITY",
+            "INVALID_ARGUMENT",
         ),
     }
     found = {name: code(await tool(a, TOOL, arguments)) for name, (arguments, _) in cases.items()}

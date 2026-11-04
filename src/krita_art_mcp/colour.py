@@ -78,7 +78,8 @@ def disc(
         rgb = pixels[:, :3].sum(axis=0) / count
     sample: dict[str, Any] = {
         "pixel_count": count,
-        "rgba": [number(channel) for channel in rgb] + [number(weight / count)],
+        "rgba_255": [number(channel) for channel in rgb] + [number(weight / count)],
+        "color": None,
         "hex": None,
         "lab": None,
         "lch": None,
@@ -89,6 +90,9 @@ def disc(
     sample["hex"] = hex_of(rgb)
     if not srgb:
         return sample
+    # A stroke's colour as it takes one: unrounded, so a stored byte paints back as itself, and
+    # opaque, because a stroke's transparency comes from its opacity and flow.
+    sample["color"] = {"space": "srgb", "rgba": [float(channel) / 255 for channel in rgb] + [1]}
     mean = lab(rgb)
     lightness = lab(pixels[:, :3])[:, 0]
     centre = float((lightness * alpha).sum() / weight)

@@ -30,24 +30,29 @@
         "type": "object",
         "properties": {
           "preset_id": {
+            "description": "A brush preset's id, from krita_resource_list.",
             "type": "string",
             "minLength": 1
           },
           "preset_sha256": {
+            "description": "The preset's sha256, from krita_resource_list; a preset that differs is refused.",
             "type": "string",
             "pattern": "^[0-9a-f]{64}$"
           },
           "size_px": {
+            "description": "Brush diameter in px, 1 to 1000.",
             "type": "number",
             "minimum": 1,
             "maximum": 1000
           },
           "opacity": {
+            "description": "0 to 1.",
             "type": "number",
             "minimum": 0,
             "maximum": 1
           },
           "flow": {
+            "description": "0 to 1.",
             "type": "number",
             "minimum": 0,
             "maximum": 1
@@ -62,6 +67,7 @@
                 ]
               },
               "rgba": {
+                "description": "Red, green, blue and alpha, each 0 to 1, not 0 to 255; alpha must be 1. A krita_sample color goes here unchanged.",
                 "type": "array",
                 "items": {
                   "type": "number",
@@ -79,7 +85,7 @@
             "additionalProperties": false
           },
           "eraser": {
-            "type": "boolean"
+            "const": false
           },
           "blend_mode": {
             "type": "string",
@@ -100,10 +106,11 @@
             "type": "boolean"
           },
           "rotation_deg": {
+            "description": "The tip's rotation in degrees.",
             "type": "number"
           },
           "antialias": {
-            "type": "boolean"
+            "const": true
           }
         },
         "required": [
@@ -117,6 +124,7 @@
         "additionalProperties": false
       },
       "points": {
+        "description": "Canvas px, at least half a pixel long in all. An on-curve point may lie off the canvas by at most half of size_px.",
         "type": "array",
         "items": {
           "type": "object",
@@ -128,6 +136,7 @@
               "type": "number"
             },
             "pressure": {
+              "description": "0 to 1. Any value but 1 is refused unless input_fallback is flat.",
               "type": "number",
               "minimum": 0,
               "maximum": 1
@@ -137,11 +146,13 @@
               "minimum": 0
             },
             "tilt_x": {
+              "description": "Degrees, -90 to 90. Refused unless input_fallback is flat.",
               "type": "number",
               "minimum": -90,
               "maximum": 90
             },
             "tilt_y": {
+              "description": "Degrees, -90 to 90. Refused unless input_fallback is flat.",
               "type": "number",
               "minimum": -90,
               "maximum": 90
@@ -150,6 +161,7 @@
               "type": "number"
             },
             "tangential_pressure": {
+              "description": "-1 to 1. Refused unless input_fallback is flat.",
               "type": "number",
               "minimum": -1,
               "maximum": 1
@@ -169,21 +181,22 @@
         "maxItems": 4096
       },
       "smooth": {
+        "description": "catmull_rom curves the path through the points; none, the default, joins them.",
         "type": "string",
         "enum": [
           "none",
-          "catmull_rom",
-          "basic",
-          "stabilizer"
+          "catmull_rom"
         ]
       },
       "input_fallback": {
+        "description": "flat paints every point at pressure 1 and ignores per-point pressure, tilt, rotation, speed and time, which are refused without it.",
         "type": "string",
         "enum": [
           "flat"
         ]
       },
       "verify": {
+        "description": "region, the default, checks the stroke's reach and needs the pixel brush engine. full checks the whole canvas: for any other preset, or a filter, mask, style or clone that spreads a change.",
         "type": "string",
         "enum": [
           "region",
@@ -203,7 +216,7 @@
     "type": "object",
     "properties": {
       "api_version": {
-        "const": "0.3.0"
+        "const": "0.4.0"
       },
       "status": {
         "type": "string",
@@ -1325,7 +1338,7 @@
       "smooth": "catmull_rom"
     },
     "structuredContent": {
-      "api_version": "0.3.0",
+      "api_version": "0.4.0",
       "status": "completed",
       "document_id": "doc-1",
       "revision": null,

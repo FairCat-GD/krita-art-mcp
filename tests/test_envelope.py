@@ -111,6 +111,7 @@ def test_the_plugins_bounds_are_the_schemas_limits() -> None:
     assert sample["radius"]["maximum"] == bridge_pixels.MAX_RADIUS
     listing = schemas.load("krita_resource_list")["inputSchema"]["properties"]
     assert listing["limit"]["maximum"] == bridge_resources.MAX_LIMIT
+    assert observe.LIMITS["resource_page_size"] == bridge_resources.MAX_LIMIT
     selection = schemas.load("krita_selection_set")["inputSchema"]["properties"]
     for field in ("grow_px", "shrink_px", "feather_px"):
         assert selection[field]["maximum"] == bridge_selections.MAX_MODIFIER_PX
@@ -127,6 +128,11 @@ def test_the_plugins_bounds_are_the_schemas_limits() -> None:
         bridge_painting.MIN_SIZE_PX,
         bridge_painting.MAX_SIZE_PX,
     )
+    assert observe.LIMITS["brush_size_px"] == {
+        "min": bridge_painting.MIN_SIZE_PX,
+        "max": bridge_painting.MAX_SIZE_PX,
+    }
+    assert observe.LIMITS["stroke_overhang_size_fraction"] == bridge_painting.OVERHANG_OF_SIZE
     render = schemas.load("krita_preview_render")["inputSchema"]["properties"]
     assert render["sources"]["maxItems"] == bridge_previews.MAX_SOURCES
     assert tuple(render["overlays"]["items"]["enum"]) == bridge_previews.OVERLAYS

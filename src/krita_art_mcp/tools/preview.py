@@ -2,7 +2,6 @@ import base64
 import functools
 import json
 import logging
-import math
 from collections import Counter
 from dataclasses import replace
 from pathlib import Path
@@ -17,7 +16,7 @@ from krita_art_mcp.bridge_client import Done, Failed, Outcome
 from krita_art_mcp.envelope import MAX_RESULT_BYTES
 from krita_art_mcp.errors import error_body
 from krita_art_mcp.paths import Places
-from krita_art_mcp.tools.dispatch import ToolCall, from_outcome
+from krita_art_mcp.tools.dispatch import ToolCall, from_outcome, not_finite
 from krita_art_mcp.tools.documents import frame_refusal
 from krita_art_mcp.tools.pixels import IMAGE_META, discard, failed, operation_id_of, today
 
@@ -64,8 +63,6 @@ def preview_render(call: ToolCall, arguments: dict[str, Any]) -> CallToolResult:
 
 def _rules(arguments: dict[str, Any]) -> CallToolResult | None:
     # Each depends on the arguments alone, so nothing is sent to Krita to be refused.
-    if not _finite(arguments):
-        return envelope.failure("INVALID_ARGUMENT", "Every number is finite.")
     sources = arguments["sources"]
     for source in sources:
         refused = frame_refusal(source["frame"])
@@ -101,16 +98,6 @@ def _rules(arguments: dict[str, Any]) -> CallToolResult | None:
         message = "The crops cover too many pixels for one preview; render fewer at a time."
         return envelope.failure("INVALID_ARGUMENT", message, details=details)
     return None
-
-
-def _finite(value: Any) -> bool:
-    if isinstance(value, float):
-        return math.isfinite(value)
-    if isinstance(value, dict):
-        return all(_finite(item) for item in value.values())
-    if isinstance(value, list):
-        return all(_finite(item) for item in value)
-    return True
 
 
 def resolve_preview(places: Places, outcome: Outcome) -> Outcome:
@@ -208,7 +195,7 @@ def _inputs() -> Draft202012Validator:
 
 def _echoed(echo: Any) -> dict[str, Any]:
     # The server's own arguments, echoed by the plugin; checked before anything is allocated.
-    if not isinstance(echo, dict) or not _inputs().is_valid(echo) or not _finite(echo):
+    if not isinstance(echo, dict) or not _inputs().is_valid(echo) or any(not_finite(echo)):
         raise ValueError("the plugin echoed malformed preview arguments")
     return echo
 

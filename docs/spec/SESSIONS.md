@@ -587,6 +587,62 @@ forms reach Codex, The instructions), *Reads, and K46* (Capture, Sample); `docs/
   5,000 bytes, and a rendered one over 16,000 becomes `unknown`.
 - **The probe reads `rgba` too.** Rename it in one pass.
 
+**Done (2026-11-04, 0.20.0).**
+- **Decided with the owner in plan mode:**
+  - **`color`'s alpha is always 1.** It is the paintable colour; `rgba_255` keeps the sampled
+    alpha. `color` is null with no colour (alpha 0) or outside sRGB, as `hex` and `lab` are.
+  - **Codex's limits are measured by a port of its renderer in `tests/support`,** pinned to a Codex
+    tag. This reverses 14a's "no port in the repository", because this block's gate asks `verify`
+    to test the limits.
+  - **The plan,** approved in plan mode, including the limits' names.
+- **Colours.** `colour.disc` gives `rgba_255` and `color`, `{space: srgb, rgba: [r/255, g/255, b/255,
+  1]}` from the unrounded alpha-weighted mean. The sample schema, its example and the tool
+  description carry both.
+- **Limits.** `LIMITS` gains `brush_size_px` `{min: 1, max: 1000}`, `resource_page_size` 100 and
+  `stroke_overhang_size_fraction` 0.5. The plugin's `_on_canvas` now reads the new
+  `OVERHANG_OF_SIZE`, and a test holds each limit to its plugin constant and its schema bound.
+- **Descriptions.** Every input property with both bounds (20, across eight tools) states them as
+  "A to B", held by a test. `points`, `rotation_deg`, `cursor`, `input_fallback`, `smooth`,
+  `verify`, the presets and capture's fields have theirs too, as do the new outputs.
+- **Capture's two forms.** `dependentSchemas.scale` refuses `background` and `greyscale` at scale
+  1, and the selection rule nests in the target rule's `else`. `_capture_rules` loses those two
+  branches. The tool description gives one example of each form.
+- **Not-finite numbers.** `_checked` walks every tool's arguments beside the schema, with
+  `dispatch.finite` and `not_finite`. The stroke's `_unbounded` and preview's whole-argument check
+  went; the stroke keeps its check on smoothed control points, and preview its echo check.
+  - **Measured:** mcp's stdio parser reads `NaN`, `Infinity` and `1e400` as floats, and a 400-digit
+    literal as an int.
+- **Refused values.** `smooth` is `none | catmull_rom`, `antialias` `const: true` and `eraser`
+  `const: false`; `_refusal` lost the four branches behind them.
+- **Instructions.** 3,970 to 3,453 characters, 643 spare.
+- **Codex's limits.** `codex_render.py` ports `sanitize_json_schema`, the schema struct's keep-list
+  and `JsonSchemaTypeRenderer`, work budget included, from the Rust source at `rust-v0.166.0`.
+  - **Measured at 0.20.0:** largest normalised input 2,948 bytes (`krita_paint_stroke`); largest
+    rendered input 1,909 (the same); largest rendered output 2,362 (`krita_preview_render`). No input
+    renders an `unknown`; two outputs hold an open object's `[key: string]: unknown`, as they should.
+  - The backlog item "Codex's renderer is not re-measured" left.
+- **Probe.** H6 gains a check: each of the 10 colours' sampled `color` equals the brush colour sent,
+  and painted back unchanged it samples as the same bytes. The eraser and stabilizer refusals now
+  expect `INVALID_ARGUMENT`.
+- **Amendments:**
+  - **Descriptions reach every bounded input field,** not only the block's six, so one test can hold
+    them all. Decided at plan time, with the owner.
+  - **No test holds the 500 spare characters,** because later sessions spend them.
+  - **The block said 190 characters were spare;** R3 had left 126. D1 left 643.
+- **Checked live:** `install-plugin`, a Krita restart at 0 unsaved, `doctor` 6 of 6. The first probe
+  run met a dialog Krita opened at start (16 PASS, 15 FAIL, all `KRITA_MODAL_DIALOG`, nothing
+  touched); the owner closed it and the rerun passed.
+- **Falsified:**
+  - **Sixteen unit checks, each failing at its own test:** `color` rounded to 2 decimals; `color`
+    with the sampled alpha; each of the three limits drifted; the finite walk off; the walk missing
+    big integers; `smooth: basic` back; `eraser` a boolean again; the overflow check off; a
+    description's range drifted; the scale rule off; the selection rule off; an input padded past
+    5,000 normalised bytes; an output padded past 16,000 rendered bytes; the port's comment form.
+  - **The probe's new and changed checks, broken together:** 146 PASS and 2 FAIL, exactly those.
+- **Numbers:** 879 server tests (+137), 799 plugin tests (+0), probe 148 PASS (+1), 0 FAIL, 24
+  MEASURED, 125.5 s with 0 documents open. 19 tools, 19 schema files, 30 error codes, 31 ops,
+  instructions 3,453 characters, `api_version` 0.4.0.
+
 ---
 
 ## F1: One verified-mutation frame

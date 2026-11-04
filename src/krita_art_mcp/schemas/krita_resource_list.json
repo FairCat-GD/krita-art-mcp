@@ -1,6 +1,6 @@
 {
   "name": "krita_resource_list",
-  "description": "Discover available brushes, profiles, palettes and blend modes.",
+  "description": "Discover available brushes, profiles, palettes and blend modes. A brush's id and sha256 are what krita_paint_stroke takes.",
   "inputSchema": {
     "type": "object",
     "properties": {
@@ -14,6 +14,7 @@
         ]
       },
       "cursor": {
+        "description": "null for the first page, then the last page's next_cursor.",
         "anyOf": [
           {
             "type": "string",
@@ -25,6 +26,7 @@
         ]
       },
       "limit": {
+        "description": "Page size, 1 to 100.",
         "type": "integer",
         "minimum": 1,
         "maximum": 100
@@ -41,7 +43,7 @@
     "type": "object",
     "properties": {
       "api_version": {
-        "const": "0.3.0"
+        "const": "0.4.0"
       },
       "status": {
         "type": "string",
@@ -412,7 +414,7 @@
       "limit": 20
     },
     "structuredContent": {
-      "api_version": "0.3.0",
+      "api_version": "0.4.0",
       "status": "completed",
       "document_id": null,
       "revision": null,

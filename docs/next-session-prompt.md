@@ -1,59 +1,46 @@
-Read `FEATURE-recovery-and-construction.md` *The Codex agent's report* (Input and schema
-discoverability), decisions 9, 11; `ARCHITECTURE.md` *The tool contract* (Schemas are data, Which
-forms reach Codex, The instructions), *Reads, and K46* (Capture, Sample); `docs/USER-GUIDE.md`
-*Phase 1's limits*; then CLAUDE.md, docs/ARCHITECTURE.md's overview, invariants and baseline, your
-block in docs/spec/SESSIONS.md and R3's done-note, then this file, and do Session D1: Discovery.
-D1 has six parts:
-- `krita_sample` gains `color`, the shape `brush.color` takes, and `rgba` becomes `rgba_255`;
-- `LIMITS` gains the brush size range, the resource page size and the overhang rule, each held
-  to its constant;
-- `description`s where a range or unit matters, since Codex drops `minimum` and `maximum`;
-- capture's native and resampled forms made explicit;
-- not-finite numbers refused in every tool, in one place on the server;
-- `krita_paint_stroke`'s refused values out of the schema (decision 11), and the instructions
-  trimmed to leave at least 500 characters spare.
+Read `FEATURE-recovery-and-construction.md` decisions 5, 10; `ARCHITECTURE.md` *Bridge and jobs*,
+*Registry, lease and document state*, *The verification core*, *Painting*, *The undo ledger and
+history*, *Testing strategy*; from git history, `git show
+04e9f6c:docs/spec/REVIEW-2026-10-25.md` F3 and `git show 04e9f6c:docs/spec/REVIEW-2026-10-30.md` F19
+and §8.8 items 6, 8; then CLAUDE.md, docs/ARCHITECTURE.md's overview, invariants and baseline, your
+block in docs/spec/SESSIONS.md and D1's done-note, then this file, and do Session F1: One
+verified-mutation frame. F1 has three parts:
+- `bridge_core/mutation.py`, one frame for scope, reads, marker and `before_change`,
+  `unconfirmed`, the change, the verdict, the ledger, rollback and the receipt, taking a channel
+  count (M1) and one or more undo steps per op (L1);
+- `paint.stroke`, `layer.update` and `layer.create` moved onto it, the save keeping its ladder;
+- parity tests for the six argument pairs (decision 10), and a helper for each new pair.
 
-Release 0.20.0, with `api_version` 0.4.0.
+No version and no `CHANGELOG.md` entry: nobody can see it.
 
 ## State you need that is not in the specs
 
-- **Round 2 is recovery and construction.** R1, R2 and R3 are done. D1, F1, C1, M1, X1, E1, L1, B1,
+- **Round 2 is recovery and construction.** R1, R2, R3 and D1 are done. F1, C1, M1, X1, E1, L1, B1,
   T1, S1, X2 and V1 remain, in that order.
-- **`api_version` is 0.3.0 now, so D1's move is 0.4.0.** R3 changed what `refuse` means. D1's
-  block is amended. `errors.API_VERSION` drives every schema's envelope through
-  `scripts/amend_schemas.py`. Each schema's example and `tests/test_c1_error_passthrough.py` hold
-  the literal.
-- **What R3 left:**
-  - **Every document now reports two flags.** `dirty` is the bridge's own changes since the last
-    verified save. `krita_modified` is Krita's own flag, which a verified save leaves set.
-    `refuse` reads both.
-  - **A handle keeps `saved_state`,** what its last verified save compared: the composite, the
-    tree's nodes and every node's own pixels. A tool that changes a document marks it through
-    `before_change` as before, and needs nothing new.
-  - **A property write through libkis leaves Krita's flag clear,** while `dirty` is set; it is in
-    the backlog. `doctor`'s unsaved count reads Krita's flag, so a saved working copy counts as
-    unsaved until it closes.
-  - **`probe/modified.py`** holds the flag checks, and `opening.harness_export` is now public.
-- **R1, R2 and R3 are pushed,** with the owner's approval on 2026-11-03. `origin/main` stops at
-  "review: ORA saves kept no pixels for dropped masks, and 5 smaller". List `origin/main..HEAD`
-  before any push.
-- **What R2 left for later sessions:**
-  - **Every tool's hints are in a table,** `HINTS` in `tests/test_tools.py`. A new tool needs its
-    row, chosen from its worst permitted behaviour (decision 1). C1, M1, L1, B1, T1 and S1 each add
-    one.
-  - **A finished journal line carries `elapsed_ms`.** V1's re-measure can set it beside Codex's own
-    records.
-  - **Codex's schema sizes were last measured at 0.15.0,** with a scratchpad port of its renderer
-    (see `docs/BACKLOG.md`). D1's gate "rendered inputs stay under Codex's limits" needs a measure
-    again. Whatever D1 builds for it settles that backlog item, so move the item out if it does.
-  - **D1's ground was hit again on 0.18.0:** a sampled 0–255 colour sent as a stroke's 0–1, a
-    native capture given a `background`, and a brush size over 1000. Each was a clear refusal.
+- **`api_version` is 0.4.0.** D1 renamed `rgba` to `rgba_255` and took three refused values out of
+  `krita_paint_stroke`. The next move is whichever session first removes, renames or changes the
+  meaning of a field or an input value (decision 9).
+- **What D1 left:**
+  - **A field's range or unit lives in its `description`.** `test_a_bounded_input_states_its_range_
+    where_codex_shows_it` holds every input property with both bounds to a description stating
+    them as "A to B". A new tool's bounded field needs one, or the test fails.
+  - **Codex's limits are tested.** `tests/support/codex_render.py` ports Codex's sanitizer and
+    renderer at `rust-v0.166.0`, and `test_codex_shows_every_input_and_output_whole` holds every
+    tool: normalised input at most 5,000 bytes (the largest, the stroke's, is 2,948), rendered input
+    and output at most 16,000 and whole. A new tool's schema is measured the moment it exists.
+  - **Not-finite numbers are refused in `tools/__init__.py:_checked`,** for every tool, before any
+    tool runs. A tool needs its own check only for a number it computes.
+  - **The server's six argument pairs are unchanged by D1.** The capture's background and greyscale
+    rules moved into its schema (`dependentSchemas`), and the stroke's eraser, smooth and antialias
+    refusals left with their values; none of those was one of F19's six.
+  - **The instructions are 3,453 characters, 643 spare.** No test holds the spare; later sessions
+    spend it.
 - **The evidence stays outside the repository.** The Codex agent holds its bundles.
-- **Baseline** (ARCHITECTURE's table, v0.19.0): `verify` 6 stages, all PASS; 742 server tests and
-  799 plugin-core tests, 0 skipped; `probe` 147 PASS, 0 FAIL, 24 MEASURED, about 125 s with 0
-  documents open; 19 tools; 19 schema files; 30 error codes; 31 bridge ops; instructions 3,970
+- **Baseline** (ARCHITECTURE's table, v0.20.0): `verify` 6 stages, all PASS; 879 server tests and
+  799 plugin-core tests, 0 skipped; `probe` 148 PASS, 0 FAIL, 24 MEASURED, about 125 s with 0
+  documents open; 19 tools; 19 schema files; 30 error codes; 31 bridge ops; instructions 3,453
   characters.
-- **Not done:** nothing from R3's block.
+- **Not done:** nothing from D1's block.
 
 ## Watch for
 
@@ -80,26 +67,21 @@ Release 0.20.0, with `api_version` 0.4.0.
   the owner before any probe run: a dialog it raises refuses every call until it closes, and fails
   what the run overlaps. Done-notes record what was measured, never its work or its documents.
 - **A client's `serve` runs this checkout as it stands.** A Codex session started mid-session
-  imports your uncommitted code, and once the version is bumped and the plugin installed, nothing
-  refuses it. Keep the tree working between edits while the owner may be painting.
+  imports your uncommitted code. Keep the tree working between edits while the owner may be
+  painting.
 - **Every plugin change needs `install-plugin` and a Krita restart** before `probe` or `doctor` step
-  5 passes. That includes a version bump, which changes the plugin's hash, so bump before the first
-  live run. **`serve` refuses a plugin of another version:** a stale plugin fails every tool with
-  `PROTOCOL_MISMATCH` until Krita restarts.
-- **A release restarts the MCP client too,** so tell the owner before the restart.
+  5 passes, F1's included: the plugin's hash changes with no version bump.
 - **Before the probe's paint checks, the stock presets must be listed in Krita:**
   `b) Basic-2 Opacity`, `b) Airbrush Soft`, `y) Texture Spray`, `y) Texture Wood Fiber`.
 - **Brush state is window-wide (K3).** Any live run that paints changes the owner's current brush
   and Krita's preset history. The probe saves and writes back the brush state. A scratchpad driver
-  must do the same: read `harness.brush_state` first, from a document in the harness folder (a
-  created document has no path, so the read fails), and stop if the read fails.
-- **A scratchpad driver that leaves documents open for the owner** must not remove their folder
-  until they are closed.
+  must do the same: read `harness.brush_state` first, from a document in the harness folder, and
+  stop if the read fails.
 - **Krita's memory grows across large opens and saves.** Restart it, at 0 unsaved, before measuring.
-- **D1's own traps:**
-  - **Descriptions count.** They raise each rendered input. Codex compacts a normalised input over
-    5,000 bytes, and a rendered one over 16,000 becomes `unknown`.
-  - **The probe reads `rgba` too.** Rename it in one pass.
-  - **The instructions have 126 characters to spare.** D1 must leave at least 500.
+- **F1's own traps:**
+  - **This rewrites the most-tested path in the product.** The ledger's witness, the ring, the
+    rollback's re-read and `history_sealed` are not incidental. Move them, do not simplify them.
+  - **A frame nobody can extend is the failure mode.** Check it against C1, M1 and L1 first.
+  - **No count moves but the parity tests,** and the probe's whole baseline holds unchanged.
 - **Comments state the present.** No session ids, no "used to", no review stories.
 - **Every push needs its own approval.** List `origin/main..HEAD` first.

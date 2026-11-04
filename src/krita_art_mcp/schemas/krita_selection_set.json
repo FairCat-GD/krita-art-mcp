@@ -217,6 +217,7 @@
         ]
       },
       "feather_px": {
+        "description": "px, 0 to 256.",
         "type": "integer",
         "minimum": 0,
         "maximum": 256
@@ -225,11 +226,13 @@
         "type": "boolean"
       },
       "grow_px": {
+        "description": "px, 0 to 256.",
         "type": "integer",
         "minimum": 0,
         "maximum": 256
       },
       "shrink_px": {
+        "description": "px, 0 to 256.",
         "type": "integer",
         "minimum": 0,
         "maximum": 256
@@ -248,7 +251,7 @@
     "type": "object",
     "properties": {
       "api_version": {
-        "const": "0.3.0"
+        "const": "0.4.0"
       },
       "status": {
         "type": "string",
@@ -692,7 +695,7 @@
       "invert": false
     },
     "structuredContent": {
-      "api_version": "0.3.0",
+      "api_version": "0.4.0",
       "status": "completed",
       "document_id": "doc-1",
       "revision": null,

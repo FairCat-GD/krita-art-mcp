@@ -36,6 +36,8 @@ BRUSH_FIELDS = {
 PATH_FIELDS = {"start", "segments"}
 MAX_POINTS = 4096
 MIN_SIZE_PX, MAX_SIZE_PX = 1, 1000
+# How far past the canvas an on-curve point may lie, as a fraction of the brush's size.
+OVERHANG_OF_SIZE = 0.5
 SHA256 = re.compile(r"^[0-9a-f]{64}$")
 NEAREST = 5
 PAINTABLE = "PAINT"
@@ -528,7 +530,7 @@ def _target(tree: dict[str, Any], layer_id: str, protected: set[str]) -> dict[st
 
 def _on_canvas(path: dict[str, Any], size: list[int], brush_px: float) -> None:
     # Only on-curve points: a curve's control points may lie anywhere.
-    half = brush_px / 2
+    half = brush_px * OVERHANG_OF_SIZE
     points = [path["start"]] + [segment[-2:] for segment in path["segments"]]
     for index, (x, y) in enumerate(points):
         if not (-half <= x <= size[0] + half and -half <= y <= size[1] + half):

@@ -1,6 +1,6 @@
 # krita-art-mcp — architecture, as built
 
-This is the system as it stands at 0.19.0, in round 2, on the Phase 1 round 1 built. Every session
+This is the system as it stands at 0.20.0, in round 2, on the Phase 1 round 1 built. Every session
 keeps it true, in the same commit as the change. Each section stands on its own: a session reads
 the overview, the invariants and the baseline, then only the sections its work touches.
 `docs/USER-GUIDE.md` is the same system from the user's side.
@@ -41,7 +41,7 @@ MCP client (Codex, Claude Code) ──stdio──▶ server: src/krita_art_mcp/ 
 
 **Three version numbers, kept apart.** The package version (`pyproject.toml`, with the plugin's
 copy held equal by a test), shown by `--version`, in the MCP `serverInfo` and by
-`krita_server_info`. The tool contract's `api_version`, `"0.3.0"`, in every envelope. The bridge
+`krita_server_info`. The tool contract's `api_version`, `"0.4.0"`, in every envelope. The bridge
 protocol, `1`. The protocol stays 1 while the server and the plugin are released together, because
 `serve` refuses a plugin of any other version (see *The bridge contract*).
 
@@ -240,6 +240,14 @@ arguments; `ExactArguments` passes them through and the runner validates with Dr
 `guard`, `source`, the completed rule's copy of `data`, inspect's `layers`) and formats them; a test
 holds the files to it.
 
+**A field's range or unit is in its `description`.** Codex shows a property's description as a
+comment and drops `minimum` and `maximum`, so every input property with both bounds, on itself or on
+its items, states them as "A to B", and a test holds each description to its schema's own bounds.
+Fields whose unit or rule matters say it too: `points`, the colours (sRGB 0 to 1), `verify`,
+`input_fallback`, capture's two forms, and the sample's `color` and `rgba_255`. A tool's
+`description` carries a short example where a shape is easy to get wrong: capture's two forms, and a
+sample's `color` sent as a stroke's colour.
+
 **Hints follow each tool's worst permitted behaviour.**
 - The eight reads are `readOnlyHint: true`.
 - Five mutating tools only add, and are `destructiveHint: false`: `krita_layer_create`,
@@ -265,18 +273,31 @@ valid schema can still arrive as `unknown`. `tests/test_schemas.py` holds these 
   path;
 - outputs are one chain written by `amend_schemas.py`: completed, else failed, else pending.
 
-Codex's limits, measured at 0.15.0 with a scratchpad port of its renderer:
-- a normalised input over 5,000 bytes is compacted (the largest was 2,135);
-- a rendered input or output over 16,000 bytes becomes `unknown` (the largest was 2,294);
-- `Array<number>` hides a tuple's length.
+**Codex's limits are tested.** `tests/support/codex_render.py` ports Codex's sanitizer, the struct
+an input passes through and its TypeScript renderer, from `rust-v0.166.0` (the same files at main on
+2026-11-04), and renders Codex's own test case as Codex's test expects. For every tool,
+`test_codex_shows_every_input_and_output_whole` holds:
+- the normalised input at most 5,000 bytes, past which Codex strips descriptions and then deeper
+  shapes (the largest is `krita_paint_stroke`'s, 2,948);
+- the rendered input at most 16,000 bytes, past which it becomes `unknown`, and with no `unknown`
+  in it (the largest is 1,909);
+- the rendered output at most 16,000 bytes and not `unknown` (the largest is
+  `krita_preview_render`'s, 2,362).
 
-Nothing re-measures these. Every later schema change has been small beside the margins. `ALL_TOOLS` carries the declarations, so an agent reads one
-by filtering for it.
+The port follows a pinned tag, so a Codex release that changes its renderer is not seen until the
+port is redone. `Array<number>` hides a tuple's length. `ALL_TOOLS` carries the declarations, so an
+agent reads one by filtering for it.
 
 **Argument errors name every problem,** up to `MAX_REPORTED_PROBLEMS` (50). The message joins them,
 `details.errors` lists them and `details.omitted` counts the rest. Fields take turns over the cap, so
 one repeated mistake cannot hide another; the cap keeps an answer well under Claude Code's 25,000
 tokens (C4). A forbidden field reads "not allowed with these arguments".
+
+**A number no double holds is refused in one place.** mcp's parser reads `NaN`, `Infinity` and
+`1e400` as floats, and a number schema's bounds pass NaN. `_checked` walks every tool's arguments
+beside the schema and reports each NaN, infinity or integer past a double's range as `<path>: not a
+finite number`, among the schema's problems and under the same cap. A tool's own check stays only
+for a number it computes, such as a smoothed stroke's control points.
 
 **Semantic checks stop at their first refusal.** One envelope carries one code with its own
 `details`, these codes differ, and a later check can assume an earlier one held. The server's checks
@@ -325,9 +346,6 @@ the round 2 intake for the schemas that round amends.
 | `krita_layer_create` `type: transparency_mask` | `UNSUPPORTED_CAPABILITY` | Round 2's M1 |
 | `krita_paint_stroke` per-point pressure, tilt, rotation, tangential pressure, speed, time | `UNSUPPORTED_CAPABILITY`, unless `input_fallback: flat` | Phase 6, on Krita 6.1 / 5.4 (K30) |
 | `input_fallback`, which takes only `flat` | the one value | Phase 6 |
-| `smooth: basic`, `stabilizer` | `UNSUPPORTED_CAPABILITY` | Never: decided against; they belong to Krita's freehand tool |
-| `antialias: false` | `UNSUPPORTED_CAPABILITY` | No phase names it; to measure per engine |
-| `eraser: true` | `UNSUPPORTED_CAPABILITY`; the plugin keeps the plumbing | The backlog's *Erasing* |
 | Every read's `frame` other than 0 | `UNSUPPORTED_CAPABILITY` | Phase 5 |
 | `krita_document_create` depths other than `U8` | `UNSUPPORTED_CAPABILITY` | No phase names it |
 | `krita_document_create` `color_model: RGBA`, `background: transparent` | the one value | No phase names it |
@@ -339,7 +357,7 @@ the round 2 intake for the schemas that round amends.
 | `revision` in every envelope | `null` | Phase 3 |
 | `uri` in every artifact | equal to `path` | Phase 3, `krita-artifact://` |
 | `krita_paint_stroke` `input_applied` | `flat` | Phase 6 |
-| `krita_paint_stroke` `effective_brush.antialias` | `true` | When `antialias: false` does |
+| `krita_paint_stroke` `effective_brush.antialias` | `true` | Statement, kept: every stroke is antialiased |
 | `krita_capture` `fresh` | `true` | No phase promises it; meaningful once reads can pin a revision (Phase 3) |
 | `krita_preview_render` `static_only`, `source_pixels_changed` | `true`, `0` | Statements, kept: a preview certifies no motion and writes nothing |
 | `krita_document_save` `reopened_verified`, `composite_preserved` | `true` | Statements, kept: any other outcome is an error |
@@ -348,16 +366,24 @@ the round 2 intake for the schemas that round amends.
 | `krita_layer_update` `undoable` | `["blend_mode"]` or empty | Statement, kept (K22) |
 | `krita_layer_create` `protected`; `krita_document_create` `mode` | `false`; `new` | Statements, kept |
 
+At 0.20.0 `krita_paint_stroke` dropped the refused values no phase names: `smooth: basic` and
+`stabilizer`, `antialias: false` (the field takes only `true`) and `eraser: true` (still required,
+it takes only `false`; erasing, when it comes, puts it back). Each now fails the schema with
+`INVALID_ARGUMENT`. `krita_document_create`'s stay, since round 2 does not amend that schema.
+
 `limits.capture_pixels` in `krita_server_info` is reported and enforced by nothing but `max_px`'s
-schema maximum, of which it is the square.
+schema maximum, of which it is the square. `brush_size_px`, `resource_page_size` and
+`stroke_overhang_size_fraction` are the plugin's own bounds, each held to its constant by a test;
+the overhang bounds on-curve points only, so a brush's reach can pass it.
 
 **The capability matrix** is the one place a later feature announces itself. False today:
 `stroke.per_point_input` (Phase 6), `undo.grouping` (K29), `stroke.deterministic` (stochastic
 presets have no seed), `operation.cancel_running`, `color_spaces`, `filters` (Phase 2), `animation`
 (Phase 5). True since 0.9.0: `stroke.native_brush`, `stroke.smoothing`, `selection.enforced`.
 
-**The instructions.** `instructions.py` is 3,970 of Claude Code's 4,096 characters (C4), held by a
-test, and states every rule an agent would otherwise learn from a refusal.
+**The instructions.** `instructions.py` is 3,453 of Claude Code's 4,096 characters (C4), held by a
+test. It states the rules an agent would otherwise learn from a refusal, and leaves a field's range,
+unit and form to that field's description.
 
 ## The data layer
 
@@ -578,15 +604,19 @@ stays for the mask display mode.
 **Capture.** Resample, then composite: a checker composited first averages to flat grey at small
 scales. The filters are Pillow's `nearest`, `box`, `bilinear`, `hamming`, `bicubic` and `lanczos`,
 for previews too; `imaging.FILTERS` is the list, and a test holds every `filter` enum to it. Scale 1
-is native, and `background` or `greyscale` there is refused. `max_px` bounds the image;
+is native, and `background` or `greyscale` there is refused by the schema, as on a selection,
+through `dependentSchemas` on `scale` and `target`. `max_px` bounds the image;
 `limits.capture_source_pixels` (8192²) bounds the area read. A layer capture is that layer's own
 paint device (K12), and is paint layers only. A larger image goes by path with a 1600 px inline
 preview. Captures are `op-<id>` files, found before they are made, so `krita_operation_get` can
 rebuild a receipt.
 
-**Sample.** RGBA, hex, L\*a\*b\* and L\*C\*h, with an alpha-weighted disc for `radius`. Colour maths
-is sRGB only (`sRGB-elle-V2-srgbtrc.icc`, `sRGB built-in`): the document's profile for a composite,
-the layer's own for a layer. Otherwise those fields are null.
+**Sample.** `rgba_255`, `color`, hex, L\*a\*b\* and L\*C\*h, with an alpha-weighted disc for
+`radius`. `color` is the stroke's `brush.color` shape: the mean divided by 255 and unrounded, so a
+stored byte paints back as itself, with alpha 1, because a stroke's transparency comes from its
+opacity and flow. Colour maths is sRGB only (`sRGB-elle-V2-srgbtrc.icc`, `sRGB built-in`): the
+document's profile for a composite, the layer's own for a layer. Otherwise `color`, L\*a\*b\* and
+L\*C\*h are null, and with no colour (alpha 0) so is the hex.
 
 **Frames.** Reads refuse an animated document away from frame 0, and never move the owner's timeline.
 A still document whose timeline was scrubbed shows the same picture at every frame, and reads.
@@ -715,9 +745,10 @@ is `null` when no confirmed undo brought back what it is counted against.
 
 **The input gate.** Phase 1 always paints with `Node.paintPath` at pressure 1 (K4), even on a build
 with `paintPolylineStroke`, because that branch cannot be tested on released Krita. The server refuses
-before the journal, in order: argument errors; `smooth` basic or stabilizer, `antialias: false`, the
-eraser, the input gate; numbers that are not finite; a stroke under half a pixel, since Krita paints
-no dab for it. `smooth: catmull_rom` turns the points into exact cubics on the server.
+before the journal, in order: argument errors, numbers that are not finite among them; the
+colour's alpha; the input gate; smoothed control points that overflow; a stroke under half a pixel,
+since Krita paints no dab for it. Erasing, the other smoothers and antialiasing off are out of the
+schema. `smooth: catmull_rom` turns the points into exact cubics on the server.
 
 ## The undo ledger and history
 
@@ -874,7 +905,7 @@ the plugin is stale, and a session reads them before it restarts Krita.
 
 | Layer | Runs | Covers | Cannot see |
 |---|---|---|---|
-| Unit (server) | `verify` | Schemas and examples, argument rules, envelope and errors, roots, journal, client-side dedup, masks, colour maths, preview geometry, the bridge client against a fake bridge, a stdio round trip | Real Krita |
+| Unit (server) | `verify` | Schemas and examples, what Codex renders of them (by a port), argument rules, envelope and errors, roots, journal, client-side dedup, masks, colour maths, preview geometry, the bridge client against a fake bridge, a stdio round trip | Real Krita; a Codex renderer past the port's tag |
 | Unit (plugin core) | `verify`, on 3.10 | HTTP, auth, jobs and re-entry, dedup, registry, protection, the ledger, verification against `tests/fixtures/fake_krita.py` | libkis behaviour |
 | Source scans | `verify` | Invariants 1, 6 and 7, by AST | What a name hides at run time |
 | Hygiene | `verify` | Private terms and AI attribution | See below |
@@ -1014,7 +1045,6 @@ Each has its detail in `docs/BACKLOG.md`, or in `docs/spec/SESSIONS.md` where ro
 - Labels are English; region scope is the pixel engine only; filters are classed by type.
 - Selection steps are confirmed by state alone.
 - Erasing, a single dab and antialiasing off are refused.
-- Not-finite numbers reach the plugin in some tools' inputs.
 - The global-mask branch of K46, layer styles and the mirror restore are held by unit tests or by
   nothing live.
 
@@ -1087,25 +1117,25 @@ the code is shaped as it is.
   it. A Krita holding 87 documents ran document ops about three times slower, and left the paint
   benchmarks, the preview benchmark and H4 idle alone.
 
-## Baseline (v0.19.0)
+## Baseline (v0.20.0)
 
-Taken on 2026-11-03 on Krita 5.3.4.1, macOS, Apple Silicon, on a Krita restarted that session, with
+Taken on 2026-11-04 on Krita 5.3.4.1, macOS, Apple Silicon, on a Krita restarted that session, with
 **0 documents open**. The probe prints the open-document count beside its time, because document ops
 depend on it: 87 open documents cost about 50 s more.
 
 | Check | Expected |
 |---|---|
 | `uv run scripts/verify.py` | 6 stages, all PASS |
-| Server tests (3.12) | 742 passed, 0 skipped |
+| Server tests (3.12) | 879 passed, 0 skipped |
 | Plugin-core tests (3.10) | 799 passed, 0 skipped |
-| `uv run krita-art-mcp probe` | 147 PASS, 0 FAIL, 24 MEASURED; about 125 s |
+| `uv run krita-art-mcp probe` | 148 PASS, 0 FAIL, 24 MEASURED; about 125 s |
 | `uv run krita-art-mcp doctor` | 6 steps, all PASS, with a root allowed |
 | Registered tools | 19 |
 | Schema files | 19 |
 | Error codes | 30 |
 | Bridge ops | 31 |
-| Bridge protocol; `api_version` | 1; 0.3.0 |
-| Server instructions | 3,970 of 4,096 characters |
+| Bridge protocol; `api_version` | 1; 0.4.0 |
+| Server instructions | 3,453 of 4,096 characters |
 | CLI commands | 5 |
 
 A documentation or refactoring change should not move any of these. If one moves, that is the

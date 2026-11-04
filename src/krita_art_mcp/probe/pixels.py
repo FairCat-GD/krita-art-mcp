@@ -240,12 +240,12 @@ async def _samples(report: Report, a: Client, document_id: str, layers: dict[str
     lab = shape.get("lab") or [0, 0, 0]
     report.check(
         "samples at known pixels are exact, the shape #A7C284 with its L*a*b*, and a layer sample",
-        [sample["rgba"] for sample in samples] == expected
+        [sample["rgba_255"] for sample in samples] == expected
         and shape.get("hex") == "#A7C284"
         and max(abs(x - y) for x, y in zip(lab, SHAPE_LAB, strict=True)) <= 0.05
         and samples[3]["hex"] is None
-        and layer.get("rgba") == [90, 40, 200, 255],
-        f"{[sample.get('rgba') for sample in samples]}, layer {layer.get('rgba')}",
+        and layer.get("rgba_255") == [90, 40, 200, 255],
+        f"{[sample.get('rgba_255') for sample in samples]}, layer {layer.get('rgba_255')}",
     )
     discs = await tool(a, "krita_sample", _sample(document_id, [[30, 44], [0, 47]], radius=3))
     inside, edge = ((discs.get("data") or {}).get("samples") or [{}, {}])[:2]
@@ -254,7 +254,7 @@ async def _samples(report: Report, a: Client, document_id: str, layers: dict[str
     report.check(
         "a radius-3 disc in the base is 29 exact pixels with stdev_l 0; an edge disc is clipped",
         inside.get("pixel_count") == 29
-        and inside.get("rgba") == [10, 120, 220, 255]
+        and inside.get("rgba_255") == [10, 120, 220, 255]
         and inside.get("stdev_l") == 0
         and corner.get("pixel_count") == 6
         and edge.get("pixel_count", 0) < 29,

@@ -535,7 +535,7 @@ def test_a_schema_refusal_is_not_applied(world: World) -> None:
 def test_a_tools_own_refusal_is_not_applied(world: World) -> None:
     document_id = _document(world)
     arguments = _stroke(document_id)
-    arguments["brush"] = {**arguments["brush"], "eraser": True}
+    arguments["points"] = [{**point, "pressure": 0.5} for point in arguments["points"]]
     refused = world.server().content("krita_paint_stroke", arguments)
     assert refused["error"]["code"] == "UNSUPPORTED_CAPABILITY"
     assert refused["error"]["details"]["outcome"] == "not_applied"

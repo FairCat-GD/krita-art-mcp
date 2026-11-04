@@ -1,8 +1,9 @@
 import hashlib
 import json
 import logging
+import math
 import time
-from collections.abc import Callable
+from collections.abc import Callable, Iterator
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -30,6 +31,28 @@ class ToolCall:
     client_name: str | None = None
     # When the call reached the server, on the monotonic clock.
     started: float = field(default_factory=time.monotonic)
+
+
+def finite(value: float) -> bool:
+    # A JSON integer too large for a double overflows rather than answering.
+    try:
+        return math.isfinite(value)
+    except OverflowError:
+        return False
+
+
+def not_finite(value: Any, path: tuple[str | int, ...] = ()) -> Iterator[tuple[str | int, ...]]:
+    # Where a number lies that no double holds: JSON's NaN and Infinity, 1e400 (read as
+    # Infinity), or an integer past a double's range. A number schema's bounds pass NaN.
+    if isinstance(value, int | float):
+        if not finite(value):
+            yield path
+    elif isinstance(value, dict):
+        for key, item in value.items():
+            yield from not_finite(item, (*path, key))
+    elif isinstance(value, list):
+        for index, item in enumerate(value):
+            yield from not_finite(item, (*path, index))
 
 
 def args_sha256(tool: str, arguments: dict[str, Any]) -> str:

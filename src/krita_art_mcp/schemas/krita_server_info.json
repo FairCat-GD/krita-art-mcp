@@ -11,7 +11,7 @@
     "type": "object",
     "properties": {
       "api_version": {
-        "const": "0.3.0"
+        "const": "0.4.0"
       },
       "status": {
         "type": "string",
@@ -153,13 +153,45 @@
                   "capture_source_pixels": {
                     "type": "integer",
                     "minimum": 1
+                  },
+                  "brush_size_px": {
+                    "description": "krita_paint_stroke's brush.size_px range, in px.",
+                    "type": "object",
+                    "properties": {
+                      "min": {
+                        "type": "number",
+                        "exclusiveMinimum": 0
+                      },
+                      "max": {
+                        "type": "number",
+                        "exclusiveMinimum": 0
+                      }
+                    },
+                    "required": [
+                      "min",
+                      "max"
+                    ],
+                    "additionalProperties": false
+                  },
+                  "resource_page_size": {
+                    "description": "The most entries one krita_resource_list page holds: its limit's maximum.",
+                    "type": "integer",
+                    "minimum": 1
+                  },
+                  "stroke_overhang_size_fraction": {
+                    "description": "A stroke's on-curve points may lie off the canvas by up to this times brush.size_px. Control points may lie anywhere, and a brush's reach can be wider.",
+                    "type": "number",
+                    "exclusiveMinimum": 0
                   }
                 },
                 "required": [
                   "stroke_points",
                   "capture_pixels",
                   "wait_budget_seconds",
-                  "capture_source_pixels"
+                  "capture_source_pixels",
+                  "brush_size_px",
+                  "resource_page_size",
+                  "stroke_overhang_size_fraction"
                 ],
                 "additionalProperties": false
               },
@@ -387,13 +419,45 @@
                 "capture_source_pixels": {
                   "type": "integer",
                   "minimum": 1
+                },
+                "brush_size_px": {
+                  "description": "krita_paint_stroke's brush.size_px range, in px.",
+                  "type": "object",
+                  "properties": {
+                    "min": {
+                      "type": "number",
+                      "exclusiveMinimum": 0
+                    },
+                    "max": {
+                      "type": "number",
+                      "exclusiveMinimum": 0
+                    }
+                  },
+                  "required": [
+                    "min",
+                    "max"
+                  ],
+                  "additionalProperties": false
+                },
+                "resource_page_size": {
+                  "description": "The most entries one krita_resource_list page holds: its limit's maximum.",
+                  "type": "integer",
+                  "minimum": 1
+                },
+                "stroke_overhang_size_fraction": {
+                  "description": "A stroke's on-curve points may lie off the canvas by up to this times brush.size_px. Control points may lie anywhere, and a brush's reach can be wider.",
+                  "type": "number",
+                  "exclusiveMinimum": 0
                 }
               },
               "required": [
                 "stroke_points",
                 "capture_pixels",
                 "wait_budget_seconds",
-                "capture_source_pixels"
+                "capture_source_pixels",
+                "brush_size_px",
+                "resource_page_size",
+                "stroke_overhang_size_fraction"
               ],
               "additionalProperties": false
             },
@@ -484,7 +548,7 @@
   "example": {
     "input": {},
     "structuredContent": {
-      "api_version": "0.3.0",
+      "api_version": "0.4.0",
       "status": "completed",
       "document_id": null,
       "revision": null,
@@ -552,7 +616,13 @@
           "stroke_points": 4096,
           "capture_pixels": 16777216,
           "wait_budget_seconds": 45,
-          "capture_source_pixels": 67108864
+          "capture_source_pixels": 67108864,
+          "brush_size_px": {
+            "min": 1,
+            "max": 1000
+          },
+          "resource_page_size": 100,
+          "stroke_overhang_size_fraction": 0.5
         },
         "allowed_roots": [
           "/projects/demo"

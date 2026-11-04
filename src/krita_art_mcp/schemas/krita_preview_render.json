@@ -27,6 +27,7 @@
               "maxItems": 2
             },
             "integer_zoom": {
+              "description": "1 to 16.",
               "type": "integer",
               "minimum": 1,
               "maximum": 16
@@ -208,6 +209,7 @@
                   ]
                 },
                 "rgba": {
+                  "description": "sRGB, each 0 to 1.",
                   "type": "array",
                   "items": {
                     "type": "number",
@@ -256,6 +258,7 @@
               "maxItems": 3
             },
             "add": {
+              "description": "Each -1 to 1.",
               "type": "array",
               "items": {
                 "type": "number",
@@ -292,7 +295,7 @@
     "type": "object",
     "properties": {
       "api_version": {
-        "const": "0.3.0"
+        "const": "0.4.0"
       },
       "status": {
         "type": "string",
@@ -1477,7 +1480,7 @@
       "master_to_export_scale": 0.5
     },
     "structuredContent": {
-      "api_version": "0.3.0",
+      "api_version": "0.4.0",
       "status": "completed",
       "document_id": "doc-1",
       "revision": null,

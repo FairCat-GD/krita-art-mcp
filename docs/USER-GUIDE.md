@@ -115,7 +115,10 @@ The server gives every agent these rules as its instructions. This is the same l
 in order.
 
 **1. See what is there.** Call `krita_server_info` first, and do not plan around a capability marked
-`supported: false`. `krita_document_list` shows what is open. Documents you opened by hand list as
+`supported: false`. Its `limits` give the brush size range, the resource page size and how far a
+stroke may run past the canvas, and every field with a range or a unit states it in its schema
+`description`, which Codex shows its model where it drops `minimum` and `maximum`.
+`krita_document_list` shows what is open. Documents you opened by hand list as
 `read_only`, so an agent can read them and never change them.
 
 **2. Open a working copy.** The source is copied and never written. Every layer already in it becomes
@@ -130,10 +133,14 @@ protected.
 the source itself and refuses every change. KRA, ORA and PNG open, RGBA 8-bit only.
 
 **3. Look.** `krita_document_inspect` gives the layer tree, protection, the selection and how far
-history goes. `krita_capture` gives an image and its PNG's path: `scale: 1` is the native crop, and
-other scales resample with your filter onto a background. The filters are `nearest`, `box`,
+history goes. `krita_capture` gives an image and its PNG's path, in one of two forms: `scale: 1` is the
+native crop, the stored pixels, and takes no `background` or `greyscale`; any other scale resamples
+with your filter onto a background, checker by default. The filters are `nearest`, `box`,
 `bilinear`, `hamming`, `bicubic` and `lanczos`, the same for previews. `krita_sample` gives exact
-colours; never judge a colour from a capture. `krita_resource_list` lists brush presets, blend
+colours: `rgba_255` in 0–255, the hex, L\*a\*b\* and L\*C\*h, and `color`, the same colour in
+the 0–1 shape a stroke's `brush.color` takes, so it paints back unchanged. `color` is always
+opaque, because a stroke's transparency comes from its opacity and flow, and null where there is
+no colour or the profile is not sRGB. Never judge a colour from a capture. `krita_resource_list` lists brush presets, blend
 modes, profiles and palettes.
 
 **4. Add a layer of your own.** Protected layers refuse strokes, on purpose.
@@ -177,8 +184,10 @@ leaks.
  "smooth": "catmull_rom"}
 ```
 
-`preset_id` and `preset_sha256` come from `krita_resource_list`, and a pixel-engine preset's receipt
-says what Krita applied. A stroke is checked over its reach by default. A preset on another brush
+`size_px` is 1 to 1000, `opacity` and `flow` 0 to 1, and the colour sRGB 0 to 1 with alpha 1,
+not 0–255: a sample's `color` as it comes. `eraser` takes only `false`, `smooth` `none` or
+`catmull_rom`, and `antialias`, if given, only `true`. `preset_id` and `preset_sha256` come from
+`krita_resource_list`, and a pixel-engine preset's receipt says what Krita applied. A stroke is checked over its reach by default. A preset on another brush
 engine, or a filter, mask, style or clone that could spread a change, needs `verify: "full"`, which
 checks the whole canvas. A path may run half a brush past the canvas: `changed_bounds_px` is what
 changed on the canvas, and `layer_bounds_px` is the layer's whole extent, past it included.
@@ -258,7 +267,7 @@ Every failure returns `error: {code, message, retryable, details}`. The table gi
 
 | Code | Retryable | What it means | What to do |
 |---|---|---|---|
-| `INVALID_ARGUMENT` | no | The arguments break the schema or a rule. Also an undo past the last protection change, a redo of a rolled-back stroke, or a preset that does not exist (with the 5 nearest names) | Fix the call. A schema error names every problem, in the message and in `details.errors` |
+| `INVALID_ARGUMENT` | no | The arguments break the schema or a rule, or hold a number that is not finite (NaN, Infinity, or one past a double's range). Also an undo past the last protection change, a redo of a rolled-back stroke, or a preset that does not exist (with the 5 nearest names) | Fix the call. A schema error names every problem, in the message and in `details.errors` |
 | `UNSUPPORTED_CAPABILITY` | no | Not in this build or phase, the plugin cannot bound the change's reach, cumulative undo is on, or a save of a document not in sRGB | If `details` names a reach reason, use `verify: "full"`. Otherwise do without it |
 | `KRITA_NOT_RUNNING` | no | No live bridge | Follow the step in the message, or run `doctor` |
 | `PROTOCOL_MISMATCH` | no | The server and the plugin are different versions | Run `install-plugin` and restart Krita. If the plugin is the newer, restart the MCP client |
@@ -300,14 +309,15 @@ Every failure returns `error: {code, message, retryable, details}`. The table gi
 - Saves write KRA or ORA, never PNG. A saved file carries a `mergedimage.png`, and `krita_capture` at
   `scale: 1` gives a native PNG of any region.
 - A capture's image is at most 4096 px on its long edge, from at most 8192² pixels read: tile for
-  more. Layer captures and samples read paint layers only, not groups or masks.
+  more. Layer captures and samples read paint layers only, not groups or masks. A native capture
+  (`scale: 1`) and a selection's take no `background` or `greyscale`.
 
 **Painting.**
 - **No per-point pressure, tilt or timing.** Every point paints at pressure 1. Such input is refused
   unless `input_fallback` is `flat`. Scripted strokes hold speed sensors constant, so of six stock
   presets tried, only `j) WaterC Basic Round-Grunge` tapers, and only as it starts.
 - **The colour's alpha must be 1.** Transparency comes from the brush's `opacity` and `flow`.
-- **No erasing.** `eraser: true` is refused.
+- **No erasing.** `eraser` takes only `false`.
 - **No stroke under half a pixel.** Krita paints no dab for one. For a single dab, send two points
   half a pixel apart.
 - **Region verification needs the pixel brush engine.** Color Smudge, the Quick Brush, MyPaint, spray,

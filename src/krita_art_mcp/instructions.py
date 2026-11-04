@@ -5,7 +5,7 @@ krita-art-mcp lets you paint in the owner's running Krita through Krita's own br
 with accepted art protected.
 
 - Call krita_server_info first; do not plan around a capability its matrix marks supported: \
-false.
+false. Its limits, and each field's description, give the ranges and units calls take.
 - Every result has one envelope: api_version, status (completed, queued, running, failed or \
 cancelled), document_id, revision (null), operation_id, data and error.
 - A failed call returns error.code, a message, retryable and details. Retry only when retryable \
@@ -35,23 +35,16 @@ filter, mask, style, clone or copy blend could spread one, use verify full. Anim
 are refused. To recolour a silhouette under preserve_composite_alpha, paint on a new \
 inherit_alpha layer.
 - krita_paint_stroke paints one stroke per call, one undo step, checked like a layer change \
-and undone on a leak. Per-point pressure, tilt or timing is refused unless input_fallback is \
-flat, which paints every point at pressure 1. Erasing and a stroke under half a pixel are \
-refused. Region verification needs the pixel brush engine; another preset, or one whose tip or \
-scatter cannot be read, needs verify full.
-- krita_capture returns an image and its PNG's path. scale 1 is the native crop; other scales \
-resample with your filter onto a background, checker by default. max_px (1600, at most 4096) \
-bounds the long edge: capture tiles for more. A layer capture is the layer's own pixels, without \
-its opacity, masks or inherit-alpha clip.
+and undone on a leak. A preset whose tip or scatter cannot be read needs verify full.
+- krita_capture returns an image and its PNG's path: scale 1 is the native crop, any other \
+scale resamples.
 - After every one to three strokes, check krita_preview_render at the asset's game sizes, from \
 explicit recipes; a source's baseline_id shows the document as opened beside it.
 - Keep work with krita_document_save to a new .kra path (it never overwrites); it reopens the \
 file to verify it and clears dirty. An .ora drops masks and adjustment layers. A save takes \
 up to 67 megapixels (8192 x 8192); a larger document can be painted in region scope, never saved.
-- Use krita_sample for exact colours (RGBA 0-255, hex, L*a*b*, L*C*h); a radius averages a disc, \
-weighted by alpha. Never judge a colour from a capture.
-- krita_resource_list lists brush presets (their id and sha256 are what paint calls take), \
-blend modes, profiles and palettes.
+- Use krita_sample for exact colours; a sample's color goes into a stroke's brush.color \
+unchanged. Never judge a colour from a capture.
 - No tool writes raw pixels or runs code. The owner may be watching Krita, and must not edit \
 brush presets while you paint.
 """

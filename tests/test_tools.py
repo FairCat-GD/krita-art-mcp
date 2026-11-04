@@ -257,6 +257,45 @@ def test_the_largest_report_stays_well_under_claude_codes_token_limit() -> None:
     assert len(answer) < 50_000
 
 
+# mcp's parser reads NaN, Infinity and 1e400 as floats, and a long literal as an int.
+NOT_FINITE = [float("nan"), float("inf"), float("-inf"), float("1e400"), 10**400]
+
+
+def _with_a_number(value: Any, number: Any) -> tuple[Any, str]:
+    # The example with its first number replaced, or with a field added when it has none.
+    def swap(node: Any, path: str) -> tuple[Any, str | None]:
+        if isinstance(node, int | float) and not isinstance(node, bool):
+            return number, path
+        if isinstance(node, dict | list):
+            items = node.items() if isinstance(node, dict) else enumerate(node)
+            for key, item in items:
+                swapped, found = swap(item, f"{path}/{key}")
+                if found is not None:
+                    copy = dict(node) if isinstance(node, dict) else list(node)
+                    copy[key] = swapped
+                    return copy, found
+        return node, None
+
+    swapped, path = swap(value, "")
+    return (swapped, path) if path is not None else ({**value, "number": number}, "/number")
+
+
+@pytest.mark.parametrize("tool_name", schemas.tool_names())
+@pytest.mark.parametrize("number", NOT_FINITE, ids=["nan", "inf", "-inf", "1e400", "10**400"])
+def test_every_tool_refuses_a_number_that_is_not_finite(tool_name: str, number: Any) -> None:
+    ran: list[dict[str, Any]] = []
+
+    def run(arguments: dict[str, Any], *_: Any) -> CallToolResult:
+        ran.append(arguments)
+        return _completed(arguments)
+
+    arguments, path = _with_a_number(schemas.load(tool_name)["example"]["input"], number)
+    result = tools.build(tool_name, run).fn(arguments, None)
+    error = result.structured_content["error"]
+    assert error["code"] == "INVALID_ARGUMENT" and ran == []
+    assert {"path": path, "message": "not a finite number"} in error["details"]["errors"]
+
+
 def test_a_raising_tool_returns_internal_error() -> None:
     def run(arguments: dict[str, Any], *_: Any) -> CallToolResult:
         raise RuntimeError("boom")

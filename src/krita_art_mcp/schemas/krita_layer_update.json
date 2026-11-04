@@ -37,6 +37,7 @@
             "type": "boolean"
           },
           "opacity": {
+            "description": "0 to 1.",
             "type": "number",
             "minimum": 0,
             "maximum": 1
@@ -92,7 +93,7 @@
     "type": "object",
     "properties": {
       "api_version": {
-        "const": "0.3.0"
+        "const": "0.4.0"
       },
       "status": {
         "type": "string",
@@ -829,7 +830,7 @@
       }
     },
     "structuredContent": {
-      "api_version": "0.3.0",
+      "api_version": "0.4.0",
       "status": "completed",
       "document_id": "doc-1",
       "revision": null,

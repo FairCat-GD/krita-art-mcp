@@ -5,6 +5,7 @@ from pathlib import Path
 from typing import Any
 
 import amend_schemas
+import codex_render
 import pytest
 from amend_schemas import GUARD, SOURCE
 from jsonschema import Draft202012Validator
@@ -54,6 +55,16 @@ def _preview(source: dict[str, Any], recipe: dict[str, Any] | None = None) -> di
     return {**PREVIEW, "sources": [{**PREVIEW["sources"][0], **source}], "recipes": recipes}
 
 
+# The native form (scale 1) and a selection take no background or greyscale.
+CAPTURE_FORMS: list[tuple[dict[str, Any], bool]] = [
+    ({"scale": 1, "target": "composite"}, True),
+    ({"scale": 1, "target": "composite", "background": "checker"}, False),
+    ({"scale": 1, "target": "composite", "greyscale": False}, False),
+    ({"scale": 0.25, "target": "composite", "background": "checker", "greyscale": True}, True),
+    ({"scale": 2, "target": "selection"}, True),
+    ({"scale": 2, "target": "selection", "background": "transparent"}, False),
+    ({"scale": 2, "target": "selection", "greyscale": True}, False),
+]
 INPUT_RULES: list[tuple[str, dict[str, Any], bool]] = [
     *[
         (name, _with(name, target=target, layer_id=layer_id), valid)
@@ -86,6 +97,10 @@ INPUT_RULES: list[tuple[str, dict[str, Any], bool]] = [
     ("krita_document_create", _with("krita_document_create", size_px=[32, 32, 32]), False),
     ("krita_document_create", _with("krita_document_create", size_px=["32", "32"]), False),
     ("krita_document_create", _with("krita_document_create", size_px=[0, 32]), False),
+    *[
+        ("krita_capture", _with("krita_capture", layer_id=None, **fields), valid)
+        for fields, valid in CAPTURE_FORMS
+    ],
     ("krita_sample", _with("krita_sample", points=[[20]]), False),
     ("krita_sample", _with("krita_sample", points=[[20, 20, 20]]), False),
     *[
@@ -232,6 +247,70 @@ def _hidden_from_codex(schema: dict[str, Any]) -> list[str]:
 @pytest.mark.parametrize("schema_key", ["inputSchema", "outputSchema"])
 def test_a_schema_keeps_to_the_forms_codex_shows_its_model(tool_name: str, schema_key: str) -> None:
     assert _hidden_from_codex(schemas.load(tool_name)[schema_key]) == []
+
+
+def _bounded(schema: dict[str, Any], path: str = "") -> Iterator[tuple[str, dict[str, Any]]]:
+    # Every property with both a minimum and a maximum, on itself or on its items.
+    branches = [*schema.get("anyOf", []), *schema.get("oneOf", [])]
+    for name, shape in schema.get("properties", {}).items():
+        items = shape.get("items") if isinstance(shape.get("items"), dict) else {}
+        if {"minimum", "maximum"} <= shape.keys() or {"minimum", "maximum"} <= items.keys():
+            yield f"{path}/{name}", shape
+        yield from _bounded(shape, f"{path}/{name}")
+    for child in [*branches, schema.get("items")]:
+        if isinstance(child, dict):
+            yield from _bounded(child, path)
+
+
+def _number(value: float) -> str:
+    return str(int(value)) if float(value).is_integer() else str(value)
+
+
+@pytest.mark.parametrize("tool_name", PHASE_1_TOOLS)
+def test_a_bounded_input_states_its_range_where_codex_shows_it(tool_name: str) -> None:
+    # Codex drops minimum and maximum, and shows a property's description as a comment.
+    for path, shape in _bounded(schemas.load(tool_name)["inputSchema"]):
+        bounds = shape if "minimum" in shape else shape["items"]
+        said = f"{_number(bounds['minimum'])} to {_number(bounds['maximum'])}"
+        assert said in shape.get("description", ""), f"{tool_name}{path}"
+
+
+# Codex's own test of its renderer (`augment_tool_definition_includes_property_descriptions_as_
+# comments`), so the port is held to what Codex renders.
+WEATHER = {
+    "type": "object",
+    "properties": {
+        "weather": {
+            "type": "array",
+            "description": "look up weather for a given list of locations",
+            "items": {
+                "type": "object",
+                "properties": {"location": {"type": "string"}},
+                "required": ["location"],
+            },
+        }
+    },
+    "required": ["weather"],
+}
+
+
+def test_the_port_renders_codexs_own_case_as_codex_does() -> None:
+    assert codex_render.render_input(WEATHER) == (
+        "{\n  // look up weather for a given list of locations\n"
+        "  weather: Array<{ location: string; }>;\n}"
+    )
+
+
+@pytest.mark.parametrize("tool_name", PHASE_1_TOOLS)
+def test_codex_shows_every_input_and_output_whole(tool_name: str) -> None:
+    tool = schemas.load(tool_name)
+    # Over 5,000 bytes Codex strips the descriptions, then collapses deeper shapes.
+    assert codex_render.normalised_bytes(tool["inputSchema"]) <= codex_render.COMPACT_BYTES
+    # Every input field is typed, so none is shown as unknown; over 16,000 bytes all would be.
+    shown = codex_render.render_input(tool["inputSchema"])
+    assert "unknown" not in shown and len(shown.encode()) <= codex_render.RENDER_BYTES
+    output = codex_render.render_output(tool["outputSchema"])
+    assert output != "unknown" and len(output.encode()) <= codex_render.RENDER_BYTES
 
 
 @pytest.mark.parametrize(("tool_name", "arguments", "valid"), INPUT_RULES)

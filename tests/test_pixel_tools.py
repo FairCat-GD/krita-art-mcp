@@ -239,7 +239,7 @@ def test_samples_report_the_stored_values_and_their_colour(world: World) -> None
     data = world.server().content("krita_sample", _sample(document_id))["data"]
     [found] = data["samples"]
     expected = _expected(64, 32, {"x": 3, "y": 2, "width": 1, "height": 1})[0, 0].tolist()
-    assert found["rgba"] == expected and found["pixel_count"] == 1
+    assert found["rgba_255"] == expected and found["pixel_count"] == 1
     assert found["hex"] == "#{:02X}{:02X}{:02X}".format(*expected[:3])
     assert found["lab"] is not None and data["profile_id"] == SRGB
     disc = world.server().content("krita_sample", _sample(document_id, radius=1.5))["data"]
@@ -254,7 +254,7 @@ def test_a_layer_sample_and_a_corner_disc(world: World) -> None:
     )
     data = world.server().content("krita_sample", arguments)["data"]
     [found] = data["samples"]
-    assert found["rgba"] == [167, 194, 132, 255] and found["hex"] == "#A7C284"
+    assert found["rgba_255"] == [167, 194, 132, 255] and found["hex"] == "#A7C284"
     # The quarter of a radius-2 disc that lies on the canvas.
     assert found["pixel_count"] == 6 and found["stdev_l"] == 0
 
@@ -274,7 +274,8 @@ def test_outside_srgb_the_colour_maths_are_null_and_greyscale_refused(world: Wor
     [owners] = world.server().content("krita_document_list", {})["data"]["documents"]
     document_id = owners["document_id"]
     [found] = world.server().content("krita_sample", _sample(document_id))["data"]["samples"]
-    assert found["hex"] is not None and (found["lab"], found["lch"], found["stdev_l"]) == (
+    assert found["hex"] is not None and found["color"] is None
+    assert (found["lab"], found["lch"], found["stdev_l"]) == (
         None,
         None,
         None,

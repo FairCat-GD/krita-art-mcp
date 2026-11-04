@@ -3,8 +3,9 @@ import math
 
 import numpy as np
 import pytest
+from jsonschema import Draft202012Validator
 
-from krita_art_mcp import colour
+from krita_art_mcp import colour, schemas
 
 # sRGB to CIE L*a*b* (D65), tolerance 0.05.
 FIXTURES = [
@@ -49,8 +50,8 @@ def _square(rgba: tuple[int, int, int, int], size: int) -> np.ndarray:
 def test_radius_0_gives_the_stored_integers() -> None:
     found = colour.disc(_square((167, 194, 132, 255), 1), (5, 6), (5, 6), 0, True)
     assert found["pixel_count"] == 1
-    assert found["rgba"] == [167, 194, 132, 255]
-    assert all(isinstance(value, int) for value in found["rgba"])
+    assert found["rgba_255"] == [167, 194, 132, 255]
+    assert all(isinstance(value, int) for value in found["rgba_255"])
     assert found["hex"] == "#A7C284"
     assert found["stdev_l"] == 0
     assert abs(found["lch"][1] - 34.6) <= 0.05
@@ -60,7 +61,7 @@ def test_a_disc_counts_the_pixels_within_the_radius() -> None:
     found = colour.disc(_square((10, 120, 220, 255), 7), (27, 41), (30, 44), 3, True)
     # Offsets with dx² + dy² ≤ 9.
     assert found["pixel_count"] == 29
-    assert found["rgba"] == [10, 120, 220, 255]
+    assert found["rgba_255"] == [10, 120, 220, 255]
     assert found["stdev_l"] == 0
 
 
@@ -73,9 +74,9 @@ def test_a_disc_mean_is_weighted_by_alpha() -> None:
     assert found["pixel_count"] == 3
     # The transparent pixel's colour does not count; its alpha does.
     weight = 255 + 51
-    assert found["rgba"][0] == pytest.approx(round(200 * 255 / weight, 4))
-    assert found["rgba"][2] == pytest.approx(round(200 * 51 / weight, 4))
-    assert found["rgba"][3] == pytest.approx(round(306 / 3, 4))
+    assert found["rgba_255"][0] == pytest.approx(round(200 * 255 / weight, 4))
+    assert found["rgba_255"][2] == pytest.approx(round(200 * 51 / weight, 4))
+    assert found["rgba_255"][3] == pytest.approx(round(306 / 3, 4))
     lightness = colour.lab(np.array([[200, 0, 0], [0, 0, 200]]))[:, 0]
     centre = (lightness[0] * 255 + lightness[1] * 51) / weight
     spread = math.sqrt(
@@ -92,11 +93,30 @@ def test_a_disc_at_the_edge_holds_only_the_canvas() -> None:
 
 def test_a_fully_transparent_disc_has_no_colour_and_no_nan() -> None:
     found = colour.disc(_square((40, 50, 60, 0), 3), (0, 0), (1, 1), 1, True)
-    assert found["rgba"] == [40, 50, 60, 0]
-    assert (found["hex"], found["lab"], found["lch"], found["stdev_l"]) == (None,) * 4
+    assert found["rgba_255"] == [40, 50, 60, 0]
+    assert (found["color"], found["hex"], found["lab"], found["lch"], found["stdev_l"]) == (
+        None,
+    ) * 5
     one = colour.disc(_square((40, 50, 60, 0), 1), (0, 0), (0, 0), 0, True)
-    assert one["rgba"] == [40, 50, 60, 0] and one["lab"] is None
+    assert one["rgba_255"] == [40, 50, 60, 0] and one["lab"] is None
     json.dumps(found, allow_nan=False)
+
+
+def test_every_byte_samples_as_the_colour_a_stroke_paints_back() -> None:
+    brush = schemas.load("krita_paint_stroke")["inputSchema"]["properties"]["brush"]
+    takes = Draft202012Validator(brush["properties"]["color"])
+    for byte in range(256):
+        rgba = (byte, 255 - byte, byte // 2, 255)
+        found = colour.disc(_square(rgba, 1), (0, 0), (0, 0), 0, True)
+        assert takes.is_valid(found["color"])
+        assert [round(value * 255) for value in found["color"]["rgba"]] == list(rgba)
+
+
+def test_a_part_transparent_sample_gives_its_colour_opaque() -> None:
+    # A stroke's transparency comes from its opacity and flow, never its colour.
+    found = colour.disc(_square((40, 50, 60, 128), 1), (0, 0), (0, 0), 0, True)
+    assert found["rgba_255"] == [40, 50, 60, 128]
+    assert found["color"] == {"space": "srgb", "rgba": [40 / 255, 50 / 255, 60 / 255, 1]}
 
 
 def test_a_grey_has_no_hue_and_no_negative_zero() -> None:
@@ -107,5 +127,5 @@ def test_a_grey_has_no_hue_and_no_negative_zero() -> None:
 
 def test_outside_srgb_there_is_no_colour_maths_but_the_bytes_and_hex_stay() -> None:
     found = colour.disc(_square((167, 194, 132, 255), 1), (0, 0), (0, 0), 0, False)
-    assert found["rgba"] == [167, 194, 132, 255] and found["hex"] == "#A7C284"
-    assert (found["lab"], found["lch"], found["stdev_l"]) == (None, None, None)
+    assert found["rgba_255"] == [167, 194, 132, 255] and found["hex"] == "#A7C284"
+    assert (found["color"], found["lab"], found["lch"], found["stdev_l"]) == (None,) * 4

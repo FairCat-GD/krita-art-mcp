@@ -6,6 +6,39 @@ All notable changes to krita-art-mcp are documented here. The format follows
 
 ## [Unreleased]
 
+## [0.20.0] — 2026-11-04
+
+Limits an agent used to learn from a refusal are now visible before the call: a sample gives the
+colour a stroke takes, `krita_server_info` reports the brush and page limits, and every field with
+a range or unit states it in its description, which Codex shows. `api_version` is now 0.4.0. This
+release needs `install-plugin`, a Krita restart and a restart of the MCP client.
+
+### Added
+
+- **`color` in each `krita_sample` sample:** the same colour in the 0–1 sRGB shape
+  `krita_paint_stroke`'s `brush.color` takes, opaque, so it paints back unchanged. It is null where
+  there is no colour or the profile is not sRGB.
+- **Three limits in `krita_server_info`:** `brush_size_px` (1 to 1000), `resource_page_size` (100)
+  and `stroke_overhang_size_fraction` (0.5, how far past the canvas a stroke's on-curve points may
+  lie, as a share of its size).
+- **Descriptions on every field with a range or a unit,** and examples of capture's two forms and of
+  a sample sent as a stroke's colour, in the tool descriptions.
+
+### Changed
+
+- **A sample's `rgba` is now `rgba_255`,** named for its 0–255 range.
+- **Every tool refuses a number that is not finite** (NaN, Infinity, or one past a double's range)
+  with `INVALID_ARGUMENT`, naming each field as "not a finite number", beside any other problem.
+- **A native capture, or a selection's, refuses `background` and `greyscale` in its schema,** so
+  the error names the field.
+- **The server's instructions are shorter,** leaving ranges and forms to the fields' descriptions.
+
+### Removed
+
+- **`krita_paint_stroke` no longer advertises values it always refused:** `smooth: basic` and
+  `stabilizer`, `antialias: false`, and `eraser: true` (`eraser` stays required, as `false`). Each
+  now answers `INVALID_ARGUMENT` instead of `UNSUPPORTED_CAPABILITY`.
+
 ## [0.19.0] — 2026-11-03
 
 `krita_document_close` with `refuse` no longer closes over changes that only Krita holds, and the

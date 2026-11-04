@@ -12,7 +12,6 @@ from worlds import NOW, World, running_world
 from krita_art_mcp import schemas, verification
 from krita_art_mcp.bridge_client import BridgeClient, Done, Failed, Outcome
 from krita_art_mcp.tools import changes, painting
-from krita_art_mcp.tools.dispatch import ToolCall
 
 LAYER = "3f0c9a2e-8b41-4d6a-9e57-c1a2b3d4e5f6"
 OPERATION = "op-" + "d" * 32
@@ -75,9 +74,6 @@ def _with_point(index: int, **fields: Any) -> dict[str, Any]:
 
 
 REFUSALS = [
-    ({**_stroke(), "smooth": "basic"}, "UNSUPPORTED_CAPABILITY", {"smooth": "basic"}),
-    ({**_stroke(), "smooth": "stabilizer"}, "UNSUPPORTED_CAPABILITY", {"smooth": "stabilizer"}),
-    (_with_brush(antialias=False), "UNSUPPORTED_CAPABILITY", {"antialias": False}),
     (_with_point(1, pressure=0.4), "UNSUPPORTED_CAPABILITY", {"point": 1, "fields": ["pressure"]}),
     *[
         (_with_point(0, **{field: 1}), "UNSUPPORTED_CAPABILITY", {"point": 0, "fields": [field]})
@@ -89,16 +85,10 @@ REFUSALS = [
         {"point": 1, "fields": ["pressure", "time_ms", "speed"]},
     ),
     (
-        _with_brush(eraser=True, alpha_lock=True),
-        "INVALID_ARGUMENT",
-        {"eraser": True, "alpha_lock": True},
-    ),
-    (
         _with_brush(color={"space": "srgb", "rgba": [0.4, 0.3, 0.3, 0.5]}),
         "INVALID_ARGUMENT",
         {"alpha": 0.5},
     ),
-    (_with_brush(eraser=True), "UNSUPPORTED_CAPABILITY", {"eraser": True, "supported": [False]}),
     (
         {**_stroke(), "points": [{"x": 4.5, "y": 4.5}]},
         "UNSUPPORTED_CAPABILITY",
@@ -133,47 +123,42 @@ def test_a_refusal_is_returned_before_the_journal(
     assert sent == [] and _journal(world) == []
 
 
-def test_smooth_and_the_gate_name_what_they_support(world: World) -> None:
-    server = world.server()
-    smooth = server.content("krita_paint_stroke", {**_stroke(), "smooth": "basic"})
-    assert smooth["error"]["details"]["supported"] == ["none", "catmull_rom"]
-    gate = server.content("krita_paint_stroke", _with_point(0, tilt_x=10))
+def test_the_gate_names_what_it_supports(world: World) -> None:
+    gate = world.server().content("krita_paint_stroke", _with_point(0, tilt_x=10))
     assert gate["error"]["details"]["input_fallback"] == ["flat"]
 
 
 @pytest.mark.parametrize(
-    ("change", "field"),
+    ("arguments", "path"),
     [
-        ({"brush": {**BRUSH, "size_px": float("nan")}}, "brush.size_px"),
-        ({"brush": {**BRUSH, "rotation_deg": float("inf")}}, "brush.rotation_deg"),
-        (
-            {"brush": {**BRUSH, "color": {"space": "srgb", "rgba": [float("nan"), 0, 0, 1]}}},
-            "brush.color",
-        ),
-        ({"points": [{"x": float("nan"), "y": 0}]}, "points"),
-        ({"points": [{"x": 10**400, "y": 0}]}, "points"),
-        # Integers too large for a float would raise inside the smoothing.
-        ({"points": [{"x": 10**400, "y": 0}] * 3, "smooth": "catmull_rom"}, "points"),
-        # Finite points whose controls overflow.
-        (
-            {
-                "points": [{"x": 1.7e308, "y": 0}, {"x": -1.7e308, "y": 0}, {"x": 1.7e308, "y": 0}],
-                "smooth": "catmull_rom",
-            },
-            "points",
-        ),
+        ({**_stroke(), "smooth": "basic"}, "/smooth"),
+        ({**_stroke(), "smooth": "stabilizer"}, "/smooth"),
+        (_with_brush(antialias=False), "/brush/antialias"),
+        (_with_brush(eraser=True), "/brush/eraser"),
+        (_with_brush(eraser=True, alpha_lock=True), "/brush/eraser"),
     ],
 )
-def test_a_number_that_is_not_finite_is_refused_before_the_journal(
-    world: World, change: dict[str, Any], field: str
+def test_a_value_no_phase_makes_live_is_out_of_the_schema(
+    world: World,
+    sent: list[tuple[str, dict[str, Any]]],
+    arguments: dict[str, Any],
+    path: str,
 ) -> None:
-    # MCP carries NaN and Infinity, and the schema's bounds let them through.
-    call = ToolCall(world.client(), world.journal(), world.places())
-    result = painting.paint_stroke(call, {**_stroke(), **change})
-    content = result.structured_content or {}
-    assert content["error"]["code"] == "INVALID_ARGUMENT"
-    assert content["error"]["details"] == {"field": field}
-    assert content["operation_id"] is None and _journal(world) == []
+    refused = world.server().content("krita_paint_stroke", arguments)
+    assert refused["error"]["code"] == "INVALID_ARGUMENT"
+    assert [problem["path"] for problem in refused["error"]["details"]["errors"]] == [path]
+    assert sent == [] and _journal(world) == []
+
+
+def test_finite_points_whose_smoothed_controls_overflow_are_refused_before_the_journal(
+    world: World, sent: list[tuple[str, dict[str, Any]]]
+) -> None:
+    points = [{"x": 1.7e308, "y": 0}, {"x": -1.7e308, "y": 0}, {"x": 1.7e308, "y": 0}]
+    arguments = {**_stroke(), "points": points, "smooth": "catmull_rom"}
+    refused = world.server().content("krita_paint_stroke", arguments)
+    assert refused["error"]["code"] == "INVALID_ARGUMENT"
+    assert refused["error"]["details"]["field"] == "points"
+    assert refused["operation_id"] is None and sent == [] and _journal(world) == []
 
 
 def test_the_defaults_are_filled_and_the_path_sent(

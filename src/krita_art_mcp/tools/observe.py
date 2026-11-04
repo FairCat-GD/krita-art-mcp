@@ -6,13 +6,17 @@ from krita_art_mcp import __version__
 from krita_art_mcp.bridge_client import WAIT_BUDGET_S, Outcome
 from krita_art_mcp.tools.dispatch import ToolCall, from_outcome
 
-LIMITS = {
+LIMITS: dict[str, Any] = {
     "stroke_points": 4096,
     # The largest capture image: max_px is 4096 at most.
     "capture_pixels": 4096 * 4096,
     # The largest area one capture reads, a whole 8k master; the plugin holds an equal copy.
     "capture_source_pixels": 8192 * 8192,
     "wait_budget_seconds": int(WAIT_BUDGET_S),
+    # The plugin enforces these three; a test holds each to its constant there.
+    "brush_size_px": {"min": 1, "max": 1000},
+    "resource_page_size": 100,
+    "stroke_overhang_size_fraction": 0.5,
 }
 RESOURCE_DATA = ("kind", "total", "resources", "next_cursor")
 # The blend modes paint calls accept, as Krita's composite-op ids (K21); the plugin holds an equal

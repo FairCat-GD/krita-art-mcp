@@ -107,7 +107,7 @@ contract", "Phase N" and "review N" mean.
   8k ORA did not recur in six 8k opens. By the end of a probe run Krita holds about 2.5 GB, and a
   restart resets it. Whether Krita returns the memory later, or a painting day accumulates it, is
   unmeasured.
-- **Erasing** (0.9.0). `eraser: true` is refused with `UNSUPPORTED_CAPABILITY`: on Krita 5.3.4.1,
+- **Erasing** (0.9.0). `eraser` takes only `false` (out of the schema since 0.20.0): on Krita 5.3.4.1,
   `View.eraserMode()` read false after `setEraserMode(True)`, with `b) Basic-2 Opacity` and with the
   stock `a) Eraser Soft`, so no stroke could be confirmed to erase. The order of the brush setters
   and posted events are the first things to try. Left out at the round 2 intake: real use wants it
@@ -161,16 +161,13 @@ contract", "Phase N" and "review N" mean.
 - **Test fixtures are repeated.** Eighteen test files define their own `world` around
   `running_world`, `_render`, `_pixels` and `_document` appear four times each, and there is no
   `conftest.py`.
-- **The plugin's eraser plumbing is unreachable** while the server refuses erasing, and
+- **The plugin's eraser plumbing is unreachable** while the schema takes only `false`, and
   `schemas.tool_names` is reached by tests only.
 - **A client's `serve` runs this checkout as it stands** (0.18.0). Both registrations run
   `uv run --project <repo>`, so an MCP client started mid-session imports that session's uncommitted
   code. Once the version is bumped and the plugin installed, nothing refuses it. R2's Codex session
   ran that way, on finished code. A released copy to serve from would keep a client off work in
   progress.
-- **Codex's renderer is not re-measured.** The schema sizes `ARCHITECTURE.md` quotes for Codex's
-  limits come from a scratchpad port at 0.15.0. Every change since has been small beside the
-  margins, and nothing checks them.
 - **A property write leaves Krita's flag clear.** A name, opacity, visibility or alpha-lock change
   through libkis is no undo step (K22), so Krita does not mark the document modified, and a tab
   close would drop it without asking; the bridge's `dirty` still holds it. Marking Krita's flag after

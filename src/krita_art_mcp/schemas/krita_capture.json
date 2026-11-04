@@ -1,6 +1,6 @@
 {
   "name": "krita_capture",
-  "description": "Return a fresh crop of a layer, composite or selection: native at scale 1, resampled otherwise.",
+  "description": "Return a fresh crop of a layer, composite or selection, in one of two forms. Native: scale 1, the stored pixels, e.g. {scale: 1, filter: nearest}. Resampled: any other scale, e.g. {scale: 0.25, filter: lanczos, background: checker}.",
   "inputSchema": {
     "type": "object",
     "properties": {
@@ -23,6 +23,7 @@
         "additionalProperties": false
       },
       "target": {
+        "description": "A layer capture is the layer's own pixels, without its opacity, masks or inherit-alpha clip.",
         "type": "string",
         "enum": [
           "composite",
@@ -42,6 +43,7 @@
         ]
       },
       "rect": {
+        "description": "Canvas px.",
         "type": "object",
         "properties": {
           "x": {
@@ -70,10 +72,12 @@
         "additionalProperties": false
       },
       "scale": {
+        "description": "1 is the native form, which takes no background or greyscale. Any other scale resamples with filter, then composites onto background.",
         "type": "number",
         "exclusiveMinimum": 0
       },
       "filter": {
+        "description": "The resampling filter; the native form resamples nothing.",
         "type": "string",
         "enum": [
           "nearest",
@@ -85,6 +89,7 @@
         ]
       },
       "background": {
+        "description": "Resampled form only, not for a selection. checker by default.",
         "anyOf": [
           {
             "type": "string",
@@ -103,6 +108,7 @@
                 ]
               },
               "rgba": {
+                "description": "sRGB, each 0 to 1.",
                 "type": "array",
                 "items": {
                   "type": "number",
@@ -122,9 +128,11 @@
         ]
       },
       "greyscale": {
+        "description": "Resampled form only, not for a selection.",
         "type": "boolean"
       },
       "max_px": {
+        "description": "The image's longest edge in px, 1 to 4096; 1600 by default. Tile for more.",
         "type": "integer",
         "minimum": 1,
         "maximum": 4096
@@ -161,6 +169,42 @@
             "layer_id": {
               "type": "null"
             }
+          },
+          "if": {
+            "properties": {
+              "target": {
+                "const": "selection"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "background": {
+                "not": {}
+              },
+              "greyscale": {
+                "not": {}
+              }
+            }
+          }
+        }
+      },
+      "scale": {
+        "if": {
+          "properties": {
+            "scale": {
+              "const": 1
+            }
+          }
+        },
+        "then": {
+          "properties": {
+            "background": {
+              "not": {}
+            },
+            "greyscale": {
+              "not": {}
+            }
           }
         }
       }
@@ -170,7 +214,7 @@
     "type": "object",
     "properties": {
       "api_version": {
-        "const": "0.3.0"
+        "const": "0.4.0"
       },
       "status": {
         "type": "string",
@@ -896,7 +940,7 @@
       "filter": "nearest"
     },
     "structuredContent": {
-      "api_version": "0.3.0",
+      "api_version": "0.4.0",
       "status": "completed",
       "document_id": "doc-1",
       "revision": null,

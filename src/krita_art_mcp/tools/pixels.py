@@ -70,16 +70,8 @@ def capture(call: ToolCall, arguments: dict[str, Any]) -> CallToolResult:
 
 
 def _capture_rules(arguments: dict[str, Any]) -> CallToolResult | None:
-    # Each depends on the arguments alone, so nothing is sent to Krita to be refused.
-    given = [field for field in ("background", "greyscale") if field in arguments]
-    if given and arguments["scale"] == 1:
-        message = (
-            "scale 1 returns the native pixels; background and greyscale apply when resampling."
-        )
-        return envelope.failure("INVALID_ARGUMENT", message, details={"fields": given})
-    if given and arguments["target"] == "selection":
-        message = "A selection is captured as its own mask; it takes no background or greyscale."
-        return envelope.failure("INVALID_ARGUMENT", message, details={"fields": given})
+    # Each depends on the arguments alone, so nothing is sent to Krita to be refused. The schema
+    # refuses background and greyscale on the native form and on a selection.
     rect = arguments["rect"]
     area, limit = rect["width"] * rect["height"], LIMITS["capture_source_pixels"]
     if area > limit:

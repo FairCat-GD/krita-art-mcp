@@ -1,6 +1,6 @@
 {
   "name": "krita_sample",
-  "description": "Sample known pixel locations with explicit layer/composite scope.",
+  "description": "Sample known pixel locations with explicit layer/composite scope. A sample's color is the brush.color a stroke takes: paint it back unchanged.",
   "inputSchema": {
     "type": "object",
     "properties": {
@@ -41,6 +41,7 @@
         ]
       },
       "points": {
+        "description": "[x, y] in canvas px.",
         "type": "array",
         "items": {
           "type": "array",
@@ -55,6 +56,7 @@
         "maxItems": 256
       },
       "radius": {
+        "description": "Disc radius in px, 0 to 64; 0 reads one pixel. A disc's mean is weighted by alpha.",
         "type": "number",
         "minimum": 0,
         "maximum": 64
@@ -98,7 +100,7 @@
     "type": "object",
     "properties": {
       "api_version": {
-        "const": "0.3.0"
+        "const": "0.4.0"
       },
       "status": {
         "type": "string",
@@ -185,7 +187,8 @@
                       "type": "integer",
                       "minimum": 1
                     },
-                    "rgba": {
+                    "rgba_255": {
+                      "description": "Red, green, blue and alpha, each 0 to 255: the colour weighted by alpha, and the mean alpha.",
                       "type": "array",
                       "items": {
                         "type": "number",
@@ -194,6 +197,40 @@
                       },
                       "minItems": 4,
                       "maxItems": 4
+                    },
+                    "color": {
+                      "description": "The same colour as krita_paint_stroke's brush.color takes it, sRGB 0 to 1 with alpha 1: send it unchanged. Null with no colour (alpha 0) or outside sRGB.",
+                      "anyOf": [
+                        {
+                          "type": "object",
+                          "properties": {
+                            "space": {
+                              "type": "string",
+                              "enum": [
+                                "srgb"
+                              ]
+                            },
+                            "rgba": {
+                              "type": "array",
+                              "items": {
+                                "type": "number",
+                                "minimum": 0,
+                                "maximum": 1
+                              },
+                              "minItems": 4,
+                              "maxItems": 4
+                            }
+                          },
+                          "required": [
+                            "space",
+                            "rgba"
+                          ],
+                          "additionalProperties": false
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
                     },
                     "hex": {
                       "anyOf": [
@@ -251,7 +288,8 @@
                   "required": [
                     "point_px",
                     "pixel_count",
-                    "rgba",
+                    "rgba_255",
+                    "color",
                     "hex",
                     "lab",
                     "lch",
@@ -420,7 +458,8 @@
                     "type": "integer",
                     "minimum": 1
                   },
-                  "rgba": {
+                  "rgba_255": {
+                    "description": "Red, green, blue and alpha, each 0 to 255: the colour weighted by alpha, and the mean alpha.",
                     "type": "array",
                     "items": {
                       "type": "number",
@@ -429,6 +468,40 @@
                     },
                     "minItems": 4,
                     "maxItems": 4
+                  },
+                  "color": {
+                    "description": "The same colour as krita_paint_stroke's brush.color takes it, sRGB 0 to 1 with alpha 1: send it unchanged. Null with no colour (alpha 0) or outside sRGB.",
+                    "anyOf": [
+                      {
+                        "type": "object",
+                        "properties": {
+                          "space": {
+                            "type": "string",
+                            "enum": [
+                              "srgb"
+                            ]
+                          },
+                          "rgba": {
+                            "type": "array",
+                            "items": {
+                              "type": "number",
+                              "minimum": 0,
+                              "maximum": 1
+                            },
+                            "minItems": 4,
+                            "maxItems": 4
+                          }
+                        },
+                        "required": [
+                          "space",
+                          "rgba"
+                        ],
+                        "additionalProperties": false
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
                   },
                   "hex": {
                     "anyOf": [
@@ -486,7 +559,8 @@
                 "required": [
                   "point_px",
                   "pixel_count",
-                  "rgba",
+                  "rgba_255",
+                  "color",
                   "hex",
                   "lab",
                   "lch",
@@ -586,7 +660,7 @@
       ]
     },
     "structuredContent": {
-      "api_version": "0.3.0",
+      "api_version": "0.4.0",
       "status": "completed",
       "document_id": "doc-1",
       "revision": null,
@@ -603,12 +677,21 @@
               20
             ],
             "pixel_count": 1,
-            "rgba": [
+            "rgba_255": [
               167,
               194,
               132,
               255
             ],
+            "color": {
+              "space": "srgb",
+              "rgba": [
+                0.6549019607843137,
+                0.7607843137254902,
+                0.5176470588235295,
+                1
+              ]
+            },
             "hex": "#A7C284",
             "lab": [
               75.1171,
