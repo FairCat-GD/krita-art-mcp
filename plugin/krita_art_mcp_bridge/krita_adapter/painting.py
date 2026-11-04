@@ -7,7 +7,7 @@ from krita import Krita, ManagedColor, Preset
 from ..bridge_core import log
 from ..bridge_core.documents import COLOR_MODEL, DEPTH, SRGB_PROFILE
 from ..bridge_core.errors import BridgeError
-from .qt import QAbstractScrollArea, QMdiArea, QPainterPath, QPointF
+from .qt import QAbstractScrollArea, QMdiArea, QPainterPath, QPointF, QRectF
 
 # Where each of R, G, B, A sits in ManagedColor's components for RGBA / U8 (K18).
 CHANNELS = (2, 1, 0, 3)
@@ -36,6 +36,24 @@ def set_brush(document: Any, brush: dict[str, Any], preset: Any) -> dict[str, An
     view.setGlobalAlphaLock(bool(brush["alpha_lock"]))
     view.setBrushRotation(float(brush["rotation_deg"]))
     view.setForeGroundColor(_colour(brush["color"]))
+    held = view.currentBrushPreset()
+    try:
+        xml = "" if held is None else str(Preset(held).toXML())
+    except Exception:
+        xml = ""
+    return {**_current(view), "preset_xml": xml}
+
+
+def set_fill(document: Any, fill: dict[str, Any], preset: Any) -> dict[str, Any]:
+    # K3's order, size and rotation left alone: a fill paints no dab.
+    view = view_of(document)
+    view.setCurrentBrushPreset(preset)
+    view.setPaintingOpacity(float(fill["opacity"]))
+    view.setPaintingFlow(1.0)
+    view.setCurrentBlendingMode(fill["blend_mode"])
+    view.setEraserMode(False)
+    view.setGlobalAlphaLock(bool(fill["alpha_lock"]))
+    view.setForeGroundColor(_colour(fill["color"]))
     held = view.currentBrushPreset()
     try:
         xml = "" if held is None else str(Preset(held).toXML())
@@ -88,6 +106,47 @@ def paint_path(document: Any, node: Any, path: dict[str, Any]) -> None:
     finally:
         _restore_mirrors(mirrors)
         _restore_wrap(canvas, wrapped)
+
+
+def fill_path(document: Any, node: Any, shape: dict[str, Any]) -> None:
+    view = view_of(document)
+    canvas = view.canvas()
+    mirrors: list[str] = []
+    wrapped: list[bool] = []
+    try:
+        _switch_mirrors_off(mirrors)
+        _switch_wrap_off(canvas, wrapped)
+        # No stroke and a foreground fill: Krita fills the path with its painter, never a dab.
+        node.paintPath(_closed_path(shape), "None", "ForegroundColor")
+        document.waitForDone()
+    finally:
+        _restore_mirrors(mirrors)
+        _restore_wrap(canvas, wrapped)
+
+
+def _closed_path(shape: dict[str, Any]) -> Any:
+    # Odd-even, QPainterPath's default, as the server's polygon masks.
+    path = QPainterPath()
+    kind = shape["kind"]
+    if kind in ("rect", "ellipse"):
+        rect = shape["rect"]
+        box = QRectF(rect["x"], rect["y"], rect["width"], rect["height"])
+        if kind == "rect":
+            path.addRect(box)
+        else:
+            path.addEllipse(box)
+        return path
+    if kind == "polygon":
+        first, *rest = shape["points"]
+        path.moveTo(QPointF(*first))
+        for point in rest:
+            path.lineTo(QPointF(*point))
+    else:
+        path.moveTo(QPointF(*shape["start"]))
+        for c1x, c1y, c2x, c2y, x, y in shape["segments"]:
+            path.cubicTo(QPointF(c1x, c1y), QPointF(c2x, c2y), QPointF(x, y))
+    path.closeSubpath()
+    return path
 
 
 def _painter_path(path: dict[str, Any]) -> Any:

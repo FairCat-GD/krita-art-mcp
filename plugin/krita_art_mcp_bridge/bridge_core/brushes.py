@@ -18,6 +18,10 @@ MAX_SCATTER = 5.0
 NO_ENGINE = "brush_engine"
 NO_TIP = "brush_tip"
 NO_SCATTER = "brush_scatter"
+# A preset's paint action: 1 builds up on the layer, 2 washes through an indirect device.
+BUILD_UP = "1"
+WASH = "wash_mode"
+MASKING = "masking_brush"
 
 
 def brush_reach(xml: str) -> dict[str, Any]:
@@ -30,6 +34,24 @@ def brush_reach(xml: str) -> dict[str, Any]:
     params = {param.get("name"): param.text or "" for param in root.iter("param")}
     tip, spacing = _tip(params.get("brush_definition"))
     return _reach(root.get("paintopid") or None, tip, spacing, _scatter(params))
+
+
+def unplain(xml: str) -> list[str]:
+    # Why a preset would not fill straight into the layer: a wash preset paints through an
+    # indirect device and leaves colour under alpha 0 past the shape (K49).
+    try:
+        root = ElementTree.fromstring(xml)
+    except ElementTree.ParseError:
+        return [NO_ENGINE]
+    params = {param.get("name"): param.text or "" for param in root.iter("param")}
+    reasons = []
+    if root.get("paintopid") != ENGINE:
+        reasons.append(NO_ENGINE)
+    if (params.get("PaintOpAction") or "").strip() != BUILD_UP:
+        reasons.append(WASH)
+    if _flag(params.get("MaskingBrush/Enabled")):
+        reasons.append(MASKING)
+    return reasons
 
 
 def margin_px(size: float, tip: str, scatter: float) -> float:

@@ -26,6 +26,7 @@ LABELS = {
     "selection.set": "",
     "selection.clear": "",
     "paint.stroke": "Scripted Brush Stroke",
+    "paint.fill": "Scripted Brush Stroke",
 }
 
 

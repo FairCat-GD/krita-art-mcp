@@ -9,7 +9,7 @@ from parity import refused_alike
 from worlds import World, running_world
 
 from krita_art_mcp import roots
-from krita_art_mcp.tools import changes, pixels, saving
+from krita_art_mcp.tools import changes, painting, pixels, saving
 from krita_art_mcp.tools import documents as documents_tools
 from krita_art_mcp.tools.observe import LIMITS
 
@@ -155,3 +155,27 @@ def test_both_sides_bound_a_capture_s_area(world: World, monkeypatch: pytest.Mon
     }
     rule = (pixels, "_capture_rules")
     refused_alike(world, monkeypatch, "krita_capture", arguments, rule)
+
+
+@pytest.mark.parametrize(
+    "fields",
+    [
+        {"color": {"space": "srgb", "rgba": [0.8, 0.2, 0.4, 0.5]}},
+        {"shape": {"type": "polygon", "points": [[0, 0], [10, 10], [4, 4]]}},
+        {"shape": {"type": "path", "points": [[0, 0], [3, 1], [6, 2], [9.3, 3.1]]}},
+    ],
+    ids=["a colour with alpha", "a flat polygon", "a flat path"],
+)
+def test_both_sides_hold_the_fill_rules(
+    world: World, monkeypatch: pytest.MonkeyPatch, fields: dict[str, Any]
+) -> None:
+    document_id = _document(world)
+    arguments = {
+        "guard": {"document_id": document_id, "request_id": "req-fill"},
+        "layer_id": "00000000-0000-4000-8000-000000000002",
+        "shape": {"type": "rect", "rect": {"x": 1, "y": 1, "width": 4, "height": 4}},
+        "color": {"space": "srgb", "rgba": [0.8, 0.2, 0.4, 1]},
+        "opacity": 1,
+        **fields,
+    }
+    refused_alike(world, monkeypatch, "krita_paint_fill", arguments, (painting, "_fill_rules"))

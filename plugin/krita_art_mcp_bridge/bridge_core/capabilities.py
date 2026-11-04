@@ -9,6 +9,13 @@ _MATRIX: dict[str, tuple[bool, str | None, str]] = {
         "One Krita brush stroke per call (Node.paintPath, every point at pressure 1), one undo "
         "step, verified against protection and undone on a leak.",
     ),
+    "paint.fill": (
+        True,
+        "0.21.0",
+        "A flat antialiased fill of a rect, ellipse, polygon, closed curve or the selection: one "
+        "native Krita fill per call (Node.paintPath with no stroke), one undo step, verified "
+        "against protection and undone on a leak.",
+    ),
     "stroke.per_point_input": (
         False,
         None,

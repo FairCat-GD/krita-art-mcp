@@ -1,3 +1,5 @@
+import pytest
+
 from krita_art_mcp import strokes
 
 
@@ -33,3 +35,39 @@ def test_smooth_none_draws_lines() -> None:
 def test_two_points_draw_a_line_even_when_smoothed() -> None:
     path = strokes.path(_points((1.5, 2.5), (7.5, 3.5)), "catmull_rom")
     assert path == {"start": [1.5, 2.5], "segments": [[7.5, 3.5]]}
+
+
+def test_a_closed_curve_passes_through_every_point_and_closes() -> None:
+    # Each point's neighbours wrap round: the first segment's lead-in is the last point.
+    points = [(0.0, 0.0), (12.0, 6.0), (6.0, 18.0)]
+    path = strokes.closed_catmull_rom(points)
+    assert path == {
+        "start": [0.0, 0.0],
+        "segments": [
+            [1.0, -2.0, 11.0, 3.0, 12.0, 6.0],
+            [13.0, 9.0, 8.0, 19.0, 6.0, 18.0],
+            [4.0, 17.0, -1.0, 2.0, 0.0, 0.0],
+        ],
+    }
+
+
+def test_a_closed_curve_is_smooth_at_every_point_the_start_included() -> None:
+    path = strokes.closed_catmull_rom([(0.0, 0.0), (12.0, 6.0), (6.0, 18.0), (-6.0, 12.0)])
+    segments = path["segments"]
+    for before, after in zip(segments, segments[1:] + segments[:1], strict=True):
+        joint = before[4:6]
+        assert [joint[k] - before[2 + k] for k in (0, 1)] == [after[k] - joint[k] for k in (0, 1)]
+
+
+@pytest.mark.parametrize(
+    ("points", "flat"),
+    [
+        ([[0, 0], [10, 10], [4, 4]], True),
+        ([[5, 5], [5, 5], [5, 5]], True),
+        ([[0, 0], [3, 1], [6, 2], [9.3, 3.1]], True),
+        ([[0, 0], [10, 0], [10, 0.5]], False),
+    ],
+    ids=["on one line", "one point", "on one line, inexact", "a thin triangle"],
+)
+def test_collinear_points_enclose_no_area(points: list[list[float]], flat: bool) -> None:
+    assert strokes.collinear(points) is flat

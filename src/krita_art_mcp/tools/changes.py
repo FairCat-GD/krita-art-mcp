@@ -23,6 +23,7 @@ log = logging.getLogger(__name__)
 STEP_TOOLS = {
     "layer.create": "krita_layer_create",
     "layer.update": "krita_layer_update",
+    "paint.fill": "krita_paint_fill",
     "paint.stroke": "krita_paint_stroke",
     "selection.set": "krita_selection_set",
 }

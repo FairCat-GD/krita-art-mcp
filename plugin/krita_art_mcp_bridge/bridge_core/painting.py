@@ -1,10 +1,11 @@
 import difflib
 import math
 import re
+from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
-from . import brushes, mutation, verification
+from . import brushes, mutation, shapes, verification
 from .documents import COLOR_MODEL, DEPTH, SRGB_PROFILE
 from .errors import BridgeError, exact, integer, number
 from .history import LABELS, in_front
@@ -41,6 +42,15 @@ PAINTABLE = "PAINT"
 UNKNOWN_TIP = "unknown"
 # The fields Krita must take exactly; the others it may adjust, and they are reported as held.
 TAKEN = ("blend_mode", "eraser", "alpha_lock")
+FILL_FIELDS = {"document_id", "layer_id", "verify", "shape", "fill"}
+FILL_STYLE_FIELDS = {"color", "opacity", "blend_mode", "alpha_lock"}
+# A fill paints the same pixels under every preset, but a wash preset leaves colour under alpha
+# 0 up to 3 px past the shape (K49), so every fill activates this build-up stock preset first.
+FILL_PRESET = "c)_Pencil-3_Large_4B.kpp"
+FILL_PRESET_NAME = "c) Pencil-3 Large 4B"
+# Past the shape's box: its antialiased edge touches the pixels the box's outward rounding holds,
+# and the measured fill touched nothing past them.
+FILL_MARGIN_PX = 2
 
 
 def handlers(
@@ -50,6 +60,96 @@ def handlers(
     # the digest it was checked against: Krita fills in a tip's defaults on its first activation
     # in a session, which moves the listed digest without anyone changing the preset.
     activated: dict[tuple[str, str], str] = {}
+
+    def remember(preset_id: str, listed: str | None, resource: Any) -> None:
+        # The stored preset's, not the view's: a dirty digest here could vouch for a later
+        # change the owner saves.
+        _, loaded = preset_fingerprint(resources.preset_xml(resource))
+        if listed is not None and loaded is not None and loaded != listed:
+            activated[(preset_id, loaded)] = listed
+
+    def painted(
+        handle: Handle,
+        call: Call,
+        op: str,
+        noun: str,
+        info: dict[str, Any],
+        tree: dict[str, Any],
+        target: dict[str, Any],
+        effects: dict[str, Any],
+        mode: str,
+        loose: dict[str, int],
+        loose_ring: dict[str, int],
+        held: dict[str, Any],
+        paint: Callable[[], None],
+    ) -> tuple[mutation.Mutation, mutation.Applied]:
+        # One verified paint call, from R on: loose is R and loose_ring R' as Krita's unclipped
+        # bounds see them.
+        document, layer_id, size = handle.document, target["id"], info["size_px"]
+        region, ring = _clip(loose, size), _clip(loose_ring, size)
+        scope = region if mode == verification.REGION else _whole(size)
+        old_bounds = target["bounds_px"]
+        target_rect = (
+            ring
+            if mode == verification.REGION
+            else _clip(union([_box(old_bounds), loose_ring]) or loose_ring, size)
+        )
+        protected = _protected_paint_layers(tree, handle.protected)
+        hashed = {
+            node_id: met
+            for node_id, bounds in protected.items()
+            if (met := _meet(bounds, scope)) is not None
+        }
+        reads = mutation.verifiable(
+            handle, info, effects, mode, scope, layer_id, target_rect, hashed=hashed
+        )
+        near = reads.allowed if scope == region else verification.allowed_rows(handle, size, region)
+        if near is not None and b"\xff" not in near:
+            details = {"layer_id": layer_id, "region_px": region}
+            message = f"The {noun}'s reach lies wholly outside the allowed mask."
+            raise BridgeError("OUTSIDE_ALLOWED_MASK", message, False, details)
+        frame = mutation.Mutation(
+            port, handle, call, op, (LABELS[op],), reads, data, {"layer_id": layer_id}, noun
+        )
+        frame.read()
+        if port.brush(document) != held:
+            message = f"Krita's brush changed after it was set, so the {noun} was not painted."
+            raise BridgeError("INTERNAL_ERROR", message, False, {"layer_id": layer_id})
+
+        def change(steps: mutation.Steps) -> None:
+            paint()
+
+        def judge(applied: mutation.Applied) -> tuple[Any, Any]:
+            assert applied.verdict is not None
+            final = port.tree(document)
+            problem = _verdict(
+                final,
+                layer_id,
+                protected,
+                applied.verdict,
+                applied.diff,
+                mode,
+                region,
+                loose_ring,
+                old_bounds,
+                noun,
+            )
+            if problem is not None:
+                raise problem
+            diff = applied.diff
+            new = _box(_node_bounds(final, layer_id))
+            # Krita's bounds run past the canvas, where paint changes nothing anyone can see.
+            shown = None if new is None else _box(_clip(new, size))
+            if mode == verification.FULL and shown and not _inside(shown, target_rect):
+                # Full scope does not hold the target to R; what it painted past the read
+                # shows in its bounds.
+                diff = union([diff, shown])
+            return diff, new
+
+        def back() -> bool:
+            return bool(_node_bounds(port.tree(document), layer_id) == old_bounds)
+
+        return frame, frame.run(change, judge, back)
 
     def stroke(handle: Handle, args: dict[str, Any], call: Call) -> dict[str, Any]:
         document, layer_id, mode, asked = (
@@ -61,35 +161,21 @@ def handlers(
         info = port.describe(document)
         _check_space(info)
         tree = port.tree(document)
-        target = _target(tree, layer_id, handle.protected)
+        target = _target(tree, layer_id, handle.protected, "stroke")
         size = info["size_px"]
         _on_canvas(args["path"], size, asked["size_px"])
         preset = _preset(resources, asked["preset_id"])
         name = preset["name"]
         listed = _listed(preset["xml"], asked["preset_id"], asked["preset_sha256"], activated)
-        if port.cumulative_undo():
-            details: dict[str, Any] = {"reason": "cumulative_undo"}
-            message = (
-                "Krita's cumulative undo merges strokes into one undo step, so a stroke could "
-                "not be undone alone; turn it off in Krita's settings."
-            )
-            raise BridgeError("UNSUPPORTED_CAPABILITY", message, False, details)
+        _refuse_cumulative(port)
         effects = port.effects(document, mode == verification.REGION)
         if mode == verification.REGION:
             verification.refuse_reach(tree, effects, layer_id, "this stroke past its reach")
         with in_front(port, document):
             effective = port.set_brush(document, _krita_brush(asked, name), preset["resource"])
             _taken(asked, name, effective)
-            # The stored preset's, not the view's: a dirty digest here could vouch for a later
-            # change the owner saves.
-            _, loaded = preset_fingerprint(resources.preset_xml(preset["resource"]))
-            if loaded is not None and loaded != listed:
-                activated[(asked["preset_id"], loaded)] = listed
-            ability = port.paint_ability(document, layer_id)
-            if ability != PAINTABLE:
-                details = {"layer_id": layer_id, "paint_ability": ability}
-                message = "Krita says this layer cannot be painted now."
-                raise BridgeError("LAYER_NOT_PAINTABLE", message, False, details)
+            remember(asked["preset_id"], listed, preset["resource"])
+            _paintable(port, document, layer_id)
             reach = brushes.brush_reach(effective["preset_xml"])
             if mode == verification.REGION and reach["reasons"]:
                 _refuse_brush(reach, layer_id)
@@ -98,83 +184,22 @@ def handlers(
             margin = brushes.margin_px(effective["size_px"], tip, scatter)
             loose = _grow(_path_box(args["path"]), margin)
             loose_ring = _grow(loose, max(brushes.MIN_MARGIN_PX, effective["size_px"]))
-            region, ring = _clip(loose, size), _clip(loose_ring, size)
-            scope = region if mode == verification.REGION else _whole(size)
-            old_bounds = target["bounds_px"]
-            target_rect = (
-                ring
-                if mode == verification.REGION
-                else _clip(union([_box(old_bounds), loose_ring]) or loose_ring, size)
-            )
-            protected = _protected_paint_layers(tree, handle.protected)
-            hashed = {
-                node_id: met
-                for node_id, bounds in protected.items()
-                if (met := _meet(bounds, scope)) is not None
-            }
-            reads = mutation.verifiable(
-                handle, info, effects, mode, scope, layer_id, target_rect, hashed=hashed
-            )
-            near = (
-                reads.allowed
-                if scope == region
-                else verification.allowed_rows(handle, size, region)
-            )
-            if near is not None and b"\xff" not in near:
-                details = {"layer_id": layer_id, "region_px": region}
-                message = "The stroke's reach lies wholly outside the allowed mask."
-                raise BridgeError("OUTSIDE_ALLOWED_MASK", message, False, details)
-            frame = mutation.Mutation(
-                port,
+            held = {key: value for key, value in effective.items() if key != "preset_xml"}
+            frame, applied = painted(
                 handle,
                 call,
                 "paint.stroke",
-                (LABELS["paint.stroke"],),
-                reads,
-                data,
-                {"layer_id": layer_id},
                 "stroke",
+                info,
+                tree,
+                target,
+                effects,
+                mode,
+                loose,
+                loose_ring,
+                held,
+                lambda: port.paint_path(document, layer_id, args["path"]),
             )
-            frame.read()
-            held = {key: value for key, value in effective.items() if key != "preset_xml"}
-            if port.brush(document) != held:
-                message = "Krita's brush changed after it was set, so the stroke was not painted."
-                raise BridgeError("INTERNAL_ERROR", message, False, {"layer_id": layer_id})
-
-            def change(steps: mutation.Steps) -> None:
-                port.paint_path(document, layer_id, args["path"])
-
-            def judge(applied: mutation.Applied) -> tuple[Any, Any]:
-                assert applied.verdict is not None
-                final = port.tree(document)
-                problem = _verdict(
-                    final,
-                    layer_id,
-                    protected,
-                    applied.verdict,
-                    applied.diff,
-                    mode,
-                    region,
-                    loose_ring,
-                    old_bounds,
-                )
-                if problem is not None:
-                    raise problem
-                diff = applied.diff
-                new = _box(_node_bounds(final, layer_id))
-                # Krita's bounds run past the canvas, where paint changes nothing anyone can see.
-                shown = None if new is None else _box(_clip(new, size))
-                if mode == verification.FULL and shown and not _inside(shown, target_rect):
-                    # Full scope does not hold the target to R; what it painted past the read
-                    # shows in its bounds.
-                    diff = union([diff, shown])
-                return diff, new
-
-            def back() -> bool:
-                return bool(_node_bounds(port.tree(document), layer_id) == old_bounds)
-
-            applied = frame.run(change, judge, back)
-            diff, new = applied.checked
             return {
                 "document_id": handle.document_id,
                 "layer_id": layer_id,
@@ -183,22 +208,100 @@ def handlers(
                 "effective_brush": _effective(
                     asked, listed, effective, reach, tip, scatter, margin
                 ),
-                "changed_bounds_px": diff,
-                "layer_bounds_px": new,
-                "protected_pixels_changed": 0,
-                "undo_label": LABELS["paint.stroke"],
-                "undo_steps": len(frame.labels),
-                "history_sealed": applied.steps.sealed,
-                "verification": frame.files(applied),
+                **_receipt(frame, applied),
             }
 
-    guarded = registry.guarded(stroke)
+    def fill(handle: Handle, args: dict[str, Any], call: Call) -> dict[str, Any]:
+        document, layer_id, mode, shape = (
+            handle.document,
+            args["layer_id"],
+            args["verify"],
+            args["shape"],
+        )
+        info = port.describe(document)
+        _check_space(info)
+        tree = port.tree(document)
+        target = _target(tree, layer_id, handle.protected, "fill")
+        size = info["size_px"]
+        drawn = None if shape["kind"] == "selection" else shapes.on_canvas(shape, size)
+        preset = resources.preset(FILL_PRESET)
+        if preset is None:
+            details: dict[str, Any] = {"preset_id": FILL_PRESET}
+            message = (
+                f"A fill paints with Krita's stock preset {FILL_PRESET_NAME}, which Krita "
+                "does not list."
+            )
+            raise BridgeError("UNSUPPORTED_CAPABILITY", message, False, details)
+        _, found = preset_fingerprint(preset["xml"])
+        listed = None if found is None else activated.get((FILL_PRESET, found), found)
+        _refuse_cumulative(port)
+        effects = port.effects(document, mode == verification.REGION)
+        if mode == verification.REGION:
+            verification.refuse_reach(tree, effects, layer_id, "this fill past its reach")
+        with in_front(port, document):
+            if drawn is None:
+                # Read here, where it is filled: a selection's bounds can run past the canvas.
+                shape = {"kind": "rect", "rect": _selected(port, document, size)}
+                drawn = shapes.box(shape)
+            effective = port.set_fill(document, args["fill"], preset["resource"])
+            _filled_as_asked(args["fill"], preset["name"], effective)
+            remember(FILL_PRESET, listed, preset["resource"])
+            reasons = brushes.unplain(effective["preset_xml"])
+            if reasons:
+                details = {"preset_id": FILL_PRESET, "reasons": reasons}
+                message = (
+                    f"The stock preset {FILL_PRESET_NAME} no longer fills straight into the "
+                    "layer (build-up, no masking brush); put it back as Krita ships it."
+                )
+                raise BridgeError("UNSUPPORTED_CAPABILITY", message, False, details)
+            _paintable(port, document, layer_id)
+            loose = _grow(drawn, FILL_MARGIN_PX)
+            loose_ring = _grow(loose, brushes.MIN_MARGIN_PX)
+            held = {key: value for key, value in effective.items() if key != "preset_xml"}
+            frame, applied = painted(
+                handle,
+                call,
+                "paint.fill",
+                "fill",
+                info,
+                tree,
+                target,
+                effects,
+                mode,
+                loose,
+                loose_ring,
+                held,
+                lambda: port.fill_path(document, layer_id, shape),
+            )
+            return {
+                "document_id": handle.document_id,
+                "layer_id": layer_id,
+                "fill_id": call.operation_id,
+                "shape": args["shape"]["kind"],
+                "shape_bounds_px": shapes.aligned(drawn),
+                "effective_fill": {
+                    "preset_id": FILL_PRESET,
+                    "color": {"space": "srgb", "rgba": list(effective["color"])},
+                    "opacity": effective["opacity"],
+                    "blend_mode": effective["blend_mode"],
+                    "alpha_lock": effective["alpha_lock"],
+                    "antialias": True,
+                },
+                **_receipt(frame, applied),
+            }
+
+    guarded_stroke = registry.guarded(stroke)
+    guarded_fill = registry.guarded(fill)
 
     def paint_stroke(args: dict[str, Any], call: Call) -> dict[str, Any]:
         _check_args(args)
-        return guarded(args, call)
+        return guarded_stroke(args, call)
 
-    return {"paint.stroke": paint_stroke}
+    def paint_fill(args: dict[str, Any], call: Call) -> dict[str, Any]:
+        _check_fill(args)
+        return guarded_fill(args, call)
+
+    return {"paint.stroke": paint_stroke, "paint.fill": paint_fill}
 
 
 # Arguments.
@@ -221,6 +324,34 @@ def _check_args(args: Any) -> None:
     _check_path(args["path"])
 
 
+def _check_fill(args: Any) -> None:
+    if not isinstance(args, dict):
+        raise BridgeError("INVALID_ARGUMENT", "The op's arguments are an object.")
+    exact(args, FILL_FIELDS)
+    if not isinstance(args["document_id"], str):
+        raise BridgeError("INVALID_ARGUMENT", "document_id is a document id.")
+    if not isinstance(args["layer_id"], str) or not LAYER_ID.match(args["layer_id"]):
+        raise BridgeError("INVALID_ARGUMENT", "layer_id is a layer id.")
+    if args["verify"] not in verification.MODES:
+        raise BridgeError("INVALID_ARGUMENT", "verify is region or full.")
+    style = args["fill"]
+    if not isinstance(style, dict):
+        raise BridgeError("INVALID_ARGUMENT", "fill is an object.")
+    exact(style, FILL_STYLE_FIELDS)
+    if not _colour(style["color"]):
+        raise BridgeError("INVALID_ARGUMENT", "fill.color is malformed.")
+    if style["color"][3] != 1:
+        message = "fill.color's alpha must be 1; opacity sets transparency."
+        raise BridgeError("INVALID_ARGUMENT", message)
+    if not number(style["opacity"]) or not 0 <= style["opacity"] <= 1:
+        raise BridgeError("INVALID_ARGUMENT", "fill.opacity is 0 to 1.")
+    if style["blend_mode"] not in {mode for mode, _ in BLEND_MODES}:
+        raise BridgeError("INVALID_ARGUMENT", "fill.blend_mode is malformed.")
+    if not isinstance(style["alpha_lock"], bool):
+        raise BridgeError("INVALID_ARGUMENT", "fill.alpha_lock is true or false.")
+    shapes.check(args["shape"])
+
+
 def _check_brush(brush: Any) -> None:
     if not isinstance(brush, dict):
         raise BridgeError("INVALID_ARGUMENT", "brush is an object.")
@@ -236,11 +367,7 @@ def _check_brush(brush: Any) -> None:
         if not number(brush[key]) or not 0 <= brush[key] <= 1:
             _malformed(key)
     color = brush["color"]
-    if (
-        not isinstance(color, list)
-        or len(color) != 4
-        or not all(number(value) and 0 <= value <= 1 for value in color)
-    ):
+    if not _colour(color):
         _malformed("color")
     if color[3] != 1:
         message = "brush.color's alpha must be 1; opacity and flow set transparency."
@@ -270,6 +397,14 @@ def _check_path(path: Any) -> None:
         _malformed_path("Each segment is [x, y] or [c1x, c1y, c2x, c2y, x, y].")
 
 
+def _colour(color: Any) -> bool:
+    return (
+        isinstance(color, list)
+        and len(color) == 4
+        and all(number(value) and 0 <= value <= 1 for value in color)
+    )
+
+
 def _malformed(key: str) -> None:
     raise BridgeError("INVALID_ARGUMENT", f"brush.{key} is malformed.")
 
@@ -289,6 +424,34 @@ def _numbers(values: Any, lengths: tuple[int, ...]) -> bool:
 # Refusals before any change.
 
 
+def _refuse_cumulative(port: DocumentsPort) -> None:
+    if port.cumulative_undo():
+        details: dict[str, Any] = {"reason": "cumulative_undo"}
+        message = (
+            "Krita's cumulative undo merges strokes into one undo step, so a stroke could "
+            "not be undone alone; turn it off in Krita's settings."
+        )
+        raise BridgeError("UNSUPPORTED_CAPABILITY", message, False, details)
+
+
+def _paintable(port: DocumentsPort, document: Any, layer_id: str) -> None:
+    ability = port.paint_ability(document, layer_id)
+    if ability != PAINTABLE:
+        details = {"layer_id": layer_id, "paint_ability": ability}
+        message = "Krita says this layer cannot be painted now."
+        raise BridgeError("LAYER_NOT_PAINTABLE", message, False, details)
+
+
+def _selected(port: DocumentsPort, document: Any, size: list[int]) -> dict[str, int]:
+    # The rect a selection fill paints, clipped: Krita's bounds can run past the canvas.
+    bounds = port.selection_bounds(document)
+    shown = None if bounds is None else _box(_clip(bounds, size))
+    if shown is None:
+        message = "There is no selection on the canvas to fill; set one first."
+        raise BridgeError("INVALID_ARGUMENT", message, False, {"field": "shape"})
+    return shown
+
+
 def _check_space(info: dict[str, Any]) -> None:
     if (info["color_model"], info["depth"], info["profile_id"]) != (
         COLOR_MODEL,
@@ -300,7 +463,7 @@ def _check_space(info: dict[str, Any]) -> None:
         raise BridgeError("COLOR_PROFILE_MISMATCH", message, False, details)
 
 
-def _target(tree: dict[str, Any], layer_id: str, protected: set[str]) -> dict[str, Any]:
+def _target(tree: dict[str, Any], layer_id: str, protected: set[str], noun: str) -> dict[str, Any]:
     node: dict[str, Any] | None = next(
         (node for node in tree["nodes"] if node["id"] == layer_id), None
     )
@@ -312,7 +475,7 @@ def _target(tree: dict[str, Any], layer_id: str, protected: set[str]) -> dict[st
     if node["type"] != "paintlayer":
         kind = TYPES.get(node["type"], node["type"])
         details["layer_type"] = kind
-        message = f"Only paint layers take strokes; this layer is a {kind}."
+        message = f"Only paint layers take {noun}s; this layer is a {kind}."
         raise BridgeError("LAYER_NOT_PAINTABLE", message, False, details)
     if (node["color_model"], node["depth"]) != (COLOR_MODEL, DEPTH):
         details.update({key: node[key] for key in ("color_model", "depth", "profile_id")})
@@ -324,10 +487,10 @@ def _target(tree: dict[str, Any], layer_id: str, protected: set[str]) -> dict[st
         if child["parent_id"] == layer_id and child["type"] == "selectionmask"
     )
     if masks:
-        # K10: a local selection mask confines the stroke in place of the global selection, and
+        # K10: a local selection mask confines paint in place of the global selection, and
         # libkis does not say which mask is active.
         details["mask_ids"] = masks
-        message = "The layer has a local selection mask, which would confine the stroke instead."
+        message = f"The layer has a local selection mask, which would confine the {noun} instead."
         raise BridgeError("LAYER_HAS_LOCAL_SELECTION", message, False, details)
     return node
 
@@ -407,6 +570,31 @@ def _taken(asked: dict[str, Any], name: str, effective: dict[str, Any]) -> None:
         raise BridgeError("INTERNAL_ERROR", message, False, details)
 
 
+def _filled_as_asked(asked: dict[str, Any], name: str, effective: dict[str, Any]) -> None:
+    refused = [key for key in ("blend_mode", "alpha_lock") if effective[key] != asked[key]]
+    if effective["eraser"]:
+        refused.append("eraser")
+    if effective["preset"] != name:
+        refused.insert(0, "preset")
+    if refused:
+        details = {"fields": refused}
+        message = "Krita did not take the fill as asked, so nothing was painted."
+        raise BridgeError("INTERNAL_ERROR", message, False, details)
+
+
+def _receipt(frame: mutation.Mutation, applied: mutation.Applied) -> dict[str, Any]:
+    diff, new = applied.checked
+    return {
+        "changed_bounds_px": diff,
+        "layer_bounds_px": new,
+        "protected_pixels_changed": 0,
+        "undo_label": frame.labels[0],
+        "undo_steps": len(frame.labels),
+        "history_sealed": applied.steps.sealed,
+        "verification": frame.files(applied),
+    }
+
+
 def _effective(
     asked: dict[str, Any],
     listed: str,
@@ -451,6 +639,7 @@ def _verdict(
     region: dict[str, int],
     loose_ring: dict[str, int],
     old_bounds: dict[str, int],
+    noun: str,
 ) -> BridgeError | None:
     # region is R clipped to the canvas, and loose_ring the guard ring R' as Krita's unclipped
     # bounds see it.
@@ -469,12 +658,12 @@ def _verdict(
     details: dict[str, Any] = {"protected_layer_ids": changed, "target_outside_reach": outside}
     if outside:
         message = (
-            "The stroke reached past the region it was verified over, so it was undone; "
+            f"The {noun} reached past the region it was verified over, so it was undone; "
             'verify "full" checks the whole canvas.'
         )
     else:
         message = (
-            "The stroke changed what protection forbids (a protected layer, the composite "
+            f"The {noun} changed what protection forbids (a protected layer, the composite "
             "outside the allowed mask, or its alpha under preserve_composite_alpha)."
         )
     return BridgeError("PROTECTED_REGION_CHANGED", message, False, details)

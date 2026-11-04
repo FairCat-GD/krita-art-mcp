@@ -28,6 +28,7 @@ PHASE_1_TOOLS = sorted(
         "selection_set",
         "protection_set",
         "paint_stroke",
+        "paint_fill",
         "history_step",
         "operation_get",
         "operation_cancel",
@@ -163,7 +164,7 @@ def test_every_copy_of_guard_is_the_phase_1_guard() -> None:
         for name in PHASE_1_TOOLS
         for guard in _shapes(schemas.load(name)["inputSchema"].get("properties", {}), "guard")
     ]
-    assert len(guards) == 8
+    assert len(guards) == 9
     assert all(guard == GUARD for guard in guards)
 
 
@@ -329,11 +330,22 @@ def test_the_output_rules_hold_for_every_status(changes: dict[str, Any], valid: 
     assert Draft202012Validator(tool["outputSchema"]).is_valid(result) is valid
 
 
-def test_a_stroke_reports_its_verification_in_layer_updates_shape() -> None:
+@pytest.mark.parametrize("name", ["krita_paint_stroke", "krita_paint_fill"])
+def test_a_paint_call_reports_its_verification_in_layer_updates_shape(name: str) -> None:
     update = schemas.load("krita_layer_update")["outputSchema"]["properties"]["data"]["anyOf"][0]
-    stroke = schemas.load("krita_paint_stroke")["outputSchema"]["properties"]["data"]["anyOf"][0]
+    painted = schemas.load(name)["outputSchema"]["properties"]["data"]["anyOf"][0]
     checked = update["properties"]["verification"]["anyOf"]
-    assert stroke["properties"]["verification"] == checked[0] and checked[1] == {"type": "null"}
+    assert painted["properties"]["verification"] == checked[0] and checked[1] == {"type": "null"}
+
+
+def test_a_fill_takes_a_stroke_s_colour_and_a_selection_s_shapes() -> None:
+    fill = schemas.load("krita_paint_fill")["inputSchema"]["properties"]
+    stroke = schemas.load("krita_paint_stroke")["inputSchema"]["properties"]
+    selected = schemas.load("krita_selection_set")["inputSchema"]["properties"]["shape"]["oneOf"]
+    assert fill["color"] == stroke["brush"]["properties"]["color"]
+    kinds = ("rect", "ellipse", "polygon")
+    taken = [branch for branch in selected if branch["properties"]["type"]["const"] in kinds]
+    assert fill["shape"]["oneOf"][1:4] == taken
 
 
 def test_the_schema_files_are_as_the_amendment_script_writes_them() -> None:
@@ -359,6 +371,11 @@ def test_the_amendment_script_finds_a_shared_shape_that_drifted(tmp_path: Path) 
         ("krita_paint_stroke.json", [*data, "properties", "verification"])
         for data in (stroke_data, rule_data)
     ]
+    fill_input: list[str | int] = ["inputSchema", "properties"]
+    drifts += [
+        ("krita_paint_fill.json", [*fill_input, "color"]),
+        ("krita_paint_fill.json", [*fill_input, "shape", "oneOf", 3, "properties", "points"]),
+    ]
     for name, path in drifts:
         tool = json.loads((folder / name).read_text(encoding="utf-8"))
         shape = tool
@@ -369,6 +386,7 @@ def test_the_amendment_script_finds_a_shared_shape_that_drifted(tmp_path: Path) 
         (folder / name).write_text(text, encoding="utf-8")
     assert amend_schemas.stale(folder) == [
         "krita_document_close.json",
+        "krita_paint_fill.json",
         "krita_paint_stroke.json",
         "krita_sample.json",
     ]

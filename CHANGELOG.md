@@ -6,6 +6,28 @@ All notable changes to krita-art-mcp are documented here. The format follows
 
 ## [Unreleased]
 
+## [0.21.0] — 2026-11-04
+
+Broad colour planes no longer need oversized strokes under a selection: `krita_paint_fill` fills a
+shape with one flat antialiased colour, checked like a stroke. This release needs
+`install-plugin`, a Krita restart and a restart of the MCP client.
+
+### Added
+
+- **`krita_paint_fill`:** one flat antialiased fill of a rect, an ellipse, a polygon, a closed
+  curve through points, or the current selection, on a paint layer, as one undo step. It takes a
+  colour, an opacity, a blend mode and alpha lock. It is Krita's own fill, with no brush dabs, and
+  it follows a feathered selection's coverage. It is checked against protection over the shape and
+  a 2 px margin (`verify: "region"`) or the whole canvas (`"full"`), and undone on a leak. A
+  shape past the canvas is refused, never clipped; a selection fill takes the selection's part on
+  the canvas.
+- **The fill activates the stock preset `c) Pencil-3 Large 4B` first, and says so.** Every preset
+  fills the same visible pixels, but a wash-mode preset also writes colour under alpha 0 up to
+  3 px past the shape. The preset becomes the window's current brush, as a stroke's does; a fill
+  refuses with `UNSUPPORTED_CAPABILITY` when Krita lacks it or it no longer builds up without a
+  masking brush.
+- **`paint.fill` in the capability matrix,** supported since 0.21.0.
+
 ## [0.20.1] — 2026-11-04
 
 Strokes, layer changes and new layers now share one verified sequence, so a failure that is rolled

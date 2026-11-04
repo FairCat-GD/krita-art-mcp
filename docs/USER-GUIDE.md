@@ -81,7 +81,7 @@ do. Undoable is not the same as additive, so a stroke stays destructive.
 |---|---|---|
 | Read-only | `krita_server_info`, `krita_document_list`, `krita_document_inspect`, `krita_resource_list`, `krita_capture`, `krita_sample`, `krita_preview_render`, `krita_operation_get` | Change no document. Captures and previews write their PNGs to the data folder |
 | Not destructive | `krita_layer_create`, `krita_protection_set`, `krita_document_open`, `krita_document_create`, `krita_document_save` | Add: a layer, tighter protection, a working copy, a document, a new file |
-| Destructive | `krita_paint_stroke`, `krita_selection_set`, `krita_layer_update`, `krita_history_step`, `krita_operation_cancel`, `krita_document_close` | Change what is there: pixels, the selection, a layer, history, a queued call, or unsaved changes a close discards |
+| Destructive | `krita_paint_stroke`, `krita_paint_fill`, `krita_selection_set`, `krita_layer_update`, `krita_history_step`, `krita_operation_cancel`, `krita_document_close` | Change what is there: pixels, the selection, a layer, history, a queued call, or unsaved changes a close discards |
 
 **Codex's approval setting.** By default Codex reviews every call a tool's hints call destructive.
 Measured in two long sessions, each such call carried 2 to 3 s beyond the tool's own time, and each
@@ -192,6 +192,26 @@ engine, or a filter, mask, style or clone that could spread a change, needs `ver
 checks the whole canvas. A path may run half a brush past the canvas: `changed_bounds_px` is what
 changed on the canvas, and `layer_bounds_px` is the layer's whole extent, past it included.
 
+**Fill a flat colour plane in one call.** For a broad plane inside a shape, a fill beats a large
+stroke under a selection: it is Krita's own fill, flat and antialiased, with no brush texture, and
+no stroke's reach past the edge. Keep strokes for edges, texture and anything that should look
+painted.
+
+```json
+{"guard": {"document_id": "doc-1", "request_id": "<a fresh UUID>"}, "layer_id": "<your layer>",
+ "shape": {"type": "path", "points": [[20, 20], [50, 26], [40, 46], [18, 40]]},
+ "color": {"space": "srgb", "rgba": [0.4, 0.3, 0.3, 1]}, "opacity": 1}
+```
+
+`shape` is a `rect` or `ellipse` (whole pixels), a `polygon`, a `path` (a smooth closed curve
+through 3 to 4096 points, which bulges past them between points), or `{"type": "selection"}`, the
+selection's part on the canvas. A shape must lie on the canvas, curve included; where it crosses
+itself it fills even-odd. `blend_mode` and `alpha_lock` work as a stroke's, and the current
+selection confines a fill and feathers it. Each fill makes `c) Pencil-3 Large 4B` your current
+brush preset, so it does not depend on the brush you left; it needs that stock preset as Krita
+ships it. A fill is checked over its shape plus 2 px, or the whole canvas with `verify: "full"`, and
+as with a selection, keep an antialiased shape a pixel inside the allowed mask.
+
 **7. Check it at game size.** After every one to three strokes, call `krita_preview_render` with
 explicit recipes. A source's `baseline_id` shows the document as opened beside it.
 
@@ -204,8 +224,8 @@ explicit recipes. A source's `baseline_id` shows the document as opened beside i
 ```
 
 **8. Undo or keep.** `krita_history_step` undoes or redoes the bridge's own steps, up to 50 a call,
-never below the last protection change. Layer creation, selection commits, blend changes and strokes
-undo; other property changes cannot.
+never below the last protection change. Layer creation, selection commits, blend changes, strokes
+and fills undo; other property changes cannot.
 
 **9. Save to a new path.** The file is written beside the path, reopened in Krita, compared, and only
 then moved into place. It never overwrites.
@@ -281,9 +301,9 @@ Every failure returns `error: {code, message, retryable, details}`. The table gi
 | `LAYER_NOT_FOUND` | no | No layer has that id here | Inspect. A reopened ORA or PNG has new ids; match by name |
 | `LOCKED_TARGET` | no | The layer is protected, or holds or is a protected layer | Add a layer of your own |
 | `LAYER_NOT_PAINTABLE` | no | The target is not a paint layer, or Krita refuses paint on it | Paint on a paint layer of your own |
-| `LAYER_HAS_LOCAL_SELECTION` | no | The layer has a local selection mask, which would confine the stroke | Paint on another layer |
+| `LAYER_HAS_LOCAL_SELECTION` | no | The layer has a local selection mask, which would confine the stroke or fill | Paint on another layer |
 | `PROTECTED_REGION_CHANGED` | no | The change reached protected pixels, and was undone and confirmed | Read `details.verification` and the diff image, then confine the stroke with a selection |
-| `OUTSIDE_ALLOWED_MASK` | no | The stroke lies entirely outside the allowed mask; nothing was painted | Move the stroke |
+| `OUTSIDE_ALLOWED_MASK` | no | The stroke or fill lies entirely outside the allowed mask; nothing was painted | Move it |
 | `RESOURCE_HASH_MISMATCH` | no | A preset or mask differs from the hash given | List it again, and do not edit presets during a session |
 | `SOURCE_HASH_MISMATCH` | no | The source or working copy differs from the hash given | Hash the file again, or find what changed it |
 | `COLOR_PROFILE_MISMATCH` | no | The document is not 8-bit RGBA, or this needs sRGB | Work on another document; Phase 1 does not convert |
@@ -323,8 +343,8 @@ Every failure returns `error: {code, message, retryable, details}`. The table gi
 - **Region verification needs the pixel brush engine.** Color Smudge, the Quick Brush, MyPaint, spray,
   deform and others need `verify: "full"`.
 - Stochastic presets do not repeat exactly.
-- No filters, transforms, fills, shapes, or layer deleting, reordering or duplicating. Those are
-  Phase 2.
+- No filters, transforms, flood fills from a seed, or layer deleting, reordering or duplicating.
+- **A fill is one flat colour.** No gradients or patterns, and no fill of a shape past the canvas.
 
 **Documents and history.**
 - Frame 0 only. An animated document away from it is refused, and verification refuses animated
@@ -337,8 +357,8 @@ Every failure returns `error: {code, message, retryable, details}`. The table gi
 
 **Krita is shared.**
 - The brush is window-wide: painting changes your current brush and foreground colour, and Krita
-  records the presets used in its own history. Mirror painting and wrap-around go off for a stroke and
-  come back after it.
+  records the presets used in its own history; a fill activates `c) Pencil-3 Large 4B`. Mirror painting
+  and wrap-around go off for a stroke or a fill and come back after it.
 - A stroke, an undo or a redo brings that document's tab to the front for its length, then puts yours
   back.
 - Do not edit brush presets while an agent paints, or paint in the same document.

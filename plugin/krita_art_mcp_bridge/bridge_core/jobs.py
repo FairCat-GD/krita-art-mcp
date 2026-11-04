@@ -44,6 +44,7 @@ BOUNDED = frozenset(
         "protection.set",
         "history.step",
         "paint.stroke",
+        "paint.fill",
     }
 )
 # Fixture ops have no marker, so a raise from one proves nothing.

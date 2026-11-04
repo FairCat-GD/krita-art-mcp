@@ -57,6 +57,7 @@ TOOLS: dict[str, ToolFunction] = {
     "krita_protection_set": changes.protection_set,
     "krita_history_step": changes.history_step,
     "krita_paint_stroke": painting.paint_stroke,
+    "krita_paint_fill": painting.paint_fill,
     "krita_preview_render": preview.preview_render,
     "krita_operation_get": operations.operation_get,
     "krita_operation_cancel": operations.operation_cancel,

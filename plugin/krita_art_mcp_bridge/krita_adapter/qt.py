@@ -7,6 +7,7 @@ try:
         QEventLoop,
         QObject,
         QPointF,
+        QRectF,
         pyqtSignal,
         pyqtSlot,
     )
@@ -23,6 +24,7 @@ except ImportError:
         QEventLoop,
         QObject,
         QPointF,
+        QRectF,
         pyqtSignal,
         pyqtSlot,
     )
@@ -43,6 +45,7 @@ __all__ = [
     "QObject",
     "QPainterPath",
     "QPointF",
+    "QRectF",
     "pyqtSignal",
     "pyqtSlot",
 ]

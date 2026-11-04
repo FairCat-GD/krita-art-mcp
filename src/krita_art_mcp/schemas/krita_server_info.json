@@ -81,6 +81,7 @@
                 "type": "object",
                 "propertyNames": {
                   "enum": [
+                    "paint.fill",
                     "stroke.native_brush",
                     "stroke.per_point_input",
                     "stroke.smoothing",
@@ -123,6 +124,7 @@
                   "additionalProperties": false
                 },
                 "required": [
+                  "paint.fill",
                   "stroke.native_brush",
                   "stroke.per_point_input",
                   "stroke.smoothing",
@@ -347,6 +349,7 @@
               "type": "object",
               "propertyNames": {
                 "enum": [
+                  "paint.fill",
                   "stroke.native_brush",
                   "stroke.per_point_input",
                   "stroke.smoothing",
@@ -389,6 +392,7 @@
                 "additionalProperties": false
               },
               "required": [
+                "paint.fill",
                 "stroke.native_brush",
                 "stroke.per_point_input",
                 "stroke.smoothing",
@@ -561,6 +565,11 @@
         "krita_version": "5.3.4",
         "qt_major": 5,
         "capabilities": {
+          "paint.fill": {
+            "supported": false,
+            "since": null,
+            "notes": "Fills are not built in this release."
+          },
           "stroke.native_brush": {
             "supported": false,
             "since": null,

@@ -834,6 +834,58 @@ and §8.8 items 6, 8.
   pixels.
 - **Flood fill from a seed is out** (decision 18).
 
+**Done (2026-11-04, 0.21.0).**
+- **Decided with the owner in plan mode:**
+  - **The closed `path` is a curve through points,** `{"type": "path", "points": [[x, y], …]}`,
+    3 to 4096, a closed uniform Catmull-Rom the server turns into exact cubics.
+  - **The plan,** approved after an adversarial review of it. Its findings went in: flow set per
+    fill, the full set run under every preset, a selection's bounds clipped to the canvas.
+- **Measured first,** in a harness document, through a temporary `harness.fill` op that never
+  shipped, under one stock preset of each of the 16 engines, a wash preset at flow 0.3, and eraser
+  mode left on:
+  - `paintPath(path, "None", "ForegroundColor")` is a painter fill. It made one "Scripted Brush
+    Stroke" step, which one undo took back. Nothing changed past the shape at brush size 300, while
+    a bad style string painted its outline 134 px out.
+  - Opacity 0.5 gave alpha 128, and multiply gave the product. Alpha lock kept every alpha byte, and
+    a feathered selection's coverage was the fill's alpha exactly. An ellipse's edge is antialiased;
+    an integer rect's is not.
+  - **The preset matters, invisibly.** Every preset filled the same visible pixels, but wash-mode
+    presets (most `b)`, the masked brush among them) wrote colour under alpha 0 up to 3 px past the
+    shape. Build-up, MyPaint, smudge and the others wrote none. Byte-exact verification counts
+    that, so by the block's rule the fill activates one fixed preset, `c) Pencil-3 Large 4B`.
+  - A selection's bounds run past the canvas: an inverted rect's are 448 × 320 on a 400 × 300
+    canvas, and one grown at the corner starts at −10.
+  - The fallback was not needed.
+- **Shipped:**
+  - `krita_paint_fill` / `paint.fill`, on the frame. The stroke's body from R on is one shared
+    function, with the stroke's order and wording unchanged.
+  - The shapes are `bridge_core/shapes.py`: exact fields, the area rule, and a curve's box by its
+    extrema. A shape off the canvas is refused; a selection fill takes the selection's part on it.
+  - R is the shape's aligned box plus 2 px, and R′ is R plus 32. The preset's XML is checked
+    (build-up, no masking brush), and its digest is kept in the stroke's map.
+  - The receipt has the stroke's shape, and the capability is `paint.fill`.
+  - **Parity:** `_fill_rules` (alpha 1; points on one line), three cases.
+  - The plugin tests' world moved to `tests/fixtures/paint_world.py`, shared by the stroke and fill
+    tests.
+- **Amendments:**
+  - **The fill activates a preset,** which the block allowed only if the measurement showed it
+    mattered. It did, under alpha 0 only; the owner's rule ("any difference") decided it.
+  - **The margin is 2 px,** the plan's floor. The build-up preset touched nothing past the aligned
+    box.
+- **Checked live:** `install-plugin` and a Krita restart at 0 unsaved, twice (the instrument, then
+  0.21.0), with `doctor` 6 of 6 each time. The first probe run had 7 FAIL, all in the fill group:
+  its own check cleared the selection before its undo, which then undid the clear instead and left
+  the selection on. Reordered, the rerun held the whole baseline.
+- **Falsified:**
+  - 13 new unit checks, each broken alone, each caught by its own test: the off-canvas rule, both
+    halves of the area rule (the plugin's through parity), the extrema, the margin, the selection's
+    clip and refusal, the taken check, the preset check, the curve's wrap, the overflow check, and
+    both halves of the alpha rule.
+  - The 11 new probe checks, broken together in one run: 11 FAIL, each at its own line.
+- **Numbers:** 953 server tests (+56), 878 plugin tests (+74), probe 159 PASS (+11), 0 FAIL, 25
+  MEASURED (+1), 130.0 s with 0 documents open. 20 tools, 20 schema files, 30 error codes, 32 ops,
+  instructions 3,750 characters, `api_version` 0.4.0.
+
 ---
 
 ## M1: Transparency masks

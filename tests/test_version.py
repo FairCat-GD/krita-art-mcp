@@ -16,7 +16,7 @@ from krita_art_mcp.tools import BUILT_TOOLS
 
 CLI = str(Path(sys.executable).with_name("krita-art-mcp"))
 # The release this checkout is; bumped with the package version.
-EXPECTED_VERSION = "0.20.1"
+EXPECTED_VERSION = "0.21.0"
 
 
 def test_plugin_version_equals_package_version() -> None:

@@ -12,7 +12,7 @@ from mcp import Client
 
 from krita_art_mcp.bridge_client import BridgeClient, Done
 from krita_art_mcp.journal import Journal
-from krita_art_mcp.probe import acceptance, edges, fixtures, modified, previews, saving
+from krita_art_mcp.probe import acceptance, edges, filling, fixtures, modified, previews, saving
 from krita_art_mcp.probe.common import (
     add_layer,
     brush_args,
@@ -106,6 +106,7 @@ async def run(report: Report, a: Client, b: Client, client: BridgeClient, harnes
     presets = {"hard": _pick(found, HARD), "soft": _pick(found, SOFT)}
     presets["scatter"] = _pick(found, SCATTER)
     presets["tall"] = _pick(found, TALL)
+    presets["fill"] = _pick(found, filling.FILL)
     hard = presets["hard"]
     if not report.check("a hard round stock preset is listed", hard is not None):
         return
@@ -138,6 +139,7 @@ async def run(report: Report, a: Client, b: Client, client: BridgeClient, harnes
             await _masks(report, a, client, paint, harness, presets)
             await _rim(report, a, rim, harness, hard)
             await edges.run(report, a, folder, harness, hard)
+            await filling.run(report, a, client, paint, harness, presets)
         with report.timed("benchmark"):
             for spec in BENCHMARKS:
                 await _benchmark(report, a, client, harness, folder, spec, hard)

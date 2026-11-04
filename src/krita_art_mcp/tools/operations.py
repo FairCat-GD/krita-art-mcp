@@ -60,6 +60,7 @@ RECEIPTS: dict[str, Known] = {
     "protection.set": Known("krita_protection_set", changes.protection_receipt),
     "history.step": Known("krita_history_step", changes.history_receipt, changes.resolve_history),
     "paint.stroke": Known("krita_paint_stroke", painting.paint_receipt, changes.resolve_update),
+    "paint.fill": Known("krita_paint_fill", painting.fill_receipt, changes.resolve_update),
     "preview.read": Known("krita_preview_render", preview.preview_receipt, preview.resolve_preview),
     "document.save": Known("krita_document_save", saving.save_receipt, finish=saving.finish_save),
 }

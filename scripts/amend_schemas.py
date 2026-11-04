@@ -5,7 +5,8 @@ Usage: uv run scripts/amend_schemas.py [--check]
 A tool's session edits its schema's input, the `data` under its output's properties, and its
 example. This script then writes the envelope, `guard` and `source` into every schema, copies
 each `data` into the completed rule, open's `layers` into inspect's, layer_update's
-`verification` object into paint_stroke's and the stroke's colour into sample's `color`, and
+`verification` object into paint_stroke's and paint_fill's, the stroke's colour into sample's
+`color` and the fill's, selection_set's rect, ellipse and polygon shapes into the fill's, and
 formats the files.
 With --check it changes nothing and exits 1 if any file would change.
 """
@@ -101,10 +102,20 @@ def amended(tools: dict[str, dict[str, Any]]) -> dict[str, dict[str, Any]]:
     # A stroke always reports its verification, so it takes only the object branch.
     checked = _data(tools["krita_layer_update"])["properties"]["verification"]["anyOf"][0]
     _data(tools["krita_paint_stroke"])["properties"]["verification"] = copy.deepcopy(checked)
-    # A sample's color is exactly what a stroke's brush.color takes, descriptions included.
+    _data(tools["krita_paint_fill"])["properties"]["verification"] = copy.deepcopy(checked)
+    # A sample's color is exactly what a stroke's brush.color and a fill's color take.
     taken = tools["krita_paint_stroke"]["inputSchema"]["properties"]["brush"]["properties"]["color"]
     sampled = _data(tools["krita_sample"])["properties"]["samples"]["items"]["properties"]["color"]
     sampled["anyOf"][0] = copy.deepcopy(taken)
+    fill = tools["krita_paint_fill"]["inputSchema"]["properties"]
+    fill["color"] = copy.deepcopy(taken)
+    # A fill takes a selection's rect, ellipse and polygon as the selection does.
+    selected = tools["krita_selection_set"]["inputSchema"]["properties"]["shape"]["oneOf"]
+    by_type = {branch["properties"]["type"]["const"]: branch for branch in selected}
+    fill["shape"]["oneOf"] = [
+        copy.deepcopy(by_type.get(branch["properties"]["type"]["const"], branch))
+        for branch in fill["shape"]["oneOf"]
+    ]
     said = _data(tools["krita_operation_get"])["properties"]["outcome"]["anyOf"][0]
     said["enum"] = list(errors.OUTCOMES)
     for tool in tools.values():

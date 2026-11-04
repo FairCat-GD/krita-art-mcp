@@ -8,7 +8,7 @@ import zipfile
 import zlib
 from typing import Any
 
-from bridge_core import documents, history, saving
+from bridge_core import documents, history, saving, shapes
 from bridge_core.bridge import Bridge
 from bridge_core.errors import BridgeError
 
@@ -118,7 +118,7 @@ class FakePort:
         self.buffers: dict[str, bytearray] = {}
         # The window's brush (K3), each preset's XML by name, and each preset's values by file id.
         self.brush_now: dict[str, Any] = dict(BRUSH)
-        self.preset_xml: dict[str, str] = {name: xml for _, name, xml in PRESETS}
+        self.preset_xml: dict[str, str] = {name: xml for _, name, xml in [*PRESETS, FILL_PRESET]}
         self.preset_state: dict[str, dict[str, Any]] = {}
         self.brush_order: list[str] = []
         # Brush fields Krita does not take, values it adjusts, and a change the next brush()
@@ -133,6 +133,7 @@ class FakePort:
         self.stray: list[dict[str, int]] = []
         self.on_paint: list[Any] = []
         self.paths: list[dict[str, Any]] = []
+        self.shapes: list[dict[str, Any]] = []
         # The call whose marker every mutating call here answers to, once a test sets it.
         self.marker: Any = None
 
@@ -709,6 +710,44 @@ class FakePort:
     def cumulative_undo(self) -> bool:
         return self.cumulative
 
+    def set_fill(self, document: Any, fill: dict[str, Any], preset: Any) -> dict[str, Any]:
+        values = {**fill, "preset": preset, "flow": 1.0, "eraser": False}
+        for key in FILL_ORDER:
+            self.brush_order.append(key)
+            if key in self.ignore_brush:
+                continue
+            if key == "preset":
+                self.brush_now["blend_mode"] = "normal"
+            self.brush_now[key] = copy.deepcopy(self.adjust.get(key, values[key]))
+        found = copy.deepcopy(self.brush_now)
+        found["preset_xml"] = self.preset_xml.get(found["preset"], "")
+        return found
+
+    def fill_path(self, document: Any, layer_id: str, shape: dict[str, Any]) -> None:
+        # The shape's whole pixels in the fill's colour: a rect exactly, any other its box.
+        self._marked()
+        self.calls.append("fill")
+        self._maybe_fail("fill_path")
+        key = document.key
+        node = self._layer(key, layer_id)
+        self.paintable(key, None)
+        before = self._state(key)
+        self.shapes.append(copy.deepcopy(shape))
+        boxes = [shapes.aligned(shapes.box(shape))] + [dict(rect) for rect in self.stray]
+        red, green, blue = (round(value * 255) for value in self.brush_now["color"][:3])
+        pixel = bytes([blue, green, red, 255])
+        size = self.live[key]["size_px"]
+        composite = self.canvas[key]
+        assert isinstance(composite, bytearray)
+        for box in boxes:
+            _fill(self.buffers[layer_id], size, box, pixel)
+            _fill(composite, size, box, pixel)
+        node["bounds_px"] = _span([node["bounds_px"], *boxes])
+        for hook in self.on_paint:
+            hook(key)
+        self._push(key, history.LABELS["paint.fill"], before)
+        self._maybe_fail("fill_path_after")
+
     def paint_path(self, document: Any, layer_id: str, path: dict[str, Any]) -> None:
         self._marked()
         self.calls.append("paint")
@@ -906,6 +945,12 @@ PRESETS = [
     ("no-scatter-keys.kpp", "No Scatter Keys", preset_xml("No Scatter Keys", scatter={})),
     ("smudge.kpp", "Smudge", preset_xml("Smudge", engine="colorsmudge")),
 ]
+# The build-up stock preset every fill activates.
+FILL_PRESET = (
+    "c)_Pencil-3_Large_4B.kpp",
+    "c) Pencil-3 Large 4B",
+    preset_xml("c) Pencil-3 Large 4B", scatter={"PaintOpAction": "1"}),
+)
 # The window's brush as Krita starts, the order set_brush takes the fields in (K3), and a view.
 BRUSH: dict[str, Any] = {
     "preset": "Basic Round",
@@ -929,6 +974,7 @@ BRUSH_ORDER = (
     "rotation_deg",
     "color",
 )
+FILL_ORDER = ("preset", "opacity", "flow", "blend_mode", "eraser", "alpha_lock", "color")
 VIEW: dict[str, Any] = {"zoom": 1.0, "rotation_deg": 0.0, "pan_px": [0, 0]}
 PRESET_STATE: dict[str, Any] = {
     "size_px": 10.0,
@@ -943,7 +989,9 @@ class FakeResources:
     # Krita's resources as resource.list sees them.
     def __init__(self) -> None:
         self.preset_list = [{"name": name, "file": file} for file, name, _ in PRESETS[:3]]
-        self.xmls = {name: xml for _, name, xml in PRESETS}
+        self.xmls = {name: xml for _, name, xml in [*PRESETS, FILL_PRESET]}
+        # Found but not listed, so the listings keep their three; None as if Krita lacked it.
+        self.stock: dict[str, str] | None = {"name": FILL_PRESET[1], "file": FILL_PRESET[0]}
         self.profile_names = ["sRGB-elle-V2-srgbtrc.icc", "sRGB built-in"]
         self.palette_list = [{"name": "Default", "file": "default.kpl"}]
         self.asked: list[list[str]] = []
@@ -964,7 +1012,7 @@ class FakeResources:
 
     def preset(self, preset_id: str) -> dict[str, Any] | None:
         self.calls.append("preset")
-        for entry in self.preset_list:
+        for entry in [*self.preset_list, *([self.stock] if self.stock else [])]:
             if entry["file"] == preset_id:
                 name = entry["name"]
                 return {"name": name, "xml": self.xmls.get(name, ""), "resource": name}

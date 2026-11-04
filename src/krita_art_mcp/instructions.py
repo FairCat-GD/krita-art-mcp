@@ -36,6 +36,9 @@ are refused. To recolour a silhouette under preserve_composite_alpha, paint on a
 inherit_alpha layer.
 - krita_paint_stroke paints one stroke per call, one undo step, checked like a layer change \
 and undone on a leak. A preset whose tip or scatter cannot be read needs verify full.
+- krita_paint_fill fills a rect, ellipse, polygon, closed curve or the selection with one flat \
+antialiased colour, one undo step, checked like a stroke: use it for broad colour planes, and \
+strokes for edges and texture. Keep an antialiased shape a pixel inside the allowed mask.
 - krita_capture returns an image and its PNG's path: scale 1 is the native crop, any other \
 scale resamples.
 - After every one to three strokes, check krita_preview_render at the asset's game sizes, from \
@@ -44,7 +47,7 @@ explicit recipes; a source's baseline_id shows the document as opened beside it.
 file to verify it and clears dirty. An .ora drops masks and adjustment layers. A save takes \
 up to 67 megapixels (8192 x 8192); a larger document can be painted in region scope, never saved.
 - Use krita_sample for exact colours; a sample's color goes into a stroke's brush.color \
-unchanged. Never judge a colour from a capture.
+or a fill's color unchanged. Never judge a colour from a capture.
 - No tool writes raw pixels or runs code. The owner may be watching Krita, and must not edit \
 brush presets while you paint.
 """

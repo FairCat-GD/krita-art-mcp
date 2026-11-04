@@ -167,6 +167,21 @@ class World:
             **changes,
         }
 
+    def fill_args(self, document_id: str, **changes: Any) -> dict[str, Any]:
+        return {
+            "document_id": document_id,
+            "layer_id": PAINT,
+            "verify": "region",
+            "shape": {"kind": "rect", "rect": {"x": 40, "y": 50, "width": 20, "height": 10}},
+            "fill": {
+                "color": [1, 0.5, 0, 1],
+                "opacity": 1,
+                "blend_mode": "normal",
+                "alpha_lock": False,
+            },
+            **changes,
+        }
+
     def protection_args(self, document_id: str, **changes: Any) -> dict[str, Any]:
         return {
             "document_id": document_id,
@@ -253,7 +268,7 @@ def test_every_op_is_classed(world: World) -> None:
     fixtures = {op for op in registered if op.startswith(HARNESS)}
     assert READS.isdisjoint(BOUNDED) and not (READS | BOUNDED) & fixtures
     assert registered == READS | BOUNDED | fixtures
-    assert len(registered) == 31
+    assert len(registered) == 32
     # The prefix hides no tool op: these are the fixture ops, by name.
     assert fixtures == set(harness.handlers(world.registry, world.port, world.data)) | {
         "harness.retention"
@@ -376,6 +391,13 @@ def test_a_stroke_and_history_pass_their_markers(world: World) -> None:
     world.done("paint.stroke", world.stroke_args(document_id))
     assert world.done("history.step", world.history_args(document_id))["steps_applied"] == 1
     assert world.done("history.step", world.history_args(document_id, "redo"))["verified"]
+
+
+def test_a_fill_passes_its_marker_and_a_refused_one_is_not_applied(world: World) -> None:
+    document_id = world.document()
+    assert world.done("paint.fill", world.fill_args(document_id))["undo_steps"] == 1
+    body = world.failure("paint.fill", world.fill_args(document_id, layer_id=BASE))
+    assert (body["code"], body["details"]["outcome"]) == ("LOCKED_TARGET", "not_applied")
 
 
 @pytest.mark.parametrize(

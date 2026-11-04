@@ -1,201 +1,35 @@
 import copy
-import hashlib
-import itertools
-import json
 import logging
 import math
-import os
 from pathlib import Path
 from typing import Any
 
 import pytest
-from bridge_core import brushes, documents, harness, history, painting, resources
+from bridge_core import brushes, documents, painting, resources
 from bridge_core.bridge import Bridge
 from bridge_core.errors import BridgeError
-from bridge_core.jobs import Call
-from bridge_core.registry import Handle, Registry
 from fake_krita import (
     BRUSH_ORDER,
     SCATTERED,
-    FakePort,
-    FakeResources,
     fake_node,
     layer_id,
     preset_xml,
 )
+from paint_world import (
+    BASE,
+    BASE_PIXEL,
+    FAR,
+    HEIGHT,
+    LABEL,
+    ORANGE,
+    PAINT,
+    WIDTH,
+    A,
+    World,
+    box,
+)
 
-A: dict[str, Any] = {"pid": 101, "started_at": "Sun Oct 25 10:00:00 2026"}
-WIDTH, HEIGHT = 200, 120
-CREATE = {
-    "name": "sketch",
-    "size_px": [WIDTH, HEIGHT],
-    "color_model": "RGBA",
-    "depth": "U8",
-    "profile_id": documents.SRGB_PROFILE,
-    "background": "transparent",
-}
-BASE, PAINT, FAR, GROUP = (layer_id(1, index) for index in range(4))
-BASE_PIXEL = bytes([9, 8, 7, 255])
-# Orange at full opacity, as the fake paints it: B, G, R, A.
-ORANGE = bytes([0, 128, 255, 255])
-LABEL = history.LABELS["paint.stroke"]
 PACKAGE = Path(__file__).resolve().parents[2] / "plugin" / "krita_art_mcp_bridge"
-
-
-def _box(x: int, y: int, width: int, height: int) -> dict[str, int]:
-    return {"x": x, "y": y, "width": width, "height": height}
-
-
-class World:
-    def __init__(self, tmp: Path) -> None:
-        self.data = tmp / "data"
-        (self.data / "harness").mkdir(parents=True)
-        (tmp / "art").mkdir()
-        roots = {"v": 1, "roots": [os.path.realpath(tmp / "art")]}
-        (self.data / "config.json").write_text(json.dumps(roots))
-        self.port = FakePort()
-        self.resources = FakeResources()
-        self.resources.add_stroke_presets()
-        self.registry = Registry(self.port, lambda client: True)
-        self.ops = {
-            **documents.handlers(self.registry, self.port, self.data),
-            **harness.handlers(self.registry, self.port, self.data),
-            **painting.handlers(self.registry, self.port, self.resources, self.data),
-        }
-        self.ids = itertools.count(1)
-        # Each layer read, as (layer id, rect).
-        self.layer_reads: list[tuple[str, dict[str, int]]] = []
-        reads = self.port.layer_rects
-
-        def logged(document: Any, layer: str, rects: list[dict[str, int]]) -> list[bytes]:
-            self.layer_reads += [(layer, dict(rect)) for rect in rects]
-            return reads(document, layer, rects)
-
-        self.port.layer_rects = logged  # type: ignore[assignment]
-
-    def run(self, op: str, args: dict[str, Any], request_id: str = "") -> dict[str, Any]:
-        number = next(self.ids)
-        call = Call(f"op-{number:032x}", request_id or f"req-{number}", A)
-        return self.ops[op](args, call)
-
-    def refused(self, op: str, args: dict[str, Any], request_id: str = "") -> dict[str, Any]:
-        with pytest.raises(BridgeError) as raised:
-            self.run(op, args, request_id)
-        body: dict[str, Any] = raised.value.body
-        return body
-
-    def document(self) -> tuple[str, Handle]:
-        # A protected base under the whole canvas, an empty editable paint layer, a protected
-        # layer far to the right, and an empty group.
-        document_id = self.run("document.create", CREATE)["document_id"]
-        handle = self.registry.find(document_id)
-        tree = self.port._tree(1)
-        root = tree["root_id"]
-        tree["nodes"] = [
-            fake_node(1, 0, "base", root, 0, bounds_px=_box(0, 0, WIDTH, HEIGHT)),
-            fake_node(1, 1, "paint", root, 1),
-            fake_node(1, 2, "far", root, 2, bounds_px=_box(180, 0, 20, 10)),
-            fake_node(1, 3, "group", root, 3, type="grouplayer"),
-        ]
-        tree["active_id"] = PAINT
-        handle.protected = {BASE, FAR}
-        self.port.paintable(1)
-        self.port.buffers[BASE] = bytearray(BASE_PIXEL * (WIDTH * HEIGHT))
-        return document_id, handle
-
-    def args(self, document_id: str, **changes: Any) -> dict[str, Any]:
-        brush = {
-            "preset_id": "basic-round.kpp",
-            "preset_sha256": None,
-            "size_px": 10,
-            "opacity": 1,
-            "flow": 1,
-            "color": [1, 0.5, 0, 1],
-            "eraser": False,
-            "blend_mode": "normal",
-            "alpha_lock": False,
-            "rotation_deg": 0,
-            **changes.pop("brush", {}),
-        }
-        found = {
-            "document_id": document_id,
-            "layer_id": PAINT,
-            "verify": "region",
-            "accepted_points": 2,
-            "brush": brush,
-            "path": {"start": [40, 60], "segments": [[50, 60]]},
-        }
-        found.update(changes)
-        return found
-
-    def stroke(self, document_id: str, request_id: str = "", **changes: Any) -> dict[str, Any]:
-        return self.run("paint.stroke", self.args(document_id, **changes), request_id)
-
-    def stroke_refused(self, document_id: str, **changes: Any) -> dict[str, Any]:
-        return self.refused("paint.stroke", self.args(document_id, **changes))
-
-    def pixels(self, layer: str, rect: dict[str, int]) -> bytes:
-        handle = self.registry.sync()[0]
-        [found] = FakePort.layer_rects(self.port, handle.document, layer, [rect])
-        return found
-
-    def history(self, document_id: str, action: str, steps: int = 1) -> dict[str, Any]:
-        args = {"document_id": document_id, "action": action, "steps": steps}
-        return self.run("history.step", args)
-
-    def history_refused(self, document_id: str, action: str) -> dict[str, Any]:
-        args = {"document_id": document_id, "action": action, "steps": 1}
-        return self.refused("history.step", args)
-
-    def allow(self, document_id: str, rect: dict[str, int], preserve: bool = False) -> None:
-        handle = self.registry.find(document_id)
-        request_id = f"req-protect-{next(self.ids)}"
-        data = b"\xff" * (rect["width"] * rect["height"])
-        folder = self.data / "transfer"
-        folder.mkdir(exist_ok=True)
-        digest = hashlib.sha256(data).hexdigest()
-        key = hashlib.sha256(request_id.encode()).hexdigest()[:16]
-        path = folder / f"mask-{key}-{digest}.a8"
-        path.write_bytes(data)
-        spec = {
-            "path": str(path),
-            "size_px": [rect["width"], rect["height"]],
-            "format": "A8",
-            "sha256": digest,
-        }
-        args = {
-            "document_id": document_id,
-            "protected_layer_ids": sorted(handle.protected),
-            "allowed_change_mask": {
-                "origin_px": [rect["x"], rect["y"]],
-                "mask": spec,
-                "source_path": None,
-            },
-            "preserve_composite_alpha": preserve,
-            "preserve_canvas": False,
-        }
-        self.run("protection.set", args, request_id)
-
-    def harness_document(self) -> tuple[str, Handle]:
-        source = self.data / "harness" / "fixture.ora"
-        source.write_bytes(b"ora")
-        args = {
-            "source_path": str(source),
-            "source_sha256": hashlib.sha256(b"ora").hexdigest(),
-            "mode": "working_copy",
-            "working_dir": str(self.data / "harness" / "work"),
-            "editable_layer_ids": None,
-            "editable_layer_names": None,
-        }
-        (self.data / "harness" / "work").mkdir()
-        document_id = str(self.run("document.open", args)["document_id"])
-        handle = self.registry.find(document_id)
-        handle.protected = set()
-        self.port.live[1]["size_px"] = [WIDTH, HEIGHT]
-        tree = self.port._tree(1)
-        tree["nodes"] = [fake_node(1, 1, "paint", tree["root_id"], 0)]
-        self.port.paintable(1)
-        return document_id, handle
 
 
 @pytest.fixture
@@ -208,10 +42,10 @@ def _spec_bytes(spec: dict[str, Any]) -> bytes:
 
 
 # R for the default stroke: the path (40..50, 60) grown by 32, and the ring by another 32.
-REGION = _box(8, 28, 74, 64)
-RING = _box(0, 0, 114, 120)
+REGION = box(8, 28, 74, 64)
+RING = box(0, 0, 114, 120)
 # The default stroke's dabs: radius 5 around (40, 60) and (50, 60).
-DABS = _box(35, 55, 20, 10)
+DABS = box(35, 55, 20, 10)
 
 
 # A stroke.
@@ -256,7 +90,7 @@ def test_a_stroke_is_painted_verified_over_r_and_reported(world: World) -> None:
     checked = done["verification"]
     assert (checked["mode"], checked["rect"]) == ("region", REGION)
     assert checked["changed_bounds_px"] == DABS and checked["changed_outside_px"] == 0
-    assert world.pixels(PAINT, _box(40, 60, 1, 1)) == ORANGE
+    assert world.pixels(PAINT, box(40, 60, 1, 1)) == ORANGE
     assert world.port._tree(1)["nodes"][1]["bounds_px"] == DABS
     [step] = handle.ledger.steps
     assert (step.op, step.label, step.region) == ("paint.stroke", LABEL, DABS)
@@ -269,10 +103,10 @@ def test_history_undoes_and_redoes_a_stroke_by_its_witness(world: World) -> None
     document_id, _ = world.document()
     world.stroke(document_id)
     undone = world.history(document_id, "undo")
-    assert undone["verified"] and world.pixels(PAINT, _box(40, 60, 1, 1)) == bytes(4)
+    assert undone["verified"] and world.pixels(PAINT, box(40, 60, 1, 1)) == bytes(4)
     assert undone["region_px"] == DABS
     redone = world.history(document_id, "redo")
-    assert redone["verified"] and world.pixels(PAINT, _box(40, 60, 1, 1)) == ORANGE
+    assert redone["verified"] and world.pixels(PAINT, box(40, 60, 1, 1)) == ORANGE
 
 
 def test_the_target_is_read_over_the_ring_and_protected_layers_over_their_meeting(
@@ -301,10 +135,10 @@ def test_full_scope_reads_the_canvas_the_target_s_old_bounds_and_every_protected
     world: World,
 ) -> None:
     document_id, _ = world.document()
-    world.port._tree(1)["nodes"][1]["bounds_px"] = _box(150, 100, 60, 30)
+    world.port._tree(1)["nodes"][1]["bounds_px"] = box(150, 100, 60, 30)
     world.layer_reads.clear()
     done = world.stroke(document_id, verify="full")
-    assert done["verification"]["rect"] == _box(0, 0, WIDTH, HEIGHT)
+    assert done["verification"]["rect"] == box(0, 0, WIDTH, HEIGHT)
     target = {_frozen(read)[1] for read in world.layer_reads if read[0] == PAINT}
     # Old bounds and R' together, clipped to the canvas.
     assert target == {(0, 0, WIDTH, HEIGHT)}
@@ -473,7 +307,7 @@ def test_r_grows_by_the_control_points_too(world: World) -> None:
     document_id, _ = world.document()
     curve = {"start": [40, 60], "segments": [[30, 50, 70, 50, 60, 60]]}
     done = world.stroke(document_id, path=curve)
-    assert done["verification"]["rect"] == _box(0, 18, 102, 74)
+    assert done["verification"]["rect"] == box(0, 18, 102, 74)
 
 
 # The brush.
@@ -631,7 +465,7 @@ def test_r_grows_by_the_effective_brush_s_margin(
     assert done["effective_brush"]["reach"]["margin_px"] == pytest.approx(margin)
     left, right = math.floor(40 - margin), math.ceil(50 + margin)
     top, bottom = math.floor(60 - margin), math.ceil(60 + margin)
-    expected = _box(max(0, left), max(0, top), min(WIDTH, right) - max(0, left), 0)
+    expected = box(max(0, left), max(0, top), min(WIDTH, right) - max(0, left), 0)
     expected["height"] = min(HEIGHT, bottom) - max(0, top)
     assert done["verification"]["rect"] == expected
 
@@ -692,7 +526,7 @@ def test_a_stroke_wholly_outside_the_allowed_mask_is_refused_before_painting(
     world: World,
 ) -> None:
     document_id, handle = world.document()
-    world.allow(document_id, _box(150, 0, 50, 20))
+    world.allow(document_id, box(150, 0, 50, 20))
     body = world.stroke_refused(document_id)
     assert body["code"] == "OUTSIDE_ALLOWED_MASK" and body["details"]["region_px"] == REGION
     assert "paint" not in world.port.calls and not handle.dirty
@@ -705,7 +539,7 @@ def test_a_stroke_wholly_outside_the_allowed_mask_is_refused_before_painting(
 
 def test_a_leak_is_undone_on_the_ledger_confirmed_and_refused(world: World) -> None:
     document_id, handle = world.document()
-    world.allow(document_id, _box(0, 0, 45, HEIGHT))
+    world.allow(document_id, box(0, 0, 45, HEIGHT))
     body = world.stroke_refused(document_id)
     assert (body["code"], body["retryable"]) == ("PROTECTED_REGION_CHANGED", False)
     details = body["details"]
@@ -716,7 +550,7 @@ def test_a_leak_is_undone_on_the_ledger_confirmed_and_refused(world: World) -> N
     assert (checked["changed_px"], checked["changed_outside_px"]) == (200, 100)
     assert checked["after"] is None and checked["diff"] is not None
     assert world.pixels(PAINT, DABS) == bytes(4 * 200)
-    assert world.port._tree(1)["nodes"][1]["bounds_px"] == _box(0, 0, 0, 0)
+    assert world.port._tree(1)["nodes"][1]["bounds_px"] == box(0, 0, 0, 0)
     assert handle.ledger.steps == [] and not handle.dirty and not handle.unsafe
     # K43: Krita keeps the undone stroke as a redo, and history never offers it.
     assert world.port.undo_labels(handle.document)[1] == LABEL
@@ -728,7 +562,7 @@ def test_an_alpha_change_is_refused_under_preserve_composite_alpha(world: World)
     canvas = world.port.canvas[1]
     assert isinstance(canvas, bytearray)
     canvas[3::4] = bytes(WIDTH * HEIGHT)
-    world.allow(document_id, _box(0, 0, WIDTH, HEIGHT), preserve=True)
+    world.allow(document_id, box(0, 0, WIDTH, HEIGHT), preserve=True)
     body = world.stroke_refused(document_id)
     assert body["code"] == "PROTECTED_REGION_CHANGED"
     assert body["details"]["verification"]["alpha_changed_px"] == 200
@@ -747,13 +581,13 @@ def test_a_protected_layer_s_changed_pixels_are_counted_and_undone(world: World)
     assert body["code"] == "PROTECTED_REGION_CHANGED"
     assert (details["protected_layer_ids"], details["protected_pixels_changed"]) == ([BASE], 3)
     assert details["rollback_verified"] is True
-    assert world.pixels(BASE, _box(40, 60, 3, 1)) == BASE_PIXEL * 3
+    assert world.pixels(BASE, box(40, 60, 3, 1)) == BASE_PIXEL * 3
 
 
 def test_only_the_first_changed_protected_layer_is_counted(world: World) -> None:
     document_id, handle = world.document()
     tree = world.port._tree(1)
-    tree["nodes"].append(fake_node(1, 6, "rim", tree["root_id"], 5, bounds_px=_box(0, 0, 60, 60)))
+    tree["nodes"].append(fake_node(1, 6, "rim", tree["root_id"], 5, bounds_px=box(0, 0, 60, 60)))
     rim = layer_id(1, 6)
     handle.protected.add(rim)
     world.port.paintable(1, BASE_PIXEL)
@@ -777,7 +611,7 @@ def test_a_protected_layer_s_bounds_are_checked_where_its_pixels_are_not_read(
     document_id, handle = world.document()
 
     def grow(key: int) -> None:
-        world.port._tree(1)["nodes"][2]["bounds_px"] = _box(170, 0, 30, 10)
+        world.port._tree(1)["nodes"][2]["bounds_px"] = box(170, 0, 30, 10)
 
     world.port.on_paint.append(grow)
     body = world.stroke_refused(document_id)
@@ -789,18 +623,18 @@ def test_a_protected_layer_s_bounds_are_checked_where_its_pixels_are_not_read(
 
 def test_a_stroke_past_r_inside_the_ring_is_undone(world: World) -> None:
     document_id, _ = world.document()
-    world.port.stray = [_box(85, 60, 2, 2)]
+    world.port.stray = [box(85, 60, 2, 2)]
     body = world.stroke_refused(document_id)
     assert body["code"] == "PROTECTED_REGION_CHANGED"
     assert body["details"]["target_outside_reach"] is True
     assert body["details"]["rollback_verified"] is True
-    assert world.pixels(PAINT, _box(85, 60, 1, 1)) == bytes(4)
+    assert world.pixels(PAINT, box(85, 60, 1, 1)) == bytes(4)
 
 
 def test_a_stroke_past_r_inside_the_old_bounds_is_caught_by_the_ring(world: World) -> None:
     document_id, _ = world.document()
-    world.port._tree(1)["nodes"][1]["bounds_px"] = _box(0, 0, WIDTH, HEIGHT)
-    world.port.stray = [_box(4, 4, 2, 2)]
+    world.port._tree(1)["nodes"][1]["bounds_px"] = box(0, 0, WIDTH, HEIGHT)
+    world.port.stray = [box(4, 4, 2, 2)]
     body = world.stroke_refused(document_id)
     assert body["details"]["target_outside_reach"] is True
 
@@ -808,17 +642,17 @@ def test_a_stroke_past_r_inside_the_old_bounds_is_caught_by_the_ring(world: Worl
 def test_target_bounds_grown_past_the_ring_are_undone(world: World) -> None:
     document_id, _ = world.document()
     # Off the canvas, so no read sees it; Krita's bounds are not clipped.
-    world.port.stray = [_box(-60, 60, 2, 2)]
+    world.port.stray = [box(-60, 60, 2, 2)]
     body = world.stroke_refused(document_id)
     assert body["details"]["target_outside_reach"] is True
-    assert world.port._tree(1)["nodes"][1]["bounds_px"] == _box(0, 0, 0, 0)
+    assert world.port._tree(1)["nodes"][1]["bounds_px"] == box(0, 0, 0, 0)
 
 
 def test_full_scope_does_not_hold_the_target_to_r(world: World) -> None:
     document_id, handle = world.document()
-    world.port.stray = [_box(85, 60, 2, 2)]
+    world.port.stray = [box(85, 60, 2, 2)]
     done = world.stroke(document_id, verify="full")
-    assert done["changed_bounds_px"] == _box(35, 55, 52, 10)
+    assert done["changed_bounds_px"] == box(35, 55, 52, 10)
     assert not handle.unsafe and len(handle.ledger.steps) == 1
 
 
@@ -828,10 +662,10 @@ def test_full_scope_widens_the_changed_bounds_by_what_it_painted_past_the_read(
     document_id, handle = world.document()
     # Past R' on the canvas, and off it: neither is read. The first grows the changed bounds, and
     # only the layer's own bounds show the second.
-    world.port.stray = [_box(150, 60, 2, 2), _box(-60, 60, 2, 2)]
+    world.port.stray = [box(150, 60, 2, 2), box(-60, 60, 2, 2)]
     done = world.stroke(document_id, verify="full")
-    assert done["changed_bounds_px"] == _box(0, 55, 152, 10)
-    assert done["layer_bounds_px"] == _box(-60, 55, 212, 10)
+    assert done["changed_bounds_px"] == box(0, 55, 152, 10)
+    assert done["layer_bounds_px"] == box(-60, 55, 212, 10)
     # The witness stays the diff over what was read.
     witness = handle.ledger.steps[-1].witness
     assert witness is not None and witness[1] == DABS
@@ -853,7 +687,7 @@ def _dabs(start: list[int], end: list[int]) -> dict[str, int]:
     # What the fake paints with the default 10 px brush, unclipped.
     left, right = min(start[0], end[0]) - 5, max(start[0], end[0]) + 5
     top, bottom = min(start[1], end[1]) - 5, max(start[1], end[1]) + 5
-    return _box(left, top, right - left, bottom - top)
+    return box(left, top, right - left, bottom - top)
 
 
 @pytest.mark.parametrize("verify", ["region", "full"])
@@ -870,10 +704,10 @@ def test_a_stroke_past_an_edge_reports_the_canvas_and_the_layer_apart(
 
 def test_a_layer_that_already_overhangs_does_not_trip_a_stroke_far_from_it(world: World) -> None:
     document_id, _ = world.document()
-    world.port._tree(1)["nodes"][1]["bounds_px"] = _box(-30, -20, 60, 50)
+    world.port._tree(1)["nodes"][1]["bounds_px"] = box(-30, -20, 60, 50)
     done = world.stroke(document_id, verify="full")
     assert done["changed_bounds_px"] == DABS
-    assert done["layer_bounds_px"] == _box(-30, -20, 85, 85)
+    assert done["layer_bounds_px"] == box(-30, -20, 85, 85)
 
 
 @pytest.mark.parametrize("verify", ["region", "full"])
@@ -882,7 +716,7 @@ def test_a_stroke_wholly_past_the_canvas_changes_nothing_on_it(world: World, ver
     path = {"start": [-5, 40], "segments": [[-5, 60]]}
     done = world.stroke(document_id, verify=verify, path=path)
     assert done["changed_bounds_px"] is None and done["history_sealed"] is True
-    assert done["layer_bounds_px"] == _box(-10, 35, 10, 30)
+    assert done["layer_bounds_px"] == box(-10, 35, 10, 30)
     assert done["verification"]["changed_px"] == 0
 
 
@@ -907,7 +741,7 @@ def test_target_bounds_inside_the_unclipped_ring_pass(world: World) -> None:
     edge = {"start": [2, 60], "segments": [[4, 60]]}
     done = world.stroke(document_id, path=edge)
     assert done["layer_bounds_px"]["x"] == -3
-    assert done["changed_bounds_px"] == _box(0, 55, 9, 10)
+    assert done["changed_bounds_px"] == box(0, 55, 9, 10)
 
 
 # Rollbacks off the ledger.
@@ -924,7 +758,7 @@ def test_a_stroke_that_raises_before_painting_is_confirmed_without_an_undo(world
     assert (details["rolled_back"], details["rollback_verified"]) == (False, True)
     assert "undo" not in world.port.calls
     # The earlier stroke is still there, and history stops above it.
-    assert world.pixels(PAINT, _box(40, 60, 1, 1)) == ORANGE
+    assert world.pixels(PAINT, box(40, 60, 1, 1)) == ORANGE
     assert handle.ledger.undo_available() == 0 and handle.dirty
 
 
@@ -987,7 +821,7 @@ def test_a_raise_under_another_stroke_marks_the_document_unsafe(world: World) ->
     body = world.stroke_refused(document_id)
     assert body["code"] == "ROLLBACK_FAILED" and handle.unsafe
     # The top stroke was undone, failed its witness, and was put back.
-    assert world.pixels(PAINT, _box(45, 60, 1, 1)) == bytes([255, 0, 0, 255])
+    assert world.pixels(PAINT, box(45, 60, 1, 1)) == bytes([255, 0, 0, 255])
     assert world.port.undo_labels(handle.document) == (LABEL, None)
 
 
@@ -1048,7 +882,7 @@ def test_a_failure_after_the_first_change_is_never_retryable(
 
 def test_an_undo_krita_does_not_take_fails_the_rollback(world: World) -> None:
     document_id, handle = world.document()
-    world.allow(document_id, _box(0, 0, 45, HEIGHT))
+    world.allow(document_id, box(0, 0, 45, HEIGHT))
     world.port.undo_works = False
     body = world.stroke_refused(document_id)
     assert body["code"] == "ROLLBACK_FAILED"
@@ -1077,7 +911,7 @@ def test_a_protected_change_whose_undo_fails_is_not_counted(world: World) -> Non
 
 def test_a_rollback_whose_reread_differs_fails(world: World) -> None:
     document_id, handle = world.document()
-    world.allow(document_id, _box(0, 0, 45, HEIGHT))
+    world.allow(document_id, box(0, 0, 45, HEIGHT))
     undo = world.port.undo
 
     def drifting(document: Any) -> None:
@@ -1117,7 +951,7 @@ def test_a_protected_change_whose_undo_is_not_confirmed_is_not_counted(world: Wo
 
 def test_a_rollback_that_leaves_the_target_s_bounds_grown_fails(world: World) -> None:
     document_id, handle = world.document()
-    world.allow(document_id, _box(0, 0, 45, HEIGHT))
+    world.allow(document_id, box(0, 0, 45, HEIGHT))
     undo = world.port.undo
 
     def kept_bounds(document: Any) -> None:
@@ -1155,7 +989,7 @@ def test_a_hand_undo_stops_history_at_the_stroke_it_took(world: World) -> None:
     # The ledger names three strokes; Krita holds the first and the third.
     found = world.history(document_id, "undo", 3)
     assert (found["steps_applied"], found["stopped"]) == (1, "not_the_bridges_step")
-    assert world.pixels(PAINT, _box(40, 60, 1, 1)) == ORANGE
+    assert world.pixels(PAINT, box(40, 60, 1, 1)) == ORANGE
     assert handle.ledger.undo_available() == 0
 
 
@@ -1166,7 +1000,7 @@ def test_a_stroke_by_hand_on_top_is_not_the_bridges(world: World) -> None:
     world.port.paint_path(handle.document, PAINT, {"start": [45, 60], "segments": [[45, 60]]})
     body = world.history_refused(document_id, "undo")
     assert body["code"] == "INVALID_ARGUMENT" and body["details"]["found_label"] == LABEL
-    assert world.pixels(PAINT, _box(45, 60, 1, 1)) == bytes([255, 0, 0, 255])
+    assert world.pixels(PAINT, box(45, 60, 1, 1)) == bytes([255, 0, 0, 255])
     assert handle.ledger.undo_available() == 0
 
 

@@ -136,6 +136,16 @@ class DocumentsPort(Protocol):
     # LAYER_NOT_FOUND for an unknown id; anything Krita raises passes through.
     def paint_path(self, document: Any, layer_id: str, path: dict[str, Any]) -> None: ...
 
+    # A fill's resources on the active view, in K3's order: the preset (a resource
+    # ResourcesPort.preset found), opacity, flow 1, blend, eraser off, alpha lock, colour. Returns
+    # brush() afterwards, plus "preset_xml".
+    def set_fill(self, document: Any, fill: dict[str, Any], preset: Any) -> dict[str, Any]: ...
+
+    # The closed shape ({kind: rect or ellipse, rect} | {kind: polygon, points} | {kind: path,
+    # start, segments}) filled with Node.paintPath(path, "None", "ForegroundColor"): one undo
+    # step, no dab; mirrors and wrap-around off as paint_path, waitForDone.
+    def fill_path(self, document: Any, layer_id: str, shape: dict[str, Any]) -> None: ...
+
     # Whether Krita merges consecutive strokes into one undo step.
     def cumulative_undo(self) -> bool: ...
 

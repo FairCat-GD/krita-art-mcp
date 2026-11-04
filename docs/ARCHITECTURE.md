@@ -1,6 +1,6 @@
 # krita-art-mcp — architecture, as built
 
-This is the system as it stands at 0.20.1, in round 2, on the Phase 1 round 1 built. Every session
+This is the system as it stands at 0.21.0, in round 2, on the Phase 1 round 1 built. Every session
 keeps it true, in the same commit as the change. Each section stands on its own: a session reads
 the overview, the invariants and the baseline, then only the sections its work touches.
 `docs/USER-GUIDE.md` is the same system from the user's side.
@@ -10,7 +10,8 @@ the overview, the invariants and the baseline, then only the sections its work t
 krita-art-mcp lets an AI agent paint in the owner's running Krita through Krita's own brush engine.
 It is for painted (non-pixel) 2D game art, run by one developer on macOS with Krita 5.3.x. The core
 loop: open a working copy with every existing layer protected; inspect, capture and sample; add a
-layer, select, tighten protection; paint native strokes, each verified and rolled back on a leak;
+layer, select, tighten protection; paint native strokes and fills, each verified and rolled back on
+a leak;
 preview at game size; undo or keep; save to a new KRA or ORA, verified by reopening; close.
 
 ```
@@ -148,11 +149,11 @@ while stopping, then the body: 411 with no length or when chunked, 413 over 64 M
 Every operation reply carries `session_id`, `operation_id`, `request_id` and `op`; health and
 refusals leave out `op`. One error body serves every refusal. `wait_s` is capped at 10 s. `ephemeral` is required on every call.
 
-**The ops: 31.**
+**The ops: 32.**
 
 | Group | Ops |
 |---|---|
-| Sent by tools (18) | `server_info`, `document.list`, `document.open`, `document.create`, `document.inspect`, `document.close`, `document.save`, `document.save_finish`, `resource.list`, `capture.read`, `sample.read`, `preview.read`, `layer.create`, `layer.update`, `selection.set`, `protection.set`, `history.step`, `paint.stroke` |
+| Sent by tools (19) | `server_info`, `document.list`, `document.open`, `document.create`, `document.inspect`, `document.close`, `document.save`, `document.save_finish`, `resource.list`, `capture.read`, `sample.read`, `preview.read`, `layer.create`, `layer.update`, `selection.set`, `protection.set`, `history.step`, `paint.stroke`, `paint.fill` |
 | Server and `doctor` (2) | `bridge.unsaved_documents`, `document.baselines` |
 | Fixtures, the probe only (10) | `harness.export_kra`, `.select_mask`, `.front_document`, `.activate`, `.undo_labels`, `.label_timing`, `.add_node`, `.view`, `.brush_state`, `.undo` |
 | A measurement, the probe only (1) | `harness.retention` |
@@ -204,10 +205,10 @@ two-op tool should know its reach.
 
 ## The tool contract
 
-**19 tools.** Observe: `krita_server_info`, `krita_document_list`, `krita_document_open`,
+**20 tools.** Observe: `krita_server_info`, `krita_document_list`, `krita_document_open`,
 `krita_document_create`, `krita_document_inspect`, `krita_resource_list`, `krita_capture`,
 `krita_sample`. Paint safely: `krita_layer_create`, `krita_layer_update`, `krita_selection_set`,
-`krita_protection_set`, `krita_paint_stroke`. Deliver: `krita_history_step`, `krita_operation_get`,
+`krita_protection_set`, `krita_paint_stroke`, `krita_paint_fill`. Deliver: `krita_history_step`, `krita_operation_get`,
 `krita_operation_cancel`, `krita_preview_render`, `krita_document_save`, `krita_document_close`.
 
 **The envelope.** Every tool returns `structuredContent` matching its output schema:
@@ -232,13 +233,15 @@ values are `applied`, `not_applied`, `uncertain` and `unregistered`.
 **`api_version` moves when a field or an input value is removed or renamed, or a field changes
 meaning.** Added fields and tools do not move it.
 
-**Schemas are data.** Each of the 19 `schemas/krita_<tool>.json` holds `name`, `description`,
+**Schemas are data.** Each of the 20 `schemas/krita_<tool>.json` holds `name`, `description`,
 `inputSchema`, `outputSchema`, `annotations` and `example`. `MCPServer` tools are built by hand with
 `FuncMetadata`, so the contract's exact JSON Schema is published and no pydantic model filters
 arguments; `ExactArguments` passes them through and the runner validates with Draft 2020-12.
 `scripts/amend_schemas.py` writes the shapes the files share (the envelope with its typed error,
 `guard`, `source`, the completed rule's copy of `data`, inspect's `layers`, the stroke's colour as
-the sample's `color`) and formats them; a test holds the files to it.
+the sample's `color` and the fill's, the selection's rect, ellipse and polygon as the fill's, and
+layer_update's `verification` as the stroke's and the fill's) and formats them; a test holds the
+files to it.
 
 **A field's range or unit is in its `description`.** Codex shows a property's description as a
 comment and drops `minimum` and `maximum`, so every input property with both bounds, on itself or on
@@ -252,11 +255,12 @@ sample's `color` sent as a stroke's colour.
 - The eight reads are `readOnlyHint: true`.
 - Five mutating tools only add, and are `destructiveHint: false`: `krita_layer_create`,
   `krita_protection_set`, `krita_document_open`, `krita_document_create` and `krita_document_save`.
-- The other six are destructive, because undoable is not additive.
+- The other seven are destructive, because undoable is not additive. A fill overwrites what is
+  there.
 - `idempotentHint` is true and `openWorldHint` false on every tool.
 - `readOnlyHint` is load-bearing. `tools.build` reads it to decide what mutates, and the
   `BOUNDED` test holds the ops to it.
-- A table test in `tests/test_tools.py` holds all 19, so a new tool's hints are chosen, never
+- A table test in `tests/test_tools.py` holds all 20, so a new tool's hints are chosen, never
   copied.
 
 Codex reviews every destructive call unless the owner sets the server's
@@ -307,8 +311,8 @@ schema, where a job ends at its first raise and each check reads what the one be
 document before the layer before the pixels.
 
 **Argument rules are written twice on purpose.** Each side trusts no caller, and a refusal the server
-makes carries no `operation_id`. Each pair is held by a parity test in `tests/test_parity.py`: six
-today, from open's format and editable lists to a capture's area. The server's half of a pair is a
+makes carries no `operation_id`. Each pair is held by a parity test in `tests/test_parity.py`: seven
+today, from open's format and editable lists to a capture's area and a fill's colour and area. The server's half of a pair is a
 named function, and `tests/support/parity.py`'s `refused_alike` calls the tool, turns that function
 off, and calls again, so the server's own translation carries the same arguments to the plugin. Both
 must refuse with one code and one `retryable`, the plugin before its marker. A new pair needs its
@@ -363,11 +367,12 @@ the round 2 intake for the schemas that round amends.
 | `revision` in every envelope | `null` | Phase 3 |
 | `uri` in every artifact | equal to `path` | Phase 3, `krita-artifact://` |
 | `krita_paint_stroke` `input_applied` | `flat` | Phase 6 |
-| `krita_paint_stroke` `effective_brush.antialias` | `true` | Statement, kept: every stroke is antialiased |
+| `krita_paint_stroke` `effective_brush.antialias`, `krita_paint_fill` `effective_fill.antialias` | `true` | Statement, kept: every stroke and fill is antialiased |
+| `krita_paint_fill` `effective_fill.preset_id` | `c)_Pencil-3_Large_4B.kpp` | Statement, kept: the preset every fill activates (K49) |
 | `krita_capture` `fresh` | `true` | No phase promises it; meaningful once reads can pin a revision (Phase 3) |
 | `krita_preview_render` `static_only`, `source_pixels_changed` | `true`, `0` | Statements, kept: a preview certifies no motion and writes nothing |
 | `krita_document_save` `reopened_verified`, `composite_preserved` | `true` | Statements, kept: any other outcome is an error |
-| `krita_paint_stroke` `protected_pixels_changed`, `changed_outside_px`, `undo_steps` | `0`, `0`, `1` | Statements, kept: on a completed stroke; a leak is an error |
+| `krita_paint_stroke` and `krita_paint_fill` `protected_pixels_changed`, `changed_outside_px`, `undo_steps` | `0`, `0`, `1` | Statements, kept: on a completed stroke or fill; a leak is an error |
 | `krita_protection_set` `composite_outside_mask`, `undo_steps` | `exact`, `0` | Statements, kept |
 | `krita_layer_update` `undoable` | `["blend_mode"]` or empty | Statement, kept (K22) |
 | `krita_layer_create` `protected`; `krita_document_create` `mode` | `false`; `new` | Statements, kept |
@@ -385,9 +390,10 @@ the overhang bounds on-curve points only, so a brush's reach can pass it.
 **The capability matrix** is the one place a later feature announces itself. False today:
 `stroke.per_point_input` (Phase 6), `undo.grouping` (K29), `stroke.deterministic` (stochastic
 presets have no seed), `operation.cancel_running`, `color_spaces`, `filters` (Phase 2), `animation`
-(Phase 5). True since 0.9.0: `stroke.native_brush`, `stroke.smoothing`, `selection.enforced`.
+(Phase 5). True since 0.9.0: `stroke.native_brush`, `stroke.smoothing`, `selection.enforced`; since
+0.21.0, `paint.fill`.
 
-**The instructions.** `instructions.py` is 3,453 of Claude Code's 4,096 characters (C4), held by a
+**The instructions.** `instructions.py` is 3,750 of Claude Code's 4,096 characters (C4), held by a
 test. It states the rules an agent would otherwise learn from a refusal, and leaves a field's range,
 unit and form to that field's description.
 
@@ -498,11 +504,11 @@ because a rollback is already past its own op's marker.
 | `document.save_finish` | clearing the pending save |
 | `protection.set` | writing the handle's state |
 | `selection.set` | `before_change` |
-| `layer.create`, `paint.stroke` | the frame, beside `before_change` |
+| `layer.create`, `paint.stroke`, `paint.fill` | the frame, beside `before_change` |
 | `layer.update` | the frame, or `port.activate` for `active` alone |
 | `history.step` | inside `move()`, past its `FOREIGN` return |
 
-**Every op has a class.** `READS` (9) change nothing. `BOUNDED` (11) carry a marker, and a test holds
+**Every op has a class.** `READS` (9) change nothing. `BOUNDED` (12) carry a marker, and a test holds
 them equal to the mutating tools' ops and `document.save_finish`. `harness.*` has no marker, so a
 raise from one proves nothing, and the test pins each by name so no tool op hides under the prefix.
 An op in no class is `uncertain` too, so a new op that forgets its class fails safe.
@@ -687,8 +693,8 @@ retry still gets the counts. A pass sends before and after, up to 2048²; a refu
 the flags. The diff draws offending pixels red over the scope as it was, faded toward white, at most
 1024 px long, block-reduced so none vanishes, and goes inline only under the size bound.
 
-**The frame.** `bridge_core/mutation.py` holds invariant 5's sequence once, and the stroke,
-`krita_layer_update` and `krita_layer_create` run on it; the save keeps its own ladder, and a
+**The frame.** `bridge_core/mutation.py` holds invariant 5's sequence once, and the stroke, the
+fill, `krita_layer_update` and `krita_layer_create` run on it; the save keeps its own ladder, and a
 selection, which has no verdict, pushes its step by hand.
 - **Before the change.** `verifiable` refuses a scope or target rect the reads cannot see and takes
   the allowed mask over the scope, as a `Reads`. That names the composite's scope, and optionally
@@ -759,7 +765,7 @@ comes from, `changed_bounds_px` counts every byte, and Krita can write colour un
 selection's edge, so it can run a dab's box past the selection while no visible paint does. The
 probe holds alpha to the selection.
 
-**Mirror and wrap-around** go off for the stroke and back on in a `finally`, each noted before it is
+**Mirror and wrap-around** go off for a stroke or a fill and back on in a `finally`, each noted before it is
 turned off (K2, K47).
 
 **R, the margin and the ring.** R is the path's bounds grown by `max(32, size × (e + 2e·s) + 2)`,
@@ -787,6 +793,34 @@ only when the label and a witness built from the re-read match. It is confirmed 
 `same()` and the target's bounds; otherwise the document is unsafe and the call `ROLLBACK_FAILED`.
 It is never retryable, and a `BaseException` marks the document unsafe through `unconfirmed`.
 `protected_pixels_changed` is `null` when no confirmed undo brought back what it is counted against.
+
+**The fill.** `paint.fill` shares the stroke's body from R on: one function in `painting.py` holds
+the scope, the reads, `OUTSIDE_ALLOWED_MASK`, the frame, the brush re-read, the judge and `back`,
+and each op brings its R, its noun and its paint call. The fill paints with `Node.paintPath(path,
+"None", "ForegroundColor")`: Krita's painter fills the path, antialiased, with no paint op and so
+no dab, in one "Scripted Brush Stroke" step, confined and weighted by the selection (K49).
+- **The shapes** (`bridge_core/shapes.py`, pure): a rect and an ellipse take whole pixels; a polygon
+  and a closed curve take 3 to 4096 points and fill even-odd. The server turns a curve's points
+  into a closed uniform Catmull-Rom, exact cubics whose neighbours wrap round. The area rule (no
+  shape whose points lie on one line, to a relative 1e-9) is a parity pair, as is the colour's
+  alpha of 1.
+- **Order.** Before the job: the fields, the shape and the area rule. Then the space, the target,
+  the shape on the canvas (a curve by its extrema, not its control points; refused, never
+  clipped), the fill's preset listed, cumulative undo, region reach. With the view in front: a
+  selection fill reads the selection's bounds there and clips them to the canvas, since Krita's
+  can run past it (an inverted selection's measured 448 × 320 on a 400 × 300 canvas); then the
+  preset, opacity, flow 1, blend, eraser off, alpha lock and colour in K3's order, read back, the
+  preset's XML checked, and `paintAbility()`.
+- **The preset.** Every fill activates `c) Pencil-3 Large 4B`, a build-up `paintbrush` preset with
+  no masking brush, and records its digest as the stroke does. Measured under one stock preset of
+  each of the 16 engines: every preset fills the same visible pixels, but a wash-mode preset (most
+  `b)` presets, the masked one among them) writes colour under alpha 0 up to 3 px past the shape,
+  which byte-exact verification counts. A preset no longer build-up, or with a masking brush, is
+  refused before painting.
+- **R** is the shape's box, aligned outward, grown by 2 px; R′ is R grown by 32. Measured under the
+  build-up preset, nothing changed past the aligned box, colour under alpha 0 included.
+- **The receipt** has the stroke's shape, with `fill_id`, `shape`, `shape_bounds_px` and
+  `effective_fill` in place of the brush.
 
 **The input gate.** Phase 1 always paints with `Node.paintPath` at pressure 1 (K4), even on a build
 with `paintPolylineStroke`, because that branch cannot be tested on released Krita. The server refuses
@@ -1133,6 +1167,7 @@ cite stay in the PDD, in git history.
 | K46 | A selection mask that is the current node is drawn as an overlay into the image; `exportImage` saves the live image | `libs/ui/kis_selection_decoration.cc:106-116`; `libs/ui/KisDocument.cpp:1417-1419` |
 | K47 | Scripted strokes honour wrap-around mode | `libs/ui/tool/strokes/freehand_stroke.cpp:110,296-303` |
 | K48 | `aboutToQuit` fires after documents and windows close; pykrita then finalises Python | `libs/libkis/Notifier.cpp:23` |
+| K49 | `paintPath` with stroke `None` and fill `ForegroundColor` fills the path with the painter, never the paint op; a wash-mode preset paints through an indirect device, and a masked brush paints the path into its mask painter too | `libs/libkis/PaintingResources.cpp:17-58`; `libs/image/kis_painter.cc` (`paintPainterPath`, `fillPainterPathImpl`); `libs/ui/tool/strokes/KisMaskedFreehandStrokePainter.cpp` |
 | C1 | `mcp` 2.3.0: `FastMCP` is `MCPServer`; `Image` takes no `_meta`; a raised exception yields only "Error executing tool X" | Probed 2026-10-22 |
 | C2 | Codex passes MCP images to image-capable models and honours `codex/imageDetail` | openai/codex `codex-rs/core/src/mcp_tool_call.rs` |
 | C4 | Claude Code: output limit 25,000 tokens; instructions and descriptions truncated at 4,096 characters | code.claude.com/docs/en/mcp |
@@ -1156,6 +1191,15 @@ the code is shaped as it is.
 - Preset XML: the raw digest changed at every restart, across six runs; the canonical one held. No
   run repeats this.
 - 144 stock presets, 21 RGBA / U8 profiles, 13 palettes.
+- A fill (`paintPath(path, "None", "ForegroundColor")`), on 0.21.0's measurement under one stock
+  preset of each engine: one "Scripted Brush Stroke" step that one undo takes back; nothing past
+  the shape at brush size 300, while a bad style string paints its outline 134 px out; opacity 0.5
+  gives alpha 128; multiply over (200, 120, 40) with (230, 60, 30) gives (180, 28, 5); alpha lock
+  keeps every alpha byte; a feathered selection's coverage is the fill's alpha exactly; an
+  ellipse's edge is antialiased and an integer rect's is not. Wash-mode presets differ only by
+  colour under alpha 0, up to 3 px out. A fill takes under 15 ms on a 400 × 300 canvas.
+- A selection's bounds run past the canvas: an inverted rect's are 448 × 320 on a 400 × 300 canvas,
+  and a rect grown or feathered at the corner starts at −10 or −12.
 - A 20 × 16 rect grown, shrunk and feathered by 3 lands on {17, 11, 26, 22}, {23, 17, 14, 10} and
   {17, 11, 26, 22}.
 - `eraserMode()` read false after `setEraserMode(True)` with every preset tried.
@@ -1165,7 +1209,7 @@ the code is shaped as it is.
   it. A Krita holding 87 documents ran document ops about three times slower, and left the paint
   benchmarks, the preview benchmark and H4 idle alone.
 
-## Baseline (v0.20.1)
+## Baseline (v0.21.0)
 
 Taken on 2026-11-04 on Krita 5.3.4.1, macOS, Apple Silicon, on a Krita restarted that session, with
 **0 documents open**. The probe prints the open-document count beside its time, because document ops
@@ -1174,16 +1218,16 @@ depend on it: 87 open documents cost about 50 s more.
 | Check | Expected |
 |---|---|
 | `uv run scripts/verify.py` | 6 stages, all PASS |
-| Server tests (3.12) | 897 passed, 0 skipped |
-| Plugin-core tests (3.10) | 804 passed, 0 skipped |
-| `uv run krita-art-mcp probe` | 148 PASS, 0 FAIL, 24 MEASURED; about 125 s |
+| Server tests (3.12) | 953 passed, 0 skipped |
+| Plugin-core tests (3.10) | 878 passed, 0 skipped |
+| `uv run krita-art-mcp probe` | 159 PASS, 0 FAIL, 25 MEASURED; about 130 s |
 | `uv run krita-art-mcp doctor` | 6 steps, all PASS, with a root allowed |
-| Registered tools | 19 |
-| Schema files | 19 |
+| Registered tools | 20 |
+| Schema files | 20 |
 | Error codes | 30 |
-| Bridge ops | 31 |
+| Bridge ops | 32 |
 | Bridge protocol; `api_version` | 1; 0.4.0 |
-| Server instructions | 3,453 of 4,096 characters |
+| Server instructions | 3,750 of 4,096 characters |
 | CLI commands | 5 |
 
 A documentation or refactoring change should not move any of these. If one moves, that is the
