@@ -405,7 +405,8 @@ def test_a_create_krita_raised_in_after_adding_is_undone_and_history_sealed(
     assert body["code"] == "INTERNAL_ERROR" and body["retryable"] is False
     assert (body["details"]["rolled_back"], body["details"]["rollback_verified"]) == (True, True)
     # The step Krita pushed but the ledger never held is undone, and history stops below it.
-    assert _ids(world, handle) == before and handle.ledger.steps[-1].label == "Add Layer"
+    assert _ids(world, handle) == before and len(handle.ledger.steps) == 1
+    assert world.port.undo_labels(handle.document) == ("Add Layer", "Add Layer")
     assert handle.dirty and not handle.unsafe and handle.ledger.undo_available() == 0
 
 

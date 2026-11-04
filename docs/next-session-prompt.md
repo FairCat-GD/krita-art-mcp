@@ -31,13 +31,13 @@ shape, version 0.21.0.
     `refused_alike(world, monkeypatch, tool, arguments, (module, "name"))` case in
     `tests/test_parity.py`.
   - **`selection.set` is outside the frame** (no verdict). *Known debt* says so.
-- **R1, R2, R3 and D1 are pushed.** `origin/main` stops at "review: the sample's color is a shared
-  shape, and 6 smaller"; F1's commits are local until the owner approves a push. List
-  `origin/main..HEAD` before any push.
+- **R1, R2, R3, D1 and F1 are pushed.** `origin/main` stops at "review: a rollback with nothing to
+  move flipped the view, and 6 smaller". List `origin/main..HEAD` before any push.
 - **The evidence stays outside the repository.** The Codex agent holds its bundles.
 - **Baseline** (ARCHITECTURE's table, v0.20.1): `verify` 6 stages, all PASS; 897 server tests and
-  799 plugin-core tests, 0 skipped; `probe` 148 PASS, 0 FAIL, 24 MEASURED, about 125 s with 0 documents open; 19 tools;
-  19 schema files; 30 error codes; 31 bridge ops; instructions 3,453 characters.
+  804 plugin-core tests, 0 skipped; `probe` 148 PASS, 0 FAIL, 24 MEASURED, about 125 s with 0
+  documents open; 19 tools; 19 schema files; 30 error codes; 31 bridge ops; instructions 3,453
+  characters.
 - **Not done:** nothing from F1's block.
 
 ## Watch for

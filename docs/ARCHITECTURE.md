@@ -698,7 +698,8 @@ selection, which has no verdict, pushes its step by hand.
   then, inside `unconfirmed`, the op's change, the after-read, `check`, and the op's `judge`. The
   rollback runs inside `unconfirmed` too: the op's own `BridgeError` passes through, and any other
   raise marks the document lost. The write-nothing update does not arm it.
-- **Steps.** An op names its undo labels up front, one or more, and the frame holds it to them. A
+- **Steps.** An op names its undo labels up front, one or more, and the frame refuses a change
+  that took any other number. An op that names none reads no start state, so no selection. A
   node change pushes each step the moment Krita holds it, with its state after. A pixel change's
   step is pushed by the frame after the reads, with the witness over the target's diff, or sealed
   when the diff is empty.
@@ -708,7 +709,8 @@ selection, which has no verdict, pushes its step by hand.
   1. A step named but never pushed is the newest Krita may hold, so it goes first. A pixel step is
      undone by a witness built from a re-read, unless the re-read shows the document back. A node
      step is undone by its label and state, unless the state never moved.
-  2. Each pushed step is undone, newest first, through `history.move`.
+  2. Each pushed step is undone, newest first, through `history.move`. The view comes forward
+     (K7) only when a step may move, so a rollback that only writes values back leaves it alone.
   3. History is sealed below a step it never named, after the pushed steps are off the ledger, so
      the floor never stands above `applied`.
   4. The op's `compensate` writes back what no undo holds: the update's property values, because
@@ -1173,7 +1175,7 @@ depend on it: 87 open documents cost about 50 s more.
 |---|---|
 | `uv run scripts/verify.py` | 6 stages, all PASS |
 | Server tests (3.12) | 897 passed, 0 skipped |
-| Plugin-core tests (3.10) | 799 passed, 0 skipped |
+| Plugin-core tests (3.10) | 804 passed, 0 skipped |
 | `uv run krita-art-mcp probe` | 148 PASS, 0 FAIL, 24 MEASURED; about 125 s |
 | `uv run krita-art-mcp doctor` | 6 steps, all PASS, with a root allowed |
 | Registered tools | 19 |

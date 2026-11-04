@@ -11,9 +11,7 @@ def refused_alike(
     arguments: dict[str, Any],
     rule: tuple[object, str],
 ) -> dict[str, Any]:
-    # One argument rule written on both sides (decision 10). The server refuses before anything is
-    # sent; with its rule off, its own translation carries the same arguments to the plugin, which
-    # must refuse them alike before its marker. rule is the server's function, by module and name.
+    # Decision 10: with the server's rule (module, name) off, the plugin must refuse alike.
     server = world.server()
     ours = server.content(tool, arguments)
     assert ours["status"] == "failed" and ours["operation_id"] is None, ours
@@ -26,5 +24,4 @@ def refused_alike(
     # A read's refusal on the server states no outcome; the plugin's always does.
     assert plugin["details"]["outcome"] == mine["details"].get("outcome", "not_applied")
     assert plugin["details"]["outcome"] == "not_applied"
-    found: dict[str, Any] = plugin
-    return found
+    return dict(plugin)

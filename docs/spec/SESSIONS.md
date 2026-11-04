@@ -759,6 +759,30 @@ and §8.8 items 6, 8.
 - **Numbers:** 897 server tests (+14), 799 plugin tests (+0), probe 148 PASS (+0), 0 FAIL, 24
   MEASURED, 125.6 s with 0 documents open. 19 tools, 19 schema files, 30 error codes, 31 ops,
   instructions 3,453 characters, `api_version` 0.4.0.
+- **Review (`/code-review high`), run at the owner's request, 7 findings: 7 fixed and 0 skipped.**
+  - **A rollback brought the view forward with no step to move.** A property-only update or a
+    create that failed before Krita changed anything flipped the owner's view, and a failure to
+    bring it forward would turn a clean rollback into `ROLLBACK_FAILED`. The view now comes
+    forward only around a step that may move; a node step not pushed is checked by state first.
+  - **Every op read the selection for its start state,** a property-only update included. An op
+    that names no undo step now reads none.
+  - **The step-count check was a bare `assert`,** gone under `-O`. It is now an `INTERNAL_ERROR`
+    refusal, rolled back like any other.
+  - **The frame's paths for L1 and M1 had no test.** `tests/plugin/test_mutation.py` holds two
+    steps undone newest first, a raise between two steps (the floor stays at `applied`, so the
+    next op's step can be undone), the step-count refusal, the view and the selection left alone,
+    and one-byte pixels counted and cropped.
+  - **The changed create test checked the surviving step's label;** it now checks Krita's undo
+    and redo labels.
+  - **Two comments ran to paragraphs:** `Mutation.run`'s, which restated its parameters, and the
+    parity helper's. Each is one line, or gone.
+  - **Falsified:** the view always brought forward and the start state always read (the view
+    test failed for each); the step-count check off; the seal moved before the undo (the raise
+    test failed at its floor); the steps undone oldest first; the channels ignored. Each failed
+    at its own test.
+  - **Checked live:** `install-plugin`, a Krita restart at 0 unsaved, `doctor` 6 of 6.
+  - **Numbers after the review:** 897 server tests, 804 plugin tests (+5), probe 148 PASS, 0 FAIL,
+    24 MEASURED, 127.2 s with 0 documents open.
 
 ---
 

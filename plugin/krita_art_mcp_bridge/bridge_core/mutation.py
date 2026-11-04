@@ -217,12 +217,10 @@ class Mutation:
         tree: dict[str, Any] | None = None,
         changing: bool = True,
     ) -> Applied:
-        # judge raises the op's refusal or returns its receipt's values; back checks, beside the
-        # re-read, that a rollback left the document as it was; compensate writes back what no
-        # undo holds and says whether it wrote.
         port, handle, call = self.port, self.handle, self.call
         assert self.reads is None or self.before is not None, "the before-read comes first"
-        start = fingerprint(port, handle.document, tree)
+        # An op that names no step never reads its state, so it reads no selection either.
+        start: Fingerprint = fingerprint(port, handle.document, tree) if self.labels else ((), None)
         call.mark()
         was = handle.before_change()
         steps = Steps(port, handle, self.op, call.operation_id, self.labels, start)
@@ -233,7 +231,10 @@ class Mutation:
                 applied.value = change(steps)
                 if self.reads is not None:
                     self._verify(applied)
-                assert steps.taken == len(self.labels), "the op took other steps than it names"
+                if steps.taken != len(self.labels):
+                    details = {"op": self.op, "named": len(self.labels), "taken": steps.taken}
+                    message = "The change made other undo steps than it names."
+                    raise BridgeError("INTERNAL_ERROR", message, False, details)
                 applied.checked = judge(applied)
             except BridgeError as raised:
                 problem = raised
@@ -356,9 +357,13 @@ class Mutation:
         try:
             undone, failed, found = False, False, NONE
             unnamed = len(steps.pushed) < len(steps.labels)
-            with in_front(port, handle.document):
+            pixel = unnamed and self._pixel(steps)
+            moved = self._moved_state(steps) if unnamed and not pixel else None
+            # The view comes forward only for a step that may move (K7), never to confirm.
+            moving = bool(steps.pushed) or pixel or moved is not None
+            with in_front(port, handle.document) if moving else contextlib.nullcontext():
                 if unnamed:
-                    found, seen = self._unnamed(applied, back)
+                    found, seen = self._unnamed(applied, back, moved)
                     failed, undone = found == FAILED, found == UNDONE
                 known: Fingerprint | None = None
                 for step in reversed(steps.pushed):
@@ -383,18 +388,29 @@ class Mutation:
             logging.getLogger(log.NAME).exception("%s's rollback raised", self.op)
             return False, False, None, seen
 
-    def _unnamed(self, applied: Applied, back: Callable[[], bool]) -> tuple[str, dict[str, Any]]:
-        # The step the change raised before pushing, the newest Krita may hold: undone only when
-        # Krita's top step is the one this job saw happen.
-        port, handle, steps, reads = self.port, self.handle, applied.steps, self.reads
-        document, label = handle.document, steps.labels[len(steps.pushed)]
-        pixel = (
+    def _pixel(self, steps: Steps) -> bool:
+        # Whether the step not pushed is the pixel step the frame pushes after its reads.
+        reads = self.reads
+        return (
             reads is not None
             and reads.target_id is not None
             and reads.target_rect is not None
             and len(steps.pushed) == len(steps.labels) - 1
         )
-        if pixel:
+
+    def _moved_state(self, steps: Steps) -> Fingerprint | None:
+        # The state a node step left that the change never pushed, or None if it never moved.
+        now = fingerprint(self.port, self.handle.document)
+        return None if now == steps.state else now
+
+    def _unnamed(
+        self, applied: Applied, back: Callable[[], bool], moved: Fingerprint | None
+    ) -> tuple[str, dict[str, Any]]:
+        # The step the change raised before pushing, the newest Krita may hold: undone only when
+        # Krita's top step is the one this job saw happen.
+        port, handle, steps, reads = self.port, self.handle, applied.steps, self.reads
+        document, label = handle.document, steps.labels[len(steps.pushed)]
+        if self._pixel(steps):
             assert reads is not None and reads.target_rect is not None
             before = applied.before
             assert before is not None
@@ -414,11 +430,10 @@ class Mutation:
             )
             outcome, seen, _ = move(port, handle, step, UNDO)
             return (UNDONE if outcome == DONE else FAILED), seen
-        now = fingerprint(port, document)
-        if now == steps.state:
+        if moved is None:
             return NONE, {}
-        step = Step(self.op, self.call.operation_id, label, steps.state, now)
-        outcome, seen, _ = move(port, handle, step, UNDO, now)
+        step = Step(self.op, self.call.operation_id, label, steps.state, moved)
+        outcome, seen, _ = move(port, handle, step, UNDO, moved)
         return (UNDONE if outcome == DONE else FAILED), seen
 
     def _back(self, applied: Applied, back: Callable[[], bool]) -> bool:
