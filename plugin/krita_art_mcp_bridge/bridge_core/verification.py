@@ -305,27 +305,31 @@ def _bytes(buffer: Any) -> memoryview:
     return memoryview(buffer).cast("B")
 
 
-def changes(old: Any, new: Any, rect: dict[str, int]) -> tuple[int, dict[str, int] | None]:
-    # How many BGRA pixels differ between two reads of one rect, and the canvas rect around them.
+def changes(
+    old: Any, new: Any, rect: dict[str, int], channels: int = 4
+) -> tuple[int, dict[str, int] | None]:
+    # How many pixels of channels bytes each differ between two reads of one rect, and the canvas
+    # rect around them.
     pixels = 0 if _empty(rect) else rect["width"] * rect["height"]
     marked = bytearray(pixels)
     for start in range(0, pixels, BAND_PIXELS):
         stop = min(pixels, start + BAND_PIXELS)
         changed = 0
-        for channel in range(4):
-            changed |= _int(old[start * 4 + channel : stop * 4 : 4]) ^ _int(
-                new[start * 4 + channel : stop * 4 : 4]
+        for channel in range(channels):
+            changed |= _int(old[start * channels + channel : stop * channels : channels]) ^ _int(
+                new[start * channels + channel : stop * channels : channels]
             )
         marked[start:stop] = changed.to_bytes(stop - start, "little").translate(_MARK_CHANGED)
     return marked.count(CHANGED), _bounds(marked, rect)
 
 
-def crop(buffer: Any, outer: dict[str, int], inner: dict[str, int]) -> bytes:
-    # The BGRA rows of inner, a rect inside outer, from a read of outer.
-    width, left = outer["width"] * 4, (inner["x"] - outer["x"]) * 4
+def crop(buffer: Any, outer: dict[str, int], inner: dict[str, int], channels: int = 4) -> bytes:
+    # The rows of inner, a rect inside outer, from a read of outer of channels bytes per pixel.
+    width, left = outer["width"] * channels, (inner["x"] - outer["x"]) * channels
     top = inner["y"] - outer["y"]
+    row_bytes = inner["width"] * channels
     return b"".join(
-        buffer[(top + row) * width + left : (top + row) * width + left + inner["width"] * 4]
+        buffer[(top + row) * width + left : (top + row) * width + left + row_bytes]
         for row in range(inner["height"])
     )
 

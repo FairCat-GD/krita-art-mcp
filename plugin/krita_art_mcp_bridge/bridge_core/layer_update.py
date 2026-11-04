@@ -3,11 +3,10 @@ import math
 from pathlib import Path
 from typing import Any
 
-from . import log, verification
+from . import log, mutation, verification
 from .errors import BridgeError, exact
-from .history import DONE, LABELS, UNDO, in_front, move, unconfirmed
+from .history import LABELS, in_front
 from .jobs import Call, Handler
-from .ledger import Step, fingerprint, node_states
 from .opening import LAYER_ID
 from .port import DocumentsPort
 from .registry import Handle, Registry
@@ -18,20 +17,6 @@ FLAGS = ("visible", "locked", "alpha_locked", "inherit_alpha")
 PROPERTIES = {"name", "opacity", "blend_mode", "active", *FLAGS}
 # The properties that change the composite, so each change of one is checked pixel by pixel.
 APPEARANCE = {"visible", "opacity", "blend_mode", "inherit_alpha"}
-# What a property write leaves alone on every other node; bounds move with a group's projection.
-WATCHED = (
-    "name",
-    "type",
-    "parent_id",
-    "order",
-    "visible",
-    "opacity",
-    "blend_mode",
-    "locked",
-    "alpha_locked",
-    "inherit_alpha",
-    "offset_px",
-)
 
 
 def handlers(registry: Registry, port: DocumentsPort, data: Path) -> dict[str, Handler]:
@@ -42,80 +27,76 @@ def handlers(registry: Registry, port: DocumentsPort, data: Path) -> dict[str, H
         wanted = _in_krita_terms(args["properties"])
         changes = {key: value for key, value in wanted.items() if key != "active"}
         changes = {key: value for key, value in changes.items() if target[key] != value}
-        rect, before, allowed = None, None, None
-        if APPEARANCE & set(changes):
-            info = port.describe(document)
-            effects = port.effects(document, mode == verification.REGION)
-            if mode == verification.REGION:
-                verification.refuse_reach(
-                    tree, effects, layer_id, "this change past the layer's bounds"
-                )
-            rect = verification.scope(mode, tree, layer_id, info["size_px"])
-            verification.refuse_unverifiable(info, effects, rect)
-            allowed = verification.allowed_rows(handle, info["size_px"], rect)
-            # A projection left stale by a write elsewhere would read as this change.
-            port.refresh(document)
-            before = verification.read(port, document, rect)
+        # The values the change overwrote, which a rollback writes back.
+        old: dict[str, Any] = {}
+        undoable: list[str] = []
+        result = None
+        final = tree
         if set(wanted) == {"active"}:
             # Only which layer the owner sees selected changes.
-            was = handle.dirty
             handle.touched()
         else:
-            call.mark()
-            was = handle.before_change()
-        applied: dict[str, Any] = {}
-        step: Step | None = None
-        after, verdict = None, None
-        problem: BridgeError | None = None
-        # The tree as the change left it; tree stays the one the rollback must get back to.
-        final = tree
-        with unconfirmed(handle, bool(changes)):
-            try:
+            reads = None
+            if APPEARANCE & set(changes):
+                info = port.describe(document)
+                effects = port.effects(document, mode == verification.REGION)
+                if mode == verification.REGION:
+                    verification.refuse_reach(
+                        tree, effects, layer_id, "this change past the layer's bounds"
+                    )
+                rect = verification.scope(mode, tree, layer_id, info["size_px"])
+                reads = mutation.verifiable(handle, info, effects, mode, rect)
+            labels = (LABELS["layer.update"],) if "blend_mode" in changes else ()
+            frame = mutation.Mutation(
+                port, handle, call, "layer.update", labels, reads, data, {"layer_id": layer_id}
+            )
+            if reads is not None:
+                frame.read()
+
+            def change(steps: mutation.Steps) -> dict[str, Any]:
                 if "blend_mode" in changes:
-                    applied["blend_mode"] = target["blend_mode"]
-                    step = _blend(handle, tree, layer_id, changes["blend_mode"], call)
+                    old["blend_mode"] = target["blend_mode"]
+                    port.set_blend(document, layer_id, changes["blend_mode"])
+                    steps.push(steps.of(port.tree(document)))
                 rest = {key: value for key, value in changes.items() if key != "blend_mode"}
                 if rest:
-                    applied.update({key: target[key] for key in rest})
+                    old.update({key: target[key] for key in rest})
                     port.set_properties(document, layer_id, rest)
-                if before is not None:
+                if reads is not None:
                     port.refresh(document)
-                final = port.tree(document)
-                moved = _moved(tree, final, layer_id, changes)
+                changed = port.tree(document)
+                moved = _moved(tree, changed, layer_id, changes)
                 if moved:
                     details: dict[str, Any] = {"layer_ids": moved}
                     message = "Krita changed more than the asked properties."
-                    problem = BridgeError("INTERNAL_ERROR", message, False, details)
-                elif before is not None and rect is not None:
-                    after = verification.read(port, document, rect)
-                    verdict = verification.check(
-                        before, after, allowed, handle.preserve_composite_alpha
-                    )
-                    if verdict.leaked:
-                        problem = _leak()
-            except BridgeError as raised:
-                problem = raised
-            except Exception as raised:
-                logging.getLogger(log.NAME).exception("layer.update raised mid-change")
-                details = {"op": "layer.update", "raised": type(raised).__name__}
-                message = "Krita raised during the change; see plugin.log."
-                problem = BridgeError("INTERNAL_ERROR", message, False, details)
-            if problem is not None:
-                # Dropped first, so the re-read never holds two copies of the scope.
-                after = None
-                _roll_back(handle, args, tree, applied, step, before, rect, was, problem, verdict)
-        if step is not None:
-            step.region = None if verdict is None else verdict.changed_bounds_px
-        result = None
-        if before is not None and verdict is not None:
-            result = verification.files(data, mode, before, after, verdict, False)
+                    raise BridgeError("INTERNAL_ERROR", message, False, details)
+                return changed
+
+            def judge(applied: mutation.Applied) -> None:
+                if applied.verdict is not None and applied.verdict.leaked:
+                    raise _leak()
+
+            def back() -> bool:
+                return mutation.watched(port.tree(document)) == mutation.watched(tree)
+
+            def compensate() -> bool:
+                # Property writes are no undo step (K22), so they are written back.
+                rest = {key: value for key, value in old.items() if key != "blend_mode"}
+                if rest:
+                    port.set_properties(document, layer_id, rest)
+                return bool(rest)
+
+            applied = frame.run(change, judge, back, compensate, tree, bool(changes))
+            final = applied.value
+            undoable = ["blend_mode"] if applied.steps.pushed else []
+            result = frame.files(applied)
         if args["properties"].get("active"):
             try:
                 with in_front(port, document):
                     call.mark()
                     port.activate(document, layer_id)
             except BridgeError:
-                if not applied:
+                if not old:
                     raise
                 # Reported as it is: a verified change never fails over the selected layer.
                 logging.getLogger(log.NAME).exception("the layer was not made active")
@@ -127,98 +108,10 @@ def handlers(registry: Registry, port: DocumentsPort, data: Path) -> dict[str, H
             "effective_properties": {
                 key: _reported(key, node, final) for key in args["properties"]
             },
-            "undoable": [] if step is None else ["blend_mode"],
-            "undo_steps": 0 if step is None else 1,
+            "undoable": undoable,
+            "undo_steps": len(undoable),
             "verification": result,
         }
-
-    def _blend(handle: Handle, tree: dict[str, Any], layer_id: str, mode: str, call: Call) -> Step:
-        start = fingerprint(port, handle.document, tree)
-        try:
-            port.set_blend(handle.document, layer_id, mode)
-            # A blend change leaves the selection alone, so its hash is not read again.
-            end = (node_states(port.tree(handle.document)), start[1])
-        except BaseException:
-            # Krita may hold a step the ledger cannot name; history stops below it.
-            handle.ledger.seal()
-            raise
-        step = Step("layer.update", call.operation_id, LABELS["layer.update"], start, end)
-        handle.ledger.push(step, port.undo_limit())
-        return step
-
-    def _roll_back(
-        handle: Handle,
-        args: dict[str, Any],
-        tree: dict[str, Any],
-        applied: dict[str, Any],
-        step: Step | None,
-        before: verification.Reading | None,
-        rect: dict[str, int] | None,
-        was: bool,
-        problem: BridgeError,
-        verdict: verification.Verdict | None,
-    ) -> None:
-        # Invariant 5: undone, then confirmed by the scope and the tree, or the document is unsafe.
-        rolled_back, confirmed = _restore(handle, args["layer_id"], tree, applied, step, before)
-        details = {
-            **problem.body["details"],
-            "document_id": handle.document_id,
-            "layer_id": args["layer_id"],
-            "rolled_back": rolled_back,
-            "rollback_verified": confirmed,
-        }
-        if verdict is not None and before is not None:
-            details["verification"] = verification.files(
-                data, args["verify"], before, None, verdict, True
-            )
-        if confirmed:
-            handle.dirty = was
-            # Never retryable: a retry under this request_id would make the change again.
-            raise BridgeError(problem.body["code"], problem.body["message"], False, details)
-        handle.unsafe = True
-        details["cause"] = problem.body["code"]
-        message = "The change could not be undone and confirmed; the document is unsafe. Reopen it."
-        raise BridgeError("ROLLBACK_FAILED", message, False, details)
-
-    def _restore(
-        handle: Handle,
-        layer_id: str,
-        tree: dict[str, Any],
-        applied: dict[str, Any],
-        step: Step | None,
-        before: verification.Reading | None,
-    ) -> tuple[bool, bool]:
-        # Whether the restore ran, and whether the document was confirmed as it was.
-        document = handle.document
-        try:
-            undone = True
-            if step is not None:
-                with in_front(port, document):
-                    outcome, _, _ = move(port, handle, step, UNDO, step.after)
-                if outcome == DONE:
-                    handle.ledger.rolled_back()
-                else:
-                    undone = False
-            elif (
-                "blend_mode" in applied
-                and _node(port.tree(document), layer_id)["blend_mode"] != applied["blend_mode"]
-            ):
-                # The blend changed without a step the ledger holds; history is sealed already.
-                port.set_blend(document, layer_id, applied["blend_mode"])
-            rest = {key: value for key, value in applied.items() if key != "blend_mode"}
-            if rest:
-                port.set_properties(document, layer_id, rest)
-            if APPEARANCE & set(applied):
-                port.refresh(document)
-            back = _watched(port.tree(document)) == _watched(tree)
-            if before is not None:
-                back = back and verification.same(
-                    before, verification.read(port, document, before.rect)
-                )
-            return undone, undone and back
-        except Exception:
-            logging.getLogger(log.NAME).exception("layer.update's rollback raised")
-            return False, False
 
     guarded = registry.guarded(update)
 
@@ -315,20 +208,11 @@ def _leak() -> BridgeError:
     return BridgeError("PROTECTED_REGION_CHANGED", message)
 
 
-def _node(tree: dict[str, Any], layer_id: str) -> dict[str, Any]:
-    found: dict[str, Any] = next(node for node in tree["nodes"] if node["id"] == layer_id)
-    return found
-
-
-def _watched(tree: dict[str, Any]) -> dict[str, dict[str, Any]]:
-    return {node["id"]: {key: node[key] for key in WATCHED} for node in tree["nodes"]}
-
-
 def _moved(
     before: dict[str, Any], after: dict[str, Any], layer_id: str, changes: dict[str, Any]
 ) -> list[str]:
     # The ids whose watched fields differ from what the change should leave.
-    old, new = _watched(before), _watched(after)
+    old, new = mutation.watched(before), mutation.watched(after)
     if set(old) != set(new):
         return sorted(set(old) ^ set(new))
     expected = {**old[layer_id], **changes}

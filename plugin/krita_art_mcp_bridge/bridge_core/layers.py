@@ -1,9 +1,9 @@
 from typing import Any
 
+from . import mutation
 from .errors import BridgeError, exact
-from .history import DONE, LABELS, UNDO, in_front, move
+from .history import LABELS
 from .jobs import Call, Handler
-from .ledger import Step, fingerprint, node_states
 from .opening import LAYER_ID
 from .port import DocumentsPort
 from .registry import Handle, Registry
@@ -19,25 +19,27 @@ def handlers(registry: Registry, port: DocumentsPort) -> dict[str, Handler]:
         parent_id, above_id = args["parent_id"], args["above_id"]
         before = port.tree(document)
         _placement(before, parent_id, above_id)
-        start = fingerprint(port, document)
-        call.mark()
-        was = handle.before_change()
-        try:
+        frame = mutation.Mutation(port, handle, call, "layer.create", (LABELS["layer.create"],))
+
+        def change(steps: mutation.Steps) -> tuple[str, dict[str, Any]]:
             layer_id = port.create_layer(
                 document, parent_id, above_id, KINDS[args["type"]], args["name"]
             )
             after = port.tree(document)
-            # Adding a layer leaves the selection alone, so its hash is not read again.
-            end = (node_states(after), start[1])
-        except BaseException:
-            # Krita may hold a step the ledger cannot name; history stops below it.
-            handle.ledger.seal()
-            raise
-        step = Step("layer.create", call.operation_id, LABELS["layer.create"], start, end)
-        handle.ledger.push(step, port.undo_limit())
-        problem = misplaced(before, after, layer_id, args, handle.protected)
-        if problem is not None:
-            _roll_back(handle, step, was, problem)
+            steps.push(steps.of(after))
+            return layer_id, after
+
+        def judge(applied: mutation.Applied) -> None:
+            layer_id, after = applied.value
+            problem = misplaced(before, after, layer_id, args, handle.protected)
+            if problem is not None:
+                raise problem
+
+        def back() -> bool:
+            return mutation.watched(port.tree(document)) == mutation.watched(before)
+
+        applied = frame.run(change, judge, back)
+        layer_id, _ = applied.value
         return {
             "document_id": handle.document_id,
             "layer_id": layer_id,
@@ -46,27 +48,8 @@ def handlers(registry: Registry, port: DocumentsPort) -> dict[str, Handler]:
             "type": args["type"],
             "name": args["name"],
             "protected": False,
-            "undo_steps": 1,
+            "undo_steps": len(frame.labels),
         }
-
-    def _roll_back(handle: Handle, step: Step, was: bool, problem: BridgeError) -> None:
-        # Invariant 5: native undo, confirmed, or the document is unsafe.
-        with in_front(port, handle.document):
-            outcome, seen, _ = move(port, handle, step, UNDO)
-        if outcome == DONE:
-            handle.ledger.rolled_back()
-            handle.dirty = was
-            problem.body["details"].update(rolled_back=True, rollback_verified=True)
-            raise problem
-        handle.unsafe = True
-        details = {
-            **problem.body["details"],
-            **seen,
-            "rolled_back": False,
-            "rollback_verified": False,
-        }
-        message = "A layer Krita added wrongly could not be undone; the document is unsafe."
-        raise BridgeError("ROLLBACK_FAILED", message, False, details)
 
     guarded = registry.guarded(create)
 

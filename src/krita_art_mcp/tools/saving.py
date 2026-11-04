@@ -34,11 +34,9 @@ CHUNK = 1 << 20
 
 
 def document_save(call: ToolCall, arguments: dict[str, Any]) -> CallToolResult:
-    extension = os.path.splitext(arguments["path"])[1].lower()
-    if extension not in FORMATS:
-        details = {"formats": list(FORMATS)}
-        message = "Phase 1 saves .kra and .ora files; PNG export arrives in Phase 4."
-        return envelope.failure("UNSUPPORTED_CAPABILITY", message, details=details)
+    refused = _save_rules(arguments)
+    if refused is not None:
+        return refused
     guard = arguments["guard"]
     op_args = {"document_id": guard["document_id"], "path": arguments["path"]}
     started = time.monotonic()
@@ -54,6 +52,16 @@ def document_save(call: ToolCall, arguments: dict[str, Any]) -> CallToolResult:
         return finish_save(call, outcome, call.bridge.budget_s - (time.monotonic() - started))
 
     return journaled(call, TOOL, arguments, guard["request_id"], send, save_receipt, precheck)
+
+
+def _save_rules(arguments: dict[str, Any]) -> CallToolResult | None:
+    # The plugin checks this too.
+    extension = os.path.splitext(arguments["path"])[1].lower()
+    if extension not in FORMATS:
+        details = {"formats": list(FORMATS)}
+        message = "Phase 1 saves .kra and .ora files; PNG export arrives in Phase 4."
+        return envelope.failure("UNSUPPORTED_CAPABILITY", message, details=details)
+    return None
 
 
 def finish_save(call: ToolCall, outcome: Outcome, left_s: float) -> Outcome:

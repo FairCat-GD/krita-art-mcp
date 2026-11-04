@@ -1,6 +1,6 @@
 # krita-art-mcp — architecture, as built
 
-This is the system as it stands at 0.20.0, in round 2, on the Phase 1 round 1 built. Every session
+This is the system as it stands at 0.20.1, in round 2, on the Phase 1 round 1 built. Every session
 keeps it true, in the same commit as the change. Each section stands on its own: a session reads
 the overview, the invariants and the baseline, then only the sections its work touches.
 `docs/USER-GUIDE.md` is the same system from the user's side.
@@ -307,7 +307,12 @@ schema, where a job ends at its first raise and each check reads what the one be
 document before the layer before the pixels.
 
 **Argument rules are written twice on purpose.** Each side trusts no caller, and a refusal the server
-makes carries no `operation_id`. Six such pairs have no parity test yet; round 2's F1 adds them.
+makes carries no `operation_id`. Each pair is held by a parity test in `tests/test_parity.py`: six
+today, from open's format and editable lists to a capture's area. The server's half of a pair is a
+named function, and `tests/support/parity.py`'s `refused_alike` calls the tool, turns that function
+off, and calls again, so the server's own translation carries the same arguments to the plugin. Both
+must refuse with one code and one `retryable`, the plugin before its marker. A new pair needs its
+named function and one call.
 
 **The error codes: 30.** The default `retryable` is the server's; a site may override it, and
 `docs/USER-GUIDE.md` says what an agent should do with each.
@@ -478,8 +483,9 @@ An unexpected exception is always `uncertain`, and so is a failure `drain` makes
 never finished. A change counter proves nothing either way: `history.move` calls `before_change()`
 during confirmed rollbacks and reversed steps.
 
-**The marker.** `Call.mark()` goes by hand before an op's first change of any kind, on each path:
-document, protection state, file or registration. The window-wide brush is not a change here, because
+**The marker.** `Call.mark()` goes before an op's first change of any kind, on each path: document,
+protection state, file or registration. The frame places it for the ops on it (see *The
+verification core*); every other op places it by hand. The window-wide brush is not a change here, because
 a stroke sets it before its marker. `move()` takes it as a callback that only `history.step` passes,
 because a rollback is already past its own op's marker.
 
@@ -491,8 +497,9 @@ because a rollback is already past its own op's marker.
 | `document.save` | making the folder |
 | `document.save_finish` | clearing the pending save |
 | `protection.set` | writing the handle's state |
-| `selection.set`, `layer.create`, `paint.stroke` | `before_change` |
-| `layer.update` | `before_change`, or `port.activate` for `active` alone |
+| `selection.set` | `before_change` |
+| `layer.create`, `paint.stroke` | the frame, beside `before_change` |
+| `layer.update` | the frame, or `port.activate` for `active` alone |
 | `history.step` | inside `move()`, past its `FOREIGN` return |
 
 **Every op has a class.** `READS` (9) change nothing. `BOUNDED` (11) carry a marker, and a test holds
@@ -680,11 +687,45 @@ retry still gets the counts. A pass sends before and after, up to 2048²; a refu
 the flags. The diff draws offending pixels red over the scope as it was, faded toward white, at most
 1024 px long, block-reduced so none vanishes, and goes inline only under the size bound.
 
+**The frame.** `bridge_core/mutation.py` holds invariant 5's sequence once, and the stroke,
+`krita_layer_update` and `krita_layer_create` run on it; the save keeps its own ladder, and a
+selection, which has no verdict, pushes its step by hand.
+- **Before the change.** `verifiable` refuses a scope or target rect the reads cannot see and takes
+  the allowed mask over the scope, as a `Reads`. That names the composite's scope, and optionally
+  the target over its own rect, its bytes per pixel (`channels`: 4, or 1 for a mask) and each
+  protected layer over its own rect. `Mutation.read` refreshes, then reads.
+- **`Mutation.run`** takes the start fingerprint, then the marker and `before_change()` together,
+  then, inside `unconfirmed`, the op's change, the after-read, `check`, and the op's `judge`. The
+  rollback runs inside `unconfirmed` too: the op's own `BridgeError` passes through, and any other
+  raise marks the document lost. The write-nothing update does not arm it.
+- **Steps.** An op names its undo labels up front, one or more, and the frame holds it to them. A
+  node change pushes each step the moment Krita holds it, with its state after. A pixel change's
+  step is pushed by the frame after the reads, with the witness over the target's diff, or sealed
+  when the diff is empty.
+- **A problem** is a `BridgeError` from the change or the judge, keeping its code, or any other
+  `Exception`, logged as `INTERNAL_ERROR`. Either is re-raised never retryable, after the rollback.
+- **The rollback,** in order:
+  1. A step named but never pushed is the newest Krita may hold, so it goes first. A pixel step is
+     undone by a witness built from a re-read, unless the re-read shows the document back. A node
+     step is undone by its label and state, unless the state never moved.
+  2. Each pushed step is undone, newest first, through `history.move`.
+  3. History is sealed below a step it never named, after the pushed steps are off the ledger, so
+     the floor never stands above `applied`.
+  4. The op's `compensate` writes back what no undo holds: the update's property values, because
+     `set_properties` pushes no undo step (K22).
+  5. The rollback is confirmed by a re-read and `same()` when the op reads pixels, and by the op's
+     `back`: the stroke's target bounds, or the watched tree for the layer ops.
+- **Every rollback reports alike.**
+  - Confirmed: `dirty` comes back and the problem is raised with `document_id`, the op's ids,
+    `rolled_back` (no move failed, and something was undone or written back) and
+    `rollback_verified`. An op that reads pixels adds `protected_layer_ids`,
+    `protected_pixels_changed` and `target_outside_reach`, and the failed `verification`.
+  - Not confirmed: the document is unsafe, and the call is `ROLLBACK_FAILED`, with `cause` and what
+    a failed move saw.
+
 **`krita_layer_update`.** Only values that differ are written; the blend first, then the rest in a
-fixed order, then a refresh (K42). `set_properties` pushes no undo step (K22), so a rollback restores
-old values and undoes the blend through `history.move`, then confirms the tree and the scope.
-`history.unconfirmed(handle, changing)` wraps the change and its rollback: the op's own `BridgeError`
-passes through, and any other raise marks the document lost. The write-nothing case does not arm it.
+fixed order, then a refresh (K42), the tree, and the check that nothing else moved, all inside its
+change. An update that only sets `active` changes nothing in the document and skips the frame.
 
 ## Painting
 
@@ -697,8 +738,9 @@ grown by half the size; the preset by file id, with the 5 nearest; the listed fi
 undo; region reach. Then, with the view in front (K2, K9): the brush set in K3's order (preset,
 then size, opacity, flow, blend, eraser, alpha lock, rotation, colour) and read back, `paintAbility()`,
 the reach from the effective preset's XML, R and the ring, the refusals over the scope,
-`OUTSIDE_ALLOWED_MASK` over R, a refresh, the before-read, the brush read again, the fingerprint,
-`before_change()`, `paint_path`.
+`OUTSIDE_ALLOWED_MASK` over R, a refresh, the before-read, the brush read again, then the frame's
+fingerprint, marker and `before_change()`, and `paint_path`. Its judge holds the target to R and
+its bounds, and widens a full-scope `changed_bounds_px`.
 
 **Stateless brushes.** The brush is window-wide (K3), so every call sets all of it and reports what
 Krita applied. A stroke writes `OpacityValue`, `FlowValue` and the tip's size fields into the active
@@ -738,11 +780,11 @@ a change beyond R′ inside the target's old bounds is read nowhere.
 scope; in region scope, the target's diff inside R and its bounds inside its old bounds ∪ unclipped
 R′. A protected layer that shares no pixel with the scope is skipped once its bounds are compared.
 
-**Rollback.** One undo through `history.move`, or, after a raise, a re-read and an undo only when the
-label and a witness built from the re-read match. It is confirmed by the re-read, `same()` and the
-bounds; otherwise the document is unsafe and the call `ROLLBACK_FAILED`. It is never retryable, and a
-`BaseException` marks the document unsafe through `history.unconfirmed`. `protected_pixels_changed`
-is `null` when no confirmed undo brought back what it is counted against.
+**Rollback,** the frame's. One undo through `history.move`, or, after a raise, a re-read and an undo
+only when the label and a witness built from the re-read match. It is confirmed by the re-read,
+`same()` and the target's bounds; otherwise the document is unsafe and the call `ROLLBACK_FAILED`.
+It is never retryable, and a `BaseException` marks the document unsafe through `unconfirmed`.
+`protected_pixels_changed` is `null` when no confirmed undo brought back what it is counted against.
 
 **The input gate.** Phase 1 always paints with `Node.paintPath` at pressure 1 (K4), even on a build
 with `paintPolylineStroke`, because that branch cannot be tested on released Krita. The server refuses
@@ -760,6 +802,9 @@ region, witness}` and `Ledger{steps, applied, floor, redo, bottom}`.
   Krita's redo of a rolled-back stroke, which it does offer, is refused.
 - `seal` stops history below a step the bridge cannot name: protection changes, harness ops that
   push, a mutation that raised, a stroke that changed no pixel (`history_sealed` on its receipt).
+  A rollback seals after its pushed steps are off, so an op of several steps leaves no floor above
+  `applied`.
+- An op may push several steps, each its own `Step`; a rollback undoes them newest first.
 - `bottom` follows Krita's `undoStackLimit`, default 200 (`UNDO_LIMIT_DEFAULT`), measured to be exactly
   what Krita keeps.
 - `undo_available = applied − max(floor, bottom)`.
@@ -1039,8 +1084,8 @@ These span subsystems. A decision about one subsystem is in its section.
 Each has its detail in `docs/BACKLOG.md`, or in `docs/spec/SESSIONS.md` where round 2 takes it up.
 
 - The save reads whole canvases unbanded, so it stops at 8192² pixels.
-- Three verified-mutation sequences are hand-rolled, and the save has a ladder of its own.
-- Six argument rules are written on both sides with no parity test.
+- The save has a ladder of its own, and a selection pushes its step outside the frame, with no
+  verdict.
 - The journal is permanent and unbounded.
 - A Krita crash mid-save leaves a hidden file nothing sweeps.
 - Labels are English; region scope is the pixel engine only; filters are classed by type.
@@ -1118,7 +1163,7 @@ the code is shaped as it is.
   it. A Krita holding 87 documents ran document ops about three times slower, and left the paint
   benchmarks, the preview benchmark and H4 idle alone.
 
-## Baseline (v0.20.0)
+## Baseline (v0.20.1)
 
 Taken on 2026-11-04 on Krita 5.3.4.1, macOS, Apple Silicon, on a Krita restarted that session, with
 **0 documents open**. The probe prints the open-document count beside its time, because document ops
@@ -1127,7 +1172,7 @@ depend on it: 87 open documents cost about 50 s more.
 | Check | Expected |
 |---|---|
 | `uv run scripts/verify.py` | 6 stages, all PASS |
-| Server tests (3.12) | 883 passed, 0 skipped |
+| Server tests (3.12) | 897 passed, 0 skipped |
 | Plugin-core tests (3.10) | 799 passed, 0 skipped |
 | `uv run krita-art-mcp probe` | 148 PASS, 0 FAIL, 24 MEASURED; about 125 s |
 | `uv run krita-art-mcp doctor` | 6 steps, all PASS, with a root allowed |

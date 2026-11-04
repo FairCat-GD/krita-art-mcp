@@ -386,13 +386,27 @@ def test_a_rollback_that_cannot_be_confirmed_marks_the_document_unsafe(world: Wo
     assert world.refused("history.step", _undo(document_id))["code"] == "DOCUMENT_UNSAFE"
 
 
-def test_a_create_that_raises_in_krita_leaves_it_dirty_and_history_sealed(world: World) -> None:
+def test_a_create_krita_raised_in_after_adding_is_undone_and_history_sealed(
+    world: World, monkeypatch: pytest.MonkeyPatch
+) -> None:
     document_id, handle = world.created()
     world.layer(document_id)
-    world.port.fail["create_layer"] = RuntimeError("libkis failed")
-    with pytest.raises(RuntimeError):
+    before = _ids(world, handle)
+    added = world.port.create_layer
+
+    def raised_after(*args: Any) -> str:
+        added(*args)
+        raise RuntimeError("libkis failed")
+
+    monkeypatch.setattr(world.port, "create_layer", raised_after)
+    with pytest.raises(BridgeError) as raised:
         world.layer(document_id)
-    assert handle.dirty and handle.ledger.undo_available() == 0
+    body = raised.value.body
+    assert body["code"] == "INTERNAL_ERROR" and body["retryable"] is False
+    assert (body["details"]["rolled_back"], body["details"]["rollback_verified"]) == (True, True)
+    # The step Krita pushed but the ledger never held is undone, and history stops below it.
+    assert _ids(world, handle) == before and handle.ledger.steps[-1].label == "Add Layer"
+    assert handle.dirty and not handle.unsafe and handle.ledger.undo_available() == 0
 
 
 @pytest.mark.parametrize("whose", ["the owner's", "a read_only open"])

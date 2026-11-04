@@ -26,11 +26,9 @@ def list_receipt(outcome: Outcome) -> CallToolResult:
 
 
 def document_create(call: ToolCall, arguments: dict[str, Any]) -> CallToolResult:
-    # The schema admits these, and Phase 1 cannot make them.
-    if arguments["depth"] != DEPTH or arguments["profile_id"] != SRGB_PROFILE:
-        details = {"supported": {"depth": DEPTH, "profile_id": SRGB_PROFILE}}
-        message = "Phase 1 creates RGBA / U8 / sRGB documents only."
-        return envelope.failure("UNSUPPORTED_CAPABILITY", message, details=details)
+    refused = _create_rules(arguments)
+    if refused is not None:
+        return refused
     op_args = {key: value for key, value in arguments.items() if key != "request_id"}
     request_id = arguments["request_id"]
 
@@ -40,6 +38,15 @@ def document_create(call: ToolCall, arguments: dict[str, Any]) -> CallToolResult
         )
 
     return journaled(call, "krita_document_create", arguments, request_id, send, create_receipt)
+
+
+def _create_rules(arguments: dict[str, Any]) -> CallToolResult | None:
+    # The schema admits these, and Phase 1 cannot make them; the plugin checks them too.
+    if arguments["depth"] != DEPTH or arguments["profile_id"] != SRGB_PROFILE:
+        details = {"supported": {"depth": DEPTH, "profile_id": SRGB_PROFILE}}
+        message = "Phase 1 creates RGBA / U8 / sRGB documents only."
+        return envelope.failure("UNSUPPORTED_CAPABILITY", message, details=details)
+    return None
 
 
 def create_receipt(outcome: Outcome) -> CallToolResult:
@@ -222,6 +229,11 @@ def _open_roots(places: Places, arguments: dict[str, Any]) -> CallToolResult | N
         if isinstance(resolved, CallToolResult):
             return resolved
         real[field] = resolved
+    return _working_dir_rule(real)
+
+
+def _working_dir_rule(real: dict[str, str]) -> CallToolResult | None:
+    # On the real paths, as the plugin checks it too.
     if real.get("working_dir") == os.path.dirname(real["source_path"]):
         details = {"field": "working_dir"}
         message = "working_dir must not be the source's own folder."

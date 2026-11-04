@@ -149,16 +149,10 @@ def diff_image(details: dict[str, Any]) -> ImageContent | None:
 
 
 def selection_set(call: ToolCall, arguments: dict[str, Any]) -> CallToolResult:
+    refused = _clear_rules(arguments)
+    if refused is not None:
+        return refused
     shape = arguments["shape"]
-    modified = [field for field in ("grow_px", "shrink_px") if arguments.get(field)]
-    if shape["type"] == "none" and (
-        arguments["combine"] != "replace"
-        or arguments["feather_px"]
-        or arguments["invert"]
-        or modified
-    ):
-        message = "Clearing the selection takes combine replace and no modifiers."
-        return envelope.failure("INVALID_ARGUMENT", message)
     guard = arguments["guard"]
     request_id = guard["request_id"]
 
@@ -183,6 +177,20 @@ def selection_set(call: ToolCall, arguments: dict[str, Any]) -> CallToolResult:
         return resolve_selection(call.places, outcome)
 
     return journaled(call, "krita_selection_set", arguments, request_id, send, selection_receipt)
+
+
+def _clear_rules(arguments: dict[str, Any]) -> CallToolResult | None:
+    # The plugin checks this too.
+    modified = [field for field in ("grow_px", "shrink_px") if arguments.get(field)]
+    if arguments["shape"]["type"] == "none" and (
+        arguments["combine"] != "replace"
+        or arguments["feather_px"]
+        or arguments["invert"]
+        or modified
+    ):
+        message = "Clearing the selection takes combine replace and no modifiers."
+        return envelope.failure("INVALID_ARGUMENT", message)
+    return None
 
 
 def _selection_shape(places: Places, shape: dict[str, Any], request_id: str) -> dict[str, Any]:

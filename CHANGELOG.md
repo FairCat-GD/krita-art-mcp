@@ -6,6 +6,21 @@ All notable changes to krita-art-mcp are documented here. The format follows
 
 ## [Unreleased]
 
+## [0.20.1] — 2026-11-04
+
+Strokes, layer changes and new layers now share one verified sequence, so a failure that is rolled
+back reads the same whichever of them it came from. This release needs `install-plugin`, a Krita
+restart and a restart of the MCP client.
+
+### Fixed
+
+- **A layer Krita fails while adding is now undone and confirmed, as a failed stroke is.** The
+  failure says `not_applied` once the document is shown to be as it was, and marks the document
+  unsafe when it cannot be shown. Before, it read `uncertain`, and the document stayed open to
+  changes.
+- **Every rolled-back change reports the same fields:** `document_id`, `rolled_back` and
+  `rollback_verified`, and, when the rollback fails, `cause` and what Krita's history showed.
+
 ## [0.20.0] — 2026-11-04
 
 Limits an agent used to learn from a refusal are now visible before the call: a sample gives the

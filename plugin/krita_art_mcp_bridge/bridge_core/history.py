@@ -55,20 +55,6 @@ def in_front(port: DocumentsPort, document: Any) -> Iterator[None]:
             port.restore_view(previous)
 
 
-@contextlib.contextmanager
-def unconfirmed(handle: Any, changing: bool = True) -> Iterator[None]:
-    # Around a change and its rollback: anything but the op's own error leaves Krita holding a
-    # change the bridge can neither name nor confirm.
-    try:
-        yield
-    except BridgeError:
-        raise
-    except BaseException:
-        if changing:
-            handle.lost()
-        raise
-
-
 def move(
     port: DocumentsPort,
     handle: Any,

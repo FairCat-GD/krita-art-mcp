@@ -36,7 +36,7 @@ Never push without being asked.
 | R2 | Truthful hints, timing, Hamming | 1, 2 | **0.18.0** |
 | R3 | Krita's own modified state, and the close guard | — (R2's review) | **0.19.0** |
 | D1 | Discovery: colours, limits, ranges, finite numbers | 9, 11 | **0.20.0** |
-| F1 | One verified-mutation frame, parity tests | 5, 10 | — |
+| F1 | One verified-mutation frame, parity tests | 5, 10 | **0.20.1** |
 | C1 | `krita_paint_fill` | 1, 3 | **0.21.0** |
 | M1 | Transparency masks | 1, 3, 14 | **0.22.0** |
 | X1 | Architecture review: the frame and its first two tools | all | — |
@@ -693,6 +693,72 @@ and §8.8 items 6, 8.
   it.
 - **The plugin's hash changes with no version bump,** so `install-plugin` and a Krita restart still
   apply.
+
+**Done (2026-11-04, 0.20.1).**
+- **Decided with the owner in plan mode:**
+  - **One failure behaviour, the stroke's.** A create Krita raised in used to seal history and pass
+    the raise on (`uncertain`, the document still usable), and a raise in its rollback escaped. Now
+    every op on the frame is rolled back and confirmed, or the document is unsafe. Fields were
+    only added, so `api_version` stays 0.4.0.
+  - **So F1 ships 0.20.1,** with a `Fixed` entry.
+  - **The plan,** approved in plan mode, after an independent attack on the frame against C1, M1,
+    L1 and the pinned tests.
+- **`bridge_core/mutation.py`.**
+  - **`Reads` and `verifiable`:** the scope, the allowed mask, and optionally the target over its
+    own rect with its `channels` (4, or 1 for a mask) and the protected layers over theirs. The
+    refusals keep the stroke's order.
+  - **`Steps`:** labels declared up front, one or more. A node step is pushed as Krita holds it; a
+    pixel step is pushed after the reads with its witness, or sealed when its diff is empty. The
+    frame asserts the op took exactly its labels.
+  - **`Mutation.run`:** the fingerprint, the marker and `before_change()` together, then, inside
+    `unconfirmed`, the change, the after-read, `check`, the pixel step and the op's `judge`.
+  - **The rollback, inside `unconfirmed` too,** in this order:
+    1. a step named but never pushed: by witness from a re-read, or by label and state;
+    2. the pushed steps, newest first;
+    3. the seal, after them, so the floor never stands above `applied`;
+    4. the op's `compensate`;
+    5. the re-read and the op's `back`.
+  - **`unconfirmed`** moved here from `history.py`. `WATCHED` moved here from `layer_update.py`.
+    `verification.changes` and `crop` take `channels`.
+- **The three ops on it.**
+  - **The stroke** keeps its refusals, brush, reach, R, ring and `target_rect`. Its judge is
+    `_verdict`, its bounds and the full-scope widening; its `back` is its target's bounds.
+  - **The update's** change ends with the refresh, the tree and `_moved`, as before. Its
+    `compensate` writes the old values back, and its `back` compares the watched tree.
+  - **The create** reads no pixels; its judge is `misplaced`, its `back` the watched tree.
+- **Parity.**
+  - The server's half of each pair is a named function: `_create_rules`, `_working_dir_rule`,
+    `_save_rules` and `_clear_rules` are new, beside `_open_rules` and `_capture_rules`.
+  - `tests/support/parity.py`'s `refused_alike` calls the tool, turns the server's function off,
+    and calls again. Both refusals must share a code and `retryable`, with the plugin's
+    `not_applied`.
+  - `tests/test_parity.py` holds 14 cases across the six pairs.
+- **Amendments:**
+  - **A version and a `CHANGELOG.md` entry,** which the block ruled out: the unified failure path
+    is visible. Decided at plan time, with the owner.
+  - **Two tests changed their expectation, not their count:**
+    - `test_a_layer_krita_refused_is_uncertain` became `…_is_confirmed_not_applied`;
+    - the create-raises test now has Krita add the layer, then raise. That covers the frame's new
+      undo by label and state, without adding a test.
+  - **The update's `set_blend` compensation went:** an unpushed blend step is undone like any
+    other node step.
+  - **An update that only sets `active` skips the frame.** Its `_moved` check compared two reads
+    around no write.
+  - **`rolled_back` now means one thing for every op:** no move failed, and something was undone
+    or written back. An update that wrote nothing before failing now reports `false`.
+  - **`selection.set` stays outside the frame,** having no verdict; *Known debt* says so.
+- **Checked live:** `install-plugin`, a Krita restart at 0 unsaved, `doctor` 6 of 6. The first
+  probe run met a dialog Krita opened at start (16 PASS, 15 FAIL, all `KRITA_MODAL_DIALOG`, nothing
+  touched); the owner closed it and the rerun held the whole baseline.
+- **Falsified:**
+  - **The six pairs, broken together** (each plugin side's code changed): all 14 parity cases
+    failed at the helper's code comparison.
+  - **The frame's undo by label and state, turned off:** the changed create test failed.
+  - **Create's watched-tree check, turned off:** both changed tests failed, with three other
+    create rollback tests.
+- **Numbers:** 897 server tests (+14), 799 plugin tests (+0), probe 148 PASS (+0), 0 FAIL, 24
+  MEASURED, 125.6 s with 0 documents open. 19 tools, 19 schema files, 30 error codes, 31 ops,
+  instructions 3,453 characters, `api_version` 0.4.0.
 
 ---
 

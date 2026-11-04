@@ -729,10 +729,12 @@ def test_a_selection_krita_refused_is_uncertain(world: World) -> None:
     assert _outcome(world.failure("selection.set", args)) == UNCERTAIN
 
 
-def test_a_layer_krita_refused_is_uncertain(world: World) -> None:
+def test_a_layer_krita_refused_is_confirmed_not_applied(world: World) -> None:
     document_id = world.document()
     world.port.fail["create_layer"] = BridgeError("INTERNAL_ERROR", "Krita did not add the layer.")
-    assert _outcome(world.failure("layer.create", world.layer_args(document_id))) == UNCERTAIN
+    body = world.failure("layer.create", world.layer_args(document_id))
+    assert body["details"]["rolled_back"] is False and body["details"]["rollback_verified"] is True
+    assert _outcome(body) == NOT_APPLIED
 
 
 def _misplaced(tree: dict[str, Any], node: dict[str, Any]) -> None:

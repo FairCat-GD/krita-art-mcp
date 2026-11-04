@@ -1,18 +1,15 @@
 import difflib
-import hashlib
-import logging
 import math
 import re
 from pathlib import Path
 from typing import Any
 
-from . import brushes, log, verification
+from . import brushes, mutation, verification
 from .documents import COLOR_MODEL, DEPTH, SRGB_PROFILE
 from .errors import BridgeError, exact, integer, number
-from .history import DONE, LABELS, UNDO, in_front, move, unconfirmed
+from .history import LABELS, in_front
 from .inspection import TYPES
 from .jobs import Call, Handler
-from .ledger import Fingerprint, Step, fingerprint
 from .opening import LAYER_ID
 from .port import DocumentsPort, ResourcesPort
 from .rects import union
@@ -109,258 +106,91 @@ def handlers(
                 if mode == verification.REGION
                 else _clip(union([_box(old_bounds), loose_ring]) or loose_ring, size)
             )
-            verification.refuse_unverifiable(info, effects, scope)
-            verification.refuse_unverifiable(info, effects, target_rect)
-            allowed = verification.allowed_rows(handle, size, scope)
-            near = allowed if scope == region else verification.allowed_rows(handle, size, region)
-            if near is not None and b"\xff" not in near:
-                details = {"layer_id": layer_id, "region_px": region}
-                message = "The stroke's reach lies wholly outside the allowed mask."
-                raise BridgeError("OUTSIDE_ALLOWED_MASK", message, False, details)
             protected = _protected_paint_layers(tree, handle.protected)
             hashed = {
                 node_id: met
                 for node_id, bounds in protected.items()
                 if (met := _meet(bounds, scope)) is not None
             }
-            port.refresh(document)
-            before = verification.read(
-                port, document, scope, layer_id, list(hashed), {layer_id: target_rect, **hashed}
+            reads = mutation.verifiable(
+                handle, info, effects, mode, scope, layer_id, target_rect, hashed=hashed
             )
+            near = (
+                reads.allowed
+                if scope == region
+                else verification.allowed_rows(handle, size, region)
+            )
+            if near is not None and b"\xff" not in near:
+                details = {"layer_id": layer_id, "region_px": region}
+                message = "The stroke's reach lies wholly outside the allowed mask."
+                raise BridgeError("OUTSIDE_ALLOWED_MASK", message, False, details)
+            frame = mutation.Mutation(
+                port,
+                handle,
+                call,
+                "paint.stroke",
+                (LABELS["paint.stroke"],),
+                reads,
+                data,
+                {"layer_id": layer_id},
+                "stroke",
+            )
+            frame.read()
             held = {key: value for key, value in effective.items() if key != "preset_xml"}
             if port.brush(document) != held:
                 message = "Krita's brush changed after it was set, so the stroke was not painted."
                 raise BridgeError("INTERNAL_ERROR", message, False, {"layer_id": layer_id})
-            start = fingerprint(port, document)
-            call.mark()
-            was = handle.before_change()
-            with unconfirmed(handle):
-                return painted(
-                    handle,
-                    args,
-                    call,
-                    Stroke(
-                        mode, start, was, before, allowed, region, loose_ring, target_rect, size
-                    ),
-                    old_bounds,
-                    protected,
-                    _effective(asked, listed, effective, reach, tip, scatter, margin),
-                )
 
-    def painted(
-        handle: Handle,
-        args: dict[str, Any],
-        call: Call,
-        stroke: "Stroke",
-        old_bounds: dict[str, int],
-        protected: dict[str, dict[str, int]],
-        effective: dict[str, Any],
-    ) -> dict[str, Any]:
-        document, layer_id = handle.document, args["layer_id"]
-        before = stroke.before
-        step: Step | None = None
-        after: verification.Reading | None = None
-        verdict: verification.Verdict | None = None
-        diff: dict[str, int] | None = None
-        sealed = False
-        new: dict[str, int] | None = None
-        problem: BridgeError | None = None
-        try:
-            port.paint_path(document, layer_id, args["path"])
-            after = verification.read(
-                port,
-                document,
-                before.rect,
-                layer_id,
-                list(before.hashes),
-                before.rects,
-                before.hashes,
-            )
-            verdict = verification.check(
-                before, after, stroke.allowed, handle.preserve_composite_alpha
-            )
-            _, diff = verification.changes(before.target, after.target, stroke.target_rect)
-            if diff is None:
-                # Krita still pushes a step, but its undo changes no pixel, so nothing could
-                # confirm it: history stops below it, and the receipt says so.
-                handle.ledger.seal()
-                sealed = True
-            else:
-                witness = (
+            def change(steps: mutation.Steps) -> None:
+                port.paint_path(document, layer_id, args["path"])
+
+            def judge(applied: mutation.Applied) -> tuple[Any, Any]:
+                assert applied.verdict is not None
+                final = port.tree(document)
+                problem = _verdict(
+                    final,
                     layer_id,
-                    diff,
-                    _sha(verification.crop(before.target, stroke.target_rect, diff)),
-                    _sha(verification.crop(after.target, stroke.target_rect, diff)),
-                )
-                region = union([verdict.changed_bounds_px, diff])
-                made = Step(
-                    "paint.stroke",
-                    call.operation_id,
-                    LABELS["paint.stroke"],
-                    stroke.start,
-                    stroke.start,
+                    protected,
+                    applied.verdict,
+                    applied.diff,
+                    mode,
                     region,
-                    witness,
+                    loose_ring,
+                    old_bounds,
                 )
-                handle.ledger.push(made, port.undo_limit())
-                step = made
-            final = port.tree(document)
-            problem = _verdict(final, layer_id, protected, verdict, diff, stroke, old_bounds)
-            new = _box(_node_bounds(final, layer_id))
-            # Krita's bounds run past the canvas, where paint changes nothing anyone can see.
-            shown = None if new is None else _box(_clip(new, stroke.size))
-            if (
-                stroke.mode == verification.FULL
-                and shown
-                and not _inside(shown, stroke.target_rect)
-            ):
-                # Full scope does not hold the target to R; what it painted past the read shows
-                # in its bounds.
-                diff = union([diff, shown])
-        except BridgeError as raised:
-            problem = raised
-        except Exception as raised:
-            logging.getLogger(log.NAME).exception("paint.stroke raised mid-stroke")
-            details = {"op": "paint.stroke", "raised": type(raised).__name__}
-            message = "Krita raised during the stroke; see plugin.log."
-            problem = BridgeError("INTERNAL_ERROR", message, False, details)
-        if problem is not None:
-            kept = None if after is None else after.kept
-            # Dropped first, so the re-read never holds two copies of the scope.
-            after = None
-            roll_back(handle, args, call, stroke, step, old_bounds, kept, problem, verdict)
-        assert after is not None and verdict is not None
-        return {
-            "document_id": handle.document_id,
-            "layer_id": layer_id,
-            "stroke_id": call.operation_id,
-            "accepted_points": args["accepted_points"],
-            "effective_brush": effective,
-            "changed_bounds_px": diff,
-            "layer_bounds_px": new,
-            "protected_pixels_changed": 0,
-            "undo_label": LABELS["paint.stroke"],
-            "undo_steps": 1,
-            "history_sealed": sealed,
-            "verification": verification.files(data, args["verify"], before, after, verdict, False),
-        }
+                if problem is not None:
+                    raise problem
+                diff = applied.diff
+                new = _box(_node_bounds(final, layer_id))
+                # Krita's bounds run past the canvas, where paint changes nothing anyone can see.
+                shown = None if new is None else _box(_clip(new, size))
+                if mode == verification.FULL and shown and not _inside(shown, target_rect):
+                    # Full scope does not hold the target to R; what it painted past the read
+                    # shows in its bounds.
+                    diff = union([diff, shown])
+                return diff, new
 
-    def roll_back(
-        handle: Handle,
-        args: dict[str, Any],
-        call: Call,
-        stroke: "Stroke",
-        step: Step | None,
-        old_bounds: dict[str, int],
-        kept: tuple[str, Any] | None,
-        problem: BridgeError,
-        verdict: verification.Verdict | None,
-    ) -> None:
-        # Invariant 5: undone, then confirmed by the scope, the target and its bounds, or the
-        # document is unsafe.
-        layer_id = args["layer_id"]
-        rolled_back, confirmed, counted = restore(handle, call, stroke, step, old_bounds, kept)
-        found = problem.body["details"]
-        details = {
-            **found,
-            "document_id": handle.document_id,
-            "layer_id": layer_id,
-            "rolled_back": rolled_back,
-            "rollback_verified": confirmed,
-            "protected_layer_ids": found.get("protected_layer_ids", []),
-            "protected_pixels_changed": counted,
-            "target_outside_reach": found.get("target_outside_reach", False),
-        }
-        if verdict is not None:
-            details["verification"] = verification.files(
-                data, args["verify"], stroke.before, None, verdict, True
-            )
-        if confirmed:
-            handle.dirty = stroke.was
-            # Never retryable: a retry under this request_id would paint again.
-            raise BridgeError(problem.body["code"], problem.body["message"], False, details)
-        handle.unsafe = True
-        details["cause"] = problem.body["code"]
-        message = "The stroke could not be undone and confirmed; the document is unsafe. Reopen it."
-        raise BridgeError("ROLLBACK_FAILED", message, False, details)
+            def back() -> bool:
+                return bool(_node_bounds(port.tree(document), layer_id) == old_bounds)
 
-    def restore(
-        handle: Handle,
-        call: Call,
-        stroke: "Stroke",
-        step: Step | None,
-        old_bounds: dict[str, int],
-        kept: tuple[str, Any] | None,
-    ) -> tuple[bool, bool, int | None]:
-        # Whether an undo ran, whether the document was confirmed as it was, and how many pixels
-        # of the first changed protected layer the stroke had changed; None when no undo
-        # brought back what they are counted against.
-        document, before = handle.document, stroke.before
-        layer_id = before.target_id or ""
-        try:
-            undone, back = False, False
-            if step is not None:
-                outcome, _, _ = move(port, handle, step, UNDO, step.after)
-                if outcome != DONE:
-                    return False, False, None
-                handle.ledger.rolled_back()
-                undone = True
-            else:
-                # Krita may hold a step the ledger does not: history stops below it.
-                handle.ledger.seal()
-                port.refresh(document)
-                again = verification.again(port, document, before)
-                back = _back(port, document, before, again, layer_id, old_bounds)
-                if not back:
-                    if not _undo_unnamed(handle, call, stroke, again):
-                        return False, False, None
-                    undone = True
-                del again
-            if undone:
-                port.refresh(document)
-                again = verification.again(port, document, before)
-                back = _back(port, document, before, again, layer_id, old_bounds)
-                del again
-            counted: int | None = 0
-            if kept is not None and not back:
-                # Not confirmed back, so the layer's pixels now are no measure of the change.
-                counted = None
-            elif kept is not None:
-                kept_id, pixels = kept
-                rect = before.rects.get(kept_id, before.rect)
-                [now] = port.layer_rects(document, kept_id, [rect])
-                counted, _ = verification.changes(pixels, memoryview(now).cast("B"), rect)
-            return undone, back, counted
-        except Exception:
-            logging.getLogger(log.NAME).exception("paint.stroke's rollback raised")
-            return False, False, None
-
-    def _undo_unnamed(
-        handle: Handle, call: Call, stroke: "Stroke", again: verification.Reading
-    ) -> bool:
-        # A stroke that raised before the ledger held it is undone only when the top step is a
-        # stroke whose pixels are the ones this job saw change.
-        before = stroke.before
-        _, diff = verification.changes(before.target, again.target, stroke.target_rect)
-        if diff is None:
-            return False
-        witness = (
-            before.target_id or "",
-            diff,
-            _sha(verification.crop(before.target, stroke.target_rect, diff)),
-            _sha(verification.crop(again.target, stroke.target_rect, diff)),
-        )
-        unnamed = Step(
-            "paint.stroke",
-            call.operation_id,
-            LABELS["paint.stroke"],
-            stroke.start,
-            stroke.start,
-            None,
-            witness,
-        )
-        outcome, _, _ = move(port, handle, unnamed, UNDO)
-        return outcome == DONE
+            applied = frame.run(change, judge, back)
+            diff, new = applied.checked
+            return {
+                "document_id": handle.document_id,
+                "layer_id": layer_id,
+                "stroke_id": call.operation_id,
+                "accepted_points": args["accepted_points"],
+                "effective_brush": _effective(
+                    asked, listed, effective, reach, tip, scatter, margin
+                ),
+                "changed_bounds_px": diff,
+                "layer_bounds_px": new,
+                "protected_pixels_changed": 0,
+                "undo_label": LABELS["paint.stroke"],
+                "undo_steps": len(frame.labels),
+                "history_sealed": applied.steps.sealed,
+                "verification": frame.files(applied),
+            }
 
     guarded = registry.guarded(stroke)
 
@@ -369,32 +199,6 @@ def handlers(
         return guarded(args, call)
 
     return {"paint.stroke": paint_stroke}
-
-
-class Stroke:
-    # What the job knew just before it painted.
-    def __init__(
-        self,
-        mode: str,
-        start: Fingerprint,
-        was: bool,
-        before: verification.Reading,
-        allowed: bytes | None,
-        region: dict[str, int],
-        loose_ring: dict[str, int],
-        target_rect: dict[str, int],
-        size: list[int],
-    ) -> None:
-        self.mode = mode
-        self.start = start
-        self.was = was
-        self.before = before
-        self.allowed = allowed
-        # R, clipped to the canvas, and the guard ring R' as Krita's unclipped bounds see it.
-        self.region = region
-        self.loose_ring = loose_ring
-        self.target_rect = target_rect
-        self.size = size
 
 
 # Arguments.
@@ -643,17 +447,21 @@ def _verdict(
     protected: dict[str, dict[str, int]],
     verdict: verification.Verdict,
     diff: dict[str, int] | None,
-    stroke: Stroke,
+    mode: str,
+    region: dict[str, int],
+    loose_ring: dict[str, int],
     old_bounds: dict[str, int],
 ) -> BridgeError | None:
+    # region is R clipped to the canvas, and loose_ring the guard ring R' as Krita's unclipped
+    # bounds see it.
     bounds = {node["id"]: node["bounds_px"] for node in tree["nodes"]}
     moved = [node_id for node_id, old in protected.items() if bounds.get(node_id) != old]
     changed = sorted(set(verdict.protected_changed) | set(moved))
     new = _box(bounds.get(layer_id))
-    allowed_bounds = union([_box(old_bounds), stroke.loose_ring]) or stroke.loose_ring
+    allowed_bounds = union([_box(old_bounds), loose_ring]) or loose_ring
     # R bounds the check only in region scope; full scope reads every composite byte.
-    outside = stroke.mode == verification.REGION and (
-        (diff is not None and not _inside(diff, stroke.region))
+    outside = mode == verification.REGION and (
+        (diff is not None and not _inside(diff, region))
         or (new is not None and not _inside(new, allowed_bounds))
     )
     if not (verdict.leaked or changed or outside):
@@ -672,20 +480,6 @@ def _verdict(
     return BridgeError("PROTECTED_REGION_CHANGED", message, False, details)
 
 
-def _back(
-    port: DocumentsPort,
-    document: Any,
-    before: verification.Reading,
-    again: verification.Reading,
-    layer_id: str,
-    old_bounds: dict[str, int],
-) -> bool:
-    if not verification.same(before, again):
-        return False
-    node = next((node for node in port.tree(document)["nodes"] if node["id"] == layer_id), None)
-    return node is not None and node["bounds_px"] == old_bounds
-
-
 def _node_bounds(tree: dict[str, Any], layer_id: str) -> dict[str, int] | None:
     node = next((node for node in tree["nodes"] if node["id"] == layer_id), None)
     return None if node is None else dict(node["bounds_px"])
@@ -697,10 +491,6 @@ def _protected_paint_layers(tree: dict[str, Any], protected: set[str]) -> dict[s
         for node in tree["nodes"]
         if node["id"] in protected and node["type"] == "paintlayer"
     }
-
-
-def _sha(data: bytes) -> str:
-    return hashlib.sha256(data).hexdigest()
 
 
 # Rects: {x, y, width, height} in canvas pixels.

@@ -6,7 +6,7 @@ game size, and undo or keep it. It is for painted (non-pixel) 2D game art.
 
 ## What it does
 
-Phase 1 is complete, and round 2 has reached 0.20.0, with 19 tools.
+Phase 1 is complete, and round 2 has reached 0.20.1, with 19 tools.
 
 - **Works on a copy.** A document opens as a working copy with every existing layer protected, and
   the source is never written.
