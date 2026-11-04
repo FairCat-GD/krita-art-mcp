@@ -80,7 +80,7 @@ def handlers(
         mode: str,
         loose: dict[str, int],
         loose_ring: dict[str, int],
-        held: dict[str, Any],
+        effective: dict[str, Any],
         paint: Callable[[], None],
     ) -> tuple[mutation.Mutation, mutation.Applied]:
         # One verified paint call, from R on: loose is R and loose_ring R' as Krita's unclipped
@@ -112,6 +112,7 @@ def handlers(
             port, handle, call, op, (LABELS[op],), reads, data, {"layer_id": layer_id}, noun
         )
         frame.read()
+        held = {key: value for key, value in effective.items() if key != "preset_xml"}
         if port.brush(document) != held:
             message = f"Krita's brush changed after it was set, so the {noun} was not painted."
             raise BridgeError("INTERNAL_ERROR", message, False, {"layer_id": layer_id})
@@ -184,7 +185,6 @@ def handlers(
             margin = brushes.margin_px(effective["size_px"], tip, scatter)
             loose = _grow(_path_box(args["path"]), margin)
             loose_ring = _grow(loose, max(brushes.MIN_MARGIN_PX, effective["size_px"]))
-            held = {key: value for key, value in effective.items() if key != "preset_xml"}
             frame, applied = painted(
                 handle,
                 call,
@@ -197,7 +197,7 @@ def handlers(
                 mode,
                 loose,
                 loose_ring,
-                held,
+                effective,
                 lambda: port.paint_path(document, layer_id, args["path"]),
             )
             return {
@@ -257,7 +257,6 @@ def handlers(
             _paintable(port, document, layer_id)
             loose = _grow(drawn, FILL_MARGIN_PX)
             loose_ring = _grow(loose, brushes.MIN_MARGIN_PX)
-            held = {key: value for key, value in effective.items() if key != "preset_xml"}
             frame, applied = painted(
                 handle,
                 call,
@@ -270,7 +269,7 @@ def handlers(
                 mode,
                 loose,
                 loose_ring,
-                held,
+                effective,
                 lambda: port.fill_path(document, layer_id, shape),
             )
             return {

@@ -227,3 +227,18 @@ def krita_rss_kb() -> int | None:
 
 def megabytes(kilobytes: int | None) -> str:
     return "unread" if kilobytes is None else f"{kilobytes / 1024:.0f} MB"
+
+
+def held_bounds(pixels: np.ndarray) -> dict[str, int] | None:
+    # Where a layer captured from empty holds anything: each changed byte, as the receipt counts.
+    found = np.any(pixels != 0, axis=2)
+    rows, columns = np.flatnonzero(found.any(axis=1)), np.flatnonzero(found.any(axis=0))
+    if rows.size == 0:
+        return None
+    left, top = int(columns[0]), int(rows[0])
+    return {
+        "x": left,
+        "y": top,
+        "width": int(columns[-1]) + 1 - left,
+        "height": int(rows[-1]) + 1 - top,
+    }

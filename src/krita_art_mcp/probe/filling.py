@@ -18,6 +18,7 @@ from krita_art_mcp.probe.common import (
     close,
     guard,
     harness_call,
+    held_bounds,
     history_args,
     line_points,
     open_working,
@@ -243,7 +244,12 @@ async def _presets(
         stroked = await tool(a, "krita_paint_stroke", stroke)
         filled = await tool(a, TOOL, fill_args(document_id, layer, POLYGON))
         found.append(await _layer(a, document_id, layer))
-        undone = await tool(a, "krita_history_step", history_args(document_id, "undo", 2))
+        pushed = sum(content.get("status") == "completed" for content in (stroked, filled))
+        undone = (
+            await tool(a, "krita_history_step", history_args(document_id, "undo", pushed))
+            if pushed
+            else {}
+        )
         failed += [one for one in (code(stroked), code(filled), code(undone)) if one]
     report.check(
         "the same fill after a stroke with a second preset paints equal bytes, colour under "
@@ -271,9 +277,11 @@ async def _edges(report: Report, a: Client, document_id: str, root: str) -> None
             done = await tool(a, TOOL, fill_args(document_id, layer, shape, verify=scope))
             painted = await _layer(a, document_id, layer)
             data = done.get("data") or {}
-            truth = None if painted is None else _bounds(painted)
+            truth = None if painted is None else held_bounds(painted)
             valid = not list(OUTPUT.iter_errors(done))
-            await tool(a, "krita_history_step", history_args(document_id, "undo"))
+            if done.get("status") == "completed":
+                # Only a fill that completed pushed a step to take back.
+                await tool(a, "krita_history_step", history_args(document_id, "undo"))
             back = await _layer(a, document_id, layer)
             if not (
                 done.get("status") == "completed"
@@ -334,17 +342,3 @@ async def _leak(
         f"leaked {[code(c) for c in leaked.values()]}, confirmed {confirmed}, "
         f"composite {differs(after, before) or 'as before'}, inset {code(inset) or outside}",
     )
-
-
-def _bounds(pixels: np.ndarray) -> dict[str, int] | None:
-    found = np.any(pixels != 0, axis=2)
-    rows, columns = np.flatnonzero(found.any(axis=1)), np.flatnonzero(found.any(axis=0))
-    if rows.size == 0:
-        return None
-    left, top = int(columns[0]), int(rows[0])
-    return {
-        "x": left,
-        "y": top,
-        "width": int(columns[-1]) + 1 - left,
-        "height": int(rows[-1]) + 1 - top,
-    }

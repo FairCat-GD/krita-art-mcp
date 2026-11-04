@@ -3,7 +3,7 @@ from pathlib import Path
 from typing import Any
 
 import pytest
-from bridge_core import documents, painting
+from bridge_core import documents, painting, resources
 from fake_krita import FILL_ORDER, fake_node, layer_id, preset_xml
 from paint_world import BASE, BASE_PIXEL, GROUP, HEIGHT, LABEL, ORANGE, PAINT, WIDTH, World, box
 
@@ -426,3 +426,23 @@ def test_a_fill_is_undone_and_redone_by_history(world: World) -> None:
     assert world.pixels(PAINT, RECT["rect"]) == bytes(4) * 200
     assert world.history(document_id, "redo")["verified"]
     assert world.pixels(PAINT, RECT["rect"]) == ORANGE * 200
+
+
+def test_a_digest_the_fill_s_activation_moved_still_lets_a_stroke_name_the_preset(
+    world: World,
+) -> None:
+    # Krita fills in a tip's defaults on a preset's first activation, which moves its digest.
+    document_id, _ = world.document()
+    name = painting.FILL_PRESET_NAME
+    _, listed = resources.fingerprint(world.resources.xmls[name])
+    real = world.port.set_fill
+
+    def activated(*args: Any) -> dict[str, Any]:
+        world.resources.xmls[name] = preset_xml(name, scatter={"PaintOpAction": "1", "x": "1"})
+        return real(*args)
+
+    world.port.set_fill = activated  # type: ignore[method-assign,assignment]
+    fill(world, document_id)
+    brush = {"preset_id": painting.FILL_PRESET, "preset_sha256": listed}
+    done = world.run("paint.stroke", world.args(document_id, brush=brush, verify="full"))
+    assert done["effective_brush"]["preset_sha256"] == listed

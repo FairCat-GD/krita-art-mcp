@@ -26,7 +26,8 @@ shape with one flat antialiased colour, checked like a stroke. This release need
   3 px past the shape. The preset becomes the window's current brush, as a stroke's does; a fill
   refuses with `UNSUPPORTED_CAPABILITY` when Krita lacks it or it no longer builds up without a
   masking brush.
-- **`paint.fill` in the capability matrix,** supported since 0.21.0.
+- **`paint.fill` in the capability matrix,** supported since 0.21.0; `selection.enforced` now says
+  fills keep to the selection too.
 
 ## [0.20.1] — 2026-11-04
 

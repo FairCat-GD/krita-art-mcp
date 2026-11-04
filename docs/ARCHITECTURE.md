@@ -805,8 +805,8 @@ no dab, in one "Scripted Brush Stroke" step, confined and weighted by the select
   shape whose points lie on one line, to a relative 1e-9) is a parity pair, as is the colour's
   alpha of 1.
 - **Order.** Before the job: the fields, the shape and the area rule. Then the space, the target,
-  the shape on the canvas (a curve by its extrema, not its control points; refused, never
-  clipped), the fill's preset listed, cumulative undo, region reach. With the view in front: a
+  the shape on the canvas (a curve by its extrema, found with the stable quadratic, not its
+  control points; refused, never clipped), the fill's preset listed, cumulative undo, region reach. With the view in front: a
   selection fill reads the selection's bounds there and clips them to the canvas, since Krita's
   can run past it (an inverted selection's measured 448 × 320 on a 400 × 300 canvas); then the
   preset, opacity, flow 1, blend, eraser off, alpha lock and colour in K3's order, read back, the
@@ -1219,7 +1219,7 @@ depend on it: 87 open documents cost about 50 s more.
 |---|---|
 | `uv run scripts/verify.py` | 6 stages, all PASS |
 | Server tests (3.12) | 953 passed, 0 skipped |
-| Plugin-core tests (3.10) | 878 passed, 0 skipped |
+| Plugin-core tests (3.10) | 880 passed, 0 skipped |
 | `uv run krita-art-mcp probe` | 159 PASS, 0 FAIL, 25 MEASURED; about 130 s |
 | `uv run krita-art-mcp doctor` | 6 steps, all PASS, with a root allowed |
 | Registered tools | 20 |

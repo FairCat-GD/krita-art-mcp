@@ -138,3 +138,21 @@ def test_a_shape_off_the_canvas_is_refused_never_clipped(shape: dict[str, Any]) 
 def test_a_shape_on_the_canvas_edge_is_inside() -> None:
     shape = {"kind": "polygon", "points": [[0, 0], [50, 0], [50, 30]]}
     assert shapes.on_canvas(shape, [50, 30]) == (0, 0, 50, 30)
+
+
+def test_a_nearly_quadratic_curve_keeps_its_turning_point() -> None:
+    # A cubic one rounding away from a quadratic: the textbook root puts its top at 0.256, inside
+    # the canvas; the curve turns at -0.15, outside it.
+    c1 = 10 + (2 / 3) * -20.3
+    dip = {
+        "kind": "path",
+        "start": [0, 10],
+        "segments": [
+            [10 / 3, c1, 20 / 3, c1 + 3e-15, 10, 10],
+            [10, 13, 10, 17, 10, 20],
+            [6, 20, 3, 15, 0, 10],
+        ],
+    }
+    assert shapes.box(dip)[1] == pytest.approx(-0.15)
+    with pytest.raises(BridgeError):
+        shapes.on_canvas(dip, [20, 30])

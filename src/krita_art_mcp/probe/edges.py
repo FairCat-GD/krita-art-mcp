@@ -14,6 +14,7 @@ from krita_art_mcp.probe.common import (
     capture,
     close,
     finished,
+    held_bounds,
     history_args,
     inspect_data,
     line_points,
@@ -54,21 +55,6 @@ def _strokes() -> dict[str, Ends]:
         "top right": ((right, -PAST), (WIDTH - 8, 8)),
         "bottom left": ((-PAST, bottom), (8, HEIGHT - 8)),
         "bottom right": ((right, bottom), (WIDTH - 8, HEIGHT - 8)),
-    }
-
-
-def _bounds(pixels: np.ndarray) -> dict[str, int] | None:
-    # Where a layer captured from empty holds anything: each changed byte, as the receipt counts.
-    found = np.any(pixels != 0, axis=2)
-    rows, columns = np.flatnonzero(found.any(axis=1)), np.flatnonzero(found.any(axis=0))
-    if rows.size == 0:
-        return None
-    left, top = int(columns[0]), int(rows[0])
-    return {
-        "x": left,
-        "y": top,
-        "width": int(columns[-1]) + 1 - left,
-        "height": int(rows[-1]) + 1 - top,
     }
 
 
@@ -165,7 +151,7 @@ async def _failing_request(
         after = await capture(a, document_id, whole)
         painted = await capture(a, document_id, whole, "layer", layer)
         receipt = done.get("data") or {}
-        truth = None if painted is None else _bounds(painted)
+        truth = None if painted is None else held_bounds(painted)
         overhang = receipt.get("layer_bounds_px") or {}
         same_alpha = (
             before is not None
@@ -251,13 +237,13 @@ async def _past_edge(
         return str(code(done))
     data = done["data"]
     changed = data["changed_bounds_px"]
-    truth = None if painted is None else _bounds(painted)
+    truth = None if painted is None else held_bounds(painted)
     if before is None or after is None or changed != truth or changed is None:
         return f"changed {changed}, true {truth}"
     if not _inside(changed, CANVAS):
         return f"changed {changed} leaves the canvas"
     # Alpha, not every byte: Krita can write colour under alpha 0 beyond a selection.
-    visible = None if painted is None else _bounds(painted[..., 3:])
+    visible = None if painted is None else held_bounds(painted[..., 3:])
     if selected and (visible is None or not _inside(visible, area)):
         return f"the paint {visible} leaves {area}"
     if not selected and not _overhangs(name, data["layer_bounds_px"]):
@@ -305,7 +291,7 @@ async def _old_overhang(
     done = await tool(a, TOOL, arguments)
     painted = await capture(a, document_id, CANVAS, "layer", layer)
     data = done.get("data") or {}
-    truth = None if painted is None else _bounds(painted)
+    truth = None if painted is None else held_bounds(painted)
     bounds = data.get("layer_bounds_px") or {}
     report.check(
         "a full-scope stroke far from the edge, on a layer with old overhang, completes and "

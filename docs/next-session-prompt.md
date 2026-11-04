@@ -28,15 +28,14 @@ frame, version 0.22.0.
     canvas). `painting._selected` clips them; anything that reads `selection_bounds` must too.
   - **Plugin tests share `tests/fixtures/paint_world.py`** (the stroke's `World`). The fake fill
     paints the shape's aligned box, and `FakeResources.stock` holds the fill preset unlisted.
-- **C1 is not pushed.** `origin/main` stops at "review: a rollback with nothing to move flipped
-  the view, and 6 smaller". List `origin/main..HEAD` before any push.
+- **R1, R2, R3, D1, F1 and C1 are pushed.** `origin/main` stops at "review: a curve's turning
+  point could be missed, and 6 smaller". List `origin/main..HEAD` before any push.
 - **The evidence stays outside the repository.** The Codex agent holds its bundles.
 - **Baseline** (ARCHITECTURE's table, v0.21.0): `verify` 6 stages, all PASS; 953 server tests and
-  878 plugin-core tests, 0 skipped; `probe` 159 PASS, 0 FAIL, 25 MEASURED, about 130 s with 0
+  880 plugin-core tests, 0 skipped; `probe` 159 PASS, 0 FAIL, 25 MEASURED, about 130 s with 0
   documents open; 20 tools; 20 schema files; 30 error codes; 32 bridge ops; instructions 3,750
   characters.
-- **Not done:** `capabilities.py`'s `selection.enforced` note still says "Strokes keep to the
-  global selection"; fills do too. It is a plugin string, so it waits for the next plugin change.
+- **Not done:** nothing from C1's block.
 
 ## Watch for
 

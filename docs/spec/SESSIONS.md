@@ -885,6 +885,26 @@ and §8.8 items 6, 8.
 - **Numbers:** 953 server tests (+56), 878 plugin tests (+74), probe 159 PASS (+11), 0 FAIL, 25
   MEASURED (+1), 130.0 s with 0 documents open. 20 tools, 20 schema files, 30 error codes, 32 ops,
   instructions 3,750 characters, `api_version` 0.4.0.
+- **Review (`/code-review high`), 8 findings: 7 fixed, 1 was not a problem.**
+  - **A curve's extremum could be missed.** The textbook quadratic cancels when a cubic is almost
+    a quadratic: one such curve read its top at 0.256, inside the canvas, while it turns at −0.15,
+    outside. The roots now use the stable form.
+  - **`selection.enforced`'s note named only strokes;** it names fills too.
+  - **Nothing tested the fill's preset digest memory.** A test now has Krita move the digest on
+    the fill's activation, then strokes with the listed sha256.
+  - **The probe undid after a refused fill,** in the edge check and the preset check, taking back
+    an earlier step. It undoes only what completed.
+  - **The probe's true-bounds helper was copied** from the edge checks; both now use
+    `common.held_bounds`.
+  - **`held` was built twice;** `painted()` derives it from the effective brush.
+  - **Not a problem: huge points called collinear.** Traced, a reach that overflows makes the first
+    point's tolerance `inf × 0 = nan`, so `collinear` already answers False. The guard added for it
+    was removed with its tests, which passed without it.
+  - **Falsified:** the textbook roots back (the near-quadratic test failed); the fill's `remember`
+    off (the digest test failed).
+  - **Checked live:** `install-plugin`, a Krita restart at 0 unsaved, `doctor` 6 of 6.
+  - **Numbers after the review:** 953 server tests, 880 plugin tests (+2), probe 159 PASS, 0 FAIL,
+    25 MEASURED, 130.1 s with 0 documents open.
 
 ---
 

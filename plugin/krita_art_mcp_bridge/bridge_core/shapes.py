@@ -146,10 +146,11 @@ def _extrema(
 
 
 def _roots(a: float, b: float, c: float) -> list[float]:
+    # The stable form: the textbook one cancels when a is tiny, and misses a turning point.
     if a == 0:
         return [] if b == 0 else [-c / b]
     disc = b * b - 4 * a * c
     if disc < 0:
         return []
-    root = math.sqrt(disc)
-    return [(-b - root) / (2 * a), (-b + root) / (2 * a)]
+    q = -(b + math.copysign(math.sqrt(disc), b)) / 2
+    return [q / a] if q == 0 else [q / a, c / q]
