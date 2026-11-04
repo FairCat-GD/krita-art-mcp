@@ -28,7 +28,8 @@ release needs `install-plugin`, a Krita restart and a restart of the MCP client.
 
 - **A sample's `rgba` is now `rgba_255`,** named for its 0–255 range.
 - **Every tool refuses a number that is not finite** (NaN, Infinity, or one past a double's range)
-  with `INVALID_ARGUMENT`, naming each field as "not a finite number", beside any other problem.
+  with `INVALID_ARGUMENT`, naming each such field once as "not a finite number", beside any other
+  problem.
 - **A native capture, or a selection's, refuses `background` and `greyscale` in its schema,** so
   the error names the field.
 - **The server's instructions are shorter,** leaving ranges and forms to the fields' descriptions.

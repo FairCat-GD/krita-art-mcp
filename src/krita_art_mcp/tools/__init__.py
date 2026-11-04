@@ -28,7 +28,7 @@ from krita_art_mcp.tools import (
     preview,
     saving,
 )
-from krita_art_mcp.tools.dispatch import ToolCall, contract_problem, identity, not_finite
+from krita_art_mcp.tools.dispatch import ToolCall, contract_problem, finite, identity, not_finite
 
 # An answer holds each problem three times, and stays well under Claude Code's 25,000 tokens (C4).
 MAX_REPORTED_PROBLEMS = 50
@@ -137,7 +137,7 @@ def _checked(
 ) -> CallToolResult:
     # Errors are returned, never raised: a raise reaches the client as a bare
     # "Error executing tool", without the envelope.
-    problems = list(inputs.iter_errors(arguments)) + _not_finite(arguments)
+    problems = _schema_problems(inputs, arguments) + _not_finite(arguments)
     if problems:
         result = _invalid(problems)
     else:
@@ -189,6 +189,17 @@ def _invalid(problems: list[ValidationError]) -> CallToolResult:
     parts += [f"and {omitted} more"] if omitted else []
     details = {"errors": reported, "omitted": omitted}
     return envelope.failure("INVALID_ARGUMENT", "; ".join(parts), details=details)
+
+
+def _schema_problems(
+    inputs: Draft202012Validator, arguments: dict[str, Any]
+) -> list[ValidationError]:
+    # A number that is not finite is reported once, as such, not also as out of bounds or type.
+    return [
+        problem
+        for problem in inputs.iter_errors(arguments)
+        if not (isinstance(problem.instance, int | float) and not finite(problem.instance))
+    ]
 
 
 def _not_finite(arguments: dict[str, Any]) -> list[ValidationError]:

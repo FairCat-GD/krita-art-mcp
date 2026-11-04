@@ -33,10 +33,15 @@ No version and no `CHANGELOG.md` entry: nobody can see it.
   - **The server's six argument pairs are unchanged by D1.** The capture's background and greyscale
     rules moved into its schema (`dependentSchemas`), and the stroke's eraser, smooth and antialias
     refusals left with their values; none of those was one of F19's six.
+  - **A sample's `color` is a shared shape.** `amend_schemas.py` writes it from the stroke's
+    `brush.color`, so a change to the stroke's colour reaches the sample through the script.
   - **The instructions are 3,453 characters, 643 spare.** No test holds the spare; later sessions
     spend it.
+- **R1, R2, R3 and D1 are pushed,** with the owner's approval on 2026-11-04. `origin/main` stops at
+  "review: the sample's color is a shared shape, and 6 smaller". List `origin/main..HEAD` before
+  any push.
 - **The evidence stays outside the repository.** The Codex agent holds its bundles.
-- **Baseline** (ARCHITECTURE's table, v0.20.0): `verify` 6 stages, all PASS; 879 server tests and
+- **Baseline** (ARCHITECTURE's table, v0.20.0): `verify` 6 stages, all PASS; 883 server tests and
   799 plugin-core tests, 0 skipped; `probe` 148 PASS, 0 FAIL, 24 MEASURED, about 125 s with 0
   documents open; 19 tools; 19 schema files; 30 error codes; 31 bridge ops; instructions 3,453
   characters.

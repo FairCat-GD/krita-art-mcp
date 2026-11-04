@@ -199,20 +199,18 @@ async def _colours(
         report.check("N-06's layer is added", False)
         return
     colours = [brush_colour(rgb) for rgb in COLOURS]
-    problems = await _paint_colours(a, document_id, layer_id, hard, colours, 20)
+    problems = await _paint_colours(a, document_id, layer_id, hard, colours, 20, 60)
     centres = [[8 + index * 15, 40] for index in range(len(COLOURS))]
-    on_layer: list[dict[str, Any]] = []
-    for target, chosen in (("layer", layer_id), ("composite", None)):
-        samples, wrong = await _sampled(a, document_id, target, chosen, centres)
-        problems += wrong
-        on_layer = samples if target == "layer" else on_layer
+    on_layer, wrong = await _sampled(a, document_id, "layer", layer_id, centres)
+    _, in_composite = await _sampled(a, document_id, "composite", None, centres)
+    problems += wrong + in_composite
     report.check(
         "H6 / N-06: a hard round brush at opacity 1 paints 10 colours, #A7C284 among them, "
         "exactly at the stroke centre, on the layer and in the composite",
         not problems,
         "; ".join(problems[:4]),
     )
-    # Each sample's color painted back as it came, 40 px below its source.
+    # Each sample's color painted back as it came, 40 px below its source, inside the canvas.
     again = [sample.get("color") for sample in on_layer]
     back = [
         f"#{bytes(rgb).hex().upper()}: color {given}"
@@ -220,7 +218,7 @@ async def _colours(
         if given != brush_colour(rgb)
     ]
     if len(again) == len(COLOURS) and not back:
-        back = await _paint_colours(a, document_id, layer_id, hard, again, 60)
+        back = await _paint_colours(a, document_id, layer_id, hard, again, 70, 90)
         _, wrong = await _sampled(
             a, document_id, "layer", layer_id, [[x, y + 40] for x, y in centres]
         )
@@ -240,14 +238,15 @@ async def _paint_colours(
     hard: dict[str, Any],
     colours: list[Any],
     top: int,
+    bottom: int,
 ) -> list[str]:
-    # One vertical 40 px stroke per colour, 15 px apart, from y = top.
+    # One vertical stroke per colour, 15 px apart.
     problems = []
     for index, (rgb, colour) in enumerate(zip(COLOURS, colours, strict=True)):
         x = 8 + index * 15
         brush = brush_args(hard, size_px=10, color=colour)
         done = await tool(
-            a, TOOL, stroke_args(document_id, layer_id, brush, line_points(x, top, x, top + 40))
+            a, TOOL, stroke_args(document_id, layer_id, brush, line_points(x, top, x, bottom))
         )
         if done.get("status") != "completed":
             problems.append(f"#{bytes(rgb).hex().upper()}: {code(done)}")

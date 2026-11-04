@@ -1,7 +1,5 @@
-# What Codex shows its model of a tool's schemas, ported from Codex rust-v0.166.0 (the same files
-# at main 71a4c070, 2026-11-04): codex-rs/tools/src/json_schema.rs and json_schema/{types,
-# compaction}.rs, and codex-rs/code-mode-protocol/src/json_schema_types.rs. Refs and nested
-# resources are not ported; no schema here has one, so one that does is refused.
+# Codex's schema sanitizer and TypeScript renderer, ported from its tag rust-v0.166.0.
+# Refs and nested resources are not ported, so a schema that has one is refused.
 
 import copy
 import json

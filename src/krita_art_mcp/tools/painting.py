@@ -99,9 +99,11 @@ def _refusal(arguments: dict[str, Any]) -> CallToolResult | None:
 
 
 def _path(points: list[dict[str, Any]], smooth: str) -> dict[str, Any] | None:
-    # The server refuses a point that is not finite before any tool runs; smoothing can still
-    # overflow from large finite ones, and then this is None.
-    path = strokes.path(points, smooth)
+    # None when smoothing overflows; a caller past the server's own check can send any number.
+    try:
+        path = strokes.path(points, smooth)
+    except OverflowError:
+        return None
     numbers = [*path["start"], *(value for segment in path["segments"] for value in segment)]
     return path if all(finite(value) for value in numbers) else None
 

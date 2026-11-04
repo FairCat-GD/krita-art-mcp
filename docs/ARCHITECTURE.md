@@ -237,8 +237,8 @@ meaning.** Added fields and tools do not move it.
 `FuncMetadata`, so the contract's exact JSON Schema is published and no pydantic model filters
 arguments; `ExactArguments` passes them through and the runner validates with Draft 2020-12.
 `scripts/amend_schemas.py` writes the shapes the files share (the envelope with its typed error,
-`guard`, `source`, the completed rule's copy of `data`, inspect's `layers`) and formats them; a test
-holds the files to it.
+`guard`, `source`, the completed rule's copy of `data`, inspect's `layers`, the stroke's colour as
+the sample's `color`) and formats them; a test holds the files to it.
 
 **A field's range or unit is in its `description`.** Codex shows a property's description as a
 comment and drops `minimum` and `maximum`, so every input property with both bounds, on itself or on
@@ -296,7 +296,8 @@ tokens (C4). A forbidden field reads "not allowed with these arguments".
 **A number no double holds is refused in one place.** mcp's parser reads `NaN`, `Infinity` and
 `1e400` as floats, and a number schema's bounds pass NaN. `_checked` walks every tool's arguments
 beside the schema and reports each NaN, infinity or integer past a double's range as `<path>: not a
-finite number`, among the schema's problems and under the same cap. A tool's own check stays only
+finite number`, among the schema's problems and under the same cap; the schema's own problem with
+that number (a bound or a type) is left out, so each is reported once. A tool's own check stays only
 for a number it computes, such as a smoothed stroke's control points.
 
 **Semantic checks stop at their first refusal.** One envelope carries one code with its own
@@ -1126,7 +1127,7 @@ depend on it: 87 open documents cost about 50 s more.
 | Check | Expected |
 |---|---|
 | `uv run scripts/verify.py` | 6 stages, all PASS |
-| Server tests (3.12) | 879 passed, 0 skipped |
+| Server tests (3.12) | 883 passed, 0 skipped |
 | Plugin-core tests (3.10) | 799 passed, 0 skipped |
 | `uv run krita-art-mcp probe` | 148 PASS, 0 FAIL, 24 MEASURED; about 125 s |
 | `uv run krita-art-mcp doctor` | 6 steps, all PASS, with a root allowed |

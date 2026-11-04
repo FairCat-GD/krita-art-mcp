@@ -150,6 +150,14 @@ def test_a_value_no_phase_makes_live_is_out_of_the_schema(
     assert sent == [] and _journal(world) == []
 
 
+def test_a_direct_caller_past_the_servers_check_gets_a_refusal_not_a_raise() -> None:
+    # The probe builds op arguments with stroke_op itself, without the server's finite check.
+    points = [{"x": 10**400, "y": 0}] * 3
+    refused = painting.stroke_op({**_stroke(), "points": points, "smooth": "catmull_rom"})
+    assert not isinstance(refused, dict)
+    assert (refused.structured_content or {})["error"]["details"] == {"field": "points"}
+
+
 def test_finite_points_whose_smoothed_controls_overflow_are_refused_before_the_journal(
     world: World, sent: list[tuple[str, dict[str, Any]]]
 ) -> None:

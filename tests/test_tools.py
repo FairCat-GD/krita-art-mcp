@@ -296,6 +296,19 @@ def test_every_tool_refuses_a_number_that_is_not_finite(tool_name: str, number: 
     assert {"path": path, "message": "not a finite number"} in error["details"]["errors"]
 
 
+@pytest.mark.parametrize(
+    ("field", "number"),
+    [("opacity", float("inf")), ("size_px", float("nan")), ("size_px", 10**400)],
+)
+def test_a_number_that_is_not_finite_is_one_problem(field: str, number: Any) -> None:
+    arguments = _example("krita_paint_stroke")
+    arguments["brush"] = {**arguments["brush"], field: number}
+    # Called directly: the in-memory client would carry NaN and Infinity as null.
+    result = tools.build("krita_paint_stroke", _completed).fn(arguments, None)
+    errors = result.structured_content["error"]["details"]["errors"]
+    assert errors == [{"path": f"/brush/{field}", "message": "not a finite number"}]
+
+
 def test_a_raising_tool_returns_internal_error() -> None:
     def run(arguments: dict[str, Any], *_: Any) -> CallToolResult:
         raise RuntimeError("boom")

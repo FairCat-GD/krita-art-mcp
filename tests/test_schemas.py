@@ -275,8 +275,7 @@ def test_a_bounded_input_states_its_range_where_codex_shows_it(tool_name: str) -
         assert said in shape.get("description", ""), f"{tool_name}{path}"
 
 
-# Codex's own test of its renderer (`augment_tool_definition_includes_property_descriptions_as_
-# comments`), so the port is held to what Codex renders.
+# Codex's own test of what its renderer writes for a described property.
 WEATHER = {
     "type": "object",
     "properties": {
@@ -308,7 +307,9 @@ def test_codex_shows_every_input_and_output_whole(tool_name: str) -> None:
     assert codex_render.normalised_bytes(tool["inputSchema"]) <= codex_render.COMPACT_BYTES
     # Every input field is typed, so none is shown as unknown; over 16,000 bytes all would be.
     shown = codex_render.render_input(tool["inputSchema"])
-    assert "unknown" not in shown and len(shown.encode()) <= codex_render.RENDER_BYTES
+    types = [line for line in shown.splitlines() if not line.lstrip().startswith("//")]
+    assert not any("unknown" in line for line in types)
+    assert len(shown.encode()) <= codex_render.RENDER_BYTES
     output = codex_render.render_output(tool["outputSchema"])
     assert output != "unknown" and len(output.encode()) <= codex_render.RENDER_BYTES
 
@@ -339,12 +340,17 @@ def test_the_schema_files_are_as_the_amendment_script_writes_them() -> None:
     assert amend_schemas.stale() == []
 
 
+SAMPLE_ITEM: list[str | int] = ["outputSchema", "properties", "data", "anyOf", 0]
+SAMPLE_ITEM += ["properties", "samples", "items"]
+
+
 def test_the_amendment_script_finds_a_shared_shape_that_drifted(tmp_path: Path) -> None:
     folder = tmp_path / "schemas"
     shutil.copytree(amend_schemas.FOLDER, folder, ignore=shutil.ignore_patterns("*.py", "__*"))
     drifts: list[tuple[str, list[str | int]]] = [
         ("krita_sample.json", ["outputSchema", "then"]),
         ("krita_document_close.json", ["inputSchema", "properties", "guard"]),
+        ("krita_sample.json", [*SAMPLE_ITEM, "properties", "color", "anyOf", 0]),
     ]
     # Both copies of the stroke's verification, so only the copy from layer_update restores it.
     stroke_data: list[str | int] = ["outputSchema", "properties", "data", "anyOf", 0]

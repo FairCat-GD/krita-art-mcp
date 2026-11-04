@@ -182,7 +182,7 @@ message for AI attribution. A hit names the file and line, or the commit and mes
 |---|---|
 | `uv run scripts/verify.py [--message <draft>]` | The gate, in six stages: `format`, `lint`, `types`, `tests` (3.12), `plugin-tests` (3.10, pytest only) and `hygiene`. It then prints a summary and exits 1 if any stage failed. `--message` gives `hygiene` the drafted commit message to check too. |
 | `uv run scripts/verify.py <stage>…` | Runs only the named stages; `--message` needs `hygiene` among them. |
-| `uv run scripts/amend_schemas.py [--check]` | Writes the shapes the tool schemas share (the envelope, `guard`, `source`, the completed rule's copy of `data`, inspect's `layers`) and formats the files. A tool session edits its schema's input, `data` and example, then runs it. `--check` changes nothing; a test holds the files to it. |
+| `uv run scripts/amend_schemas.py [--check]` | Writes the shapes the tool schemas share (the envelope, `guard`, `source`, the completed rule's copy of `data`, inspect's `layers`, the sample's `color`) and formats the files. A tool session edits its schema's input, `data` and example, then runs it. `--check` changes nothing; a test holds the files to it. |
 | `uv run krita-art-mcp --version` | Prints the package version. |
 | `uv run krita-art-mcp serve` | Runs the MCP server `krita-art` over stdio; the clients start it this way. |
 | `uv run krita-art-mcp install-plugin [--krita-data-dir DIR]` | Copies the plugin into Krita's `pykrita/` (default `~/Library/Application Support/Krita`) and prints the steps left. It never edits `kritarc`. |

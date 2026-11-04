@@ -642,6 +642,24 @@ forms reach Codex, The instructions), *Reads, and K46* (Capture, Sample); `docs/
 - **Numbers:** 879 server tests (+137), 799 plugin tests (+0), probe 148 PASS (+1), 0 FAIL, 24
   MEASURED, 125.5 s with 0 documents open. 19 tools, 19 schema files, 30 error codes, 31 ops,
   instructions 3,453 characters, `api_version` 0.4.0.
+- **Review (`/code-review high`), run at the owner's request, 7 findings: 7 fixed and 0 skipped.**
+  - **The sample's `color` was a hand copy of the stroke's colour shape.** `amend_schemas.py` now
+    writes it from `brush.color`, and the drift test covers it.
+  - **`stroke_op` raised on a huge point from a direct caller,** such as the probe. `_path` now
+    answers an overflow in smoothing with its refusal.
+  - **A number that is not finite was reported twice,** as out of bounds or of the wrong type, and
+    as not finite. The schema's own problem with such a number is now left out.
+  - **The probe's paint-back strokes ran past the canvas** and over the first strokes; they now run
+    from y 70 to 90.
+  - **The Codex gate would have failed on the word "unknown" in a description;** it now reads only
+    the type lines.
+  - **The probe sampled the layer and the composite through one loop variable;** they are two calls.
+  - **The port's header comment was a paragraph;** it is two lines.
+  - **Falsified:** the stroke's colour changed without the sample's (the amendment test failed); the
+    schema's problem kept beside not-finite; the overflow left raising; an untyped input field
+    (the Codex gate failed). Each failed at its own test.
+  - **Numbers after the review:** 883 server tests, 799 plugin tests, probe 148 PASS, 0 FAIL, 24
+    MEASURED, 127.3 s with 0 documents open.
 
 ---
 

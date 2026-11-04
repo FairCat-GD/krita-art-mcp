@@ -211,6 +211,7 @@
                               ]
                             },
                             "rgba": {
+                              "description": "Red, green, blue and alpha, each 0 to 1, not 0 to 255; alpha must be 1. A krita_sample color goes here unchanged.",
                               "type": "array",
                               "items": {
                                 "type": "number",
@@ -482,6 +483,7 @@
                             ]
                           },
                           "rgba": {
+                            "description": "Red, green, blue and alpha, each 0 to 1, not 0 to 255; alpha must be 1. A krita_sample color goes here unchanged.",
                             "type": "array",
                             "items": {
                               "type": "number",
