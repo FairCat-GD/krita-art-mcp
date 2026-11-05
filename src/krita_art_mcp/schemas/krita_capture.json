@@ -1,6 +1,6 @@
 {
   "name": "krita_capture",
-  "description": "Return a fresh crop of a layer, composite or selection, in one of two forms. Native: scale 1, the stored pixels, e.g. {scale: 1, filter: nearest}. Resampled: any other scale, e.g. {scale: 0.25, filter: lanczos, background: checker}.",
+  "description": "Return a fresh crop of a layer, a transparency mask, the composite or the selection, in one of two forms. Native: scale 1, the stored pixels, e.g. {scale: 1, filter: nearest}. Resampled: any other scale, e.g. {scale: 0.25, filter: lanczos, background: checker}.",
   "inputSchema": {
     "type": "object",
     "properties": {
@@ -23,12 +23,13 @@
         "additionalProperties": false
       },
       "target": {
-        "description": "A layer capture is the layer's own pixels, without its opacity, masks or inherit-alpha clip.",
+        "description": "A layer capture is the layer's own pixels, without its opacity, masks or inherit-alpha clip. A mask capture is a transparency mask's coverage alone, as grey: white shows, black hides.",
         "type": "string",
         "enum": [
           "composite",
           "layer",
-          "selection"
+          "selection",
+          "mask"
         ]
       },
       "layer_id": {
@@ -152,7 +153,10 @@
         "if": {
           "properties": {
             "target": {
-              "const": "layer"
+              "enum": [
+                "layer",
+                "mask"
+              ]
             }
           }
         },
@@ -161,6 +165,23 @@
             "layer_id": {
               "type": "string",
               "minLength": 1
+            }
+          },
+          "if": {
+            "properties": {
+              "target": {
+                "const": "mask"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "background": {
+                "not": {}
+              },
+              "greyscale": {
+                "not": {}
+              }
             }
           }
         },
@@ -350,7 +371,8 @@
                 "enum": [
                   "composite",
                   "layer",
-                  "selection"
+                  "selection",
+                  "mask"
                 ]
               },
               "layer_id": {
@@ -703,7 +725,8 @@
               "enum": [
                 "composite",
                 "layer",
-                "selection"
+                "selection",
+                "mask"
               ]
             },
             "layer_id": {

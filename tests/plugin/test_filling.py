@@ -21,6 +21,7 @@ def world(tmp_path: Path) -> World:
 def fill_args(document_id: str, **changes: Any) -> dict[str, Any]:
     style = {
         "color": [1, 0.5, 0, 1],
+        "mask": None,
         "opacity": 1,
         "blend_mode": "normal",
         "alpha_lock": False,
@@ -60,6 +61,7 @@ def test_a_fill_is_painted_verified_over_r_and_reported(world: World) -> None:
     assert done["effective_fill"] == {
         "preset_id": painting.FILL_PRESET,
         "color": {"space": "srgb", "rgba": [1, 0.5, 0, 1]},
+        "mask": None,
         "opacity": 1,
         "blend_mode": "normal",
         "alpha_lock": False,

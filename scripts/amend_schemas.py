@@ -103,12 +103,20 @@ def amended(tools: dict[str, dict[str, Any]]) -> dict[str, dict[str, Any]]:
     checked = _data(tools["krita_layer_update"])["properties"]["verification"]["anyOf"][0]
     _data(tools["krita_paint_stroke"])["properties"]["verification"] = copy.deepcopy(checked)
     _data(tools["krita_paint_fill"])["properties"]["verification"] = copy.deepcopy(checked)
+    # A mask's create reports its verification; a paint or group layer's is null.
+    _data(tools["krita_layer_create"])["properties"]["verification"] = copy.deepcopy(
+        _data(tools["krita_layer_update"])["properties"]["verification"]
+    )
     # A sample's color is exactly what a stroke's brush.color and a fill's color take.
     taken = tools["krita_paint_stroke"]["inputSchema"]["properties"]["brush"]["properties"]["color"]
     sampled = _data(tools["krita_sample"])["properties"]["samples"]["items"]["properties"]["color"]
     sampled["anyOf"][0] = copy.deepcopy(taken)
     fill = tools["krita_paint_fill"]["inputSchema"]["properties"]
     fill["color"] = copy.deepcopy(taken)
+    # A fill's mask paint is a stroke's.
+    fill["mask"] = copy.deepcopy(
+        tools["krita_paint_stroke"]["inputSchema"]["properties"]["brush"]["properties"]["mask"]
+    )
     # A fill takes a selection's rect, ellipse and polygon as the selection does.
     selected = tools["krita_selection_set"]["inputSchema"]["properties"]["shape"]["oneOf"]
     by_type = {branch["properties"]["type"]["const"]: branch for branch in selected}

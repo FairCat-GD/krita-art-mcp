@@ -647,6 +647,7 @@ def test_the_harness_adds_each_spreading_node_and_seals_history(world: World) ->
         "parent_id": "root-1",
         "above_id": None,
         "type": "paint",
+        "coverage": None,
         "name": "repair",
     }
     world.run("layer.create", layer)

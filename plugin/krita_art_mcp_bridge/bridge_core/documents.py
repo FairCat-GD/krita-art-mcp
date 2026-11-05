@@ -103,7 +103,7 @@ def handlers(registry: Registry, port: DocumentsPort, data: Path) -> dict[str, H
         **inspection.handlers(registry, port),
         **pixels.handlers(registry, port, data),
         **previews.handlers(registry, port, data),
-        **layers.handlers(registry, port),
+        **layers.handlers(registry, port, data),
         **layer_update.handlers(registry, port, data),
         **selections.handlers(registry, port, data),
         **protection.handlers(registry, port, data),

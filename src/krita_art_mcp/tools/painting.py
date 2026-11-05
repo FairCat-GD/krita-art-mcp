@@ -52,7 +52,8 @@ def stroke_op(arguments: dict[str, Any]) -> dict[str, Any] | CallToolResult:
             "size_px": brush["size_px"],
             "opacity": brush["opacity"],
             "flow": brush["flow"],
-            "color": list(brush["color"]["rgba"]),
+            "color": _rgba(brush.get("color")),
+            "mask": brush.get("mask"),
             "eraser": brush["eraser"],
             "blend_mode": brush.get("blend_mode", "normal"),
             "alpha_lock": brush.get("alpha_lock", False),
@@ -80,11 +81,9 @@ def stroke_op(arguments: dict[str, Any]) -> dict[str, Any] | CallToolResult:
 
 def _refusal(arguments: dict[str, Any]) -> CallToolResult | None:
     # Refused before the journal: no op could paint these.
-    alpha = arguments["brush"]["color"]["rgba"][3]
-    if alpha != 1:
-        message = "The colour's alpha must be 1; transparency comes from the brush's opacity."
-        details: dict[str, Any] = {"alpha": alpha, "supported": [1]}
-        return envelope.failure("INVALID_ARGUMENT", message, details=details)
+    refused = _brush_rules(arguments)
+    if refused is not None:
+        return refused
     if arguments.get("input_fallback") != "flat":
         for index, point in enumerate(arguments["points"]):
             fields = ["pressure"] if point.get("pressure", 1) != 1 else []
@@ -97,6 +96,29 @@ def _refusal(arguments: dict[str, Any]) -> CallToolResult | None:
                 details = {"point": index, "fields": fields, "input_fallback": ["flat"]}
                 return envelope.failure("UNSUPPORTED_CAPABILITY", message, details=details)
     return None
+
+
+def _brush_rules(arguments: dict[str, Any]) -> CallToolResult | None:
+    # The plugin holds the same rules.
+    return _paint_rules(arguments["brush"], "brush", "the brush's opacity")
+
+
+def _paint_rules(style: dict[str, Any], field: str, transparency: str) -> CallToolResult | None:
+    # A colour for a paint layer or mask paint for a transparency mask; the schema refuses both.
+    color = style.get("color")
+    if color is None and style.get("mask") is None:
+        message = f"{field} takes a color for a paint layer, or a mask for a transparency mask."
+        return envelope.failure("INVALID_ARGUMENT", message, details={"field": f"{field}.color"})
+    if color is not None and color["rgba"][3] != 1:
+        alpha = color["rgba"][3]
+        message = f"The colour's alpha must be 1; transparency comes from {transparency}."
+        details: dict[str, Any] = {"alpha": alpha, "supported": [1]}
+        return envelope.failure("INVALID_ARGUMENT", message, details=details)
+    return None
+
+
+def _rgba(color: dict[str, Any] | None) -> list[float] | None:
+    return None if color is None else list(color["rgba"])
 
 
 def _path(points: list[dict[str, Any]], smooth: str) -> dict[str, Any] | None:
@@ -150,7 +172,8 @@ def fill_op(arguments: dict[str, Any]) -> dict[str, Any] | CallToolResult:
         "verify": arguments.get("verify", "region"),
         "shape": shape,
         "fill": {
-            "color": list(arguments["color"]["rgba"]),
+            "color": _rgba(arguments.get("color")),
+            "mask": arguments.get("mask"),
             "opacity": arguments["opacity"],
             "blend_mode": arguments.get("blend_mode", "normal"),
             "alpha_lock": arguments.get("alpha_lock", False),
@@ -160,11 +183,9 @@ def fill_op(arguments: dict[str, Any]) -> dict[str, Any] | CallToolResult:
 
 def _fill_rules(arguments: dict[str, Any]) -> CallToolResult | None:
     # Refused before the journal; the plugin holds the same rules.
-    alpha = arguments["color"]["rgba"][3]
-    if alpha != 1:
-        message = "The colour's alpha must be 1; transparency comes from the fill's opacity."
-        details: dict[str, Any] = {"alpha": alpha, "supported": [1]}
-        return envelope.failure("INVALID_ARGUMENT", message, details=details)
+    refused = _paint_rules(arguments, "fill", "the fill's opacity")
+    if refused is not None:
+        return refused
     shape = arguments["shape"]
     if shape["type"] in ("polygon", "path") and strokes.collinear(shape["points"]):
         message = "The shape encloses no area: its points lie on one line."

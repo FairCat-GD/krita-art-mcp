@@ -9,6 +9,7 @@ from .history import LABELS, in_front
 from .jobs import Call, Handler
 from .opening import LAYER_ID
 from .port import DocumentsPort
+from .protection import MASK, refuse_held_line
 from .registry import Handle, Registry
 from .resources import BLEND_MODES
 
@@ -17,6 +18,8 @@ FLAGS = ("visible", "locked", "alpha_locked", "inherit_alpha")
 PROPERTIES = {"name", "opacity", "blend_mode", "active", *FLAGS}
 # The properties that change the composite, so each change of one is checked pixel by pixel.
 APPEARANCE = {"visible", "opacity", "blend_mode", "inherit_alpha"}
+# What a transparency mask takes: shown or not, and its name.
+MASK_PROPERTIES = {"name", "visible"}
 
 
 def handlers(registry: Registry, port: DocumentsPort, data: Path) -> dict[str, Handler]:
@@ -170,9 +173,17 @@ def _target(
     if node is None:
         details = {"layer_id": layer_id}
         raise BridgeError("LAYER_NOT_FOUND", "No layer has that id.", False, details)
+    if node["type"] == MASK:
+        refused = sorted(set(properties) - MASK_PROPERTIES)
+        if refused:
+            details = {"layer_id": layer_id, "layer_type": "transparency_mask", "fields": refused}
+            message = "A transparency mask takes name and visible only."
+            raise BridgeError("INVALID_ARGUMENT", message, False, details)
+        refuse_held_line(tree, layer_id, protected, "mask")
+        return node
     if node["type"].endswith("mask"):
         details = {"layer_id": layer_id, "layer_type": node["type"]}
-        message = "krita_layer_update changes layers; masks arrive in Phase 2."
+        message = "krita_layer_update changes layers and transparency masks, not other masks."
         raise BridgeError("INVALID_ARGUMENT", message, False, details)
     held = sorted(
         node_id

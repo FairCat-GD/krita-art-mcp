@@ -152,6 +152,7 @@ def test_the_defaults_are_filled_and_the_rect_sent(
             "shape": {"kind": "rect", "rect": RECT["rect"]},
             "fill": {
                 "color": [0.8, 0.2, 0.4, 1],
+                "mask": None,
                 "opacity": 1,
                 "blend_mode": "normal",
                 "alpha_lock": False,
@@ -199,6 +200,7 @@ def test_each_shape_is_sent_as_the_bridge_takes_it(
     assert (op, args["shape"], args["verify"]) == ("paint.fill", expected, "full")
     assert args["fill"] == {
         "color": [0.8, 0.2, 0.4, 1],
+        "mask": None,
         "opacity": 0.5,
         "blend_mode": "multiply",
         "alpha_lock": True,
@@ -218,6 +220,7 @@ def _result(**fields: Any) -> dict[str, Any]:
         "effective_fill": {
             "preset_id": "c)_Pencil-3_Large_4B.kpp",
             "color": {"space": "srgb", "rgba": [0.8, 0.2, 0.4, 1]},
+            "mask": None,
             "opacity": 1,
             "blend_mode": "normal",
             "alpha_lock": False,
@@ -344,3 +347,50 @@ def test_history_names_the_fill_by_its_tool(world: World) -> None:
     undone = world.server().content("krita_history_step", arguments)
     assert [step["tool"] for step in undone["data"]["steps"]] == ["krita_paint_fill"]
     assert changes.STEP_TOOLS["paint.fill"] == "krita_paint_fill"
+
+
+def test_a_mask_fill_and_stroke_report_their_mask_paint_within_the_schemas(world: World) -> None:
+    document_id = _document(world)
+    server = world.server()
+    server.content("krita_paint_fill", _fill(document_id, "req-paint"))
+    made = server.content(
+        "krita_layer_create",
+        {
+            "guard": {"document_id": document_id, "request_id": "req-mask"},
+            "parent_id": LAYER,
+            "above_id": None,
+            "type": "transparency_mask",
+            "name": "veil",
+            "coverage": "all",
+        },
+    )
+    mask = made["data"]["layer_id"]
+    plain = {key: value for key, value in _fill(document_id, "req-hide").items() if key != "color"}
+    hidden = server.content("krita_paint_fill", {**plain, "layer_id": mask, "mask": "hide"})
+    assert hidden["status"] == "completed", hidden
+    assert OUTPUT.is_valid(hidden)
+    assert (
+        hidden["data"]["effective_fill"]["mask"],
+        hidden["data"]["effective_fill"]["color"],
+    ) == (
+        "hide",
+        None,
+    )
+    stroked = server.content(
+        "krita_paint_stroke",
+        {
+            "guard": {"document_id": document_id, "request_id": "req-reveal"},
+            "layer_id": mask,
+            "brush": {
+                "preset_id": "basic-round.kpp",
+                "size_px": 2,
+                "opacity": 0.5,
+                "flow": 1,
+                "mask": "reveal",
+                "eraser": False,
+            },
+            "points": [{"x": 6, "y": 4}, {"x": 10, "y": 4}],
+        },
+    )
+    assert stroked["status"] == "completed", stroked
+    assert stroked["data"]["effective_brush"]["mask"] == "reveal"

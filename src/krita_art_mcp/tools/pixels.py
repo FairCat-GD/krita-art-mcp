@@ -50,7 +50,7 @@ def capture(call: ToolCall, arguments: dict[str, Any]) -> CallToolResult:
     if refused is not None:
         return refused
     resampled = arguments["scale"] != 1
-    coloured = arguments["target"] != "selection"
+    coloured = arguments["target"] not in ("selection", "mask")
     how = {
         "scale": arguments["scale"],
         "filter": arguments["filter"],

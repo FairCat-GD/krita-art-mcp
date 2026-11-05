@@ -179,3 +179,24 @@ def test_both_sides_hold_the_fill_rules(
         **fields,
     }
     refused_alike(world, monkeypatch, "krita_paint_fill", arguments, (painting, "_fill_rules"))
+
+
+def test_both_sides_want_a_colour_or_mask_paint(
+    world: World, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    document_id = _document(world)
+    fill = {
+        "guard": {"document_id": document_id, "request_id": "req-fill"},
+        "layer_id": A_LAYER,
+        "shape": {"type": "rect", "rect": {"x": 1, "y": 1, "width": 4, "height": 4}},
+        "opacity": 1,
+    }
+    refused_alike(world, monkeypatch, "krita_paint_fill", fill, (painting, "_fill_rules"))
+    brush = {"preset_id": "basic-round.kpp", "size_px": 4, "opacity": 1, "flow": 1, "eraser": False}
+    stroke = {
+        "guard": {"document_id": document_id, "request_id": "req-stroke"},
+        "layer_id": A_LAYER,
+        "brush": brush,
+        "points": [{"x": 1, "y": 1}, {"x": 9, "y": 1}],
+    }
+    refused_alike(world, monkeypatch, "krita_paint_stroke", stroke, (painting, "_brush_rules"))

@@ -19,6 +19,23 @@ PROTECTION_FIELDS = {
     "preserve_canvas",
 }
 MAX_PROTECTED = 1024
+# Krita's name for a transparency mask, the one mask an agent creates and paints.
+MASK = "transparencymask"
+
+
+def refuse_held_line(tree: dict[str, Any], node_id: str, protected: set[str], noun: str) -> None:
+    # A mask changes how its layer shows without changing the layer's pixels, so the node, its
+    # parent and every ancestor must be unprotected.
+    nodes = {node["id"]: node for node in tree["nodes"]}
+    held, current = [], node_id
+    while current in nodes:
+        if current in protected:
+            held.append(current)
+        current = nodes[current]["parent_id"]
+    if held:
+        details = {"layer_id": node_id, "protected_layer_ids": sorted(held)}
+        message = f"The {noun}, its layer or a group holding it is protected."
+        raise BridgeError("LOCKED_TARGET", message, False, details)
 
 
 def loosened(current: bytes | None, new: bytes | None) -> int:

@@ -13,6 +13,7 @@ from .inspection import TYPES
 from .jobs import Call, Handler
 from .opening import LAYER_ID
 from .port import DocumentsPort, ResourcesPort
+from .protection import MASK, refuse_held_line
 from .rects import union
 from .registry import Handle, Registry
 from .resources import BLEND_MODES
@@ -26,6 +27,7 @@ BRUSH_FIELDS = {
     "opacity",
     "flow",
     "color",
+    "mask",
     "eraser",
     "blend_mode",
     "alpha_lock",
@@ -43,7 +45,12 @@ UNKNOWN_TIP = "unknown"
 # The fields Krita must take exactly; the others it may adjust, and they are reported as held.
 TAKEN = ("blend_mode", "eraser", "alpha_lock")
 FILL_FIELDS = {"document_id", "layer_id", "verify", "shape", "fill"}
-FILL_STYLE_FIELDS = {"color", "opacity", "blend_mode", "alpha_lock"}
+FILL_STYLE_FIELDS = {"color", "mask", "opacity", "blend_mode", "alpha_lock"}
+# Mask paint in Krita's terms: white reveals and black hides, each by the opacity, on a mask's
+# one byte a pixel (measured on 5.3.4.1).
+MASK_COLOURS = {"reveal": [1.0, 1.0, 1.0, 1.0], "hide": [0.0, 0.0, 0.0, 1.0]}
+# A transparency mask's colour model and depth, as Node.colorModel() and colorDepth() read them.
+MASK_SPACE = ("A", "U8")
 # A fill paints the same pixels under every preset, but a wash preset leaves colour under alpha
 # 0 up to 3 px past the shape (K49), so every fill activates this build-up stock preset first.
 FILL_PRESET = "c)_Pencil-3_Large_4B.kpp"
@@ -100,8 +107,9 @@ def handlers(
             for node_id, bounds in protected.items()
             if (met := _meet(bounds, scope)) is not None
         }
+        channels = 1 if target["type"] == MASK else 4
         reads = mutation.verifiable(
-            handle, info, effects, mode, scope, layer_id, target_rect, hashed=hashed
+            handle, info, effects, mode, scope, layer_id, target_rect, channels, hashed
         )
         near = reads.allowed if scope == region else verification.allowed_rows(handle, size, region)
         if near is not None and b"\xff" not in near:
@@ -162,7 +170,7 @@ def handlers(
         info = port.describe(document)
         _check_space(info)
         tree = port.tree(document)
-        target = _target(tree, layer_id, handle.protected, "stroke")
+        target = _target(tree, layer_id, handle.protected, "stroke", asked["mask"] is not None)
         size = info["size_px"]
         _on_canvas(args["path"], size, asked["size_px"])
         preset = _preset(resources, asked["preset_id"])
@@ -174,7 +182,7 @@ def handlers(
             verification.refuse_reach(tree, effects, layer_id, "this stroke past its reach")
         with in_front(port, document):
             effective = port.set_brush(document, _krita_brush(asked, name), preset["resource"])
-            _taken(asked, name, effective)
+            _taken(_krita_brush(asked, name), name, effective)
             remember(asked["preset_id"], listed, preset["resource"])
             _paintable(port, document, layer_id)
             reach = brushes.brush_reach(effective["preset_xml"])
@@ -221,7 +229,8 @@ def handlers(
         info = port.describe(document)
         _check_space(info)
         tree = port.tree(document)
-        target = _target(tree, layer_id, handle.protected, "fill")
+        style = args["fill"]
+        target = _target(tree, layer_id, handle.protected, "fill", style["mask"] is not None)
         size = info["size_px"]
         drawn = None if shape["kind"] == "selection" else shapes.on_canvas(shape, size)
         preset = resources.preset(FILL_PRESET)
@@ -243,8 +252,9 @@ def handlers(
                 # Read here, where it is filled: a selection's bounds can run past the canvas.
                 shape = {"kind": "rect", "rect": _selected(port, document, size)}
                 drawn = shapes.box(shape)
-            effective = port.set_fill(document, args["fill"], preset["resource"])
-            _filled_as_asked(args["fill"], preset["name"], effective)
+            krita_fill = {**style, "color": _paint_colour(style)}
+            effective = port.set_fill(document, krita_fill, preset["resource"])
+            _filled_as_asked(krita_fill, preset["name"], effective)
             remember(FILL_PRESET, listed, preset["resource"])
             reasons = brushes.unplain(effective["preset_xml"])
             if reasons:
@@ -280,7 +290,7 @@ def handlers(
                 "shape_bounds_px": shapes.aligned(drawn),
                 "effective_fill": {
                     "preset_id": FILL_PRESET,
-                    "color": {"space": "srgb", "rgba": list(effective["color"])},
+                    **_paint_reported(style, effective),
                     "opacity": effective["opacity"],
                     "blend_mode": effective["blend_mode"],
                     "alpha_lock": effective["alpha_lock"],
@@ -337,17 +347,14 @@ def _check_fill(args: Any) -> None:
     if not isinstance(style, dict):
         raise BridgeError("INVALID_ARGUMENT", "fill is an object.")
     exact(style, FILL_STYLE_FIELDS)
-    if not _colour(style["color"]):
-        raise BridgeError("INVALID_ARGUMENT", "fill.color is malformed.")
-    if style["color"][3] != 1:
-        message = "fill.color's alpha must be 1; opacity sets transparency."
-        raise BridgeError("INVALID_ARGUMENT", message)
+    _check_paint(style, "fill", "opacity sets transparency")
     if not number(style["opacity"]) or not 0 <= style["opacity"] <= 1:
         raise BridgeError("INVALID_ARGUMENT", "fill.opacity is 0 to 1.")
     if style["blend_mode"] not in {mode for mode, _ in BLEND_MODES}:
         raise BridgeError("INVALID_ARGUMENT", "fill.blend_mode is malformed.")
     if not isinstance(style["alpha_lock"], bool):
         raise BridgeError("INVALID_ARGUMENT", "fill.alpha_lock is true or false.")
+    _check_mask_paint(style, "fill")
     shapes.check(args["shape"])
 
 
@@ -365,12 +372,7 @@ def _check_brush(brush: Any) -> None:
     for key in ("opacity", "flow"):
         if not number(brush[key]) or not 0 <= brush[key] <= 1:
             _malformed(key)
-    color = brush["color"]
-    if not _colour(color):
-        _malformed("color")
-    if color[3] != 1:
-        message = "brush.color's alpha must be 1; opacity and flow set transparency."
-        raise BridgeError("INVALID_ARGUMENT", message)
+    _check_paint(brush, "brush", "opacity and flow set transparency")
     for key in ("eraser", "alpha_lock"):
         if not isinstance(brush[key], bool):
             _malformed(key)
@@ -382,6 +384,41 @@ def _check_brush(brush: Any) -> None:
         _malformed("blend_mode")
     if not number(brush["rotation_deg"]):
         _malformed("rotation_deg")
+    _check_mask_paint(brush, "brush")
+
+
+def _check_paint(style: dict[str, Any], field: str, transparency: str) -> None:
+    # Exactly one of a colour and mask paint.
+    color, mask = style["color"], style["mask"]
+    if (color is None) == (mask is None):
+        message = f"{field} takes a color for a paint layer or a mask for a transparency mask."
+        raise BridgeError("INVALID_ARGUMENT", message, False, {"field": f"{field}.color"})
+    if mask is not None:
+        if mask not in MASK_COLOURS:
+            raise BridgeError("INVALID_ARGUMENT", f"{field}.mask is reveal or hide.")
+        return
+    if not _colour(color):
+        raise BridgeError("INVALID_ARGUMENT", f"{field}.color is malformed.")
+    if color[3] != 1:
+        message = f"{field}.color's alpha must be 1; {transparency}."
+        raise BridgeError("INVALID_ARGUMENT", message)
+
+
+def _check_mask_paint(style: dict[str, Any], field: str) -> None:
+    # Mask paint picks its own colour, so it takes no blend or alpha lock.
+    if style["mask"] is not None and (style["blend_mode"] != "normal" or style["alpha_lock"]):
+        message = f"{field}.mask paints in normal blend without alpha lock."
+        raise BridgeError("INVALID_ARGUMENT", message, False, {"field": f"{field}.mask"})
+
+
+def _paint_colour(style: dict[str, Any]) -> list[float]:
+    return list(MASK_COLOURS[style["mask"]]) if style["mask"] is not None else style["color"]
+
+
+def _paint_reported(style: dict[str, Any], effective: dict[str, Any]) -> dict[str, Any]:
+    if style["mask"] is not None:
+        return {"color": None, "mask": style["mask"]}
+    return {"color": {"space": "srgb", "rgba": list(effective["color"])}, "mask": None}
 
 
 def _check_path(path: Any) -> None:
@@ -462,7 +499,9 @@ def _check_space(info: dict[str, Any]) -> None:
         raise BridgeError("COLOR_PROFILE_MISMATCH", message, False, details)
 
 
-def _target(tree: dict[str, Any], layer_id: str, protected: set[str], noun: str) -> dict[str, Any]:
+def _target(
+    tree: dict[str, Any], layer_id: str, protected: set[str], noun: str, masking: bool
+) -> dict[str, Any]:
     node: dict[str, Any] | None = next(
         (node for node in tree["nodes"] if node["id"] == layer_id), None
     )
@@ -471,8 +510,25 @@ def _target(tree: dict[str, Any], layer_id: str, protected: set[str], noun: str)
         raise BridgeError("LAYER_NOT_FOUND", "No layer has that id.", False, details)
     if layer_id in protected:
         raise BridgeError("LOCKED_TARGET", "The layer is protected.", False, details)
+    kind = TYPES.get(node["type"], node["type"])
+    if (node["type"] == MASK) != masking:
+        details["layer_type"] = kind
+        message = (
+            f"A transparency mask takes a {noun} with mask reveal or hide, never a colour."
+            if node["type"] == MASK
+            else f"mask paints transparency masks; this layer is a {kind}."
+        )
+        raise BridgeError("INVALID_ARGUMENT", message, False, details)
+    if masking:
+        refuse_held_line(tree, layer_id, protected, "mask")
+        if (node["color_model"], node["depth"]) != MASK_SPACE:
+            details.update({key: node[key] for key in ("color_model", "depth", "profile_id")})
+            message = "This mask is not Krita's one-byte coverage."
+            raise BridgeError("COLOR_PROFILE_MISMATCH", message, False, details)
+        # A mask is confined by the global selection alone; a local selection mask on its
+        # layer does not confine it (measured).
+        return node
     if node["type"] != "paintlayer":
-        kind = TYPES.get(node["type"], node["type"])
         details["layer_type"] = kind
         message = f"Only paint layers take {noun}s; this layer is a {kind}."
         raise BridgeError("LAYER_NOT_PAINTABLE", message, False, details)
@@ -551,10 +607,11 @@ def _refuse_brush(reach: dict[str, Any], layer_id: str) -> None:
 
 
 def _krita_brush(asked: dict[str, Any], name: str) -> dict[str, Any]:
-    keys = ("size_px", "opacity", "flow", "color", "eraser", "blend_mode", "alpha_lock")
+    keys = ("size_px", "opacity", "flow", "eraser", "blend_mode", "alpha_lock")
     return {
         "preset": name,
         **{key: asked[key] for key in keys},
+        "color": _paint_colour(asked),
         "rotation_deg": asked["rotation_deg"],
     }
 
@@ -610,7 +667,7 @@ def _effective(
         "size_px": effective["size_px"],
         "opacity": effective["opacity"],
         "flow": effective["flow"],
-        "color": {"space": "srgb", "rgba": list(effective["color"])},
+        **_paint_reported(asked, effective),
         "eraser": effective["eraser"],
         "blend_mode": effective["blend_mode"],
         "alpha_lock": effective["alpha_lock"],

@@ -158,6 +158,7 @@ class World:
                 "opacity": 1,
                 "flow": 1,
                 "color": [1, 0.5, 0, 1],
+                "mask": None,
                 "eraser": False,
                 "blend_mode": "normal",
                 "alpha_lock": False,
@@ -175,6 +176,7 @@ class World:
             "shape": {"kind": "rect", "rect": {"x": 40, "y": 50, "width": 20, "height": 10}},
             "fill": {
                 "color": [1, 0.5, 0, 1],
+                "mask": None,
                 "opacity": 1,
                 "blend_mode": "normal",
                 "alpha_lock": False,
@@ -210,6 +212,7 @@ class World:
             "parent_id": self.port._tree(1)["root_id"],
             "above_id": None,
             "type": "paint",
+            "coverage": None,
             "name": "repair",
             **changes,
         }

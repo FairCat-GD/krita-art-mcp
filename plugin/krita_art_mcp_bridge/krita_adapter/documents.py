@@ -221,6 +221,32 @@ class KritaDocuments:
         document.waitForDone()
         return _layer_id(node)
 
+    def create_mask(
+        self, document: Any, parent_id: str, above_id: str | None, name: str, coverage: str
+    ) -> str:
+        # The plugin's one setSelection on a mask: a fresh mask, given a selection it alone holds,
+        # before addChildNode attaches it in one undo step. setSelection adopts its argument and
+        # has no undo, so it is never called on an attached mask.
+        parent = _node(document, parent_id)
+        above = None if above_id is None else _node(document, above_id)
+        shape = Selection()
+        if coverage == "all":
+            # An empty selection inverted selects everywhere, past the canvas too.
+            shape.invert()
+        elif coverage == "selection":
+            current = document.selection()
+            if current is None:
+                raise BridgeError("INVALID_ARGUMENT", "There is no selection to start from.")
+            shape = current.duplicate()
+        mask = document.createTransparencyMask(name)
+        if mask is None:
+            raise BridgeError("INTERNAL_ERROR", "Krita did not make the mask.")
+        mask.setSelection(shape)
+        if not parent.addChildNode(mask, above):
+            raise BridgeError("INTERNAL_ERROR", "Krita did not add the mask.")
+        document.waitForDone()
+        return _layer_id(mask)
+
     def set_selection(self, document: Any, recipe: list[tuple[Any, ...]]) -> None:
         selections.commit(document, recipe, _node)
 

@@ -6,6 +6,35 @@ All notable changes to krita-art-mcp are documented here. The format follows
 
 ## [Unreleased]
 
+## [0.22.0] — 2026-11-05
+
+Soft edges and revised silhouettes no longer cost colour: a transparency mask hides or shows a
+paint layer without changing its pixels, and strokes and fills paint the mask. `api_version`
+stays 0.4.0: only fields and values were added. This release needs `install-plugin`, a Krita
+restart and a restart of the MCP client.
+
+### Added
+
+- **Transparency masks from `krita_layer_create`:** `type: "transparency_mask"` on a paint layer,
+  with `coverage` `all` (shows everything), `none` (hides everything) or `selection` (copies the
+  current selection's coverage, a feathered or PNG one included), as one undo step. The new mask
+  is checked against protection over the composite, like a stroke, and undone on a leak. The
+  layer and every group holding it must be unprotected.
+- **Mask paint:** `krita_paint_stroke`'s `brush.mask` and `krita_paint_fill`'s `mask` take
+  `reveal` or `hide` in place of a colour. Each moves the mask's coverage by the opacity, so 0.5
+  goes halfway, and a soft brush or a feathered selection softens it. Receipts give `mask`, with
+  `color` null.
+- **`krita_capture` `target: "mask"`:** a transparency mask's coverage alone, as a grey image.
+- **`krita_layer_update` on masks:** a transparency mask takes `name` and `visible`, so it can be
+  turned off and on, checked like any appearance change.
+- **`mask.transparency` in the capability matrix,** supported since 0.22.0.
+
+### Changed
+
+- **`krita_layer_create` is now marked destructive** (`destructiveHint: true`). A mask with
+  coverage `none` hides its whole layer, as `visible: false` would. Codex therefore reviews each
+  create, unless the owner sets the server's approval mode.
+
 ## [0.21.0] — 2026-11-04
 
 Broad colour planes no longer need oversized strokes under a selection: `krita_paint_fill` fills a

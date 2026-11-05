@@ -83,7 +83,10 @@ The why for each is in `docs/ARCHITECTURE.md`, *The invariants*.
    raw pixels into a layer. *Enforced by* the plugin source scan, which bans `setPixelData`,
    `Filter.apply`, `saveAs`, `exec` and `eval`. Its one exception is
    `krita_adapter.selections._from_mask`, which loads a mask into a `Selection()` it builds (K11)
-   and writes no layer; an AST test holds that site and its receiver.
+   and writes no layer; an AST test holds that site and its receiver. `setSelection` is held to
+   four sites alike: the global selection's two commits, the harness's selection mask, and
+   `krita_adapter.documents.create_mask`, on a transparency mask it just made, before attaching it
+   (decision 14).
 2. **Accepted sources are never opened for writing, and no save overwrites a file.** *Enforced
    by* working copies with hash checks, and `FILE_EXISTS`.
 3. **Every path an agent names resolves (realpath) inside an allowed root,** checked on both the
@@ -221,8 +224,8 @@ touches the owner's documents or `config.json`.
 
 ## Do not
 
-- Write raw pixels, call `setPixelData` (outside `_from_mask`), `Filter.apply` or `saveAs`, or add
-  anything that runs code.
+- Write raw pixels, call `setPixelData` (outside `_from_mask`), `Filter.apply` or `saveAs`, call
+  `setSelection` outside its four sites or on an attached mask, or add anything that runs code.
 - Call libkis off Krita's main thread or outside a job, or read after a mutation without
   `waitForDone()`.
 - Touch the owner's documents, files, `kritarc` or `config.json` from a test or harness, or

@@ -959,6 +959,86 @@ save*.
 - **`reach()` counts a transparency mask as bounded;** confirm it, because a mask's own change now
   has a target.
 
+**Done (2026-11-05, 0.22.0).**
+- **Decided with the owner in plan mode:**
+  - **Mask paint is `mask: "reveal" | "hide"`, in place of the colour,** and the amount is the
+    existing opacity (and a stroke's flow): reveal gives c + opacity × (1 − c), hide c × (1 −
+    opacity).
+  - **A mask is captured with a new `target: "mask"`,** which the schema keeps from `background`
+    and `greyscale`.
+  - **`krita_layer_create` becomes destructive** (decision 1's rule): a `none` mask hides its whole
+    layer, as `visible: false` would.
+  - **The plan,** approved after an adversarial review on Fable (2 High, 6 Medium, 6 Low, all
+    folded in). Among them: compare the create's parent without bounds, read the coverage rect
+    from the before tree, decide the create's and `visible`'s scope by the measured bounds, pin
+    `setSelection` by name as well as by attribute, and send `color` and `mask` both, one null.
+  - **The owner allowed Krita restarts when needed,** at 0 unsaved documents, for this session.
+- **Measured first,** on Krita 5.3.4.1, through a temporary `harness.mask_measure` that never
+  shipped, on a 64 × 48 harness ORA:
+  - `createTransparencyMask` gives an `A`/`U8` mask with bounds 0 that reads all 0, and attached
+    with no selection it hides its layer. `setSelection` before `addChildNode` lands the
+    selection's bytes exactly (rect, inverted, empty, graded PNG, feathered), in one "Add Layer"
+    step that one undo takes back. The new mask becomes active; Krita's flag is set.
+  - A mask's bounds are its layer's own, and no mask, `none` included, moves the layer's. An
+    inverted empty selection reads 255 past the canvas; a canvas rect reads 0 there.
+  - The composite is `rint(layer × c + below × (1 − c))`, exactly, over a graded PNG mask.
+  - Paint on a mask: white reveals and black hides under `normal`, by the opacity (black 0.5 from
+    255 gives 127, white 0.5 from 0 gives 128); `erase` with white hides alike; greys map
+    linearly (0.5 gives 127, 0.25 gives 63), not by lightness as Krita's source suggested. Fills
+    and strokes (pencil, wash, soft) are each one "Scripted Brush Stroke" step. The global
+    selection confines; a local selection mask on the layer does not.
+  - `paintAbility()` reads `MYPAINTBRUSH_UNPAINTABLE` for MyPaint presets on a mask.
+  - `setVisible` and `setName` push no step; the composite shows `visible` after a refresh.
+  - A KRA save keeps masks with their ids; an ORA save lists them as lost nodes.
+- **Shipped:**
+  - `layer.create` takes `transparency_mask` with `coverage`, through `create_mask` in the adapter
+    (`all` an inverted empty `Selection()`, `none` an empty one, `selection` a duplicate). Its
+    frame reads the composite over the layer's bounds (the canvas when `reach` finds a spreading
+    node), judges `misplaced`, the verdict and the coverage, and its receipt adds `coverage` and
+    `verification`.
+  - `protection.refuse_held_line`: the mask, its layer and every group holding it unprotected, for
+    the create, paint and `visible`/`name`.
+  - Strokes and fills take `mask`; the target check reads the paint kind first; the frame reads a
+    mask one byte a pixel; receipts give `mask` and a null `color`.
+  - `reach()` starts from a mask's layer. `krita_layer_update` takes `name` and `visible` on a
+    mask. `capture.read` takes `target: "mask"` and writes `A8`.
+  - `mask.transparency` in the matrix. `setSelection` joins invariant 1's scan, held to four sites.
+  - Parity: `_brush_rules` (a stroke's colour or mask), and "neither" in the fill's rules.
+  - `probe/transparency.py`: 12 checks, run in the paint stage after the fills.
+- **Amendments:**
+  - **`krita_layer_create`'s hint becomes destructive,** which decision 1's list had as additive
+    before masks were live. Decided at plan time, with the owner.
+  - **A capability, `mask.transparency`,** which the block did not name. At plan time, with the
+    owner.
+  - **The mask create reads more instead of refusing:** it has no `verify`, so a spreading node
+    widens its read to the canvas. At plan time, with the owner.
+  - **The intake's reading of Krita's source was half right:** colour does become coverage, but
+    greys map linearly on 5.3.4.1, not by lightness. The session's own finding.
+  - **The probe's leak check needed a colour unlike the layers under it:** hiding a red layer over
+    red layers changed nothing visible, so its first run passed nothing it meant to test. The
+    session's own finding.
+- **Checked live:** `install-plugin` and a Krita restart at 0 unsaved, twice (the instrument, then
+  0.22.0), `doctor` 6 of 6 each time. The first probe run had 4 FAIL, all the probe's own: its mask
+  checks were wired in twice (the second run met `FILE_EXISTS`), and the leak check above. Fixed,
+  the rerun held the whole baseline.
+- **Falsified:**
+  - **31 unit checks, each broken alone, each caught at its own test:** the mask's parent, the
+    create's, paint's and update's held lines, `above_id`, coverage for a mask only (both
+    halves), the selection coverage's selection, the create's leak verdict, the coverage check,
+    the paint kind, one byte a pixel, colour or mask, no blend or alpha lock, hide's black, the
+    receipt's mask, the mask's two properties, the mask target's type and its `A8`, `reach` from
+    the layer, the server's rule, the mask capture's background, the create's resolved images,
+    the capability, the scan's name ban, its attach order, its mask maker and its commit
+    parameter, and the three schema rules.
+  - Three first attempts proved nothing (a `-k` with spaces selected no test), and one check was
+    first missed: `above_id`'s test was refused earlier for another reason. Each test was fixed
+    and the check caught.
+  - **The probe's 12 new checks, broken together in one run:** 159 PASS and 12 FAIL, exactly
+    those. A first attempt left them broken for the rest of the run, and does not count.
+- **Numbers:** 970 server tests (+17), 927 plugin tests (+47), probe 171 PASS (+12), 0 FAIL, 25
+  MEASURED, 129.9 s with 0 documents open. 20 tools, 20 schema files, 30 error codes, 32 ops, 12
+  capabilities, instructions 3,908 characters (+158), `api_version` 0.4.0.
+
 ---
 
 ## X1: Architecture review: the frame and its first two tools

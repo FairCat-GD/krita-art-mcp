@@ -28,7 +28,7 @@ editable_layer_ids (KRA) or editable_layer_names (ORA, PNG).
 - To repair several regions, allow their union once with krita_protection_set (it only \
 tightens), then confine each repair with krita_selection_set. An ellipse or polygon selection \
 is antialiased: keep it a pixel inside the allowed mask.
-- Undo steps: layer creation, selection commits and blend changes; other property changes \
+- Undo steps: layer and mask creation, selection commits and blend changes; other property changes \
 cannot be undone. krita_history_step never goes below the last protection change.
 - krita_layer_update checks appearance changes over the layer's bounds and undoes a leak; if a \
 filter, mask, style, clone or copy blend could spread one, use verify full. Animated documents \
@@ -39,6 +39,8 @@ and undone on a leak. A preset whose tip or scatter cannot be read needs verify 
 - krita_paint_fill fills a rect, ellipse, polygon, closed curve or the selection with one flat \
 antialiased colour, one undo step, checked like a stroke: use it for broad colour planes, and \
 strokes for edges and texture. Keep an antialiased shape a pixel inside the allowed mask.
+- For soft edges or a revised silhouette, give your layer a transparency_mask and paint it \
+with mask reveal or hide instead of a colour, by opacity.
 - krita_capture returns an image and its PNG's path: scale 1 is the native crop, any other \
 scale resamples.
 - After every one to three strokes, check krita_preview_render at the asset's game sizes, from \

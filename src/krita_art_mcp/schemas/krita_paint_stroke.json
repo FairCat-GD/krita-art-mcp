@@ -1,6 +1,6 @@
 {
   "name": "krita_paint_stroke",
-  "description": "Paint one native brush stroke with a Krita brush preset on a paint layer, as one undo step. smooth catmull_rom curves the path through the points. The stroke is checked against protection over its reach (verify region) or the whole canvas (verify full) and undone on a leak. Every point is painted at pressure 1: per-point input is refused unless input_fallback is flat.",
+  "description": "Paint one native brush stroke with a Krita brush preset on a paint layer, or reveal or hide on a transparency mask, as one undo step. smooth catmull_rom curves the path through the points. The stroke is checked against protection over its reach (verify region) or the whole canvas (verify full) and undone on a leak. Every point is painted at pressure 1: per-point input is refused unless input_fallback is flat.",
   "inputSchema": {
     "type": "object",
     "properties": {
@@ -84,6 +84,14 @@
             ],
             "additionalProperties": false
           },
+          "mask": {
+            "description": "For a transparency mask, in place of color: reveal shows its layer and hide hides it, each moving coverage by the opacity, so 0.5 moves it halfway.",
+            "type": "string",
+            "enum": [
+              "reveal",
+              "hide"
+            ]
+          },
           "eraser": {
             "const": false
           },
@@ -118,10 +126,28 @@
           "size_px",
           "opacity",
           "flow",
-          "color",
           "eraser"
         ],
-        "additionalProperties": false
+        "additionalProperties": false,
+        "dependentSchemas": {
+          "color": {
+            "properties": {
+              "mask": {
+                "not": {}
+              }
+            }
+          },
+          "mask": {
+            "properties": {
+              "blend_mode": {
+                "not": {}
+              },
+              "alpha_lock": {
+                "not": {}
+              }
+            }
+          }
+        }
       },
       "points": {
         "description": "Canvas px, at least half a pixel long in all. An on-curve point may lie off the canvas by at most half of size_px.",
@@ -310,30 +336,51 @@
                     "maximum": 1
                   },
                   "color": {
-                    "type": "object",
-                    "properties": {
-                      "space": {
+                    "anyOf": [
+                      {
+                        "type": "object",
+                        "properties": {
+                          "space": {
+                            "type": "string",
+                            "enum": [
+                              "srgb"
+                            ]
+                          },
+                          "rgba": {
+                            "type": "array",
+                            "items": {
+                              "type": "number",
+                              "minimum": 0,
+                              "maximum": 1
+                            },
+                            "minItems": 4,
+                            "maxItems": 4
+                          }
+                        },
+                        "required": [
+                          "space",
+                          "rgba"
+                        ],
+                        "additionalProperties": false
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "mask": {
+                    "anyOf": [
+                      {
                         "type": "string",
                         "enum": [
-                          "srgb"
+                          "reveal",
+                          "hide"
                         ]
                       },
-                      "rgba": {
-                        "type": "array",
-                        "items": {
-                          "type": "number",
-                          "minimum": 0,
-                          "maximum": 1
-                        },
-                        "minItems": 4,
-                        "maxItems": 4
+                      {
+                        "type": "null"
                       }
-                    },
-                    "required": [
-                      "space",
-                      "rgba"
-                    ],
-                    "additionalProperties": false
+                    ]
                   },
                   "eraser": {
                     "type": "boolean"
@@ -399,6 +446,7 @@
                   "opacity",
                   "flow",
                   "color",
+                  "mask",
                   "eraser",
                   "blend_mode",
                   "alpha_lock",
@@ -850,30 +898,51 @@
                   "maximum": 1
                 },
                 "color": {
-                  "type": "object",
-                  "properties": {
-                    "space": {
+                  "anyOf": [
+                    {
+                      "type": "object",
+                      "properties": {
+                        "space": {
+                          "type": "string",
+                          "enum": [
+                            "srgb"
+                          ]
+                        },
+                        "rgba": {
+                          "type": "array",
+                          "items": {
+                            "type": "number",
+                            "minimum": 0,
+                            "maximum": 1
+                          },
+                          "minItems": 4,
+                          "maxItems": 4
+                        }
+                      },
+                      "required": [
+                        "space",
+                        "rgba"
+                      ],
+                      "additionalProperties": false
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "mask": {
+                  "anyOf": [
+                    {
                       "type": "string",
                       "enum": [
-                        "srgb"
+                        "reveal",
+                        "hide"
                       ]
                     },
-                    "rgba": {
-                      "type": "array",
-                      "items": {
-                        "type": "number",
-                        "minimum": 0,
-                        "maximum": 1
-                      },
-                      "minItems": 4,
-                      "maxItems": 4
+                    {
+                      "type": "null"
                     }
-                  },
-                  "required": [
-                    "space",
-                    "rgba"
-                  ],
-                  "additionalProperties": false
+                  ]
                 },
                 "eraser": {
                   "type": "boolean"
@@ -939,6 +1008,7 @@
                 "opacity",
                 "flow",
                 "color",
+                "mask",
                 "eraser",
                 "blend_mode",
                 "alpha_lock",
@@ -1364,6 +1434,7 @@
               1
             ]
           },
+          "mask": null,
           "eraser": false,
           "blend_mode": "normal",
           "alpha_lock": false,

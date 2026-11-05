@@ -80,12 +80,13 @@ do. Undoable is not the same as additive, so a stroke stays destructive.
 | Hints | Tools | Worst it can do |
 |---|---|---|
 | Read-only | `krita_server_info`, `krita_document_list`, `krita_document_inspect`, `krita_resource_list`, `krita_capture`, `krita_sample`, `krita_preview_render`, `krita_operation_get` | Change no document. Captures and previews write their PNGs to the data folder |
-| Not destructive | `krita_layer_create`, `krita_protection_set`, `krita_document_open`, `krita_document_create`, `krita_document_save` | Add: a layer, tighter protection, a working copy, a document, a new file |
-| Destructive | `krita_paint_stroke`, `krita_paint_fill`, `krita_selection_set`, `krita_layer_update`, `krita_history_step`, `krita_operation_cancel`, `krita_document_close` | Change what is there: pixels, the selection, a layer, history, a queued call, or unsaved changes a close discards |
+| Not destructive | `krita_protection_set`, `krita_document_open`, `krita_document_create`, `krita_document_save` | Add: tighter protection, a working copy, a document, a new file |
+| Destructive | `krita_layer_create`, `krita_paint_stroke`, `krita_paint_fill`, `krita_selection_set`, `krita_layer_update`, `krita_history_step`, `krita_operation_cancel`, `krita_document_close` | Change what is there: what a layer shows (a new mask can hide it), pixels, the selection, a layer, history, a queued call, or unsaved changes a close discards |
 
 **Codex's approval setting.** By default Codex reviews every call a tool's hints call destructive.
 Measured in two long sessions, each such call carried 2 to 3 s beyond the tool's own time, and each
-read-only call none. Since 0.18.0 the five additive tools carry none either. Strokes and selections
+read-only call none. From 0.18.0 to 0.21.0 the five additive tools carried none either; since 0.22.0
+`krita_layer_create` is destructive again, because a mask can hide a layer. Strokes and selections
 make most of those calls and stay destructive, so that saves only a few minutes in a long session.
 Trusting this server outright is your choice: add one line to the `[mcp_servers.krita-art]` block
 above, not a second block, since TOML refuses a table defined twice.
@@ -152,6 +153,26 @@ modes, profiles and palettes.
 
 `above_id: null` puts it on top. To resume your earlier layers, reopen with `editable_layer_ids` (KRA)
 or `editable_layer_names` (ORA, PNG).
+
+**Soften an edge or revise a silhouette with a mask.** A transparency mask hides its layer where it
+is black and shows it where white, without touching the layer's pixels. Add one to your paint layer,
+starting from `all` (shows everything), `none` (hides everything) or `selection` (the current
+selection's coverage, a feathered or PNG one included):
+
+```json
+{"guard": {"document_id": "doc-1", "request_id": "<a fresh UUID>"},
+ "parent_id": "<your layer>", "above_id": null, "type": "transparency_mask", "name": "Edge",
+ "coverage": "all"}
+```
+
+Then paint the mask with a stroke or a fill whose `brush.mask` (or the fill's `mask`) is `reveal` or
+`hide`, in place of a colour. Each moves the coverage by the opacity: `hide` at 0.5 halves what shows.
+A soft brush softens the edge, and a selection confines it as it confines colour. Mask paint takes no
+`blend_mode` or `alpha_lock`. `krita_capture` with `target: "mask"` shows the mask alone in grey, and
+`krita_layer_update` turns it off and on (`visible`) or renames it. The layer and every group holding
+it must be unprotected, and a mask in a file you open is protected like a layer. A mask is checked
+against protection like a stroke: one that would hide paint outside the allowed mask is undone. A
+mask's `bounds_px` and a mask stroke's `layer_bounds_px` are its layer's, as Krita reports them.
 
 **5. Say where you may work.** `krita_protection_set` only ever tightens, and it stops undo at that
 point, so do it once, with the union of everything you will repair, then confine each repair with a
@@ -224,8 +245,8 @@ explicit recipes. A source's `baseline_id` shows the document as opened beside i
 ```
 
 **8. Undo or keep.** `krita_history_step` undoes or redoes the bridge's own steps, up to 50 a call,
-never below the last protection change. Layer creation, selection commits, blend changes, strokes
-and fills undo; other property changes cannot.
+never below the last protection change. Layer and mask creation, selection commits, blend changes,
+strokes and fills, on layers and masks, undo; other property changes cannot.
 
 **9. Save to a new path.** The file is written beside the path, reopened in Krita, compared, and only
 then moved into place. It never overwrites.
@@ -329,8 +350,9 @@ Every failure returns `error: {code, message, retryable, details}`. The table gi
 - Saves write KRA or ORA, never PNG. A saved file carries a `mergedimage.png`, and `krita_capture` at
   `scale: 1` gives a native PNG of any region.
 - A capture's image is at most 4096 px on its long edge, from at most 8192² pixels read: tile for
-  more. Layer captures and samples read paint layers only, not groups or masks. A native capture
-  (`scale: 1`) and a selection's take no `background` or `greyscale`.
+  more. Layer captures and samples read paint layers only, not groups; a transparency mask is
+  captured with `target: "mask"`, and samples read no mask. A native capture (`scale: 1`), a
+  selection's and a mask's take no `background` or `greyscale`.
 
 **Painting.**
 - **No per-point pressure, tilt or timing.** Every point paints at pressure 1. Such input is refused
@@ -343,8 +365,12 @@ Every failure returns `error: {code, message, retryable, details}`. The table gi
 - **Region verification needs the pixel brush engine.** Color Smudge, the Quick Brush, MyPaint, spray,
   deform and others need `verify: "full"`.
 - Stochastic presets do not repeat exactly.
-- No filters, transforms, flood fills from a seed, or layer deleting, reordering or duplicating.
+- No filters, transforms, flood fills from a seed, or layer or mask deleting, reordering or
+  duplicating.
 - **A fill is one flat colour.** No gradients or patterns, and no fill of a shape past the canvas.
+- **Masks are transparency masks on paint layers.** No masks on groups, no filter, transform or
+  selection masks made by a tool, and a mask takes only `name` and `visible` from
+  `krita_layer_update`.
 
 **Documents and history.**
 - Frame 0 only. An animated document away from it is refused, and verification refuses animated

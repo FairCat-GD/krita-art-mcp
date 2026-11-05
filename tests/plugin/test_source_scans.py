@@ -12,11 +12,21 @@ CORE = f"{PACKAGE}.bridge_core"
 ADAPTER = f"{PACKAGE}.krita_adapter"
 # Calls that write raw pixels or overwrite a file. Filter.apply cannot be told apart by type, so
 # every .apply is refused.
-KRITA_CALLS = {"setPixelData", "saveAs", "apply"}
+# setSelection adopts its argument with no undo on a mask, so it is held to its sites too.
+KRITA_CALLS = {"setPixelData", "saveAs", "apply", "setSelection"}
 # The one exception (invariant 1, amended 2026-10-24): one adapter function loads a mask into a
 # Selection it has just built, which writes no layer (K11).
 SELECTION_MODULE = f"{ADAPTER}.selections"
 SELECTION_FUNCTION = "_from_mask"
+SET_SELECTION = "setSelection"
+# setSelection's sites (invariant 1, decision 14), each as (receiver, what made it, count): the
+# global selection's commits, on the document passed in; the harness's selection mask; and a new
+# transparency mask, given its coverage before it is attached.
+SELECTION_SETTERS = {
+    (SELECTION_MODULE, "commit"): ("document", None, 2),
+    (f"{ADAPTER}.documents", "add_active_mask"): ("mask", "createSelectionMask", 1),
+    (f"{ADAPTER}.documents", "create_mask"): ("mask", "createTransparencyMask", 1),
+}
 # Built-ins that run code, import by name, or reach the other built-ins.
 CODE_BUILTINS = {"exec", "eval", "compile", "__import__", "vars", "__builtins__"}
 CODE_MODULES = {"builtins", "importlib", "runpy", "code", "codeop"}
@@ -99,8 +109,26 @@ def _banned_uses(tree: ast.Module, allowed: frozenset[int] = frozenset()) -> lis
     return hits
 
 
-def _bindings(scope: ast.AST, name: str) -> tuple[int, int]:
-    # How often scope binds name as `name = Selection()`, and in every other way.
+def _new_selection(call: ast.Call) -> bool:
+    return (
+        isinstance(call.func, ast.Name)
+        and call.func.id == "Selection"
+        and not call.args
+        and not call.keywords
+    )
+
+
+def _made_by(method: str) -> Callable[[ast.Call], bool]:
+    def made(call: ast.Call) -> bool:
+        return isinstance(call.func, ast.Attribute) and call.func.attr == method
+
+    return made
+
+
+def _bindings(
+    scope: ast.AST, name: str, made: Callable[[ast.Call], bool] = _new_selection
+) -> tuple[int, int]:
+    # How often scope binds name as `name = <a call made accepts>`, and in every other way.
     good: set[int] = set()
     other = 0
     for node in ast.walk(scope):
@@ -110,10 +138,7 @@ def _bindings(scope: ast.AST, name: str) -> tuple[int, int]:
             and isinstance(node.targets[0], ast.Name)
             and node.targets[0].id == name
             and isinstance(node.value, ast.Call)
-            and isinstance(node.value.func, ast.Name)
-            and node.value.func.id == "Selection"
-            and not node.value.args
-            and not node.value.keywords
+            and made(node.value)
         ):
             good.add(id(node.targets[0]))
     for node in ast.walk(scope):
@@ -185,6 +210,53 @@ def _allowed_selection_writes(tree: ast.Module, module: str) -> frozenset[int]:
     return frozenset({id(calls[0].func)})
 
 
+def _allowed_set_selections(tree: ast.Module, module: str) -> frozenset[int]:
+    # The setSelection attributes of the listed sites, each the func of its call.
+    allowed: set[int] = set()
+    functions = [node for node in ast.walk(tree) if isinstance(node, ast.FunctionDef)]
+    nested = (ast.FunctionDef, ast.AsyncFunctionDef, ast.Lambda, ast.ClassDef)
+    for (where, name), (receiver, maker, count) in SELECTION_SETTERS.items():
+        found = [function for function in functions if function.name == name]
+        if module != where or len(found) != 1:
+            continue
+        function = found[0]
+        if any(isinstance(node, nested) for node in ast.walk(function) if node is not function):
+            continue
+        calls = [
+            node
+            for node in ast.walk(function)
+            if isinstance(node, ast.Call)
+            and isinstance(node.func, ast.Attribute)
+            and node.func.attr == SET_SELECTION
+        ]
+        receivers = [
+            call.func.value.id
+            for call in calls
+            if isinstance(call.func, ast.Attribute) and isinstance(call.func.value, ast.Name)
+        ]
+        if len(calls) != count or receivers != [receiver] * count:
+            continue
+        if maker is None:
+            parameters = [argument.arg for argument in function.args.args]
+            if receiver not in parameters or _bindings(function, receiver) != (0, 1):
+                continue
+        else:
+            if _bindings(function, receiver, _made_by(maker)) != (1, 0):
+                continue
+            # Never on an attached mask: every call comes before the attach.
+            attached = [
+                node.lineno
+                for node in ast.walk(function)
+                if isinstance(node, ast.Call)
+                and isinstance(node.func, ast.Attribute)
+                and node.func.attr == "addChildNode"
+            ]
+            if not attached or any(call.lineno >= min(attached) for call in calls):
+                continue
+        allowed |= {id(call.func) for call in calls}
+    return frozenset(allowed)
+
+
 def _unknown_imports(tree: ast.Module, module: str, is_package: bool) -> list[str]:
     # Own modules are imported relatively or through the package, as Krita loads them.
     allowed = STDLIB | KRITA_AND_QT | {PACKAGE}
@@ -245,7 +317,9 @@ def test_plugin_never_names_a_banned_call() -> None:
     hits = [
         f"{m}:{hit}"
         for m, _, tree in _sources()
-        for hit in _banned_uses(tree, _allowed_selection_writes(tree, m))
+        for hit in _banned_uses(
+            tree, _allowed_selection_writes(tree, m) | _allowed_set_selections(tree, m)
+        )
     ]
     assert hits == []
 
@@ -333,6 +407,95 @@ def test_the_allowed_write_passes_the_scan() -> None:
 def test_any_other_selection_write_is_banned(module: str, source: str) -> None:
     tree = ast.parse(source)
     assert _banned_uses(tree, _allowed_selection_writes(tree, module))
+
+
+def test_set_selection_is_called_at_its_four_sites_only() -> None:
+    allowed = [(m, len(_allowed_set_selections(tree, m))) for m, _, tree in _sources()]
+    assert sorted((m, n) for m, n in allowed if n) == [
+        (f"{ADAPTER}.documents", 2),
+        (SELECTION_MODULE, 2),
+    ]
+
+
+ALLOWED_MASK = """
+def create_mask(self, document, parent, name, shape):
+    mask = document.createTransparencyMask(name)
+    mask.setSelection(shape)
+    parent.addChildNode(mask, None)
+"""
+MASK_MODULE = f"{ADAPTER}.documents"
+
+
+ALLOWED_COMMIT = """
+def commit(document, recipe, node):
+    if recipe:
+        document.setSelection(None)
+    document.setSelection(recipe)
+"""
+
+
+def test_the_commits_pass_the_scan_and_a_rebound_document_does_not() -> None:
+    tree = ast.parse(ALLOWED_COMMIT)
+    allowed = _allowed_set_selections(tree, SELECTION_MODULE)
+    assert len(allowed) == 2 and _banned_uses(tree, allowed) == []
+    rebound = ast.parse(
+        ALLOWED_COMMIT.replace("    if recipe:", "    document = node\n    if recipe:")
+    )
+    assert _banned_uses(rebound, _allowed_set_selections(rebound, SELECTION_MODULE))
+
+
+def test_the_allowed_mask_passes_the_scan() -> None:
+    tree = ast.parse(ALLOWED_MASK)
+    allowed = _allowed_set_selections(tree, MASK_MODULE)
+    assert len(allowed) == 1 and _banned_uses(tree, allowed) == []
+
+
+@pytest.mark.parametrize(
+    ("module", "source"),
+    [
+        (f"{ADAPTER}.painting", ALLOWED_MASK),
+        (MASK_MODULE, ALLOWED_MASK.replace("def create_mask", "def make_mask")),
+        (
+            MASK_MODULE,
+            ALLOWED_MASK.replace(
+                "    mask.setSelection(shape)\n    parent.addChildNode(mask, None)\n",
+                "    parent.addChildNode(mask, None)\n    mask.setSelection(shape)\n",
+            ),
+        ),
+        (MASK_MODULE, ALLOWED_MASK.replace("createTransparencyMask", "createFilterMask")),
+        (
+            MASK_MODULE,
+            ALLOWED_MASK.replace(
+                "    mask.setSelection(shape)\n",
+                "    mask = parent\n    mask.setSelection(shape)\n",
+            ),
+        ),
+        (
+            MASK_MODULE,
+            ALLOWED_MASK.replace(
+                "    mask.setSelection(shape)\n", '    getattr(mask, "setSelection")(shape)\n'
+            ),
+        ),
+        (
+            MASK_MODULE,
+            ALLOWED_MASK.replace("    mask.setSelection(shape)\n", "    mask.setSelection\n"),
+        ),
+        (MASK_MODULE, ALLOWED_MASK + "\n\ndef stray(mask, shape):\n    mask.setSelection(shape)\n"),
+    ],
+    ids=[
+        "another module",
+        "another function",
+        "after attaching",
+        "another mask",
+        "a reassigned receiver",
+        "getattr",
+        "not called",
+        "a stray site",
+    ],
+)
+def test_any_other_set_selection_is_banned(module: str, source: str) -> None:
+    tree = ast.parse(source)
+    assert _banned_uses(tree, _allowed_set_selections(tree, module))
 
 
 def test_plugin_imports_only_the_standard_library_qt_and_krita() -> None:

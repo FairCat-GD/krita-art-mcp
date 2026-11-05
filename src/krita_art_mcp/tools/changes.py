@@ -30,20 +30,18 @@ STEP_TOOLS = {
 
 
 def layer_create(call: ToolCall, arguments: dict[str, Any]) -> CallToolResult:
-    if arguments["type"] == "transparency_mask":
-        details = {"type": "transparency_mask", "supported": ["paint", "group"]}
-        message = "Transparency masks arrive in Phase 2, with mask_edit."
-        return envelope.failure("UNSUPPORTED_CAPABILITY", message, details=details)
     guard = arguments["guard"]
     op_args = {
         "document_id": guard["document_id"],
         **{field: arguments[field] for field in ("parent_id", "above_id", "type", "name")},
+        "coverage": arguments.get("coverage"),
     }
 
     def send(before_send: BeforeSend) -> Outcome:
-        return call.bridge.call(
+        outcome = call.bridge.call(
             "layer.create", op_args, request_id=guard["request_id"], before_send=before_send
         )
+        return resolve_update(call.places, outcome)
 
     return journaled(
         call, "krita_layer_create", arguments, guard["request_id"], send, layer_receipt
@@ -52,9 +50,18 @@ def layer_create(call: ToolCall, arguments: dict[str, Any]) -> CallToolResult:
 
 def layer_receipt(outcome: Outcome) -> CallToolResult:
     def text(result: dict[str, Any]) -> str:
-        return f"Added {result['type']} layer {result['layer_id']} to {result['document_id']}."
+        line = f"Added {result['type']} layer {result['layer_id']} to {result['document_id']}"
+        checked = result.get("verification")
+        if checked is not None:
+            line += f"; {checked['changed_px']} px changed, verified over {checked['mode']}"
+        return line + "."
 
-    return from_outcome(outcome, without_document, text, document_of)
+    receipt = from_outcome(outcome, without_document, text, document_of)
+    if isinstance(outcome, Failed):
+        image = diff_image(outcome.error["details"])
+        if image is not None:
+            receipt.content.append(image)
+    return receipt
 
 
 def layer_update(call: ToolCall, arguments: dict[str, Any]) -> CallToolResult:

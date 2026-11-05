@@ -1,6 +1,6 @@
 {
   "name": "krita_layer_update",
-  "description": "Set a layer's name, visibility, opacity, blend mode, locks, inherit-alpha or active state. Appearance changes are checked against protection over the layer's bounds (verify region) or the whole canvas (verify full) and undone on a leak; only blend_mode is an undo step.",
+  "description": "Set a layer's name, visibility, opacity, blend mode, locks, inherit-alpha or active state. Appearance changes are checked against protection over the layer's bounds (verify region) or the whole canvas (verify full) and undone on a leak; only blend_mode is an undo step. A transparency mask takes name and visible only.",
   "inputSchema": {
     "type": "object",
     "properties": {

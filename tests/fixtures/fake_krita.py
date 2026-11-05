@@ -16,6 +16,7 @@ from bridge_core.errors import BridgeError
 SPACE = ("RGBA", "U8", documents.SRGB_PROFILE)
 # A paint layer with no pixels of its own reads as this, B, G, R, A.
 UNREAD = bytes([30, 20, 10, 255])
+MASK = "transparencymask"
 
 
 class FakeDocument:
@@ -244,7 +245,13 @@ class FakePort:
 
     def tree(self, document: Any) -> dict[str, Any]:
         self._maybe_fail("tree")
-        return copy.deepcopy(self._tree(document.key))
+        tree = copy.deepcopy(self._tree(document.key))
+        bounds = {node["id"]: node["bounds_px"] for node in tree["nodes"]}
+        for node in tree["nodes"]:
+            # A transparency mask's bounds are its layer's (measured on Krita 5.3.4.1).
+            if node["type"] == MASK and node["parent_id"] in bounds:
+                node["bounds_px"] = dict(bounds[node["parent_id"]])
+        return tree
 
     def _tree(self, key: int) -> dict[str, Any]:
         info = self.live[key]
@@ -268,8 +275,30 @@ class FakePort:
     def _composite(self, key: int) -> bytes:
         width, height = self.live[key]["size_px"]
         if key in self.render:
-            return self.projection.setdefault(key, self.render[key](self._tree(key)))
-        return bytes(self.canvas.get(key) or bgra(width, height))
+            found = self.projection.setdefault(key, self.render[key](self._tree(key)))
+        else:
+            found = bytes(self.canvas.get(key) or bgra(width, height))
+        return self._masked(key, found)
+
+    def _masked(self, key: int, composite: bytes) -> bytes:
+        # Each shown transparency mask scales the composite's alpha where its layer has paint.
+        masks = [
+            node
+            for node in self._tree(key)["nodes"]
+            if node["type"] == MASK and node["visible"] and node["id"] in self.buffers
+        ]
+        if not masks:
+            return composite
+        out = bytearray(composite)
+        for mask in masks:
+            layer = self.buffers.get(mask["parent_id"])
+            if layer is None:
+                continue
+            cover = self.buffers[mask["id"]]
+            for index, value in enumerate(cover):
+                if value != 255 and layer[index * 4 + 3]:
+                    out[index * 4 + 3] = out[index * 4 + 3] * value // 255
+        return bytes(out)
 
     def selection_bounds(self, document: Any) -> dict[str, int] | None:
         found = self.live[document.key].get("selection")
@@ -294,7 +323,8 @@ class FakePort:
             raise BridgeError("LAYER_NOT_FOUND", "No layer has that id.")
         if layer_id in self.buffers:
             width = self.live[document.key]["size_px"][0]
-            return [crop(bytes(self.buffers[layer_id]), width, rect, 4) for rect in rects]
+            depth = 1 if self._layer(document.key, layer_id)["type"] == MASK else 4
+            return [crop(bytes(self.buffers[layer_id]), width, rect, depth) for rect in rects]
         pixel = self.layer_pixels.get(layer_id, UNREAD)
         return [pixel * (rect["width"] * rect["height"]) for rect in rects]
 
@@ -363,6 +393,47 @@ class FakePort:
                 node["order"] += 1
         node = fake_node(key, len(tree["nodes"]) + 100, name, parent_id, order, type=kind)
         tree["nodes"].append(node)
+        for hook in self.on_layer:
+            hook(tree, node)
+        self._push(key, history.LABELS["layer.create"], before)
+        return str(node["id"])
+
+    def create_mask(
+        self, document: Any, parent_id: str, above_id: str | None, name: str, coverage: str
+    ) -> str:
+        self._marked()
+        self._maybe_fail("create_mask")
+        key = document.key
+        self.paintable(key, None)
+        before = self._state(key)
+        tree = self._tree(key)
+        width, height = self.live[key]["size_px"]
+        if coverage == "selection":
+            found = self.selection_rect(document, _whole(width, height))
+            if found is None:
+                raise BridgeError("INVALID_ARGUMENT", "There is no selection to start from.")
+            cover = bytearray(found)
+        else:
+            cover = bytearray((b"\xff" if coverage == "all" else b"\x00") * (width * height))
+        siblings = [node for node in tree["nodes"] if node["parent_id"] == parent_id]
+        above = next((node for node in siblings if node["id"] == above_id), None)
+        order = len(siblings) if above is None else above["order"] + 1
+        for node in siblings:
+            if node["order"] >= order:
+                node["order"] += 1
+        node = fake_node(
+            key,
+            len(tree["nodes"]) + 100,
+            name,
+            parent_id,
+            order,
+            type=MASK,
+            color_model="A",
+            depth="U8",
+            profile_id="default",
+        )
+        tree["nodes"].append(node)
+        self.buffers[node["id"]] = cover
         for hook in self.on_layer:
             hook(tree, node)
         self._push(key, history.LABELS["layer.create"], before)
@@ -668,6 +739,8 @@ class FakePort:
         if node["type"] == "grouplayer":
             return b""
         if node["type"].endswith("mask"):
+            if node["id"] in self.buffers:
+                return crop(bytes(self.buffers[node["id"]]), width, rect, 1)
             return b"\xff" * area
         if node["id"] in self.buffers:
             return crop(bytes(self.buffers[node["id"]]), width, rect, 4)
@@ -734,15 +807,18 @@ class FakePort:
         before = self._state(key)
         self.shapes.append(copy.deepcopy(shape))
         boxes = [shapes.aligned(shapes.box(shape))] + [dict(rect) for rect in self.stray]
-        red, green, blue = (round(value * 255) for value in self.brush_now["color"][:3])
-        pixel = bytes([blue, green, red, 255])
         size = self.live[key]["size_px"]
-        composite = self.canvas[key]
-        assert isinstance(composite, bytearray)
-        for box in boxes:
-            _fill(self.buffers[layer_id], size, box, pixel)
-            _fill(composite, size, box, pixel)
-        node["bounds_px"] = _span([node["bounds_px"], *boxes])
+        if node["type"] == MASK:
+            self._cover(layer_id, size, boxes)
+        else:
+            red, green, blue = (round(value * 255) for value in self.brush_now["color"][:3])
+            pixel = bytes([blue, green, red, 255])
+            composite = self.canvas[key]
+            assert isinstance(composite, bytearray)
+            for box in boxes:
+                _fill(self.buffers[layer_id], size, box, pixel)
+                _fill(composite, size, box, pixel)
+            node["bounds_px"] = _span([node["bounds_px"], *boxes])
         for hook in self.on_paint:
             hook(key)
         self._push(key, history.LABELS["paint.fill"], before)
@@ -762,6 +838,13 @@ class FakePort:
         radius = brush["size_px"] / 2
         points = [path["start"]] + [segment[-2:] for segment in path["segments"]]
         boxes = [_around(x, y, radius) for x, y in points] + [dict(rect) for rect in self.stray]
+        if node["type"] == MASK:
+            self._cover(layer_id, self.live[key]["size_px"], boxes)
+            for hook in self.on_paint:
+                hook(key)
+            self._push(key, history.LABELS["paint.stroke"], before)
+            self._maybe_fail("paint_path_after")
+            return
         if brush["eraser"]:
             pixel = bytes(4)
         else:
@@ -781,6 +864,20 @@ class FakePort:
             hook(key)
         self._push(key, history.LABELS["paint.stroke"], before)
         self._maybe_fail("paint_path_after")
+
+    def _cover(self, mask_id: str, size: list[int], boxes: list[dict[str, int]]) -> None:
+        # White reveals and black hides on a mask, each by the opacity (measured on 5.3.4.1).
+        target = round(self.brush_now["color"][0] * 255)
+        opacity = self.brush_now["opacity"]
+        cover = self.buffers[mask_id]
+        for box in boxes:
+            left, top = max(0, box["x"]), max(0, box["y"])
+            right = min(size[0], box["x"] + box["width"])
+            bottom = min(size[1], box["y"] + box["height"])
+            for row in range(top, bottom):
+                for column in range(left, right):
+                    index = row * size[0] + column
+                    cover[index] = round(cover[index] + (target - cover[index]) * opacity)
 
     def view_state(self, document: Any) -> dict[str, Any]:
         return copy.deepcopy(self.views.setdefault(document.key, dict(VIEW)))

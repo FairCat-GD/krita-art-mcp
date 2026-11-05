@@ -189,6 +189,7 @@ def test_the_defaults_are_filled_and_the_path_sent(
                     "opacity": 0.8,
                     "flow": 1,
                     "color": [0.4, 0.3, 0.3, 1],
+                    "mask": None,
                     "eraser": False,
                     "blend_mode": "normal",
                     "alpha_lock": False,
@@ -232,7 +233,7 @@ def test_given_values_and_flat_input_reach_the_op(
     world.server().call("krita_paint_stroke", arguments)
     [(op, args)] = sent
     assert (op, args["verify"], args["accepted_points"]) == ("paint.stroke", "full", 3)
-    expected = {**brush, "color": [0.4, 0.3, 0.3, 1]}
+    expected = {**brush, "color": [0.4, 0.3, 0.3, 1], "mask": None}
     del expected["antialias"]
     assert args["brush"] == expected
     assert args["path"] == {
@@ -278,6 +279,7 @@ def _result(checked: dict[str, Any]) -> dict[str, Any]:
             "opacity": 0.8,
             "flow": 1,
             "color": {"space": "srgb", "rgba": [0.4, 0.3, 0.3, 1]},
+            "mask": None,
             "eraser": False,
             "blend_mode": "normal",
             "alpha_lock": False,

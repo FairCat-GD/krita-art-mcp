@@ -9,6 +9,7 @@ from bridge_core.source_hash import source_hash
 # The capability names of krita_server_info.
 CAPABILITIES = {
     "paint.fill",
+    "mask.transparency",
     "stroke.native_brush",
     "stroke.per_point_input",
     "stroke.smoothing",
@@ -44,6 +45,7 @@ def test_only_what_is_built_is_supported() -> None:
     supported = {name for name, entry in capabilities.matrix().items() if entry["supported"]}
     assert supported == {
         "paint.fill",
+        "mask.transparency",
         "stroke.native_brush",
         "stroke.smoothing",
         "selection.enforced",

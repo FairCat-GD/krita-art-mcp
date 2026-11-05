@@ -105,7 +105,7 @@ HINTS = {
     "krita_document_open": ADDS,
     "krita_document_save": ADDS,
     "krita_history_step": CHANGES,
-    "krita_layer_create": ADDS,
+    "krita_layer_create": CHANGES,
     "krita_layer_update": CHANGES,
     "krita_operation_cancel": CHANGES,
     "krita_operation_get": READ,

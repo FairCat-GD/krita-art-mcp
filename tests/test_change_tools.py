@@ -8,6 +8,7 @@ from typing import Any
 import numpy as np
 import pytest
 from bridge_core import documents
+from fake_krita import layer_id
 from PIL import Image
 from worlds import NOW, A, B, Server, World, running_world
 
@@ -101,29 +102,70 @@ def test_a_layer_is_created_through_the_tool_and_journaled(world: World) -> None
         "above_id": None,
         "type": "paint",
         "name": "repair",
+        "coverage": None,
         "protected": False,
         "undo_steps": 1,
+        "verification": None,
     }
     assert [line["phase"] for line in _lines(world)][-2:] == ["dispatched", "finished"]
     assert server.content("krita_layer_create", arguments) == made
 
 
-def test_a_transparency_mask_is_refused_without_reaching_krita(world: World) -> None:
+def test_a_transparency_mask_is_created_through_the_tool_with_its_verification(
+    world: World,
+) -> None:
     server = world.server()
     document_id = _document(server)
-    refused = server.content(
+    layer = layer_id(1, 0)
+    painted = server.content(
+        "krita_paint_fill",
+        {
+            "guard": _guard(document_id, "req-paint"),
+            "layer_id": layer,
+            "shape": {"type": "rect", "rect": {"x": 1, "y": 1, "width": 3, "height": 2}},
+            "color": {"space": "srgb", "rgba": [0.8, 0.2, 0.4, 1]},
+            "opacity": 1,
+        },
+    )
+    assert painted["status"] == "completed", painted
+    made = server.content(
         "krita_layer_create",
         {
             "guard": _guard(document_id, "req-mask"),
-            "parent_id": "root-1",
+            "parent_id": layer,
             "above_id": None,
             "type": "transparency_mask",
             "name": "mask",
+            "coverage": "all",
         },
     )
-    assert refused["error"]["code"] == "UNSUPPORTED_CAPABILITY"
-    assert refused["operation_id"] is None
-    assert [line["request_id"] for line in _lines(world)] == ["req-create", "req-create"]
+    data = made["data"]
+    assert made["status"] == "completed", made
+    assert (data["type"], data["coverage"], data["parent_id"]) == (
+        "transparency_mask",
+        "all",
+        layer,
+    )
+    assert (data["verification"]["mode"], data["verification"]["changed_px"]) == ("region", 0)
+    assert data["verification"]["before"]["path"].endswith(".png")
+    got = server.content("krita_operation_get", {"operation_id": made["operation_id"]})
+    receipt = got["data"]["receipt"]
+    assert got["data"]["receipt_valid"] is True
+    assert receipt["data"]["verification"]["before"]["path"].endswith(".png")
+
+
+def test_coverage_is_required_for_a_mask_and_refused_for_a_layer(world: World) -> None:
+    server = world.server()
+    document_id = _document(server)
+    base = {"guard": _guard(document_id, "req-x"), "above_id": None, "name": "x"}
+    missing = server.content(
+        "krita_layer_create", {**base, "parent_id": layer_id(1, 0), "type": "transparency_mask"}
+    )
+    stray = server.content(
+        "krita_layer_create", {**base, "parent_id": "root-1", "type": "paint", "coverage": "all"}
+    )
+    assert missing["error"]["code"] == stray["error"]["code"] == "INVALID_ARGUMENT"
+    assert missing["operation_id"] is stray["operation_id"] is None
 
 
 def test_a_rect_selection_returns_its_mask_and_leaves_no_transfer_file(world: World) -> None:

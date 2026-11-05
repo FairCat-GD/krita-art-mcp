@@ -1,6 +1,6 @@
 {
   "name": "krita_layer_create",
-  "description": "Add an empty, editable paint or group layer under the root or a group, directly above a sibling, or on top when above_id is null; one undo step.",
+  "description": "Add an empty, editable paint or group layer under the root or a group, or a transparency mask on a paint layer, directly above a sibling, or on top when above_id is null; one undo step. A mask shows its layer where it is white and hides it where black; it starts from coverage all, none or the selection, and is checked against protection like a stroke. Example: {type: transparency_mask, parent_id: <a paint layer>, coverage: selection}.",
   "inputSchema": {
     "type": "object",
     "properties": {
@@ -49,6 +49,15 @@
         "type": "string",
         "minLength": 1,
         "maxLength": 256
+      },
+      "coverage": {
+        "description": "For a transparency mask only, and required for one: all shows the whole layer, none hides it, selection copies the current selection's coverage.",
+        "type": "string",
+        "enum": [
+          "all",
+          "none",
+          "selection"
+        ]
       }
     },
     "required": [
@@ -58,7 +67,30 @@
       "type",
       "name"
     ],
-    "additionalProperties": false
+    "additionalProperties": false,
+    "dependentSchemas": {
+      "type": {
+        "if": {
+          "properties": {
+            "type": {
+              "const": "transparency_mask"
+            }
+          }
+        },
+        "then": {
+          "required": [
+            "coverage"
+          ]
+        },
+        "else": {
+          "properties": {
+            "coverage": {
+              "not": {}
+            }
+          }
+        }
+      }
+    }
   },
   "outputSchema": {
     "type": "object",
@@ -129,12 +161,28 @@
                 "type": "string",
                 "enum": [
                   "paint",
-                  "group"
+                  "group",
+                  "transparency_mask"
                 ]
               },
               "name": {
                 "type": "string",
                 "minLength": 1
+              },
+              "coverage": {
+                "anyOf": [
+                  {
+                    "type": "string",
+                    "enum": [
+                      "all",
+                      "none",
+                      "selection"
+                    ]
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
               },
               "protected": {
                 "const": false
@@ -142,6 +190,202 @@
               "undo_steps": {
                 "type": "integer",
                 "minimum": 0
+              },
+              "verification": {
+                "anyOf": [
+                  {
+                    "type": "object",
+                    "properties": {
+                      "mode": {
+                        "type": "string",
+                        "enum": [
+                          "region",
+                          "full"
+                        ]
+                      },
+                      "rect": {
+                        "type": "object",
+                        "properties": {
+                          "x": {
+                            "type": "integer",
+                            "minimum": 0
+                          },
+                          "y": {
+                            "type": "integer",
+                            "minimum": 0
+                          },
+                          "width": {
+                            "type": "integer",
+                            "minimum": 0
+                          },
+                          "height": {
+                            "type": "integer",
+                            "minimum": 0
+                          }
+                        },
+                        "required": [
+                          "x",
+                          "y",
+                          "width",
+                          "height"
+                        ],
+                        "additionalProperties": false
+                      },
+                      "changed_px": {
+                        "type": "integer",
+                        "minimum": 0
+                      },
+                      "changed_bounds_px": {
+                        "anyOf": [
+                          {
+                            "type": "object",
+                            "properties": {
+                              "x": {
+                                "type": "integer",
+                                "minimum": 0
+                              },
+                              "y": {
+                                "type": "integer",
+                                "minimum": 0
+                              },
+                              "width": {
+                                "type": "integer",
+                                "minimum": 1
+                              },
+                              "height": {
+                                "type": "integer",
+                                "minimum": 1
+                              }
+                            },
+                            "required": [
+                              "x",
+                              "y",
+                              "width",
+                              "height"
+                            ],
+                            "additionalProperties": false
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      },
+                      "changed_outside_px": {
+                        "const": 0
+                      },
+                      "alpha_changed_px": {
+                        "type": "integer",
+                        "minimum": 0
+                      },
+                      "before": {
+                        "anyOf": [
+                          {
+                            "type": "object",
+                            "properties": {
+                              "uri": {
+                                "type": "string",
+                                "minLength": 2,
+                                "pattern": "^/"
+                              },
+                              "path": {
+                                "type": "string",
+                                "minLength": 2,
+                                "pattern": "^/"
+                              },
+                              "mime_type": {
+                                "const": "image/png"
+                              },
+                              "sha256": {
+                                "type": "string",
+                                "pattern": "^[0-9a-f]{64}$"
+                              },
+                              "size_bytes": {
+                                "type": "integer",
+                                "minimum": 1
+                              },
+                              "retention_days": {
+                                "type": "integer",
+                                "minimum": 1
+                              }
+                            },
+                            "required": [
+                              "uri",
+                              "path",
+                              "mime_type",
+                              "sha256",
+                              "size_bytes",
+                              "retention_days"
+                            ],
+                            "additionalProperties": false
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      },
+                      "after": {
+                        "anyOf": [
+                          {
+                            "type": "object",
+                            "properties": {
+                              "uri": {
+                                "type": "string",
+                                "minLength": 2,
+                                "pattern": "^/"
+                              },
+                              "path": {
+                                "type": "string",
+                                "minLength": 2,
+                                "pattern": "^/"
+                              },
+                              "mime_type": {
+                                "const": "image/png"
+                              },
+                              "sha256": {
+                                "type": "string",
+                                "pattern": "^[0-9a-f]{64}$"
+                              },
+                              "size_bytes": {
+                                "type": "integer",
+                                "minimum": 1
+                              },
+                              "retention_days": {
+                                "type": "integer",
+                                "minimum": 1
+                              }
+                            },
+                            "required": [
+                              "uri",
+                              "path",
+                              "mime_type",
+                              "sha256",
+                              "size_bytes",
+                              "retention_days"
+                            ],
+                            "additionalProperties": false
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      }
+                    },
+                    "required": [
+                      "mode",
+                      "rect",
+                      "changed_px",
+                      "changed_bounds_px",
+                      "changed_outside_px",
+                      "alpha_changed_px",
+                      "before",
+                      "after"
+                    ],
+                    "additionalProperties": false
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
               }
             },
             "required": [
@@ -151,7 +395,9 @@
               "type",
               "name",
               "protected",
-              "undo_steps"
+              "undo_steps",
+              "coverage",
+              "verification"
             ],
             "additionalProperties": false
           },
@@ -281,12 +527,28 @@
               "type": "string",
               "enum": [
                 "paint",
-                "group"
+                "group",
+                "transparency_mask"
               ]
             },
             "name": {
               "type": "string",
               "minLength": 1
+            },
+            "coverage": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "enum": [
+                    "all",
+                    "none",
+                    "selection"
+                  ]
+                },
+                {
+                  "type": "null"
+                }
+              ]
             },
             "protected": {
               "const": false
@@ -294,6 +556,202 @@
             "undo_steps": {
               "type": "integer",
               "minimum": 0
+            },
+            "verification": {
+              "anyOf": [
+                {
+                  "type": "object",
+                  "properties": {
+                    "mode": {
+                      "type": "string",
+                      "enum": [
+                        "region",
+                        "full"
+                      ]
+                    },
+                    "rect": {
+                      "type": "object",
+                      "properties": {
+                        "x": {
+                          "type": "integer",
+                          "minimum": 0
+                        },
+                        "y": {
+                          "type": "integer",
+                          "minimum": 0
+                        },
+                        "width": {
+                          "type": "integer",
+                          "minimum": 0
+                        },
+                        "height": {
+                          "type": "integer",
+                          "minimum": 0
+                        }
+                      },
+                      "required": [
+                        "x",
+                        "y",
+                        "width",
+                        "height"
+                      ],
+                      "additionalProperties": false
+                    },
+                    "changed_px": {
+                      "type": "integer",
+                      "minimum": 0
+                    },
+                    "changed_bounds_px": {
+                      "anyOf": [
+                        {
+                          "type": "object",
+                          "properties": {
+                            "x": {
+                              "type": "integer",
+                              "minimum": 0
+                            },
+                            "y": {
+                              "type": "integer",
+                              "minimum": 0
+                            },
+                            "width": {
+                              "type": "integer",
+                              "minimum": 1
+                            },
+                            "height": {
+                              "type": "integer",
+                              "minimum": 1
+                            }
+                          },
+                          "required": [
+                            "x",
+                            "y",
+                            "width",
+                            "height"
+                          ],
+                          "additionalProperties": false
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "changed_outside_px": {
+                      "const": 0
+                    },
+                    "alpha_changed_px": {
+                      "type": "integer",
+                      "minimum": 0
+                    },
+                    "before": {
+                      "anyOf": [
+                        {
+                          "type": "object",
+                          "properties": {
+                            "uri": {
+                              "type": "string",
+                              "minLength": 2,
+                              "pattern": "^/"
+                            },
+                            "path": {
+                              "type": "string",
+                              "minLength": 2,
+                              "pattern": "^/"
+                            },
+                            "mime_type": {
+                              "const": "image/png"
+                            },
+                            "sha256": {
+                              "type": "string",
+                              "pattern": "^[0-9a-f]{64}$"
+                            },
+                            "size_bytes": {
+                              "type": "integer",
+                              "minimum": 1
+                            },
+                            "retention_days": {
+                              "type": "integer",
+                              "minimum": 1
+                            }
+                          },
+                          "required": [
+                            "uri",
+                            "path",
+                            "mime_type",
+                            "sha256",
+                            "size_bytes",
+                            "retention_days"
+                          ],
+                          "additionalProperties": false
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "after": {
+                      "anyOf": [
+                        {
+                          "type": "object",
+                          "properties": {
+                            "uri": {
+                              "type": "string",
+                              "minLength": 2,
+                              "pattern": "^/"
+                            },
+                            "path": {
+                              "type": "string",
+                              "minLength": 2,
+                              "pattern": "^/"
+                            },
+                            "mime_type": {
+                              "const": "image/png"
+                            },
+                            "sha256": {
+                              "type": "string",
+                              "pattern": "^[0-9a-f]{64}$"
+                            },
+                            "size_bytes": {
+                              "type": "integer",
+                              "minimum": 1
+                            },
+                            "retention_days": {
+                              "type": "integer",
+                              "minimum": 1
+                            }
+                          },
+                          "required": [
+                            "uri",
+                            "path",
+                            "mime_type",
+                            "sha256",
+                            "size_bytes",
+                            "retention_days"
+                          ],
+                          "additionalProperties": false
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "mode",
+                    "rect",
+                    "changed_px",
+                    "changed_bounds_px",
+                    "changed_outside_px",
+                    "alpha_changed_px",
+                    "before",
+                    "after"
+                  ],
+                  "additionalProperties": false
+                },
+                {
+                  "type": "null"
+                }
+              ]
             }
           },
           "required": [
@@ -303,7 +761,9 @@
             "type",
             "name",
             "protected",
-            "undo_steps"
+            "undo_steps",
+            "coverage",
+            "verification"
           ],
           "additionalProperties": false
         },
@@ -366,7 +826,7 @@
   },
   "annotations": {
     "readOnlyHint": false,
-    "destructiveHint": false,
+    "destructiveHint": true,
     "idempotentHint": true,
     "openWorldHint": false
   },
@@ -394,7 +854,9 @@
         "type": "paint",
         "name": "Accessory repair",
         "protected": false,
-        "undo_steps": 1
+        "undo_steps": 1,
+        "coverage": null,
+        "verification": null
       },
       "error": null
     }

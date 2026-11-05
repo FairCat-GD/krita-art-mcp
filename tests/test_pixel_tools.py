@@ -132,6 +132,31 @@ def test_a_selection_capture_is_its_mask_as_grey(world: World) -> None:
     assert refused["error"]["code"] == "INVALID_ARGUMENT" and refused["operation_id"]
 
 
+def test_a_mask_capture_is_its_coverage_as_grey(world: World) -> None:
+    document_id, key = _created(world)
+    layer = layer_id(key, 0)
+    world.port.live[key]["selection"] = ({"x": 3, "y": 1, "width": 2, "height": 1}, b"\x40\xc0")
+    made = world.server().content(
+        "krita_layer_create",
+        {
+            "guard": {"document_id": document_id, "request_id": "req-mask"},
+            "parent_id": layer,
+            "above_id": None,
+            "type": "transparency_mask",
+            "name": "veil",
+            "coverage": "selection",
+        },
+    )
+    mask = made["data"]["layer_id"]
+    arguments = _capture(document_id, target="mask", layer_id=mask, scale=2)
+    data = world.server().content("krita_capture", arguments)["data"]
+    found = np.asarray(Image.open(Path(data["image"]["path"])))
+    assert found.ndim == 2 and data["background"] is None and data["profile_id"] is None
+    assert found[0:2, 2:4].tolist() == [[64, 64], [64, 64]] and found[0, 4] == 192
+    refused = world.server().content("krita_capture", {**arguments, "background": "checker"})
+    assert refused["error"]["code"] == "INVALID_ARGUMENT" and refused["operation_id"] is None
+
+
 def test_a_resampled_capture_lands_on_a_checker_by_default(world: World) -> None:
     document_id, _ = _created(world)
     rect = {"x": 0, "y": 0, "width": 64, "height": 32}

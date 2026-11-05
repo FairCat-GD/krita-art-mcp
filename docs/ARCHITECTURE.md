@@ -1,6 +1,6 @@
 # krita-art-mcp — architecture, as built
 
-This is the system as it stands at 0.21.0, in round 2, on the Phase 1 round 1 built. Every session
+This is the system as it stands at 0.22.0, in round 2, on the Phase 1 round 1 built. Every session
 keeps it true, in the same commit as the change. Each section stands on its own: a session reads
 the overview, the invariants and the baseline, then only the sections its work touches.
 `docs/USER-GUIDE.md` is the same system from the user's side.
@@ -11,8 +11,7 @@ krita-art-mcp lets an AI agent paint in the owner's running Krita through Krita'
 It is for painted (non-pixel) 2D game art, run by one developer on macOS with Krita 5.3.x. The core
 loop: open a working copy with every existing layer protected; inspect, capture and sample; add a
 layer, select, tighten protection; paint native strokes and fills, each verified and rolled back on
-a leak;
-preview at game size; undo or keep; save to a new KRA or ORA, verified by reopening; close.
+a leak; soften or revise with transparency masks painted the same way; preview at game size; undo or keep; save to a new KRA or ORA, verified by reopening; close.
 
 ```
 MCP client (Codex, Claude Code) ──stdio──▶ server: src/krita_art_mcp/   (Python 3.12)
@@ -68,7 +67,12 @@ exists and what fails when it breaks.
    which bans `setPixelData`, `saveAs`, every `.apply` attribute, `exec`, `eval`, `compile`,
    `__import__`, computed attribute access and the code modules. Its one exception is
    `krita_adapter.selections._from_mask`, which loads a mask into a `Selection()` it built (K11) and
-   writes no layer; an AST test holds that site and its receiver. The tool list holds the rest.
+   writes no layer; an AST test holds that site and its receiver. `setSelection`, which on a mask
+   adopts its argument with no undo (K50), is held to four sites the same way: the global
+   selection's two commits on the document passed in, the harness's selection mask, and
+   `krita_adapter.documents.create_mask`, whose receiver is bound once from
+   `createTransparencyMask` and given its coverage before `addChildNode` attaches it (decision 14).
+   The tool list holds the rest.
 2. **Accepted sources are never opened for writing, and no save overwrites a file.** *Why:* accepted
    art is the quality floor. *Enforced by* `files.working_copy`, which copies under `O_EXCL` while
    hashing and re-hashes the copy; `read_only` mode, which refuses every mutation; `exportImage`,
@@ -231,7 +235,9 @@ values are `applied`, `not_applied`, `uncertain` and `unregistered`.
   `not_applied` unless a file stayed open. A refusal the server makes itself leaves it out.
 
 **`api_version` moves when a field or an input value is removed or renamed, or a field changes
-meaning.** Added fields and tools do not move it.
+meaning.** Added fields and tools do not move it. At 0.22.0 `transparency_mask` went live, `coverage`,
+`mask` and a capture's `mask` target were added, and a receipt's `color` reads null for mask paint;
+nothing changed for a paint layer, so `api_version` stayed 0.4.0.
 
 **Schemas are data.** Each of the 20 `schemas/krita_<tool>.json` holds `name`, `description`,
 `inputSchema`, `outputSchema`, `annotations` and `example`. `MCPServer` tools are built by hand with
@@ -253,10 +259,11 @@ sample's `color` sent as a stroke's colour.
 
 **Hints follow each tool's worst permitted behaviour.**
 - The eight reads are `readOnlyHint: true`.
-- Five mutating tools only add, and are `destructiveHint: false`: `krita_layer_create`,
-  `krita_protection_set`, `krita_document_open`, `krita_document_create` and `krita_document_save`.
-- The other seven are destructive, because undoable is not additive. A fill overwrites what is
-  there.
+- Four mutating tools only add, and are `destructiveHint: false`: `krita_protection_set`,
+  `krita_document_open`, `krita_document_create` and `krita_document_save`.
+- The other eight are destructive, because undoable is not additive. A fill overwrites what is
+  there, and `krita_layer_create` can make a mask that hides its whole layer, as `visible: false`
+  would; it was additive until masks went live at 0.22.0.
 - `idempotentHint` is true and `openWorldHint` false on every tool.
 - `readOnlyHint` is load-bearing. `tools.build` reads it to decide what mutates, and the
   `BOUNDED` test holds the ops to it.
@@ -311,12 +318,13 @@ schema, where a job ends at its first raise and each check reads what the one be
 document before the layer before the pixels.
 
 **Argument rules are written twice on purpose.** Each side trusts no caller, and a refusal the server
-makes carries no `operation_id`. Each pair is held by a parity test in `tests/test_parity.py`: seven
-today, from open's format and editable lists to a capture's area and a fill's colour and area. The server's half of a pair is a
-named function, and `tests/support/parity.py`'s `refused_alike` calls the tool, turns that function
+makes carries no `operation_id`. Each pair is held by a parity test in `tests/test_parity.py`: eight
+today, from open's format and editable lists to a capture's area, a fill's colour and area, and a
+stroke's colour or mask paint. The server's half of a pair is a named function, and `tests/support/parity.py`'s `refused_alike` calls the tool, turns that function
 off, and calls again, so the server's own translation carries the same arguments to the plugin. Both
 must refuse with one code and one `retryable`, the plugin before its marker. A new pair needs its
-named function and one call.
+named function and one call. A stroke's colour or mask paint is `_brush_rules`; a fill's is part of
+its `_fill_rules`.
 
 **The error codes: 30.** The default `retryable` is the server's; a site may override it, and
 `docs/USER-GUIDE.md` says what an agent should do with each.
@@ -353,7 +361,6 @@ the round 2 intake for the schemas that round amends.
 
 | Input | Today | Becomes live |
 |---|---|---|
-| `krita_layer_create` `type: transparency_mask` | `UNSUPPORTED_CAPABILITY` | Round 2's M1 |
 | `krita_paint_stroke` per-point pressure, tilt, rotation, tangential pressure, speed, time | `UNSUPPORTED_CAPABILITY`, unless `input_fallback: flat` | Phase 6, on Krita 6.1 / 5.4 (K30) |
 | `input_fallback`, which takes only `flat` | the one value | Phase 6 |
 | Every read's `frame` other than 0 | `UNSUPPORTED_CAPABILITY` | Phase 5 |
@@ -391,9 +398,9 @@ the overhang bounds on-curve points only, so a brush's reach can pass it.
 `stroke.per_point_input` (Phase 6), `undo.grouping` (K29), `stroke.deterministic` (stochastic
 presets have no seed), `operation.cancel_running`, `color_spaces`, `filters` (Phase 2), `animation`
 (Phase 5). True since 0.9.0: `stroke.native_brush`, `stroke.smoothing`, `selection.enforced`; since
-0.21.0, `paint.fill`.
+0.21.0, `paint.fill`; since 0.22.0, `mask.transparency`.
 
-**The instructions.** `instructions.py` is 3,750 of Claude Code's 4,096 characters (C4), held by a
+**The instructions.** `instructions.py` is 3,908 of Claude Code's 4,096 characters (C4), held by a
 test. It states the rules an agent would otherwise learn from a refusal, and leaves a field's range,
 unit and form to that field's description.
 
@@ -621,7 +628,9 @@ for previews too; `imaging.FILTERS` is the list, and a test holds every `filter`
 is native, and `background` or `greyscale` there is refused by the schema, as on a selection,
 through `dependentSchemas` on `scale` and `target`. `max_px` bounds the image;
 `limits.capture_source_pixels` (8192²) bounds the area read. A layer capture is that layer's own
-paint device (K12), and is paint layers only. A larger image goes by path with a 1600 px inline
+paint device (K12), and is paint layers only. A mask capture (`target: "mask"`) is a transparency
+mask's own one-byte device, sent as `A8` and drawn as a grey `L` image; like a selection's, it takes
+no `background` or `greyscale`, which the schema refuses through `dependentSchemas` on `target`. A larger image goes by path with a 1600 px inline
 preview. Captures are `op-<id>` files, found before they are made, so `krita_operation_get` can
 rebuild a receipt.
 
@@ -660,6 +669,26 @@ even-odd with edges half-open in y; antialiased values are `(k·255 + 8) // 16`,
 masks take k ≥ 8. The plugin takes a mask straight after its argument checks, before any other
 refusal, and the server removes a request's masks after any final outcome, never while it is pending.
 
+**Transparency masks.** `layer.create` with `type: transparency_mask` puts one on a paint layer, and
+it is the one mask an agent makes. libkis builds a new mask with an empty selection, which hides its
+layer (K50), so `create_mask` gives it its coverage before `addChildNode` attaches it, in Krita's one
+"Add Layer" step: `all` is an empty `Selection()` inverted, which selects past the canvas too; `none`
+is an empty one; `selection` is a `duplicate()` of the global selection, never the live one (K23).
+`setSelection` adopts its argument with no undo, so it is never called on an attached mask.
+- **Protection.** A mask changes how its layer shows without changing the layer's pixels. So
+  `protection.refuse_held_line` refuses any mask change (create, paint, `visible` or `name`) while
+  the mask, its layer or any group holding it is protected (decision 14); L1 can reuse it. A mask in
+  a file opened is protected like every node.
+- **Bounds.** Krita reports a mask's bounds as its layer's own, and no mask moves them, its layer's
+  included (measured). `misplaced` compares a create's parent without its bounds anyway.
+- **What a mask does.** The composite takes the layer by the coverage: `rint(layer × c + below ×
+  (1 − c))`, c the byte over 255 (measured with a graded PNG selection).
+- **The create's check.** It reads no layer pixels, only the composite, over the layer's own bounds
+  when `reach` from the layer is clean and over the canvas otherwise, since the create has no
+  `verify` to ask for more; the receipt's `verification.mode` says which. A leak, or alpha under
+  `preserve_composite_alpha`, is `PROTECTED_REGION_CHANGED`, rolled back. Its judge then reads the
+  new mask over the layer's bounds and refuses, rolled back, coverage other than what was asked.
+
 **The inset.** A polygon or ellipse selection is antialiased and the allowed mask is binary, so a
 selection on the mask's own edge paints pixels the mask forbids: 58 px with a soft brush and 67 with a
 scatter brush, each refused and rolled back. A selection 1 px inside changes none. The instructions
@@ -676,7 +705,10 @@ or its subtree (`SPREADING_BLENDS`, the only ones that composite past a layer's 
 whose bounds are derived; a filter layer anywhere in a later sibling's subtree, of the target or of
 an ancestor; a clone of either, or with no source Krita names. Any of these refuses region scope, by
 reason, unless `verify: "full"` is asked. It over-refuses on purpose: a per-pixel filter cannot
-spread a change, and a filter layer inside a closed group above cannot see below it.
+spread a change, and a filter layer inside a closed group above cannot see below it. A transparency
+mask's change is its layer's projection's, so for a mask target the walk starts at that layer: its
+own spreading blend, its filter masks and clones of it count. A transparency mask elsewhere stays
+bounded, since it multiplies pixel by pixel.
 
 **Scope and read.** `scope` is the union of the exact bounds of the target and its descendants,
 clipped to the canvas, or the canvas for `full`. The projection is refreshed before the before-read,
@@ -733,7 +765,9 @@ selection, which has no verdict, pushes its step by hand.
 
 **`krita_layer_update`.** Only values that differ are written; the blend first, then the rest in a
 fixed order, then a refresh (K42), the tree, and the check that nothing else moved, all inside its
-change. An update that only sets `active` changes nothing in the document and skips the frame.
+change. An update that only sets `active` changes nothing in the document and skips the frame. A
+transparency mask takes `name` and `visible` only; its scope is its own bounds, which are its
+layer's, so showing what it hid is read.
 
 ## Painting
 
@@ -822,6 +856,19 @@ no dab, in one "Scripted Brush Stroke" step, confined and weighted by the select
 - **The receipt** has the stroke's shape, with `fill_id`, `shape`, `shape_bounds_px` and
   `effective_fill` in place of the brush.
 
+**A mask target.** A stroke or fill on a transparency mask brings `mask: "reveal" | "hide"` in place
+of a colour; the server sends `color` and `mask`, one null, and both sides want exactly one. Mask
+paint takes no blend or alpha lock. The target check reads the paint kind first, so a colour on a
+mask or mask paint on a layer is `INVALID_ARGUMENT`, then the held line, then the mask's space (`A`,
+`U8`). A local selection mask on the layer does not confine mask paint, so it is not refused
+(measured); the global selection does. The paint is Krita's own on the mask's Alpha8 device, with
+white for reveal and black for hide under `normal`: each moves coverage by the opacity, reveal 0.5
+from 0 giving 128 and hide 0.5 from 255 giving 127 (measured; greys map linearly, not by
+lightness, and `erase` with white hides alike). The frame reads the target one byte a pixel
+(`channels=1`), so its diff, its witness and `history.move`'s witness all count bytes. A mask's
+`layer_bounds_px` is its layer's, as Krita reports a mask's bounds. MyPaint presets read
+`MYPAINTBRUSH_UNPAINTABLE` on a mask, and `_paintable` refuses them.
+
 **The input gate.** Phase 1 always paints with `Node.paintPath` at pressure 1 (K4), even on a build
 with `paintPolylineStroke`, because that branch cannot be tested on released Krita. The server refuses
 before the journal, in order: argument errors, numbers that are not finite among them; the
@@ -857,7 +904,7 @@ before Krita was asked is `REVERSED`, retryable as the first step; after it, `LO
 each stop to its receipt value: `not_the_bridges_step`, `unconfirmed`, `document_unsafe`.
 
 **Labels are English.** `history.LABELS` holds what Krita's actions read on 5.3.4 in English: "Add
-Layer", "Composition Mode Change", "Scripted Brush Stroke", and an unnamed step for a selection. They
+Layer" (a transparency mask's create too, measured), "Composition Mode Change", "Scripted Brush Stroke", and an unnamed step for a selection. They
 are read only by `move`, so on a localised Krita ordinary calls complete, `krita_history_step`
 refuses every step as not the bridge's, and any change that needs a rollback ends in
 `ROLLBACK_FAILED` and an unsafe document. English is a requirement until the backlog's item lands.
@@ -1168,6 +1215,7 @@ cite stay in the PDD, in git history.
 | K47 | Scripted strokes honour wrap-around mode | `libs/ui/tool/strokes/freehand_stroke.cpp:110,296-303` |
 | K48 | `aboutToQuit` fires after documents and windows close; pykrita then finalises Python | `libs/libkis/Notifier.cpp:23` |
 | K49 | `paintPath` with stroke `None` and fill `ForegroundColor` fills the path with the painter, never the paint op; a wash-mode preset paints through an indirect device, and a masked brush paints the path into its mask painter too | `libs/libkis/PaintingResources.cpp:17-58`; `libs/image/kis_painter.cc` (`paintPainterPath`, `fillPainterPathImpl`); `libs/ui/tool/strokes/KisMaskedFreehandStrokePainter.cpp` |
+| K50 | `TransparencyMask` starts from an empty selection; `KisMask::setSelection` adopts its pointer and pushes no undo; a transparency mask's bounds are its parent's; its device is Alpha8, whose composite ops are over, erase, copy, alpha-darken and multiply | `libs/libkis/TransparencyMask.cpp`; `libs/image/kis_mask.cc`; `libs/image/kis_transparency_mask.cc`; `libs/pigment/colorspaces/KoAlphaColorSpace.cpp` |
 | C1 | `mcp` 2.3.0: `FastMCP` is `MCPServer`; `Image` takes no `_meta`; a raised exception yields only "Error executing tool X" | Probed 2026-10-22 |
 | C2 | Codex passes MCP images to image-capable models and honours `codex/imageDetail` | openai/codex `codex-rs/core/src/mcp_tool_call.rs` |
 | C4 | Claude Code: output limit 25,000 tokens; instructions and descriptions truncated at 4,096 characters | code.claude.com/docs/en/mcp |
@@ -1198,6 +1246,15 @@ the code is shaped as it is.
   keeps every alpha byte; a feathered selection's coverage is the fill's alpha exactly; an
   ellipse's edge is antialiased and an integer rect's is not. Wash-mode presets differ only by
   colour under alpha 0, up to 3 px out. A fill takes under 15 ms on a 400 × 300 canvas.
+- Transparency masks, on 0.22.0's measurement: `createTransparencyMask` gives an `A`/`U8` mask that
+  reads all 0 and hides its layer once attached; `setSelection` before `addChildNode` lands the
+  selection's bytes exactly, in one "Add Layer" step that one undo takes back, and marks Krita's
+  flag. An inverted empty selection reads 255 past the canvas, a canvas rect 0. The new mask becomes
+  the active node; no overlay enters a composite read. The composite is `rint(layer × c + below ×
+  (1 − c))`. Paint, fills and strokes alike, follows the mask paint rule in *Painting*, one
+  "Scripted Brush Stroke" step each. `setVisible` and `setName` push no step, and the composite
+  shows `visible` only after a refresh (K42). A KRA save keeps a mask, its id and its bytes; an
+  ORA save bakes it into its layer and lists it lost.
 - A selection's bounds run past the canvas: an inverted rect's are 448 × 320 on a 400 × 300 canvas,
   and a rect grown or feathered at the corner starts at −10 or −12.
 - A 20 × 16 rect grown, shrunk and feathered by 3 lands on {17, 11, 26, 22}, {23, 17, 14, 10} and
@@ -1209,25 +1266,25 @@ the code is shaped as it is.
   it. A Krita holding 87 documents ran document ops about three times slower, and left the paint
   benchmarks, the preview benchmark and H4 idle alone.
 
-## Baseline (v0.21.0)
+## Baseline (v0.22.0)
 
-Taken on 2026-11-04 on Krita 5.3.4.1, macOS, Apple Silicon, on a Krita restarted that session, with
+Taken on 2026-11-05 on Krita 5.3.4.1, macOS, Apple Silicon, on a Krita restarted that session, with
 **0 documents open**. The probe prints the open-document count beside its time, because document ops
 depend on it: 87 open documents cost about 50 s more.
 
 | Check | Expected |
 |---|---|
 | `uv run scripts/verify.py` | 6 stages, all PASS |
-| Server tests (3.12) | 953 passed, 0 skipped |
-| Plugin-core tests (3.10) | 880 passed, 0 skipped |
-| `uv run krita-art-mcp probe` | 159 PASS, 0 FAIL, 25 MEASURED; about 130 s |
+| Server tests (3.12) | 970 passed, 0 skipped |
+| Plugin-core tests (3.10) | 927 passed, 0 skipped |
+| `uv run krita-art-mcp probe` | 171 PASS, 0 FAIL, 25 MEASURED; about 130 s |
 | `uv run krita-art-mcp doctor` | 6 steps, all PASS, with a root allowed |
 | Registered tools | 20 |
 | Schema files | 20 |
 | Error codes | 30 |
 | Bridge ops | 32 |
 | Bridge protocol; `api_version` | 1; 0.4.0 |
-| Server instructions | 3,750 of 4,096 characters |
+| Server instructions | 3,908 of 4,096 characters |
 | CLI commands | 5 |
 
 A documentation or refactoring change should not move any of these. If one moves, that is the

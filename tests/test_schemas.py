@@ -65,6 +65,58 @@ CAPTURE_FORMS: list[tuple[dict[str, Any], bool]] = [
     ({"scale": 2, "target": "selection"}, True),
     ({"scale": 2, "target": "selection", "background": "transparent"}, False),
     ({"scale": 2, "target": "selection", "greyscale": True}, False),
+    ({"scale": 2, "target": "mask", "layer_id": "mask-1"}, True),
+    ({"scale": 2, "target": "mask", "layer_id": None}, False),
+    ({"scale": 2, "target": "mask", "layer_id": "mask-1", "background": "checker"}, False),
+    ({"scale": 2, "target": "mask", "layer_id": "mask-1", "greyscale": True}, False),
+]
+STROKE = schemas.load("krita_paint_stroke")["example"]["input"]
+FILL = schemas.load("krita_paint_fill")["example"]["input"]
+LAYER = schemas.load("krita_layer_create")["example"]["input"]
+# Mask paint takes the colour's place, with no blend or alpha lock beside it.
+MASK_PAINT: list[tuple[str, dict[str, Any], bool]] = [
+    ("krita_paint_stroke", {**STROKE, "brush": {**STROKE["brush"], "mask": "hide"}}, False),
+    (
+        "krita_paint_stroke",
+        {
+            **STROKE,
+            "brush": {
+                **{
+                    k: v
+                    for k, v in STROKE["brush"].items()
+                    if k not in ("color", "blend_mode", "alpha_lock")
+                },
+                "mask": "hide",
+            },
+        },
+        True,
+    ),
+    (
+        "krita_paint_stroke",
+        {
+            **STROKE,
+            "brush": {
+                **{k: v for k, v in STROKE["brush"].items() if k != "color"},
+                "mask": "reveal",
+                "blend_mode": "normal",
+            },
+        },
+        False,
+    ),
+    (
+        "krita_paint_fill",
+        {**{k: v for k, v in FILL.items() if k != "color"}, "mask": "reveal"},
+        True,
+    ),
+    ("krita_paint_fill", {**FILL, "mask": "reveal"}, False),
+    (
+        "krita_paint_fill",
+        {**{k: v for k, v in FILL.items() if k != "color"}, "mask": "show"},
+        False,
+    ),
+    ("krita_layer_create", {**LAYER, "type": "transparency_mask", "coverage": "all"}, True),
+    ("krita_layer_create", {**LAYER, "type": "transparency_mask"}, False),
+    ("krita_layer_create", {**LAYER, "coverage": "all"}, False),
 ]
 INPUT_RULES: list[tuple[str, dict[str, Any], bool]] = [
     *[
@@ -99,9 +151,10 @@ INPUT_RULES: list[tuple[str, dict[str, Any], bool]] = [
     ("krita_document_create", _with("krita_document_create", size_px=["32", "32"]), False),
     ("krita_document_create", _with("krita_document_create", size_px=[0, 32]), False),
     *[
-        ("krita_capture", _with("krita_capture", layer_id=None, **fields), valid)
+        ("krita_capture", _with("krita_capture", **{"layer_id": None, **fields}), valid)
         for fields, valid in CAPTURE_FORMS
     ],
+    *MASK_PAINT,
     ("krita_sample", _with("krita_sample", points=[[20]]), False),
     ("krita_sample", _with("krita_sample", points=[[20, 20, 20]]), False),
     *[

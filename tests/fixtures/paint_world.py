@@ -101,6 +101,7 @@ class World:
             "opacity": 1,
             "flow": 1,
             "color": [1, 0.5, 0, 1],
+            "mask": None,
             "eraser": False,
             "blend_mode": "normal",
             "alpha_lock": False,

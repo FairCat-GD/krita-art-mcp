@@ -91,7 +91,8 @@
                     "selection.enforced",
                     "color_spaces",
                     "filters",
-                    "animation"
+                    "animation",
+                    "mask.transparency"
                   ]
                 },
                 "additionalProperties": {
@@ -134,7 +135,8 @@
                   "selection.enforced",
                   "color_spaces",
                   "filters",
-                  "animation"
+                  "animation",
+                  "mask.transparency"
                 ]
               },
               "limits": {
@@ -359,7 +361,8 @@
                   "selection.enforced",
                   "color_spaces",
                   "filters",
-                  "animation"
+                  "animation",
+                  "mask.transparency"
                 ]
               },
               "additionalProperties": {
@@ -402,7 +405,8 @@
                 "selection.enforced",
                 "color_spaces",
                 "filters",
-                "animation"
+                "animation",
+                "mask.transparency"
               ]
             },
             "limits": {
@@ -569,6 +573,11 @@
             "supported": false,
             "since": null,
             "notes": "Fills are not built in this release."
+          },
+          "mask.transparency": {
+            "supported": false,
+            "since": null,
+            "notes": "Transparency masks are not built in this release."
           },
           "stroke.native_brush": {
             "supported": false,

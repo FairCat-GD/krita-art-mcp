@@ -135,7 +135,7 @@ async def capture(
     if "image" not in data:
         return None
     with Image.open(data["image"]["path"]) as image:
-        return np.asarray(image if target == "selection" else image.convert("RGBA"))
+        return np.asarray(image if target in ("selection", "mask") else image.convert("RGBA"))
 
 
 async def capture_composite(

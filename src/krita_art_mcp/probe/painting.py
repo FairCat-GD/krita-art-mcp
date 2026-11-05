@@ -12,7 +12,16 @@ from mcp import Client
 
 from krita_art_mcp.bridge_client import BridgeClient, Done
 from krita_art_mcp.journal import Journal
-from krita_art_mcp.probe import acceptance, edges, filling, fixtures, modified, previews, saving
+from krita_art_mcp.probe import (
+    acceptance,
+    edges,
+    filling,
+    fixtures,
+    modified,
+    previews,
+    saving,
+    transparency,
+)
 from krita_art_mcp.probe.common import (
     add_layer,
     brush_args,
@@ -140,6 +149,7 @@ async def run(report: Report, a: Client, b: Client, client: BridgeClient, harnes
             await _rim(report, a, rim, harness, hard)
             await edges.run(report, a, folder, harness, hard)
             await filling.run(report, a, client, paint, harness, presets)
+            await transparency.run(report, a, client, paint, harness, presets)
         with report.timed("benchmark"):
             for spec in BENCHMARKS:
                 await _benchmark(report, a, client, harness, folder, spec, hard)

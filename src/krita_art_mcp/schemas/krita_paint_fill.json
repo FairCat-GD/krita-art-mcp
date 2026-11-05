@@ -1,6 +1,6 @@
 {
   "name": "krita_paint_fill",
-  "description": "Fill a shape on a paint layer with one flat antialiased colour, as one undo step: Krita's own fill, no brush dabs, painted with a fixed build-up stock preset. The shape is a rect, ellipse, polygon, closed curve or the current selection, and stays on the canvas. Checked against protection like a stroke and undone on a leak. Example: {\"type\": \"path\", \"points\": [[20, 20], [50, 26], [40, 46], [18, 40]]}.",
+  "description": "Fill a shape on a paint layer with one flat antialiased colour, or reveal or hide it on a transparency mask, as one undo step: Krita's own fill, no brush dabs, painted with a fixed build-up stock preset. The shape is a rect, ellipse, polygon, closed curve or the current selection, and stays on the canvas. Checked against protection like a stroke and undone on a leak. Example: {\"type\": \"path\", \"points\": [[20, 20], [50, 26], [40, 46], [18, 40]]}.",
   "inputSchema": {
     "type": "object",
     "properties": {
@@ -204,6 +204,14 @@
         ],
         "additionalProperties": false
       },
+      "mask": {
+        "description": "For a transparency mask, in place of color: reveal shows its layer and hide hides it, each moving coverage by the opacity, so 0.5 moves it halfway.",
+        "type": "string",
+        "enum": [
+          "reveal",
+          "hide"
+        ]
+      },
       "opacity": {
         "description": "0 to 1.",
         "type": "number",
@@ -242,10 +250,28 @@
       "guard",
       "layer_id",
       "shape",
-      "color",
       "opacity"
     ],
-    "additionalProperties": false
+    "additionalProperties": false,
+    "dependentSchemas": {
+      "color": {
+        "properties": {
+          "mask": {
+            "not": {}
+          }
+        }
+      },
+      "mask": {
+        "properties": {
+          "blend_mode": {
+            "not": {}
+          },
+          "alpha_lock": {
+            "not": {}
+          }
+        }
+      }
+    }
   },
   "outputSchema": {
     "type": "object",
@@ -309,30 +335,51 @@
                     "minLength": 1
                   },
                   "color": {
-                    "type": "object",
-                    "properties": {
-                      "space": {
+                    "anyOf": [
+                      {
+                        "type": "object",
+                        "properties": {
+                          "space": {
+                            "type": "string",
+                            "enum": [
+                              "srgb"
+                            ]
+                          },
+                          "rgba": {
+                            "type": "array",
+                            "items": {
+                              "type": "number",
+                              "minimum": 0,
+                              "maximum": 1
+                            },
+                            "minItems": 4,
+                            "maxItems": 4
+                          }
+                        },
+                        "required": [
+                          "space",
+                          "rgba"
+                        ],
+                        "additionalProperties": false
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "mask": {
+                    "anyOf": [
+                      {
                         "type": "string",
                         "enum": [
-                          "srgb"
+                          "reveal",
+                          "hide"
                         ]
                       },
-                      "rgba": {
-                        "type": "array",
-                        "items": {
-                          "type": "number",
-                          "minimum": 0,
-                          "maximum": 1
-                        },
-                        "minItems": 4,
-                        "maxItems": 4
+                      {
+                        "type": "null"
                       }
-                    },
-                    "required": [
-                      "space",
-                      "rgba"
-                    ],
-                    "additionalProperties": false
+                    ]
                   },
                   "opacity": {
                     "type": "number",
@@ -353,6 +400,7 @@
                 "required": [
                   "preset_id",
                   "color",
+                  "mask",
                   "opacity",
                   "blend_mode",
                   "alpha_lock",
@@ -842,30 +890,51 @@
                   "minLength": 1
                 },
                 "color": {
-                  "type": "object",
-                  "properties": {
-                    "space": {
+                  "anyOf": [
+                    {
+                      "type": "object",
+                      "properties": {
+                        "space": {
+                          "type": "string",
+                          "enum": [
+                            "srgb"
+                          ]
+                        },
+                        "rgba": {
+                          "type": "array",
+                          "items": {
+                            "type": "number",
+                            "minimum": 0,
+                            "maximum": 1
+                          },
+                          "minItems": 4,
+                          "maxItems": 4
+                        }
+                      },
+                      "required": [
+                        "space",
+                        "rgba"
+                      ],
+                      "additionalProperties": false
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "mask": {
+                  "anyOf": [
+                    {
                       "type": "string",
                       "enum": [
-                        "srgb"
+                        "reveal",
+                        "hide"
                       ]
                     },
-                    "rgba": {
-                      "type": "array",
-                      "items": {
-                        "type": "number",
-                        "minimum": 0,
-                        "maximum": 1
-                      },
-                      "minItems": 4,
-                      "maxItems": 4
+                    {
+                      "type": "null"
                     }
-                  },
-                  "required": [
-                    "space",
-                    "rgba"
-                  ],
-                  "additionalProperties": false
+                  ]
                 },
                 "opacity": {
                   "type": "number",
@@ -886,6 +955,7 @@
               "required": [
                 "preset_id",
                 "color",
+                "mask",
                 "opacity",
                 "blend_mode",
                 "alpha_lock",
@@ -1309,6 +1379,7 @@
               1
             ]
           },
+          "mask": null,
           "opacity": 1,
           "blend_mode": "normal",
           "alpha_lock": false,

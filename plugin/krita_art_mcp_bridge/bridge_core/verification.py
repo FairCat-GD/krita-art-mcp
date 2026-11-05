@@ -117,6 +117,10 @@ def reach(tree: dict[str, Any], effects: dict[str, Any], target_id: str) -> list
     for node in tree["nodes"]:
         children.setdefault(node["parent_id"], []).append(node)
     path = [by_id[target_id]]
+    if path[0]["type"] == "transparencymask" and path[0]["parent_id"] in by_id:
+        # A mask's change is its layer's projection's: that layer's blend, filters and clones
+        # carry it.
+        path = [by_id[path[0]["parent_id"]]]
     while path[-1]["parent_id"] in by_id:
         path.append(by_id[path[-1]["parent_id"]])
     styled = set(effects["styled"])

@@ -16,6 +16,13 @@ _MATRIX: dict[str, tuple[bool, str | None, str]] = {
         "native Krita fill per call (Node.paintPath with no stroke), one undo step, verified "
         "against protection and undone on a leak.",
     ),
+    "mask.transparency": (
+        True,
+        "0.22.0",
+        "Transparency masks on paint layers: made with a coverage (all, none or the selection) in "
+        "one undo step, painted with reveal or hide by strokes and fills, read alone as grey, and "
+        "shown or hidden; each change verified against protection and undone on a leak.",
+    ),
     "stroke.per_point_input": (
         False,
         None,

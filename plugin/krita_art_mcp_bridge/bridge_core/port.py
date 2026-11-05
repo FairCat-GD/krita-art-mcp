@@ -40,8 +40,8 @@ class DocumentsPort(Protocol):
     # The projection over each rect {x, y, width, height}, as composite() reads it.
     def composite_rects(self, document: Any, rects: list[dict[str, int]]) -> list[Any]: ...
 
-    # One paint layer's own device over each rect (K12): no opacity, masks or inherit-alpha
-    # clip. LAYER_NOT_FOUND for an unknown id.
+    # One layer's own device over each rect (K12): no opacity, masks or inherit-alpha clip; a
+    # transparency mask's is one byte a pixel. LAYER_NOT_FOUND for an unknown id.
     def layer_rects(
         self, document: Any, layer_id: str, rects: list[dict[str, int]]
     ) -> list[Any]: ...
@@ -73,6 +73,13 @@ class DocumentsPort(Protocol):
     # above_id or on top, in one undo step; waits, and returns its id.
     def create_layer(
         self, document: Any, parent_id: str, above_id: str | None, kind: str, name: str
+    ) -> str: ...
+
+    # Adds a transparency mask under the paint layer parent_id, directly above above_id or on top,
+    # in one undo step: its coverage (all, none, or a copy of the global selection) is set before
+    # it is attached. Waits, and returns its id.
+    def create_mask(
+        self, document: Any, parent_id: str, above_id: str | None, name: str, coverage: str
     ) -> str: ...
 
     # Builds a selection by the recipe's steps, in order, and commits it with setSelection (one

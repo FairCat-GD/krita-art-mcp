@@ -26,7 +26,7 @@ def handlers(registry: Registry, port: DocumentsPort, data: Path) -> dict[str, H
         # A read: no lease, and the view is touched only when K46 demands it.
         exact(args, CAPTURE_FIELDS)
         check_frame(args["frame"])
-        target = check_target(args, ("composite", "layer", "selection"))
+        target = check_target(args, ("composite", "layer", "selection", "mask"))
         rect = check_rect(args["rect"])
         if not isinstance(args["render"], dict):
             raise BridgeError("INVALID_ARGUMENT", "render is an object.")
@@ -47,6 +47,11 @@ def handlers(registry: Registry, port: DocumentsPort, data: Path) -> dict[str, H
                 message = "The document has no selection, so painting is unconfined."
                 missing = {"document_id": handle.document_id}
                 raise BridgeError("INVALID_ARGUMENT", message, False, missing)
+            profile = None
+            spec = transfer.write(paths.transfer_dir(data), pixels, width, height, "A8")
+        elif target == "mask":
+            transparency_mask(port.tree(handle.document), args["layer_id"])
+            [pixels] = port.layer_rects(handle.document, args["layer_id"], [rect])
             profile = None
             spec = transfer.write(paths.transfer_dir(data), pixels, width, height, "A8")
         else:
@@ -150,8 +155,9 @@ def check_target(args: dict[str, Any], targets: tuple[str, ...]) -> str:
     target, layer_id = args["target"], args["layer_id"]
     if target not in targets:
         raise BridgeError("INVALID_ARGUMENT", f"target is one of {', '.join(targets)}.")
-    if (target == "layer") != (isinstance(layer_id, str) and bool(layer_id)):
-        raise BridgeError("INVALID_ARGUMENT", "layer_id names a layer for target layer only.")
+    if (target in ("layer", "mask")) != (isinstance(layer_id, str) and bool(layer_id)):
+        message = "layer_id names a node for target layer or mask only."
+        raise BridgeError("INVALID_ARGUMENT", message)
     return str(target)
 
 
@@ -163,13 +169,27 @@ def paint_layer(tree: dict[str, Any], layer_id: str) -> dict[str, Any]:
     if node["type"] != "paintlayer":
         kind = TYPES.get(node["type"], node["type"])
         details = {"layer_id": layer_id, "layer_type": kind}
-        message = f"Phase 1 reads the pixels of paint layers; this layer is a {kind}."
+        message = f"Layer reads take paint layers; this layer is a {kind}."
+        if node["type"] == "transparencymask":
+            message += ' Capture it with target "mask".'
         raise BridgeError("UNSUPPORTED_CAPABILITY", message, False, details)
     if (node["color_model"], node["depth"]) != READ_SPACE:
         details = {key: node[key] for key in ("color_model", "depth", "profile_id")}
         details["layer_id"] = layer_id
         message = "Phase 1 reads RGBA / U8 layers only."
         raise BridgeError("COLOR_PROFILE_MISMATCH", message, False, details)
+    return node
+
+
+def transparency_mask(tree: dict[str, Any], layer_id: str) -> dict[str, Any]:
+    node: dict[str, Any] | None = next((n for n in tree["nodes"] if n["id"] == layer_id), None)
+    if node is None:
+        raise BridgeError("LAYER_NOT_FOUND", "No layer has that id.", False, {"layer_id": layer_id})
+    if node["type"] != "transparencymask":
+        kind = TYPES.get(node["type"], node["type"])
+        details = {"layer_id": layer_id, "layer_type": kind}
+        message = f"target mask reads a transparency mask; this layer is a {kind}."
+        raise BridgeError("INVALID_ARGUMENT", message, False, details)
     return node
 
 

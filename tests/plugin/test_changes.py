@@ -81,6 +81,7 @@ class World:
             "parent_id": self.port._tree(handle.document.key)["root_id"],
             "above_id": None,
             "type": "paint",
+            "coverage": None,
             "name": "repair",
             **changes,
         }
@@ -270,9 +271,11 @@ def test_a_layer_is_created_where_asked_editable_and_dirty(world: World) -> None
         "parent_id": "root-1",
         "above_id": None,
         "type": "paint",
+        "coverage": None,
         "name": "repair",
         "protected": False,
         "undo_steps": 1,
+        "verification": None,
     }
     # Null above_id puts the layer on top of the root's two children, as Krita does.
     over = world.layer(document_id, above_id=layer_id(1, 0), name="over")
@@ -314,6 +317,7 @@ def test_a_layer_is_refused_where_it_cannot_go(
         "parent_id": "root-1",
         "above_id": None,
         "type": "paint",
+        "coverage": None,
         "name": "repair",
         **changes,
     }
@@ -336,6 +340,7 @@ def test_a_layer_whose_creation_moved_a_protected_layer_is_rolled_back(world: Wo
             "parent_id": "root-1",
             "above_id": None,
             "type": "paint",
+            "coverage": None,
             "name": "repair",
         },
     )
@@ -362,6 +367,7 @@ def test_a_layer_krita_misplaced_is_rolled_back(world: World) -> None:
             "parent_id": "root-1",
             "above_id": None,
             "type": "paint",
+            "coverage": None,
             "name": "repair",
         },
     )
@@ -379,6 +385,7 @@ def test_a_rollback_that_cannot_be_confirmed_marks_the_document_unsafe(world: Wo
             "parent_id": "root-1",
             "above_id": None,
             "type": "paint",
+            "coverage": None,
             "name": "repair",
         },
     )
@@ -440,6 +447,7 @@ def test_a_read_only_document_refuses_every_new_mutation(world: World, whose: st
                 "parent_id": f"root-{key}",
                 "above_id": None,
                 "type": "paint",
+                "coverage": None,
                 "name": "x",
             },
         ),
