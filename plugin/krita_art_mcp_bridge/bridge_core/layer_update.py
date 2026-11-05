@@ -9,7 +9,7 @@ from .history import LABELS, in_front
 from .jobs import Call, Handler
 from .opening import LAYER_ID
 from .port import DocumentsPort
-from .protection import MASK, refuse_held_line
+from .protection import MASK, line, refuse_held_line
 from .registry import Handle, Registry
 from .resources import BLEND_MODES
 
@@ -186,9 +186,7 @@ def _target(
         message = "krita_layer_update changes layers and transparency masks, not other masks."
         raise BridgeError("INVALID_ARGUMENT", message, False, details)
     held = sorted(
-        node_id
-        for node_id in protected
-        if node_id in nodes and (node_id == layer_id or _inside(nodes, node_id, layer_id))
+        node_id for node_id in protected if node_id in nodes and layer_id in line(nodes, node_id)
     )
     if held:
         details = {"layer_id": layer_id, "protected_layer_ids": held}
@@ -199,15 +197,6 @@ def _target(
         message = "alpha_locked applies to paint layers only."
         raise BridgeError("INVALID_ARGUMENT", message, False, details)
     return node
-
-
-def _inside(nodes: dict[str, Any], node_id: str, ancestor_id: str) -> bool:
-    parent = nodes[node_id]["parent_id"]
-    while parent in nodes:
-        if parent == ancestor_id:
-            return True
-        parent = nodes[parent]["parent_id"]
-    return False
 
 
 def _leak() -> BridgeError:

@@ -32,14 +32,17 @@ twice (the second time cold), each finding verified on the code path. No product
   the owner's call), so four mutating tools are additive.
 - **The probe's mask checks** are `probe/transparency.py`, run inside the paint stage after
   `filling.run`, on their own working copy, with an amber layer for the leak check.
-- **M1 is committed locally, not pushed.** `origin/main` stops at "review: a curve's turning point
-  could be missed, and 6 smaller". List `origin/main..HEAD` before any push.
+- **R1, R2, R3, D1, F1, C1 and M1 are pushed.** `origin/main` holds everything through "review: a
+  paint create's parent check was loosened, and 11 smaller". List `origin/main..HEAD` before any
+  push.
 - **The evidence stays outside the repository.** The Codex agent holds its bundles.
 - **Baseline** (ARCHITECTURE's table, v0.22.0): `verify` 6 stages, all PASS; 970 server tests and
-  927 plugin-core tests, 0 skipped; `probe` 171 PASS, 0 FAIL, 25 MEASURED, about 130 s with 0
+  931 plugin-core tests, 0 skipped; `probe` 171 PASS, 0 FAIL, 25 MEASURED, about 130 s with 0
   documents open; 20 tools; 20 schema files; 30 error codes; 32 bridge ops; 12 capabilities;
   instructions 3,908 characters.
 - **Not done:** nothing from M1's block.
+- **Krita's quit can time out.** At the end of M1 an `osascript` quit timed out with 0 documents
+  open and 0 unsaved, and Krita stayed; the owner restarted it by hand. Don't force it: ask.
 
 ## Watch for
 

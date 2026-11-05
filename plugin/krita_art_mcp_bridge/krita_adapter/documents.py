@@ -224,9 +224,7 @@ class KritaDocuments:
     def create_mask(
         self, document: Any, parent_id: str, above_id: str | None, name: str, coverage: str
     ) -> str:
-        # The plugin's one setSelection on a mask: a fresh mask, given a selection it alone holds,
-        # before addChildNode attaches it in one undo step. setSelection adopts its argument and
-        # has no undo, so it is never called on an attached mask.
+        # setSelection adopts its argument with no undo, so it runs before the attach (K50).
         parent = _node(document, parent_id)
         above = None if above_id is None else _node(document, above_id)
         shape = Selection()

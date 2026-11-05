@@ -5,9 +5,21 @@ from typing import Any
 import pytest
 from bridge_core import documents, painting, resources
 from fake_krita import FILL_ORDER, fake_node, layer_id, preset_xml
-from paint_world import BASE, BASE_PIXEL, GROUP, HEIGHT, LABEL, ORANGE, PAINT, WIDTH, World, box
+from paint_world import (
+    BASE,
+    BASE_PIXEL,
+    GROUP,
+    HEIGHT,
+    LABEL,
+    ORANGE,
+    PAINT,
+    RECT,
+    WIDTH,
+    World,
+    box,
+    fill_args,
+)
 
-RECT: dict[str, Any] = {"kind": "rect", "rect": box(40, 50, 20, 10)}
 # R: the rect grown by the fill's margin; R': R grown by 32, clipped to the canvas.
 REGION = box(38, 48, 24, 14)
 RING = box(6, 16, 88, 78)
@@ -16,26 +28,6 @@ RING = box(6, 16, 88, 78)
 @pytest.fixture
 def world(tmp_path: Path) -> World:
     return World(tmp_path)
-
-
-def fill_args(document_id: str, **changes: Any) -> dict[str, Any]:
-    style = {
-        "color": [1, 0.5, 0, 1],
-        "mask": None,
-        "opacity": 1,
-        "blend_mode": "normal",
-        "alpha_lock": False,
-        **changes.pop("fill", {}),
-    }
-    found = {
-        "document_id": document_id,
-        "layer_id": PAINT,
-        "verify": "region",
-        "shape": copy.deepcopy(RECT),
-        "fill": style,
-    }
-    found.update(changes)
-    return found
 
 
 def fill(world: World, document_id: str, **changes: Any) -> dict[str, Any]:

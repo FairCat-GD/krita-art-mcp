@@ -316,7 +316,9 @@ def sample_receipt(outcome: Outcome) -> CallToolResult:
 
 def _target(result: dict[str, Any]) -> str:
     return (
-        f"layer {result['layer_id']}" if result["target"] == "layer" else f"the {result['target']}"
+        f"{result['target']} {result['layer_id']}"
+        if result["target"] in ("layer", "mask")
+        else f"the {result['target']}"
     )
 
 

@@ -50,12 +50,25 @@ def handlers(registry: Registry, port: DocumentsPort, data: Path) -> dict[str, H
             profile = None
             spec = transfer.write(paths.transfer_dir(data), pixels, width, height, "A8")
         elif target == "mask":
-            transparency_mask(port.tree(handle.document), args["layer_id"])
+            node = _found(port.tree(handle.document), args["layer_id"])
+            if node["type"] != "transparencymask":
+                kind = TYPES.get(node["type"], node["type"])
+                found = {"layer_id": args["layer_id"], "layer_type": kind}
+                message = f"target mask reads a transparency mask; this layer is a {kind}."
+                raise BridgeError("INVALID_ARGUMENT", message, False, found)
             [pixels] = port.layer_rects(handle.document, args["layer_id"], [rect])
             profile = None
             spec = transfer.write(paths.transfer_dir(data), pixels, width, height, "A8")
         else:
-            [pixels], profile = read_rects(port, handle, info, target, args["layer_id"], [rect])
+            [pixels], profile = read_rects(
+                port,
+                handle,
+                info,
+                target,
+                args["layer_id"],
+                [rect],
+                'capture it with target "mask"',
+            )
             spec = transfer.write(paths.transfer_dir(data), pixels, width, height, "BGRA8")
         return {
             "document_id": handle.document_id,
@@ -111,9 +124,10 @@ def read_rects(
     target: str,
     layer_id: Any,
     rects: list[dict[str, int]],
+    mask_hint: str = "",
 ) -> tuple[list[Any], str]:
     if target == "layer":
-        node = paint_layer(port.tree(handle.document), layer_id)
+        node = paint_layer(port.tree(handle.document), layer_id, mask_hint)
         return port.layer_rects(handle.document, layer_id, rects), node["profile_id"]
     check_read_space(info)
     # K46: a selection mask's overlay would enter the read, and an owner's document is never
@@ -155,41 +169,36 @@ def check_target(args: dict[str, Any], targets: tuple[str, ...]) -> str:
     target, layer_id = args["target"], args["layer_id"]
     if target not in targets:
         raise BridgeError("INVALID_ARGUMENT", f"target is one of {', '.join(targets)}.")
-    if (target in ("layer", "mask")) != (isinstance(layer_id, str) and bool(layer_id)):
-        message = "layer_id names a node for target layer or mask only."
+    named = [one for one in targets if one in ("layer", "mask")]
+    if (target in named) != (isinstance(layer_id, str) and bool(layer_id)):
+        message = f"layer_id names a node for target {' or '.join(named)} only."
         raise BridgeError("INVALID_ARGUMENT", message)
     return str(target)
 
 
-def paint_layer(tree: dict[str, Any], layer_id: str) -> dict[str, Any]:
+def _found(tree: dict[str, Any], layer_id: str) -> dict[str, Any]:
     node: dict[str, Any] | None = next((n for n in tree["nodes"] if n["id"] == layer_id), None)
     if node is None:
         raise BridgeError("LAYER_NOT_FOUND", "No layer has that id.", False, {"layer_id": layer_id})
+    return node
+
+
+def paint_layer(tree: dict[str, Any], layer_id: str, mask_hint: str = "") -> dict[str, Any]:
+    # mask_hint is where a caller that can read a mask points for one.
+    node = _found(tree, layer_id)
     # A group has no pixels of its own, and a mask is one channel.
     if node["type"] != "paintlayer":
         kind = TYPES.get(node["type"], node["type"])
         details = {"layer_id": layer_id, "layer_type": kind}
-        message = f"Layer reads take paint layers; this layer is a {kind}."
-        if node["type"] == "transparencymask":
-            message += ' Capture it with target "mask".'
+        message = f"Phase 1 reads the pixels of paint layers; this layer is a {kind}."
+        if mask_hint and node["type"] == "transparencymask":
+            message += f" A mask: {mask_hint}."
         raise BridgeError("UNSUPPORTED_CAPABILITY", message, False, details)
     if (node["color_model"], node["depth"]) != READ_SPACE:
         details = {key: node[key] for key in ("color_model", "depth", "profile_id")}
         details["layer_id"] = layer_id
         message = "Phase 1 reads RGBA / U8 layers only."
         raise BridgeError("COLOR_PROFILE_MISMATCH", message, False, details)
-    return node
-
-
-def transparency_mask(tree: dict[str, Any], layer_id: str) -> dict[str, Any]:
-    node: dict[str, Any] | None = next((n for n in tree["nodes"] if n["id"] == layer_id), None)
-    if node is None:
-        raise BridgeError("LAYER_NOT_FOUND", "No layer has that id.", False, {"layer_id": layer_id})
-    if node["type"] != "transparencymask":
-        kind = TYPES.get(node["type"], node["type"])
-        details = {"layer_id": layer_id, "layer_type": kind}
-        message = f"target mask reads a transparency mask; this layer is a {kind}."
-        raise BridgeError("INVALID_ARGUMENT", message, False, details)
     return node
 
 

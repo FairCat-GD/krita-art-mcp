@@ -23,15 +23,20 @@ MAX_PROTECTED = 1024
 MASK = "transparencymask"
 
 
+def line(nodes: dict[str, dict[str, Any]], node_id: str) -> list[str]:
+    # The node, its parent and every ancestor below the root; nodes maps each id to its node.
+    found, current = [], node_id
+    while current in nodes:
+        found.append(current)
+        current = nodes[current]["parent_id"]
+    return found
+
+
 def refuse_held_line(tree: dict[str, Any], node_id: str, protected: set[str], noun: str) -> None:
     # A mask changes how its layer shows without changing the layer's pixels, so the node, its
     # parent and every ancestor must be unprotected.
     nodes = {node["id"]: node for node in tree["nodes"]}
-    held, current = [], node_id
-    while current in nodes:
-        if current in protected:
-            held.append(current)
-        current = nodes[current]["parent_id"]
+    held = [one for one in line(nodes, node_id) if one in protected]
     if held:
         details = {"layer_id": node_id, "protected_layer_ids": sorted(held)}
         message = f"The {noun}, its layer or a group holding it is protected."

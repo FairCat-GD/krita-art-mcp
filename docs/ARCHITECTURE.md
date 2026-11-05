@@ -680,7 +680,8 @@ is an empty one; `selection` is a `duplicate()` of the global selection, never t
   the mask, its layer or any group holding it is protected (decision 14); L1 can reuse it. A mask in
   a file opened is protected like every node.
 - **Bounds.** Krita reports a mask's bounds as its layer's own, and no mask moves them, its layer's
-  included (measured). `misplaced` compares a create's parent without its bounds anyway.
+  included (measured), so `misplaced` compares a mask create's layer field by field, as it does any
+  create's parent.
 - **What a mask does.** The composite takes the layer by the coverage: `rint(layer × c + below ×
   (1 − c))`, c the byte over 255 (measured with a graded PNG selection).
 - **The create's check.** It reads no layer pixels, only the composite, over the layer's own bounds
@@ -1276,7 +1277,7 @@ depend on it: 87 open documents cost about 50 s more.
 |---|---|
 | `uv run scripts/verify.py` | 6 stages, all PASS |
 | Server tests (3.12) | 970 passed, 0 skipped |
-| Plugin-core tests (3.10) | 927 passed, 0 skipped |
+| Plugin-core tests (3.10) | 931 passed, 0 skipped |
 | `uv run krita-art-mcp probe` | 171 PASS, 0 FAIL, 25 MEASURED; about 130 s |
 | `uv run krita-art-mcp doctor` | 6 steps, all PASS, with a root allowed |
 | Registered tools | 20 |

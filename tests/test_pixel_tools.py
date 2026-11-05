@@ -153,6 +153,8 @@ def test_a_mask_capture_is_its_coverage_as_grey(world: World) -> None:
     found = np.asarray(Image.open(Path(data["image"]["path"])))
     assert found.ndim == 2 and data["background"] is None and data["profile_id"] is None
     assert found[0:2, 2:4].tolist() == [[64, 64], [64, 64]] and found[0, 4] == 192
+    text = world.server().call("krita_capture", {**arguments, "scale": 1}).content[0]
+    assert isinstance(text, TextContent) and f"mask {mask}" in text.text
     refused = world.server().content("krita_capture", {**arguments, "background": "checker"})
     assert refused["error"]["code"] == "INVALID_ARGUMENT" and refused["operation_id"] is None
 

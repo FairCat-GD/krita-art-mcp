@@ -1038,6 +1038,40 @@ save*.
 - **Numbers:** 970 server tests (+17), 927 plugin tests (+47), probe 171 PASS (+12), 0 FAIL, 25
   MEASURED, 129.9 s with 0 documents open. 20 tools, 20 schema files, 30 error codes, 32 ops, 12
   capabilities, instructions 3,908 characters (+158), `api_version` 0.4.0.
+- **Review (`/code-review high`), run at the owner's request while they were away, 7 findings: 7
+  fixed and 0 skipped.**
+  - **The parent check was loosened for every create.** `misplaced` compared the parent without its
+    bounds for paint and group creates too; it does so for a mask's layer only again.
+  - **A sample, a preview or a `layer_alpha` selection of a mask pointed to `target: "mask"`,**
+    which none of them takes. The hint now comes from the capture alone.
+  - **`check_target`'s message named a mask target for sample and preview;** it names each call's
+    own targets.
+  - **A mask capture's receipt said "the mask"**; it names the mask, as a layer capture names its
+    layer.
+  - **No test held the create's widening to the canvas, or a mask under
+    `preserve_composite_alpha`;** both are tested, with a protected group's bounds on a paint create.
+  - **`create_mask`'s comment was a paragraph;** it is one line.
+  - **Two ancestor walks and two node lookups;** `protection.line` and `pixels._found` serve both.
+  - **Falsified:** the parent strict for a layer, the capture's hint, `check_target`'s targets, the
+    receipt's mask, the create's widening and its alpha check. Each failed at its own test.
+  - **Checked live:** `install-plugin`; Krita's quit timed out at 0 documents open and 0 unsaved,
+    and was not forced while the owner was away. The owner restarted it, `doctor` 6 of 6.
+  - **Numbers after the review:** 970 server tests, 931 plugin tests (+4), probe 171 PASS, 0 FAIL,
+    25 MEASURED, 132.0 s with 0 documents open.
+- **Second review (the owner's `/code-review high`), 5 findings: 5 fixed and 0 skipped.**
+  - **`protection.line` rebuilt the node map on every call,** once per protected id in an update;
+    it takes the map, built once.
+  - **A layer capture read the tree twice;** the mask hint is `paint_layer`'s, given by the capture
+    alone, so one read serves.
+  - **The mask create's layer was compared without its bounds,** guarding a hypothesis the
+    measurement disproved; every create's parent is compared field by field again.
+  - **The mask tests copied the fill tests' helper;** `paint_world.fill_args` serves both.
+  - **The probe built mask paint as a colour fill and deleted the colour;** it builds it directly.
+  - **Falsified:** the capture's hint, off; its test failed. The rest are refactors under existing
+    tests.
+  - **Checked live:** `install-plugin`, a Krita restart at 0 unsaved, `doctor` 6 of 6.
+  - **Numbers after the second review:** 970 server tests, 931 plugin tests, probe 171 PASS, 0
+    FAIL, 25 MEASURED, 132.1 s with 0 documents open.
 
 ---
 

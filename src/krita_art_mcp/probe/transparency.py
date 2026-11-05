@@ -51,9 +51,13 @@ def _crop(pixels: np.ndarray | None, rect: dict[str, int]) -> np.ndarray | None:
 def _mask_paint(
     document_id: str, mask: str, rect: dict[str, int], paint: str, opacity: float
 ) -> Any:
-    found = fill_args(document_id, mask, _shape(rect), opacity=opacity, mask=paint)
-    del found["color"]
-    return found
+    return {
+        "guard": guard(document_id),
+        "layer_id": mask,
+        "shape": _shape(rect),
+        "mask": paint,
+        "opacity": opacity,
+    }
 
 
 async def _mask(

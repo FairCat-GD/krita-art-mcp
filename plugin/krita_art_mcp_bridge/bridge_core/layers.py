@@ -206,12 +206,8 @@ def misplaced(
     ):
         details = {"layer_id": layer_id, "added": added}
         return BridgeError("INTERNAL_ERROR", "Krita placed the layer elsewhere.", False, details)
-    parent_id = args["parent_id"]
-    held = sorted((protected - {parent_id}) & set(old))
-    moved = [node_id for node_id in held if _settled(old[node_id]) != _settled(new[node_id])]
-    # The parent's bounds are left out: a group's follow its projection.
-    if parent_id in old and _unmoved(old[parent_id]) != _unmoved(new[parent_id]):
-        moved = sorted([*moved, parent_id])
+    watched = sorted((protected | {args["parent_id"]}) & set(old))
+    moved = [node_id for node_id in watched if _settled(old[node_id]) != _settled(new[node_id])]
     if moved:
         details = {"layer_ids": moved}
         message = "Adding the layer changed a protected layer's properties."
@@ -231,10 +227,6 @@ def _placed(nodes: dict[str, Any], made: dict[str, Any], above_id: str | None) -
         if node["parent_id"] == made["parent_id"] and node["id"] != made["id"]
     ]
     return all(made["order"] > order for order in others)
-
-
-def _unmoved(node: dict[str, Any]) -> dict[str, Any]:
-    return {key: node[key] for key in mutation.WATCHED if key != "order"}
 
 
 def _settled(node: dict[str, Any]) -> dict[str, Any]:

@@ -3,6 +3,7 @@ import hashlib
 from pathlib import Path
 from typing import Any
 
+import paint_world
 import pytest
 from bridge_core import history, verification
 from fake_krita import MASK, fake_node, layer_id
@@ -19,20 +20,11 @@ def world(tmp_path: Path) -> World:
 
 
 def fill_args(document_id: str, layer: str, **style: Any) -> dict[str, Any]:
-    return {
-        "document_id": document_id,
-        "layer_id": layer,
-        "verify": "region",
-        "shape": {"kind": "rect", "rect": dict(style.pop("rect", PAINTED))},
-        "fill": {
-            "color": None,
-            "mask": None,
-            "opacity": 1,
-            "blend_mode": "normal",
-            "alpha_lock": False,
-            **style,
-        },
-    }
+    rect = style.pop("rect", PAINTED)
+    shape = {"kind": "rect", "rect": dict(rect)}
+    return paint_world.fill_args(
+        document_id, layer_id=layer, shape=shape, fill={"color": None, **style}
+    )
 
 
 def painted(world: World) -> tuple[str, Any]:
@@ -386,3 +378,53 @@ def test_a_mask_in_an_opened_file_is_protected(world: World) -> None:
         "paint.fill", fill_args(opened["document_id"], made["layer_id"], mask="hide")
     )
     assert body["code"] == "LOCKED_TARGET"
+
+
+def test_a_spreading_node_on_the_layer_widens_the_create_to_the_canvas(world: World) -> None:
+    document_id, _ = painted(world)
+    world.port._tree(1)["nodes"].append(fake_node(1, 8, "blur", PAINT, 0, type="filtermask"))
+    made = world.run("layer.create", create_args(document_id, "all"))
+    assert made["verification"]["mode"] == "full"
+    assert made["verification"]["rect"] == box(0, 0, WIDTH, HEIGHT)
+
+
+def test_a_mask_that_lowers_alpha_under_preserve_alpha_is_undone(world: World) -> None:
+    document_id, _ = painted(world)
+    world.allow(document_id, box(0, 0, WIDTH, HEIGHT), preserve=True)
+    body = world.refused("layer.create", create_args(document_id, "none"))
+    assert (body["code"], body["details"]["rollback_verified"]) == (
+        "PROTECTED_REGION_CHANGED",
+        True,
+    )
+    assert MASK not in {node["type"] for node in world.port._tree(1)["nodes"]}
+
+
+def test_a_layer_create_still_watches_a_protected_groups_bounds(world: World) -> None:
+    document_id, handle = painted(world)
+    handle.protected.add(GROUP)
+
+    def grow(tree: dict[str, Any], node: dict[str, Any]) -> None:
+        group = next(one for one in tree["nodes"] if one["id"] == GROUP)
+        group["bounds_px"] = box(0, 0, 4, 4)
+
+    world.port.on_layer.append(grow)
+    args = {**create_args(document_id, None), "parent_id": GROUP, "type": "paint"}
+    body = world.refused("layer.create", args)
+    assert (body["code"], body["details"]["rollback_verified"]) == ("LOCKED_TARGET", True)
+
+
+def test_a_sample_of_a_mask_is_not_sent_to_a_mask_target(world: World) -> None:
+    document_id, _ = painted(world)
+    mask = masked(world, document_id, "all")
+    args = {
+        "document_id": document_id,
+        "frame": 0,
+        "target": "layer",
+        "layer_id": mask,
+        "points": [[45, 55]],
+        "radius": 0,
+    }
+    body = world.refused("sample.read", args)
+    assert body["code"] == "UNSUPPORTED_CAPABILITY" and 'target "mask"' not in body["message"]
+    wrong = world.refused("sample.read", {**args, "target": "composite"})
+    assert wrong["message"] == "layer_id names a node for target layer only."

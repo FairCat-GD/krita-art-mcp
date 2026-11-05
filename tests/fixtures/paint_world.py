@@ -1,3 +1,4 @@
+import copy
 import hashlib
 import itertools
 import json
@@ -30,6 +31,8 @@ BASE_PIXEL = bytes([9, 8, 7, 255])
 # Orange at full opacity, as the fake paints it: B, G, R, A.
 ORANGE = bytes([0, 128, 255, 255])
 LABEL = history.LABELS["paint.stroke"]
+# The fill tests' shape: a rect on the paint layer.
+RECT: dict[str, Any] = {"kind": "rect", "rect": {"x": 40, "y": 50, "width": 20, "height": 10}}
 
 
 def box(x: int, y: int, width: int, height: int) -> dict[str, int]:
@@ -187,3 +190,23 @@ class World:
         tree["nodes"] = [fake_node(1, 1, "paint", tree["root_id"], 0)]
         self.port.paintable(1)
         return document_id, handle
+
+
+def fill_args(document_id: str, **changes: Any) -> dict[str, Any]:
+    style = {
+        "color": [1, 0.5, 0, 1],
+        "mask": None,
+        "opacity": 1,
+        "blend_mode": "normal",
+        "alpha_lock": False,
+        **changes.pop("fill", {}),
+    }
+    found = {
+        "document_id": document_id,
+        "layer_id": PAINT,
+        "verify": "region",
+        "shape": copy.deepcopy(RECT),
+        "fill": style,
+    }
+    found.update(changes)
+    return found
