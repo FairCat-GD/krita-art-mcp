@@ -40,17 +40,19 @@ Never push without being asked.
 | C1 | `krita_paint_fill` | 1, 3 | **0.21.0** |
 | M1 | Transparency masks | 1, 3, 14 | **0.22.0** |
 | X1 | Architecture review: the frame and its first two tools | all | — |
-| E1 | Taper probe, then the proven subset | 16 | **0.23.0** |
-| L1 | Layers: duplicate, reorder, remove, group | 1, 3, 13 | **0.24.0** |
-| B1 | Document duplicate | 1, 3, 12 | **0.25.0** |
-| T1 | Translate, on a native route or not at all | 1, 15 | **0.26.0** |
-| S1 | Scale, rotate, shear; cut first if the round runs long | 1, 3 | **0.27.0** |
+| X1a | Review fixes: the frame and the save's finish | 1, 5, 7, 10 | **0.23.0** |
+| E1 | Taper probe, then the proven subset | 16 | **0.24.0** |
+| L1 | Layers: duplicate, reorder, remove, group | 1, 3, 13 | **0.25.0** |
+| B1 | Document duplicate | 1, 3, 12 | **0.26.0** |
+| T1 | Translate, on a native route or not at all | 1, 15 | **0.27.0** |
+| S1 | Scale, rotate, shear; cut first if the round runs long | 1, 3 | **0.28.0** |
 | X2 | Architecture review: construction | all | — |
-| V1 | Re-measure, docs, full run, close the round | 18 | **0.28.0** |
+| V1 | Re-measure, docs, full run, close the round | 18 | **0.29.0** |
 
 A review session changes no product code and cuts no version; a session it inserts takes the next
-version, and every later version shifts by one. E1 on a no-go and T1 without a native route ship no
-version, and the later versions move down by one; the handoff says so.
+version, and every later version shifts by one. X1 inserted X1a, so E1 and every later version
+moved up by one. E1 on a no-go and T1 without a native route ship no version, and the later
+versions move down by one; the handoff says so.
 
 ---
 
@@ -1092,13 +1094,154 @@ plan.
 
 **Watch for:** a review is evidence, and a block is scope. Neither is the other.
 
+**Done (2026-11-06, no version).**
+- **Decided with the owner in plan mode:**
+  - The probe ran for the baseline, and the owner's journal was counted read-only, as counts.
+  - The product fixes land in an inserted **X1a**, before E1; every later version shifts by one.
+  - **F6:** a poll finishes a save only from the process that made the call; `krita_operation_get`
+    keeps `readOnlyHint: true`, with the exception written down.
+  - **F28** is recorded as a fix that leaves the contract alone; `api_version` stays 0.4.0.
+- **The review.** `REVIEW-2026-11-06.md`: 28 findings (2 High, 9 Medium, 17 Low) and 11 Info,
+  each verified on the code path at `189ba26`; §2 holds every invariant to its enforcing site and
+  test; §5 reads the frame forward against E1, L1, B1, T1 and S1. The read ran twice, by six
+  independent readers in two waves of three, the second without the first's notes; each
+  substantive finding was found by both reads of its area.
+- **The findings that matter most.** A save whose finish never ran says `not_applied`, retryable,
+  with its hidden file in place (F1); the instructions have 188 characters for five sessions' lines
+  (F2); a rollback's first undo skips the state check (F3); a finish refused retryably is stuck
+  under its derived id (F4), and a second process's poll kills a save (F5); the frame recovers one
+  unpushed step and cannot name a detached node (F7); the ledger's fingerprint sees only blend and
+  membership (F8); `RECEIPTS` is keyed by op (F9); parity does not hold schema-side rules and the
+  area rule differs between the sides (F10); the probe's journal check can pass on nothing (F11).
+- **Amendments:**
+  - **X1a inserted**, 0.23.0, with the fixes the owner chose; E1 0.24.0, L1 0.25.0, B1 0.26.0,
+    T1 0.27.0, S1 0.28.0, V1 0.29.0. Decided at plan time, with the owner.
+  - **E1, L1, B1, T1 and S1 amended** from the findings, each saying so under its Read line;
+    X2's watch-for names what to re-check. Decided at plan time, with the owner.
+  - **The review's method widened** from one second read to three readers a wave, so each area's
+    second read was cold and whole. The session's own choice.
+- **Measured,** on Krita 5.3.4.1, commit `189ba26`:
+  - `verify` as found: 6 stages PASS; tests 183.3 s, plugin-tests 26.9 s.
+  - `probe` as found: 171 PASS, 0 FAIL, 25 MEASURED in 134.1 s with 0 documents open; no call left
+    uncertain. `doctor` 6 of 6, 0 open documents, 0 unsaved.
+  - The owner's journal, counts only: 2,105 calls over three days, all finished as receipts, 3
+    `INVALID_ARGUMENT` failures from before the outcome field, 0 `unknown`, 0 unfinished.
+  - Codex's renderer: the stroke's input 3,154 normalised and 2,091 rendered bytes; the preview's
+    output 2,362.
+  - The fill's area rule: 22 of 30,000 and 26,282 of 300,000 near-flat closed paths refused by
+    the server alone, 63 of 300,000 by the plugin alone.
+  - Eleven simulations on the test worlds, each written under its finding.
+- **Falsified:** nothing; a review adds no check.
+- **Numbers:** 970 server tests (+0), 931 plugin tests (+0), probe 171 PASS (+0), 0 FAIL, 25
+  MEASURED, 134.1 s with 0 documents open. 20 tools, 20 schema files, 30 error codes, 32 ops, 12
+  capabilities, instructions 3,908 characters, `api_version` 0.4.0.
+
+---
+
+## X1a: Review fixes — the frame and the save's finish
+
+Inserted by the owner at X1's plan mode, 2026-11-06, from `REVIEW-2026-11-06.md`: the product
+fixes the review found, before E1 builds on the frame and before the instructions run out. The
+owner chose the inserted session over spreading the fixes across E1, L1 and B1, and chose for F6
+that a poll finishes a save only from the process that made the call.
+
+**Read:** `REVIEW-2026-11-06.md` whole (F1–F6, F10, F11, F13–F21, F23–F25, F27 are its scope);
+`FEATURE-recovery-and-construction.md` decisions 1, 5, 7, 10; `ARCHITECTURE.md` *The tool contract*
+(Hints, The instructions, Argument rules are written twice), *Bridge and jobs*, *The verification
+core* (The frame, The rollback), *The undo ledger and history*, *The save*, *The server*, *Testing
+strategy*.
+
+- **The save's finish tells the truth** (F1, F5, F6; decisions 5, 7).
+  - `finish_save` (`src/krita_art_mcp/tools/saving.py:104-107`) keeps a stated `not_applied` only
+    when the finish's `details.rollback_verified` is true (its own discard paths); any other
+    failure after a completed save is `uncertain`, not retryable, and so is a finish whose
+    session differs from the save's.
+  - A poll finishes a save only from the process that made the call: `krita_operation_get` runs
+    `Known.finish` only when this server dispatched the save (its journal holds the dispatched
+    line and the bridge's lease is this client's); another process's poll reports the save as
+    the bridge holds it, `running` or `done` with no finish, and says so. The hint stays
+    `readOnlyHint: true`; the exception is written in the hints table and the guide.
+- **A retryable failure under a derived id runs again** (F4). `Jobs.submit` (`jobs.py:185-188`)
+  treats a known op that failed retryably, whose request was released, as a new submission under
+  the same id.
+- **The rollback's first undo reads the state** (F3). `_restore` passes `known` as it is
+  (`mutation.py:372`), or seeds it from the state `_unnamed`'s move confirmed.
+- **The instructions move** (F2). Into tool and field descriptions: the inspect line, the capture
+  line, the stroke line, the layer_update line's tail (a `verify` description, which the field
+  lacks, and `inherit_alpha`'s), the fill's first clause, the sample line but "Never judge a colour
+  from a capture.", the "Undo steps" line into `history_step`'s description, open's "The source is
+  never written…" into `mode`'s. Leave at least 700 characters spare, and keep the two pinned
+  phrases (`tests/test_envelope.py:185,188-192`). A test holds the spare floor this time, because
+  the five sessions' lines are known: E1 about 145, L1 185, B1 140, T1 130, S1 130.
+- **Parity holds schema-side rules too** (F10; decision 10). `refused_alike` gains a way to turn a
+  schema rule off, or to send the translated op straight to the bridge; cases for the stroke's
+  colour alpha, colour and mask both given, mask paint with a blend or alpha lock, `coverage` on
+  the wrong type, open's mode against `working_dir`. One area rule on both sides, over the
+  on-curve points (`shapes.points`, `tools/painting.py` `_fill_rules`), with a near-flat case.
+  `ARCHITECTURE.md:320-327` then says what is held.
+- **The probe's journal check sees what it reads** (F11, F24). `_nothing_uncertain` asserts a
+  minimum line count and reports dispatched lines with no finish, and says which calls are outside
+  it. `transparency.py:301` compares against the stroke's own change; a reveal stroke, a partial
+  stroke and an undo of a mask create join the mask checks.
+- **The small fixes.** `_counted` takes the channel count per hashed id (F13); the unsafe exit of
+  `_roll_back` calls `lost()` (F14); a confirmed rollback whose unnamed step never moved does not
+  seal, or the failure reports `history_sealed` (F15); `selection.set` calls `lost()` on a
+  non-`BridgeError` after its marker (F16); `unmasked_view` puts the active node back, or K46's
+  activation is named as excluded in decision 5's table, the fake and an armed test with a mask
+  active (F17); the moved-document save writes `rollback_verified: false` (F18); the retryable
+  scan reads keyword and computed flags (F19); `no_effect` settles the attempts in that session
+  with the same digest dispatched before the line (F20); `_check_mask_paint` refuses `eraser`
+  with mask paint (F21); a composition problem whose subtree holds a not-finite path is dropped
+  (F23); `selection.enforced`'s note names mask paint (F25); `test_schemas.py` walks nested
+  objects for `additionalProperties: false` (F27).
+- **Docs** (F27, F6). `ARCHITECTURE.md`: the Codex sizes, "the paint kind first", "The 23 lines"
+  and the fill's time, the `amend_schemas` list, the hints' exception, the parity paragraph, the
+  finish's rule in *The save* and *The server*; `CLAUDE.md`'s `amend_schemas` row;
+  `USER-GUIDE.md`: the hints table's exception, `LOCKED_TARGET`'s held line, the save's and the
+  poll's new wording; `instructions.py` names `unregistered`; `BACKLOG.md:165,168-169`;
+  `CHANGELOG.md`: 0.23.0.
+
+**Gates:**
+- `uv run scripts/verify.py`, with these tests:
+  - a finish refused before its marker after a completed save reads `uncertain`, not retryable;
+    one whose own discard verified keeps `not_applied`; a session mismatch reads `uncertain`;
+  - a poll from a process that did not dispatch the save finishes nothing and says so; the
+    owning process's finish still runs;
+  - a finish refused at job start, the dialog closed, then a retry of the save that completes;
+  - the stranger step: an unseen "Add Layer" on top is `ROLLBACK_FAILED` with no move;
+  - the instructions' spare floor; each moved sentence found in its description;
+  - the new parity cases, and the near-flat path refused alike;
+  - each small fix, at its own test.
+- `probe`: the whole baseline, with the journal check's minimum and the three new mask checks.
+- Each new check falsified once.
+
+**Watch for:**
+- **Decision 7 stands.** A same-session resend of a save is still allowed; only what the finish
+  says about a completed save changes.
+- **The two-step tests** (`tests/plugin/test_mutation.py:66,82`) pin the rollback's order; the
+  `known` change must leave them green and fail the stranger test alone.
+- **The hidden file after an `uncertain` finish** stays, as known debt says; the fix changes what
+  is said, not what is swept.
+- **Version first.** The plugin's hash and `serve`'s gate both read it; `install-plugin` and a
+  Krita restart before the probe.
+- **The instructions are user-visible,** so the move is a `Changed` entry.
+
 ---
 
 ## E1: Tapers
 
 **Read:** `FEATURE-recovery-and-construction.md` *The Codex agent's report* (Authoring, its
 answers), decision 16; `ARCHITECTURE.md` *Painting*, *Reads, and K46* (Resources), *Testing
-strategy* (Hypotheses), *Reference* (K3, K4, K30, K36).
+strategy* (Hypotheses), *Reference* (K3, K4, K30, K36); `REVIEW-2026-11-06.md` §5 E1, F2, F26 and
+the Info on the brush exclusion.
+
+**Amended at X1 (2026-11-06), with the owner.** The block's pointers `painting.py:86-88,551` are
+stale (F26): the digest memory is `activated` and `remember` (`painting.py:69-76`, called at
+`:186` and `:258`), and `_listed`'s lookup is at `:588`. Decision 5's brush exclusion does not
+cover a `fromXML` edit, which Krita's "save dirty presets" setting can write to disk: mark before
+the edit, run `remember` before it and never after, and restore inside the change, checked by
+digest. Whether `Preset(resource).toXML()` differs from the view's preset after a `fromXML` is
+unverified; measure it first. E1 ships 0.24.0 on go, after X1a.
 
 - **The go/no-go,** on a throwaway document, before any product code. Activate a preset, then
   `fromXML` with a Distance curve on size, paint, restore. Run short, long and curved strokes.
@@ -1127,7 +1270,7 @@ strategy* (Hypotheses), *Reference* (K3, K4, K30, K36).
 - **Docs.**
   - `USER-GUIDE.md`: what `dynamics` is and is not.
   - `ARCHITECTURE.md`: *Painting*, the matrix, H2's row, *Reference*.
-  - Server instructions, `CHANGELOG.md`: 0.23.0 on go.
+  - Server instructions, `CHANGELOG.md`: 0.24.0 on go.
 
 **Gates:**
 - `uv run scripts/verify.py`, with these tests: curve shapes, the XML edit and its restore, the
@@ -1156,7 +1299,20 @@ strategy* (Hypotheses), *Reference* (K3, K4, K30, K36).
 **Read:** `FEATURE-recovery-and-construction.md` *The Codex agent's report* (its answers), decisions
 1, 3, 13; `ARCHITECTURE.md` *The invariants* (4, 5), *Registry, lease and document state*,
 *Protection, selections and masks*, *The verification core*, *The undo ledger and history*,
-*Reference* (K22, K42).
+*Reference* (K22, K42); `REVIEW-2026-11-06.md` §5 L1, F7, F8, F10, F12, F13, F22, F25, F26.
+
+**Amended at X1 (2026-11-06), with the owner.** The frame recovers one unpushed step and the
+adapter cannot name a detached node across two port calls (F7), so the reorder pushes between its
+steps: a port method that calls back after the remove, so the core pushes `steps.of(port.tree())`
+on the real intermediate tree, or one that returns a detached handle. `history.LABELS` becomes one
+label per step (F12), each measured. `ledger.node_states` gains `parent_id` and `order` (F8), and
+its comment changes. The create's `misplaced` cannot take a group's `id_map` (`layers.py:197-205`);
+the reorder needs a judge of its own, since siblings' `order` shifts under both parents. Protected
+masks never join `hashed` without per-layer channels (F13). The fake learns remove, re-add and
+duplicate with a per-command undo, not a snapshot (F22). A duplicate is `destructiveHint: false`
+only if the copy is always hidden; a visible option makes it destructive, as M1's `none` mask did
+for the create. `undo.grouping`'s note is reworded (F25). "The README's tool list" is struck: README
+has none (F26). L1 ships 0.25.0.
 
 - **`krita_layer_duplicate`,** layers and groups, by `Node.duplicate()` (`libs/libkis/Node.cpp:645`;
   `clone()` at `:150` gives a node with no image) and `addChildNode`, one undo step. Hidden by
@@ -1173,7 +1329,7 @@ strategy* (Hypotheses), *Reference* (K3, K4, K30, K36).
 - **Docs.**
   - `USER-GUIDE.md`: *The core loop*.
   - `ARCHITECTURE.md`: *The undo ledger and history*, the matrix, the baseline.
-  - Server instructions, the README's tool list, `CHANGELOG.md`: 0.24.0.
+  - Server instructions, `CHANGELOG.md`: 0.25.0.
 
 **Gates:**
 - `uv run scripts/verify.py`, with these tests: each refusal, parity for each new pair, `id_map`
@@ -1198,7 +1354,19 @@ strategy* (Hypotheses), *Reference* (K3, K4, K30, K36).
 
 **Read:** `FEATURE-recovery-and-construction.md` decisions 1, 3, 12; `ARCHITECTURE.md` *The
 invariants* (2, 3, 4), *Documents*, *Registry, lease and document state*, *Previews and the lazy
-baseline*, *The save*, *The server*.
+baseline*, *The save*, *The server*; `REVIEW-2026-11-06.md` §5 B1, F1, F4, F5, F6, F9, F26.
+
+**Amended at X1 (2026-11-06), with the owner.** B1 runs on the save's finisher, which X1a
+reshapes first (F1, F4, F5, F6): the finisher's rule says `uncertain` for any failure after an op
+that changed something, a finish runs only from the process that made the call, and a retryable
+refusal under a derived id runs again. `RECEIPTS` is keyed by bridge op, one tool per op, and the
+completeness test holds that (F9): the duplicate takes a distinct first plugin op, or `RECEIPTS`
+is keyed by the journal's tool; `Known.finish` becomes a chain (the finish, then the reopen),
+each step under its own derived id and keeping the save's identity, and the reopen op joins
+`document.save_finish` in the class test (`tests/test_outcomes.py:185`). "A crash between ops
+reports `uncertain`" is true only once F1 lands. Its hint is additive only if its finish never
+clears the source's `dirty` or `saved_state`, which the save's does (`saving.py:215-218`). "The
+README's tool list" is struck (F26). B1 ships 0.26.0.
 
 - **`krita_document_duplicate`** to a new `.kra` path inside a root. `.ora` is refused: ids do not
   persist (K39).
@@ -1217,7 +1385,7 @@ baseline*, *The save*, *The server*.
 - **Docs.**
   - `USER-GUIDE.md`: *The core loop*.
   - `ARCHITECTURE.md`: *Documents*, *The save*, *The server*, the matrix, the baseline.
-  - Server instructions, the README's tool list, `CHANGELOG.md`: 0.25.0.
+  - Server instructions, `CHANGELOG.md`: 0.26.0.
 
 **Gates:**
 - `uv run scripts/verify.py`, with these tests: inheritance, each refusal, the `.ora` refusal, each
@@ -1241,7 +1409,16 @@ baseline*, *The save*, *The server*.
 
 **Read:** `FEATURE-recovery-and-construction.md` *The Codex agent's report* (its answers), decisions
 3, 15; `ARCHITECTURE.md` *The verification core* (Reach), *The undo ledger and history*; from git
-history, `git show 04e9f6c:docs/spec/PDD.md` Q13.
+history, `git show 04e9f6c:docs/spec/PDD.md` Q13; `REVIEW-2026-11-06.md` §5 T1, F7, F8, F12.
+
+**Amended at X1 (2026-11-06), with the owner.** The ledger's fingerprint sees only `(id,
+blend_mode)` and the selection (F8), so `fromXML`'s own step reads as never pushed: a raise after
+it ends `rollback_verified: true` with the step on Krita's stack, or `FOREIGN` and unsafe when the
+attach was pushed first. The native route therefore needs the fingerprint to see the mask: a
+transform mask's `toXML()` digest read in `_walk` and added to `node_states`, or a projection
+witness, and Krita's top label recorded at the start so an unseen step can be told. `fromXML`
+plus attach in one port method sits in the two-unpushed window (F7): push between them. Labels
+per step (F12), measured. T1 ships 0.27.0 on a native route.
 
 - **The bounded probe, first, on a throwaway document.** `createTransformMask` and
   `TransformMask.fromXML` exist in the 5.3.4.1 stubs (`krita.pyi:174,540-543`). `fromXML` runs its
@@ -1255,7 +1432,7 @@ history, `git show 04e9f6c:docs/spec/PDD.md` Q13.
   was measured, and T1 ships no version. A non-undoable `Node.move` compensated inside one call is
   not recovery.
 - **Docs.** `USER-GUIDE.md`; `ARCHITECTURE.md`: *The verification core*, the matrix, the baseline;
-  server instructions; `CHANGELOG.md`: 0.26.0 if it ships.
+  server instructions; `CHANGELOG.md`: 0.27.0 if it ships.
 
 **Gates:**
 - `uv run scripts/verify.py`, with tests for the route chosen.
@@ -1278,7 +1455,15 @@ history, `git show 04e9f6c:docs/spec/PDD.md` Q13.
 Cut first if the round runs long: useful, not yet proven by real use.
 
 **Read:** `FEATURE-recovery-and-construction.md` *The Codex agent's report* (its answers), decisions
-1, 3; `ARCHITECTURE.md` *The verification core*, *The undo ledger and history*.
+1, 3; `ARCHITECTURE.md` *The verification core*, *The undo ledger and history*;
+`REVIEW-2026-11-06.md` §5 S1, F8, F10, F12.
+
+**Amended at X1 (2026-11-06), with the owner.** A transform's one step moves bounds and
+`offset_px`, which neither the fingerprint nor `watched` sees (F8). It runs as the frame's pixel
+step: the target read over the canvas and its old bounds with a witness (`mutation.py:280-293`
+supports it), `back` over the watched tree plus bounds, `_moved` allowing `offset_px` on the named
+node and its descendants for a group, a mask target refused, its own labels (F12). Its parity gate
+uses X1a's helper for schema-side rules (F10). S1 ships 0.28.0.
 
 - **`krita_layer_transform`,** created here, or extended if T1 shipped it, on unprotected layers,
   one operation per call, one undo step, verified in full: `scaleNode`, `rotateNode`, `shearNode`
@@ -1287,7 +1472,7 @@ Cut first if the round runs long: useful, not yet proven by real use.
 - **The filter name is validated by the tool,** because `scaleNode` silently falls back to Bicubic.
 - **The guide names duplicating first** (L1) as the reversible route.
 - **Docs.** `USER-GUIDE.md`; `ARCHITECTURE.md`: *The undo ledger and history*, the matrix, the
-  baseline; server instructions; `CHANGELOG.md`: 0.27.0.
+  baseline; server instructions; `CHANGELOG.md`: 0.28.0.
 
 **Gates:**
 - `uv run scripts/verify.py`, with these tests: each refusal, parity, and the filter whitelist.
@@ -1314,7 +1499,9 @@ plan.
 
 **Gates:** `verify` and `probe` as found, recorded in the review's baseline.
 
-**Watch for:** X1's findings the owner left open; check they still hold.
+**Watch for:** X1's findings the owner left open (its Info items, and F28); check they still
+hold. Name functions, not lines, in the amendments: X1 found every line pointer in the later
+blocks moved under it (F26).
 
 ---
 
@@ -1327,7 +1514,7 @@ plan.
   client's own records, as counts and timings. That reopens or closes the batch question (decision
   18).
 - **Docs.** `ARCHITECTURE.md` and `USER-GUIDE.md` read through whole; "Phase 1" language corrected
-  where it is no longer true; the README; `CHANGELOG.md`: 0.28.0; the baseline.
+  where it is no longer true; the README; `CHANGELOG.md`: 0.29.0; the baseline.
 - **The close,** as the workflow says: the release commit with the last done-note, then
   `docs: close round 2` deleting `docs/spec/`'s files, and the handoff says no round is in progress.
 - **The backlog.** Anything left open moves there, with checks nobody did by hand.
