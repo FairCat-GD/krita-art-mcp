@@ -1,6 +1,6 @@
 # krita-art-mcp — architecture, as built
 
-This is the system as it stands at 0.23.0, in round 2, on the Phase 1 round 1 built. Every session
+This is the system as it stands at 0.24.0, in round 2, on the Phase 1 round 1 built. Every session
 keeps it true, in the same commit as the change. Each section stands on its own: a session reads
 the overview, the invariants and the baseline, then only the sections its work touches.
 `docs/USER-GUIDE.md` is the same system from the user's side.
@@ -153,13 +153,13 @@ while stopping, then the body: 411 with no length or when chunked, 413 over 64 M
 Every operation reply carries `session_id`, `operation_id`, `request_id` and `op`; health and
 refusals leave out `op`. One error body serves every refusal. `wait_s` is capped at 10 s. `ephemeral` is required on every call.
 
-**The ops: 32.**
+**The ops: 33.**
 
 | Group | Ops |
 |---|---|
 | Sent by tools (19) | `server_info`, `document.list`, `document.open`, `document.create`, `document.inspect`, `document.close`, `document.save`, `document.save_finish`, `resource.list`, `capture.read`, `sample.read`, `preview.read`, `layer.create`, `layer.update`, `selection.set`, `protection.set`, `history.step`, `paint.stroke`, `paint.fill` |
 | Server and `doctor` (2) | `bridge.unsaved_documents`, `document.baselines` |
-| Fixtures, the probe only (10) | `harness.export_kra`, `.select_mask`, `.front_document`, `.activate`, `.undo_labels`, `.label_timing`, `.add_node`, `.view`, `.brush_state`, `.undo` |
+| Fixtures, the probe only (11) | `harness.export_kra`, `.select_mask`, `.front_document`, `.activate`, `.undo_labels`, `.label_timing`, `.add_node`, `.view`, `.brush_state`, `.preset_dirty`, `.undo` |
 | A measurement, the probe only (1) | `harness.retention` |
 
 **The harness ops' reach.** Any client with the token can call them, and they bypass protection, on
@@ -421,9 +421,9 @@ the overhang bounds on-curve points only, so a brush's reach can pass it.
 `stroke.per_point_input` (Phase 6), `undo.grouping` (K29), `stroke.deterministic` (stochastic
 presets have no seed), `operation.cancel_running`, `color_spaces`, `filters` (Phase 2), `animation`
 (Phase 5). True since 0.9.0: `stroke.native_brush`, `stroke.smoothing`, `selection.enforced`; since
-0.21.0, `paint.fill`; since 0.22.0, `mask.transparency`.
+0.21.0, `paint.fill`; since 0.22.0, `mask.transparency`; since 0.24.0, `stroke.dynamics`.
 
-**The instructions.** `instructions.py` is 2,945 of Claude Code's 4,096 characters (C4). A test
+**The instructions.** `instructions.py` is 3,104 of Claude Code's 4,096 characters (C4). A test
 holds at least 700 spare, room for the round's later sessions. It states the rules an agent would
 otherwise learn from a refusal, and leaves to the tools what belongs to one: a field's range, unit
 and form to its description, and a tool's own rule to the tool's, each moved rule held there by a
@@ -919,6 +919,47 @@ lightness, and `erase` with white hides alike). The frame reads the target one b
 `layer_bounds_px` is its layer's, as Krita reports a mask's bounds. MyPaint presets read
 `MYPAINTBRUSH_UNPAINTABLE` on a mask, and `_paintable` refuses them.
 
+**A taper (`dynamics`).** A stroke's size and opacity along its arc length, through Krita's own
+Distance sensor (K51), on the pixel engine alone. `bridge_core/dynamics.py` is pure.
+- **Rules.** Each option is 2 to 16 knots `{at, value}`, at from 0 to 1 rising by 0.001 or more.
+  A taper needs `preset_sha256`, colour paint, and an arc length of 1 px or more. These are
+  parity pairs with the server, which measures the arc the same way.
+- **Refused before any change,** after `_listed`:
+  - another engine;
+  - a preset held after a failed restore;
+  - `useDirtyPresets` set in kritarc (only Krita's default is measured);
+  - a dirty flag no resource chooser reports.
+
+  The flag read here, at A0, before the brush is set, is what the restore puts back.
+- **Everything up to the brush re-read runs on the unedited preset:** the fingerprint, `set_brush`,
+  `_taken`, `remember`, the reach and R. R holds because the edit sets `SizeValue` to 1 and touches
+  neither the tip, the ratio nor the scatter, so no dab passes `size_px`.
+- **The XML.** For each asked option, the param `<Option>Sensor` holds `distance`, with an integer
+  `length` and the curve, every point a corner, so values run straight. `Pressure<Option>` and
+  `<Option>UseCurve` are true and `<Option>UseSameCurve` is false. The receipt lists the sensors
+  replaced, and a size strength the edit raised.
+- **The origin offset (K51).** A scripted stroke's Distance sensor counts the first dab's distance
+  from the canvas origin. So the length is the arc plus |start|, rounded half up, and each knot sits
+  at (at × arc + |start|) / length, after a first corner for the first dab, which reads 0.
+- **The change,** after the marker:
+  - `edit_preset` (`Preset.fromXML` on the window's current preset), then a read-back of the sensor
+    exactly and of the brush values;
+  - then the paint;
+  - then the restore: `fromXML` of the XML read after `set_brush`, then `reload_preset_action`
+    when the flag was clean at A0;
+  - then the check, by the stored and the view's digests, which are one object (K51), and by the
+    flag against A0.
+- **A failed restore,** a raise in it included, becomes `INTERNAL_ERROR` with `preset_restored:
+  false` and `outcome: uncertain`, since the window-wide preset is a change after the marker.
+  - The frame still undoes the paint.
+  - The preset is held beside `activated`: every stroke and fill refuses it with
+    `RESOURCE_HASH_MISMATCH` (`reason: preset_held`) until its raw digest reads as before.
+  - `remember` never runs after the edit.
+- **The dirty flag** is the resource model's `Dirty` column, read through the preset choosers'
+  views. Only views and models whose class names a resource are asked: another docker's model
+  crashed Krita on a stray `data()` call (measured). The probe reads it through
+  `harness.preset_dirty`.
+
 **The input gate.** Phase 1 always paints with `Node.paintPath` at pressure 1 (K4), even on a build
 with `paintPolylineStroke`, because that branch cannot be tested on released Krita. The server refuses
 before the journal, in order: argument errors, numbers that are not finite among them; the
@@ -1153,7 +1194,7 @@ document, and fails the checks it overlaps. The stock presets `b) Basic-2 Opacit
 **The journal check comes last.** It is the live evidence that `uncertain` stays rare.
 - **What it reads.** Every line the probe's servers journaled, through the journal's own reader,
   so a line a later one settled counts as settled.
-- **When it fails.** On fewer than 340 dispatched lines, about half a whole run's 682, since that
+- **When it fails.** On fewer than 340 dispatched lines, about half a whole run's 713, since that
   means it read the wrong place. Or on any request left with an unknown attempt, which it names:
   uncertain, unregistered, or dispatched with no finished line.
 - **What it cannot see.** Reads, harness ops and the probe's own direct bridge calls, none of which
@@ -1195,7 +1236,7 @@ retry of a batch; previews from explicit recipes; a `.kra` saved, closed and reo
 | Id | Hypothesis | Outcome at 0.16.0 |
 |---|---|---|
 | H1 | An agent fixes a real review defect better than a scripted correction | Open: the trial, after the round |
-| H2 | Flat `paintPath` strokes with stock presets read as hand-painted | Passed by hand, 0.14.0: five of six usable; the taper is round 2's E1 |
+| H2 | Flat `paintPath` strokes with stock presets read as hand-painted | Passed by hand, 0.14.0: five of six usable. Tapers through `dynamics` since 0.24.0: widths and alpha follow the knots against plain reference strokes, in the probe |
 | H3 | Codex shows MCP images to the model | Holds: its agent described a known pattern from the image alone, 0.14.0 and 0.15.0 |
 | H4 | The bridge answers while idle and recovers after a blocking call | Holds: idle p95 under 50 ms; a 5 s gradient save, chosen by the owner against the 20 s target, measured, with a queued retry run once |
 | H5 | The plugin runs on 5.3.x and 6.0.x | Backlog |
@@ -1266,6 +1307,9 @@ Each has its detail in `docs/BACKLOG.md`, or in `docs/spec/SESSIONS.md` where ro
 - Erasing, a single dab and antialiasing off are refused.
 - The global-mask branch of K46, layer styles and the mirror restore are held by unit tests or by
   nothing live.
+- A taper's reload route is held by unit tests and E1's measurement. In the probe, the paint
+  checks before it leave its preset dirty, so the restore there is by XML alone. Tapers are refused
+  under a changed dirty-presets setting, on mask paint, and on engines other than the pixel engine.
 
 ## Reference: the ids the code cites
 
@@ -1306,6 +1350,7 @@ cite stay in the PDD, in git history.
 | K48 | `aboutToQuit` fires after documents and windows close; pykrita then finalises Python | `libs/libkis/Notifier.cpp:23` |
 | K49 | `paintPath` with stroke `None` and fill `ForegroundColor` fills the path with the painter, never the paint op; a wash-mode preset paints through an indirect device, and a masked brush paints the path into its mask painter too | `libs/libkis/PaintingResources.cpp:17-58`; `libs/image/kis_painter.cc` (`paintPainterPath`, `fillPainterPathImpl`); `libs/ui/tool/strokes/KisMaskedFreehandStrokePainter.cpp` |
 | K50 | `TransparencyMask` starts from an empty selection; `KisMask::setSelection` adopts its pointer and pushes no undo; a transparency mask's bounds are its parent's; its device is Alpha8, whose composite ops are over, erase, copy, alpha-darken and multiply | `libs/libkis/TransparencyMask.cpp`; `libs/image/kis_mask.cc`; `libs/image/kis_transparency_mask.cc`; `libs/pigment/colorspaces/KoAlphaColorSpace.cpp` |
+| K51 | `Preset.fromXML` edits the preset in place and sets it dirty; the view's current preset and `Preset(resource)` are one object; `reload_preset_action` reloads the current preset from storage and clears the flag; the resource model's `Dirty` column says whether a preset holds unsaved changes. The Distance sensor reads `length` as an integer, and in a scripted stroke counts the first dab's distance from the canvas origin; a curve's `is_corner` points run straight | `libs/libkis/Preset.cpp`; `libs/ui/kis_paintop_box.cc` (`slotReloadPreset`); `libs/resources/KisResourceModel.h`; `plugins/paintops/libpaintop/KisSensorData.cpp`; `libs/image/kis_painter.cc` (`paintPainterPath`); `libs/image/kis_cubic_curve.cpp`; measured |
 | C1 | `mcp` 2.3.0: `FastMCP` is `MCPServer`; `Image` takes no `_meta`; a raised exception yields only "Error executing tool X" | Probed 2026-10-22 |
 | C2 | Codex passes MCP images to image-capable models and honours `codex/imageDetail` | openai/codex `codex-rs/core/src/mcp_tool_call.rs` |
 | C4 | Claude Code: output limit 25,000 tokens; instructions and descriptions truncated at 4,096 characters | code.claude.com/docs/en/mcp |
@@ -1352,11 +1397,23 @@ the code is shaped as it is.
 - `eraserMode()` read false after `setEraserMode(True)` with every preset tried.
 - No dab without length: one point, two equal points and 0.01 px painted nothing; 0.5 px painted one.
 - Pan is reachable through the canvas controller's scroll bars, zoom and rotation through `Canvas`.
+- Tapers, on 0.24.0's go/no-go: `fromXML` changed the preset that painted, and `Preset(resource)`
+  read the same edit, so the two are one object. The dirty column read false before the brush was
+  set and true after `fromXML`. `set_brush` alone dirtied a build-up and an image-tip preset, but not
+  the wash one.
+  - The restore, by the preset's XML then a reload when it was clean before, gave back its digest
+    and flag on every case. An unsaved spacing tweak survived a taper. The preset files and bundles
+    hashed the same before the edit, during it and after.
+  - Without the offset, every taper on a 1500 px stroke peaked at about a quarter of its length,
+    330 px late for a start 335 px from the origin. Short and curved strokes whose start lay
+    farther from the origin than their length painted their end value throughout. Compensated,
+    widths matched plain reference strokes at every knot, on short, long and curved strokes.
+  - Krita echoes the curve string as written.
 - Krita's memory grows across large opens and saves, to 2 GB or more in a probe run; a restart resets
   it. A Krita holding 87 documents ran document ops about three times slower, and left the paint
   benchmarks, the preview benchmark and H4 idle alone.
 
-## Baseline (v0.23.0)
+## Baseline (v0.24.0)
 
 Taken on 2026-11-06 on Krita 5.3.4.1, macOS, Apple Silicon, on a Krita restarted that session, with
 **0 documents open**. The probe prints the open-document count beside its time, because document ops
@@ -1365,16 +1422,16 @@ depend on it: 87 open documents cost about 50 s more.
 | Check | Expected |
 |---|---|
 | `uv run scripts/verify.py` | 6 stages, all PASS |
-| Server tests (3.12) | 1013 passed, 0 skipped |
-| Plugin-core tests (3.10) | 945 passed, 0 skipped |
-| `uv run krita-art-mcp probe` | 174 PASS, 0 FAIL, 25 MEASURED; about 135 s |
+| Server tests (3.12) | 1033 passed, 0 skipped |
+| Plugin-core tests (3.10) | 972 passed, 0 skipped |
+| `uv run krita-art-mcp probe` | 182 PASS, 0 FAIL, 25 MEASURED; about 138 s |
 | `uv run krita-art-mcp doctor` | 6 steps, all PASS, with a root allowed |
 | Registered tools | 20 |
 | Schema files | 20 |
 | Error codes | 30 |
-| Bridge ops | 32 |
+| Bridge ops | 33 |
 | Bridge protocol; `api_version` | 1; 0.4.0 |
-| Server instructions | 2,945 of 4,096 characters, at least 700 spare |
+| Server instructions | 3,104 of 4,096 characters, at least 700 spare |
 | CLI commands | 5 |
 
 A documentation or refactoring change should not move any of these. If one moves, that is the

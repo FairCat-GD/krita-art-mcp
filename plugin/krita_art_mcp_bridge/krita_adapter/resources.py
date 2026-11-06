@@ -3,6 +3,14 @@ from typing import Any
 
 from krita import Krita, Preset
 
+from .qt import QAbstractItemView, QAbstractProxyModel, QApplication
+
+# Qt::UserRole as a number, and the columns of Krita's resource model read as roles past it
+# (K51); the bridge avoids Qt enums.
+USER_ROLE = 256
+FILENAME, RESOURCE_TYPE, DIRTY = 3, 8, 12
+PRESETS = "paintoppresets"
+
 
 class KritaResources:
     # Krita's resources as resource.list sees them; every method runs inside a job.
@@ -29,11 +37,46 @@ class KritaResources:
         except Exception:
             return ""
 
+    def preset_dirty(self, preset_id: str) -> bool | None:
+        for model in _preset_models():
+            for row in range(model.rowCount()):
+                index = model.index(row, 0)
+                name = model.data(index, USER_ROLE + FILENAME)
+                if name is not None and os.path.basename(str(name)) == preset_id:
+                    dirty = model.data(index, USER_ROLE + DIRTY)
+                    return dirty if isinstance(dirty, bool) else None
+        return None
+
+    def dirty_presets_setting(self) -> str | None:
+        text = str(Krita.instance().readSetting("", "useDirtyPresets", ""))
+        return text or None
+
     def profiles(self, model: str, depth: str) -> list[str]:
         return [str(profile) for profile in Krita.instance().profiles(model, depth)]
 
     def palettes(self) -> list[dict[str, str]]:
         return _named(Krita.instance().resources("palette"))
+
+
+def _preset_models() -> list[Any]:
+    # The brush presets' own models behind Krita's resource choosers. Only resource views are
+    # asked: another docker's model can crash on a stray data() call.
+    found: list[Any] = []
+    for widget in QApplication.allWidgets():
+        if not isinstance(widget, QAbstractItemView) or "Resource" not in _class(widget):
+            continue
+        model = widget.model()
+        while isinstance(model, QAbstractProxyModel) and model.sourceModel() is not None:
+            model = model.sourceModel()
+        if model is None or "Resource" not in _class(model) or model in found:
+            continue
+        if model.rowCount() and model.data(model.index(0, 0), USER_ROLE + RESOURCE_TYPE) == PRESETS:
+            found.append(model)
+    return found
+
+
+def _class(thing: Any) -> str:
+    return str(thing.metaObject().className())
 
 
 def _named(resources: Any) -> list[dict[str, str]]:

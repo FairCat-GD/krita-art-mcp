@@ -83,6 +83,7 @@
                   "enum": [
                     "paint.fill",
                     "stroke.native_brush",
+                    "stroke.dynamics",
                     "stroke.per_point_input",
                     "stroke.smoothing",
                     "undo.grouping",
@@ -127,6 +128,7 @@
                 "required": [
                   "paint.fill",
                   "stroke.native_brush",
+                  "stroke.dynamics",
                   "stroke.per_point_input",
                   "stroke.smoothing",
                   "undo.grouping",
@@ -353,6 +355,7 @@
                 "enum": [
                   "paint.fill",
                   "stroke.native_brush",
+                  "stroke.dynamics",
                   "stroke.per_point_input",
                   "stroke.smoothing",
                   "undo.grouping",
@@ -397,6 +400,7 @@
               "required": [
                 "paint.fill",
                 "stroke.native_brush",
+                "stroke.dynamics",
                 "stroke.per_point_input",
                 "stroke.smoothing",
                 "undo.grouping",
@@ -583,6 +587,11 @@
             "supported": false,
             "since": null,
             "notes": "Native brush strokes are not built in this release."
+          },
+          "stroke.dynamics": {
+            "supported": true,
+            "since": "0.24.0",
+            "notes": "Size and opacity along a stroke's arc length through Krita's Distance sensor, pixel brush engine only: the preset is edited in memory for that one stroke and put back, checked by its digest and dirty flag."
           },
           "stroke.per_point_input": {
             "supported": false,

@@ -6,7 +6,41 @@ All notable changes to krita-art-mcp are documented here. The format follows
 
 ## [Unreleased]
 
-## [0.23.0] — 2026-11-06
+## [0.24.0] — 2026-11-06
+
+A stroke can taper. `dynamics` sets size and opacity along the stroke's length, through Krita's
+own Distance sensor, on the pixel brush engine. The preset is edited in memory for that one stroke
+and put back, and the put-back is checked. `api_version` stays 0.4.0: fields and a capability were
+added, and nothing was renamed or removed. This release needs `install-plugin`, a Krita restart and
+a restart of the MCP client.
+
+### Added
+
+- **`dynamics` on `krita_paint_stroke`:**
+  - `size` and `opacity` are each 2 to 16 knots `{at, value}`, where `at` is the fraction of the
+    stroke's arc length from 0 to 1, and `value` multiplies `brush.size_px` or `brush.opacity`.
+    Values run in straight lines between knots.
+  - The taper replaces the preset's own size or opacity sensors for that one stroke, and lists
+    them in the receipt.
+  - It needs the pixel brush engine, `brush.preset_sha256`, colour paint and a stroke at least
+    1 px long. Each refusal comes before anything changes.
+- **`effective_brush.dynamics` in the receipt:** the arc length, the sensor length Krita took, the
+  knots, and the sensors replaced.
+- **The `stroke.dynamics` capability,** true since 0.24.0.
+- **The preset is put back after every taper.** It is restored from its own XML, then reloaded
+  from Krita's storage when it had no unsaved change before, so unsaved tweaks survive. The
+  put-back is checked by digest and by Krita's dirty flag. If it fails, the stroke is undone and
+  reported `uncertain`, and no stroke or fill paints with that preset until it reads as before.
+- **Taper refusals:**
+  - with Krita's "save tweaks to presets temporarily" setting changed from its default, which no
+    taper has been measured under;
+  - when no preset chooser says whether the preset has unsaved changes.
+- **`harness.preset_dirty`** for the live harness.
+
+### Changed
+
+- **The server instructions** name the taper, at 3,104 characters.
+
 
 A save's answer now says what happened to its file, and a second server can no longer break a save
 it polls. The frame's rollback reads the state before its first undo. The server's instructions

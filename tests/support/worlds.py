@@ -108,7 +108,7 @@ def running_world(tmp_path: Path) -> Iterator[World]:
         facts={"krita_version": "5.3.4", "qt_major": 5},
         handlers={
             **documents.handlers(registry, port, data),
-            **harness.handlers(registry, port, data),
+            **harness.handlers(registry, port, data, resources_port),
             **painting.handlers(registry, port, resources_port, data),
             **resources.handlers(resources_port),
             "slow": slow,

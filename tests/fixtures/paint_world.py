@@ -49,10 +49,11 @@ class World:
         self.port = FakePort()
         self.resources = FakeResources()
         self.resources.add_stroke_presets()
+        self.port.resources = self.resources
         self.registry = Registry(self.port, lambda client: True)
         self.ops = {
             **documents.handlers(self.registry, self.port, self.data),
-            **harness.handlers(self.registry, self.port, self.data),
+            **harness.handlers(self.registry, self.port, self.data, self.resources),
             **painting.handlers(self.registry, self.port, self.resources, self.data),
         }
         self.ids = itertools.count(1)
@@ -118,6 +119,7 @@ class World:
             "accepted_points": 2,
             "brush": brush,
             "path": {"start": [40, 60], "segments": [[50, 60]]},
+            "dynamics": None,
         }
         found.update(changes)
         return found

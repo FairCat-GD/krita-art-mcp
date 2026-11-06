@@ -166,6 +166,7 @@ class World:
                 "rotation_deg": 0,
             },
             "path": {"start": [40, 60], "segments": [[50, 60]]},
+            "dynamics": None,
             **changes,
         }
 
@@ -272,7 +273,7 @@ def test_every_op_is_classed(world: World) -> None:
     fixtures = {op for op in registered if op.startswith(HARNESS)}
     assert READS.isdisjoint(BOUNDED) and not (READS | BOUNDED) & fixtures
     assert registered == READS | BOUNDED | fixtures
-    assert len(registered) == 32
+    assert len(registered) == 33
     # The prefix hides no tool op: these are the fixture ops, by name.
     assert fixtures == set(harness.handlers(world.registry, world.port, world.data)) | {
         "harness.retention"

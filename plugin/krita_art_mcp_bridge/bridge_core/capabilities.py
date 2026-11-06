@@ -23,6 +23,13 @@ _MATRIX: dict[str, tuple[bool, str | None, str]] = {
         "one undo step, painted with reveal or hide by strokes and fills, read alone as grey, and "
         "shown or hidden; each change verified against protection and undone on a leak.",
     ),
+    "stroke.dynamics": (
+        True,
+        "0.24.0",
+        "Size and opacity along a stroke's arc length through Krita's Distance sensor, pixel "
+        "brush engine only: the preset is edited in memory for that one stroke and put back, "
+        "checked by its digest and dirty flag.",
+    ),
     "stroke.per_point_input": (
         False,
         None,

@@ -38,6 +38,7 @@ class KritaArtMcpExtension(Extension):
     def _start(self, data_dir: Path) -> None:
         self._waker = Waker(self._drain, self._log)
         port = KritaDocuments()
+        presets = KritaResources()
         registry = Registry(port, holder_alive)
         bridge = Bridge(
             data_dir=data_dir,
@@ -46,9 +47,9 @@ class KritaArtMcpExtension(Extension):
             handlers={
                 **ops.HANDLERS,
                 **documents.handlers(registry, port, data_dir),
-                **harness.handlers(registry, port, data_dir),
-                **painting.handlers(registry, port, KritaResources(), data_dir),
-                **resources.handlers(KritaResources()),
+                **harness.handlers(registry, port, data_dir, presets),
+                **painting.handlers(registry, port, presets, data_dir),
+                **resources.handlers(presets),
             },
             wake=self._waker.emit,
             on_main_thread=main_thread_check(),

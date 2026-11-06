@@ -153,6 +153,14 @@ class DocumentsPort(Protocol):
     # step, no dab; mirrors and wrap-around off as paint_path, waitForDone.
     def fill_path(self, document: Any, layer_id: str, shape: dict[str, Any]) -> None: ...
 
+    # On the window's view (the brush is window-wide, K3): Preset.fromXML of the current preset,
+    # then its Preset.toXML() as Krita holds it.
+    def edit_preset(self, document: Any, xml: str) -> str: ...
+
+    # As edit_preset, then, when reload is true, Krita's own "reload_preset_action", which
+    # reloads the current preset from storage and clears its dirty flag (K51); toXML after.
+    def restore_preset(self, document: Any, xml: str, reload: bool) -> str: ...
+
     # Whether Krita merges consecutive strokes into one undo step.
     def cumulative_undo(self) -> bool: ...
 
@@ -198,6 +206,13 @@ class ResourcesPort(Protocol):
 
     # A found preset's settings as they stand now.
     def preset_xml(self, resource: Any) -> str: ...
+
+    # Whether Krita holds unsaved changes to the preset with this file name, as its resource
+    # model's Dirty column reads (K51); None when no resource chooser says.
+    def preset_dirty(self, preset_id: str) -> bool | None: ...
+
+    # kritarc's useDirtyPresets as Krita reads it, or None when it is unset (Krita's default).
+    def dirty_presets_setting(self) -> str | None: ...
 
     def profiles(self, model: str, depth: str) -> list[str]: ...
 

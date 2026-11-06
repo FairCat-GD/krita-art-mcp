@@ -3,6 +3,7 @@ try:
     from PyQt6.QtCore import (
         PYQT_VERSION_STR,
         QT_VERSION_STR,
+        QAbstractProxyModel,
         QCoreApplication,
         QEventLoop,
         QObject,
@@ -12,7 +13,7 @@ try:
         pyqtSlot,
     )
     from PyQt6.QtGui import QIcon, QPainterPath
-    from PyQt6.QtWidgets import QAbstractScrollArea, QApplication, QMdiArea
+    from PyQt6.QtWidgets import QAbstractItemView, QAbstractScrollArea, QApplication, QMdiArea
 
     # The one enum the bridge needs, scoped in PyQt6 and flat in PyQt5.
     EXCLUDE_USER_INPUT = QEventLoop.ProcessEventsFlag.ExcludeUserInputEvents
@@ -20,6 +21,7 @@ except ImportError:
     from PyQt5.QtCore import (
         PYQT_VERSION_STR,
         QT_VERSION_STR,
+        QAbstractProxyModel,
         QCoreApplication,
         QEventLoop,
         QObject,
@@ -29,7 +31,7 @@ except ImportError:
         pyqtSlot,
     )
     from PyQt5.QtGui import QIcon, QPainterPath
-    from PyQt5.QtWidgets import QAbstractScrollArea, QApplication, QMdiArea
+    from PyQt5.QtWidgets import QAbstractItemView, QAbstractScrollArea, QApplication, QMdiArea
 
     EXCLUDE_USER_INPUT = QEventLoop.ExcludeUserInputEvents
 
@@ -37,6 +39,8 @@ __all__ = [
     "EXCLUDE_USER_INPUT",
     "PYQT_VERSION_STR",
     "QT_VERSION_STR",
+    "QAbstractItemView",
+    "QAbstractProxyModel",
     "QAbstractScrollArea",
     "QApplication",
     "QCoreApplication",

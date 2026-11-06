@@ -284,6 +284,48 @@ def test_both_sides_refuse_a_nearly_flat_closed_curve(
     refused_alike(world, monkeypatch, "krita_paint_fill", arguments, (painting, "_fill_rules"))
 
 
+TAPER = [{"at": 0, "value": 0.2}, {"at": 1, "value": 1}]
+
+
+@pytest.mark.parametrize(
+    ("dynamics", "brush"),
+    [
+        ({"size": [{"at": 0.2, "value": 1}, {"at": 1, "value": 1}]}, {}),
+        (
+            {"opacity": [{"at": 0, "value": 1}, {"at": 0.0004, "value": 1}, {"at": 1, "value": 1}]},
+            {},
+        ),
+        ({"size": TAPER}, {"preset_sha256": None}),
+        ({"size": TAPER}, {"color": None, "mask": "reveal"}),
+    ],
+    ids=["knots-start", "knots-apart", "no-sha", "mask-paint"],
+)
+def test_both_sides_hold_a_taper_s_rules(
+    world: World,
+    monkeypatch: pytest.MonkeyPatch,
+    dynamics: dict[str, Any],
+    brush: dict[str, Any],
+) -> None:
+    arguments = _stroke(_document(world), **{"preset_sha256": "e" * 64, **brush})
+    if arguments["brush"]["preset_sha256"] is None:
+        del arguments["brush"]["preset_sha256"]
+    arguments["dynamics"] = dynamics
+    refused_alike(
+        world, monkeypatch, "krita_paint_stroke", arguments, (painting, "_dynamics_rules")
+    )
+
+
+def test_both_sides_want_a_taper_at_least_a_pixel_long(
+    world: World, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    arguments = _stroke(_document(world), preset_sha256="e" * 64)
+    arguments["points"] = [{"x": 1, "y": 1}, {"x": 1.8, "y": 1}]
+    arguments["dynamics"] = {"size": TAPER}
+    rule = (painting, "_dynamics_length")
+    refused = refused_alike(world, monkeypatch, "krita_paint_stroke", arguments, rule)
+    assert refused["details"]["field"] == "dynamics"
+
+
 def _stroke(document_id: str, **brush: Any) -> dict[str, Any]:
     found = {"preset_id": "basic-round.kpp", "size_px": 4, "opacity": 1, "flow": 1}
     found.update(eraser=False, color=COLOUR)

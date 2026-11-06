@@ -133,6 +133,11 @@ class FakePort:
         # Rects a stroke also paints, as a leak or a reach past R would; hooks run after it.
         self.stray: list[dict[str, int]] = []
         self.on_paint: list[Any] = []
+        # The resources whose presets the view's preset is one object with (K51), once linked;
+        # each XML a taper's edit and restore set, and a restore that leaves the edit in place.
+        self.resources: FakeResources | None = None
+        self.preset_edits: list[str] = []
+        self.restore_keeps_edit = False
         self.paths: list[dict[str, Any]] = []
         self.shapes: list[dict[str, Any]] = []
         # The call whose marker every mutating call here answers to, once a test sets it.
@@ -779,6 +784,31 @@ class FakePort:
         self.brush_drift = {}
         return copy.deepcopy(self.brush_now)
 
+    def edit_preset(self, document: Any, xml: str) -> str:
+        # Preset.fromXML: the one preset the view and the resources hold changes, and is dirty.
+        self.calls.append("edit_preset")
+        self._maybe_fail("edit_preset")
+        self.preset_edits.append(xml)
+        self._preset_now(xml, True)
+        return self.preset_xml[self.brush_now["preset"]]
+
+    def restore_preset(self, document: Any, xml: str, reload: bool) -> str:
+        self.calls.append("restore_preset")
+        self._maybe_fail("restore_preset")
+        if not self.restore_keeps_edit:
+            self._preset_now(xml, True)
+            if reload and self.resources is not None:
+                name = self.brush_now["preset"]
+                self._preset_now(self.resources.stored[name], False)
+        return self.preset_xml[self.brush_now["preset"]]
+
+    def _preset_now(self, xml: str, dirty: bool) -> None:
+        name = self.brush_now["preset"]
+        self.preset_xml[name] = xml
+        if self.resources is not None:
+            self.resources.xmls[name] = xml
+            self.resources.dirty[name] = dirty
+
     def paint_ability(self, document: Any, layer_id: str) -> str:
         self.calls.append("ability")
         return self.ability.get(layer_id, "PAINT")
@@ -1097,6 +1127,11 @@ class FakeResources:
         self.asked: list[list[str]] = []
         # Each call a stroke makes, by method: the walks and serialisations it costs.
         self.calls: list[str] = []
+        # Each preset's XML as Krita's storage holds it, its dirty flag by name (None as if no
+        # resource chooser said), and kritarc's useDirtyPresets.
+        self.stored = dict(self.xmls)
+        self.dirty: dict[str, bool | None] = {}
+        self.setting: str | None = None
 
     def add_stroke_presets(self) -> None:
         self.preset_list += [{"name": name, "file": file} for file, name, _ in PRESETS[3:]]
@@ -1121,6 +1156,16 @@ class FakeResources:
     def preset_xml(self, resource: Any) -> str:
         self.calls.append("preset_xml")
         return self.xmls.get(resource, "")
+
+    def preset_dirty(self, preset_id: str) -> bool | None:
+        self.calls.append("preset_dirty")
+        for entry in [*self.preset_list, *([self.stock] if self.stock else [])]:
+            if entry["file"] == preset_id:
+                return self.dirty.get(entry["name"], False)
+        return None
+
+    def dirty_presets_setting(self) -> str | None:
+        return self.setting
 
     def profiles(self, model: str, depth: str) -> list[str]:
         return list(self.profile_names) if (model, depth) == ("RGBA", "U8") else []

@@ -1,11 +1,12 @@
 import difflib
+import logging
 import math
 import re
 from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
-from . import brushes, mutation, shapes, verification
+from . import brushes, dynamics, log, mutation, shapes, verification
 from .documents import COLOR_MODEL, DEPTH, SRGB_PROFILE
 from .errors import BridgeError, exact, integer, number
 from .history import LABELS, in_front
@@ -19,7 +20,15 @@ from .registry import Handle, Registry
 from .resources import BLEND_MODES
 from .resources import fingerprint as preset_fingerprint
 
-STROKE_FIELDS = {"document_id", "layer_id", "verify", "accepted_points", "brush", "path"}
+STROKE_FIELDS = {
+    "document_id",
+    "layer_id",
+    "verify",
+    "accepted_points",
+    "brush",
+    "path",
+    "dynamics",
+}
 BRUSH_FIELDS = {
     "preset_id",
     "preset_sha256",
@@ -74,6 +83,24 @@ def handlers(
         _, loaded = preset_fingerprint(resources.preset_xml(resource))
         if listed is not None and loaded is not None and loaded != listed:
             activated[(preset_id, loaded)] = listed
+
+    # Presets a taper could not put back, by the digest each had before it: Krita still holds
+    # the edit, so no stroke or fill paints with one until it reads as before.
+    held: dict[str, str] = {}
+
+    def unheld(preset_id: str, xml: str) -> None:
+        if preset_id not in held:
+            return
+        _, found = preset_fingerprint(xml)
+        if found == held[preset_id]:
+            del held[preset_id]
+            return
+        details = {"preset_id": preset_id, "reason": "preset_held"}
+        message = (
+            "A taper could not put this preset back in Krita; reload it in Krita's brush "
+            "editor, then list it again."
+        )
+        raise BridgeError("RESOURCE_HASH_MISMATCH", message, False, details)
 
     def painted(
         handle: Handle,
@@ -174,8 +201,12 @@ def handlers(
         size = info["size_px"]
         _on_canvas(args["path"], size, asked["size_px"])
         preset = _preset(resources, asked["preset_id"])
+        unheld(asked["preset_id"], preset["xml"])
         name = preset["name"]
         listed = _listed(preset["xml"], asked["preset_id"], asked["preset_sha256"], activated)
+        taper = args["dynamics"]
+        # The preset's own dirty flag before the brush is set, which the taper puts back.
+        dirty = None if taper is None else _taperable(resources, preset, asked["preset_id"])
         _refuse_cumulative(port)
         effects = port.effects(document, mode == verification.REGION)
         if mode == verification.REGION:
@@ -193,6 +224,15 @@ def handlers(
             margin = brushes.margin_px(effective["size_px"], tip, scatter)
             loose = _grow(_path_box(args["path"]), margin)
             loose_ring = _grow(loose, max(brushes.MIN_MARGIN_PX, effective["size_px"]))
+
+            def draw() -> None:
+                port.paint_path(document, layer_id, args["path"])
+
+            tapered = None
+            if taper is not None:
+                draw, tapered = _tapered(
+                    port, resources, document, args, preset, effective, dirty, held, draw
+                )
             frame, applied = painted(
                 handle,
                 call,
@@ -206,16 +246,17 @@ def handlers(
                 loose,
                 loose_ring,
                 effective,
-                lambda: port.paint_path(document, layer_id, args["path"]),
+                draw,
             )
             return {
                 "document_id": handle.document_id,
                 "layer_id": layer_id,
                 "stroke_id": call.operation_id,
                 "accepted_points": args["accepted_points"],
-                "effective_brush": _effective(
-                    asked, listed, effective, reach, tip, scatter, margin
-                ),
+                "effective_brush": {
+                    **_effective(asked, listed, effective, reach, tip, scatter, margin),
+                    "dynamics": tapered,
+                },
                 **_receipt(frame, applied),
             }
 
@@ -241,6 +282,7 @@ def handlers(
                 "does not list."
             )
             raise BridgeError("UNSUPPORTED_CAPABILITY", message, False, details)
+        unheld(FILL_PRESET, preset["xml"])
         _, found = preset_fingerprint(preset["xml"])
         listed = None if found is None else activated.get((FILL_PRESET, found), found)
         _refuse_cumulative(port)
@@ -331,6 +373,7 @@ def _check_args(args: Any) -> None:
         raise BridgeError("INVALID_ARGUMENT", f"accepted_points is 1 to {MAX_POINTS}.")
     _check_brush(args["brush"])
     _check_path(args["path"])
+    dynamics.check(args["dynamics"], args["brush"], args["path"])
 
 
 def _check_fill(args: Any) -> None:
@@ -458,6 +501,115 @@ def _numbers(values: Any, lengths: tuple[int, ...]) -> bool:
         and len(values) in lengths
         and all(number(value) for value in values)
     )
+
+
+# A taper.
+
+
+def _taperable(resources: ResourcesPort, preset: dict[str, Any], preset_id: str) -> bool:
+    # Refused before any change: what the taper's restore could not put back as it was. The
+    # preset's dirty flag, which the restore keeps.
+    engine, _ = preset_fingerprint(preset["xml"])
+    details: dict[str, Any] = {"preset_id": preset_id, "field": "dynamics"}
+    if engine != brushes.ENGINE:
+        details["engine"] = engine
+        message = (
+            "dynamics drives the pixel brush engine's Distance sensor; this preset is another."
+        )
+        raise BridgeError("UNSUPPORTED_CAPABILITY", message, False, details)
+    setting = resources.dirty_presets_setting()
+    if setting is not None:
+        details["reason"] = "dirty_presets_setting"
+        message = (
+            "Krita's 'save tweaks to presets temporarily' setting was changed from its default, "
+            "which dynamics has not been measured under."
+        )
+        raise BridgeError("UNSUPPORTED_CAPABILITY", message, False, details)
+    dirty = resources.preset_dirty(preset_id)
+    if dirty is None:
+        details["reason"] = "preset_state_unread"
+        message = (
+            "Krita does not say whether this preset has unsaved changes, so it could not be "
+            "put back as it was."
+        )
+        raise BridgeError("UNSUPPORTED_CAPABILITY", message, False, details)
+    return dirty
+
+
+def _tapered(
+    port: DocumentsPort,
+    resources: ResourcesPort,
+    document: Any,
+    args: dict[str, Any],
+    preset: dict[str, Any],
+    effective: dict[str, Any],
+    dirty: bool | None,
+    held: dict[str, str],
+    draw: Callable[[], None],
+) -> tuple[Callable[[], None], dict[str, Any]]:
+    # The paint, with the preset edited for it and put back after: by its own XML, then from
+    # Krita's storage when it had no unsaved change before (K51). After the marker, so a
+    # preset left edited makes the outcome uncertain.
+    taper, path, preset_id = args["dynamics"], args["path"], args["brush"]["preset_id"]
+    before = effective["preset_xml"]
+    _, stored = preset_fingerprint(preset["xml"])
+    _, set_digest = preset_fingerprint(before)
+    reload = dirty is False
+    wanted = stored if reload else set_digest
+    text, tapered = dynamics.edited(before, taper, path)
+    brush = {key: value for key, value in effective.items() if key != "preset_xml"}
+
+    def put_back() -> bool:
+        # Never raises, so the stroke's own outcome is never hidden.
+        try:
+            now = port.restore_preset(document, before, reload)
+            kept = resources.preset_xml(preset["resource"])
+            return (
+                preset_fingerprint(now)[1] == wanted
+                and preset_fingerprint(kept)[1] == wanted
+                and resources.preset_dirty(preset_id) == dirty
+            )
+        except Exception:
+            logging.getLogger(log.NAME).exception("the taper's preset was not put back")
+            return False
+
+    def lost() -> BridgeError:
+        held[preset_id] = stored or ""
+        details = {"preset_id": preset_id, "preset_restored": False, "outcome": "uncertain"}
+        message = (
+            "Krita's brush preset could not be put back after the taper, so the stroke was "
+            "undone; reload the preset in Krita's brush editor."
+        )
+        return BridgeError("INTERNAL_ERROR", message, False, details)
+
+    def paint() -> None:
+        try:
+            now = port.edit_preset(document, text)
+            wrong = dynamics.took(now, taper, path)
+            if wrong:
+                details = {"preset_id": preset_id, "fields": [f"dynamics.{key}" for key in wrong]}
+                message = "Krita did not take the taper as asked, so the stroke was not painted."
+                raise BridgeError("INTERNAL_ERROR", message, False, details)
+            if port.brush(document) != brush:
+                details = {"preset_id": preset_id}
+                message = (
+                    "Krita's brush moved when the taper was set, so the stroke was not painted."
+                )
+                raise BridgeError("INTERNAL_ERROR", message, False, details)
+            draw()
+        except Exception as raised:
+            if not put_back():
+                logging.getLogger(log.NAME).error("the taper failed: %r", raised)
+                raise lost() from raised
+            raise
+        except BaseException:
+            if not put_back():
+                lost()
+            raise
+        if not put_back():
+            raise lost()
+
+    return paint, tapered
 
 
 # Refusals before any change.

@@ -213,6 +213,34 @@ engine, or a filter, mask, style or clone that could spread a change, needs `ver
 checks the whole canvas. A path may run half a brush past the canvas: `changed_bounds_px` is what
 changed on the canvas, and `layer_bounds_px` is the layer's whole extent, past it included.
 
+**Taper a stroke with `dynamics`.** A stroke can narrow, swell or fade along its length.
+
+```json
+"dynamics": {"size": [{"at": 0, "value": 0.1}, {"at": 0.5, "value": 1}, {"at": 1, "value": 0.1}]}
+```
+
+- **Knots.** `size` and `opacity` each take 2 to 16 knots. `at` is the fraction of the stroke's
+  length, from 0 to 1, rising by at least 0.001. `value` multiplies `brush.size_px` or
+  `brush.opacity` at that point. Values run in straight lines between knots, so add knots for a
+  softer curve.
+- **How Krita does it.** Krita's own Distance sensor drives the taper. For that one stroke it
+  replaces the preset's own size or opacity sensors, and the receipt's
+  `effective_brush.dynamics.replaced` names them.
+- **What it needs:**
+  - the pixel brush engine;
+  - `brush.preset_sha256` from `krita_resource_list`;
+  - a colour, not mask paint;
+  - a stroke at least 1 px long.
+- **What it is not.** It is not per-point pressure: every dab still paints at pressure 1, and
+  `stroke.per_point_input` stays false. It is one native stroke and one undo step, never joined
+  segments.
+- **The preset is edited for that stroke and put back,** and the put-back is checked by its hash
+  and by Krita's own dirty flag.
+  - Unsaved tweaks you made to the preset in Krita survive.
+  - If Krita cannot put the preset back, the stroke is undone and reported `uncertain`. Reload the
+    preset in Krita's brush editor before painting with it again.
+  - Krita's "save tweaks to presets temporarily" setting must stay at its default.
+
 **Fill a flat colour plane in one call.** For a broad plane inside a shape, a fill beats a large
 stroke under a selection: it is Krita's own fill, flat and antialiased, with no brush texture, and
 no stroke's reach past the edge. Keep strokes for edges, texture and anything that should look
@@ -365,9 +393,12 @@ Every failure returns `error: {code, message, retryable, details}`. The table gi
   selection's and a mask's take no `background` or `greyscale`.
 
 **Painting.**
-- **No per-point pressure, tilt or timing.** Every point paints at pressure 1. Such input is refused
-  unless `input_fallback` is `flat`. Scripted strokes hold speed sensors constant, so of six stock
-  presets tried, only `j) WaterC Basic Round-Grunge` tapers, and only as it starts.
+- **No per-point pressure, tilt or timing.** Every point paints at pressure 1, and such input is
+  refused unless `input_fallback` is `flat`. Scripted strokes hold speed sensors constant, so of six
+  stock presets tried, only `j) WaterC Basic Round-Grunge` tapers by itself, and only as it starts.
+  For a taper, give the stroke `dynamics`: size and opacity along its length, on the pixel brush
+  engine. It is not available on mask paint, and not while Krita's "save tweaks to presets
+  temporarily" setting is changed.
 - **The colour's alpha must be 1.** Transparency comes from the brush's `opacity` and `flow`.
 - **No erasing.** `eraser` takes only `false`.
 - **No stroke under half a pixel.** Krita paints no dab for one. For a single dab, send two points

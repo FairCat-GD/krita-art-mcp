@@ -31,6 +31,8 @@ is antialiased: keep it a pixel inside the allowed mask.
 - Changes to an animated document are refused.
 - Use krita_paint_fill for broad colour planes, and strokes for edges and texture. Keep an \
 antialiased shape a pixel inside the allowed mask.
+- To taper a contour or swell it mid-stroke, give the stroke dynamics: size and opacity knots \
+along its length (pixel brush engine, with the preset's sha256).
 - For soft edges or a revised silhouette, give your layer a transparency_mask and paint it \
 with mask reveal or hide instead of a colour, by opacity.
 - After every one to three strokes, check krita_preview_render at the asset's game sizes, from \

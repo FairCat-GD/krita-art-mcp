@@ -24,6 +24,17 @@ contract", "Phase N" and "review N" mean.
   - `paint_shape` and `paint_path`, which `krita_paint_stroke` and fills may already cover;
   - `layer_import`, `reference_set`, `guides_set` and `view_set`;
   - preset tuning beyond tapers, templates and derived copies.
+- **Tapers, beyond what 0.24.0 measured.** `dynamics` drives the Distance sensor alone, replacing a
+  preset's own size and opacity sensors, on colour paint, under Krita's default dirty-presets
+  setting. Each of these is refused until measured:
+  - the other sensors: fade, time, and the fuzzy ones;
+  - combining a taper with the preset's own sensors, which needs `UseSameCurve` and the curve
+    modes handled;
+  - mask paint under a taper;
+  - the dirty-presets setting changed from its default.
+
+  The probe's tapers also run on a preset its earlier checks left dirty, so the reload route is held
+  only by unit tests and E1's measurement; a probe check on a clean preset would hold it live.
 - **A server-side batch.** Left out at the round 2 intake, with the Codex agent's agreement. `exec`
   already awaits calls and stops on a failed envelope: 1,253 of 1,377 consecutive calls were under
   0.25 s apart. One would earn its cost through shared-context enforcement, durable partial receipts

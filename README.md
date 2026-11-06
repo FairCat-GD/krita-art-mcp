@@ -6,12 +6,13 @@ game size, and undo or keep it. It is for painted (non-pixel) 2D game art.
 
 ## What it does
 
-Phase 1 is complete, and round 2 has reached 0.23.0, with 20 tools.
+Phase 1 is complete, and round 2 has reached 0.24.0, with 20 tools.
 
 - **Works on a copy.** A document opens as a working copy with every existing layer protected, and
   the source is never written.
 - **Paints with Krita's brushes.** One stroke per call, one undo step, with a preset you already have.
-  There is no tool that writes raw pixels or runs code.
+  A stroke can taper in size and opacity along its length. There is no tool that writes raw pixels
+  or runs code.
 - **Checks every stroke.** Each change is compared with what protection allows, inside the same job,
   and undone if it leaks.
 - **Shows the result at game size.** Comparison sheets put the document as opened beside its current

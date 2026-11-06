@@ -1,6 +1,6 @@
 [project]
 name = "krita-art-mcp"
-version = "0.23.0"
+version = "0.24.0"
 description = "MCP server that lets AI agents paint in Krita"
 keywords = [
     "krita",

@@ -14,6 +14,10 @@ from krita_art_mcp.tools.dispatch import ToolCall, finite, from_outcome, journal
 PER_POINT = ("time_ms", "tilt_x", "tilt_y", "rotation_deg", "tangential_pressure", "speed")
 # Krita paints no dab for a stroke shorter than this: 0.01 px painted nothing, 0.5 px one dab.
 MIN_LENGTH_PX = 0.5
+# A taper's sensor length is a whole number of pixels, and its knots sit at least this far apart
+# along the stroke; the plugin holds both.
+MIN_DYNAMICS_PX = 1.0
+MIN_KNOT_GAP = 0.001
 
 
 def paint_stroke(call: ToolCall, arguments: dict[str, Any]) -> CallToolResult:
@@ -75,13 +79,20 @@ def stroke_op(arguments: dict[str, Any]) -> dict[str, Any] | CallToolResult:
         )
         details = {"length_px": length, "minimum_length_px": MIN_LENGTH_PX}
         return envelope.failure("UNSUPPORTED_CAPABILITY", message, details=details)
+    refused = _dynamics_length(arguments, path)
+    if refused is not None:
+        return refused
     op_args["path"] = path
+    taper = arguments.get("dynamics")
+    op_args["dynamics"] = (
+        None if taper is None else {"size": taper.get("size"), "opacity": taper.get("opacity")}
+    )
     return op_args
 
 
 def _refusal(arguments: dict[str, Any]) -> CallToolResult | None:
     # Refused before the journal: no op could paint these.
-    refused = _brush_rules(arguments)
+    refused = _brush_rules(arguments) or _dynamics_rules(arguments)
     if refused is not None:
         return refused
     if arguments.get("input_fallback") != "flat":
@@ -101,6 +112,47 @@ def _refusal(arguments: dict[str, Any]) -> CallToolResult | None:
 def _brush_rules(arguments: dict[str, Any]) -> CallToolResult | None:
     # The plugin holds the same rules.
     return _paint_rules(arguments["brush"], "brush", "the brush's opacity")
+
+
+def _dynamics_rules(arguments: dict[str, Any]) -> CallToolResult | None:
+    # The plugin holds the same rules.
+    taper = arguments.get("dynamics")
+    if taper is None:
+        return None
+    for key in ("size", "opacity"):
+        knots = taper.get(key)
+        if knots is None:
+            continue
+        at = [knot["at"] for knot in knots]
+        if at[0] != 0 or at[-1] != 1:
+            message = f"dynamics.{key} starts at 0 and ends at 1."
+            return envelope.failure(
+                "INVALID_ARGUMENT", message, details={"field": f"dynamics.{key}"}
+            )
+        if any(later - earlier < MIN_KNOT_GAP for earlier, later in itertools.pairwise(at)):
+            message = (
+                f"dynamics.{key}'s at values rise by at least {MIN_KNOT_GAP:g} from knot to knot."
+            )
+            return envelope.failure(
+                "INVALID_ARGUMENT", message, details={"field": f"dynamics.{key}"}
+            )
+    brush = arguments["brush"]
+    if brush.get("preset_sha256") is None:
+        message = "dynamics edits the preset for one stroke, so it needs brush.preset_sha256."
+        details = {"field": "brush.preset_sha256"}
+        return envelope.failure("INVALID_ARGUMENT", message, details=details)
+    if brush.get("mask") is not None:
+        message = "dynamics paints colour on a paint layer, never mask paint."
+        return envelope.failure("INVALID_ARGUMENT", message, details={"field": "dynamics"})
+    return None
+
+
+def _dynamics_length(arguments: dict[str, Any], path: dict[str, Any]) -> CallToolResult | None:
+    # The plugin measures the painted path the same way.
+    if arguments.get("dynamics") is None or strokes.arc_length(path) >= MIN_DYNAMICS_PX:
+        return None
+    message = f"dynamics needs a stroke at least {MIN_DYNAMICS_PX:g} px long."
+    return envelope.failure("INVALID_ARGUMENT", message, details={"field": "dynamics"})
 
 
 def _paint_rules(style: dict[str, Any], field: str, transparency: str) -> CallToolResult | None:

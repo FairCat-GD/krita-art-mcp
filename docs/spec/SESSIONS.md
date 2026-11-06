@@ -1446,6 +1446,87 @@ unverified; measure it first. E1 ships 0.24.0 on go, after X1a.
   reloads.
 - **The bounded probe stays bounded.** A no-go is a result.
 
+**Done (2026-11-06). Go, 0.24.0.**
+
+- **Decided with the owner in plan mode:**
+  - Straight lines between knots, by Krita's corner points.
+  - The Distance curve replaces the preset's own size and opacity sensors for that one stroke.
+  - Krita restarts were allowed this session, at 0 unsaved documents, with the Codex agent paused.
+  - An adversarial plan review by Opus. 12 of its 13 findings went into the plan. The main one:
+    restore by the preset's own XML, and reload from storage only when it was clean before the
+    brush was set, so an unsaved tweak survives. The one declined: a quit with an edited preset, to
+    confirm the crash case. A quit may run save paths a crash never would, so the disk listings
+    during the edit confirm it instead.
+- **Decided with the owner at the go/no-go:**
+  - **Go, with the origin offset compensated** (below).
+  - **Krita's other dirty-presets setting was left unmeasured,** and refused.
+- **The go/no-go,** through a temporary `harness.taper_measure` that never shipped, on a harness
+  ORA, under three stock `paintbrush` presets (wash, build-up, image tip). Three driver runs, about
+  40 paint calls with the references.
+  - **The dirty flag.** The resource model's `Dirty` column (role 256 + 12) read false before the
+    brush was set and true after `fromXML`. `set_brush` alone dirtied the build-up and the
+    image-tip preset, not the wash one.
+  - **One object.** `Preset(resource)` read every edit of the view's preset.
+  - **The restore,** by XML then a reload when clean before, gave back the digest and the flag on
+    every case. The reload brought an activated preset back to its listed digest. An unsaved
+    spacing tweak survived a taper. The brush-state write-back was exact.
+  - **Nothing on disk moved.** The preset files and bundles hashed alike before, during and after
+    every edit. That is what a crash mid-stroke would leave.
+  - **The origin offset, the round's surprise.** A scripted stroke's Distance sensor counts the
+    first dab's distance from the canvas origin. Uncompensated, a 0.1 → 1 → 0.1 taper peaked a
+    quarter of the way along a 1500 px stroke, 330 px late for a start 335 px from the origin.
+    Short and curved strokes starting farther out than their length painted their end value
+    throughout. A stroke from near the origin peaked mid-way.
+  - **Compensated,** with the length set to arc + |start| and the knots moved to match, widths
+    matched plain reference strokes at every knot on short, long and curved strokes, and alpha
+    did for opacity.
+  - Corner points ran straight between knots; smooth points bowed. Krita echoed the curve string
+    as written. `_current` was unmoved by the edit.
+  - **Five conditions:** all held, with the compensation, under Krita's default setting.
+- **The instrument crashed Krita once.** Its first dirty read asked every item model in the window,
+  and the animation curves docker's model segfaulted on `data()`. No document of the owner's was
+  open and no preset had been touched. The shipped read asks only resource views and models. A
+  second crash, earlier, came from Krita's QML UI before any instrument call.
+- **Shipped:**
+  - `dynamics` on `krita_paint_stroke`: `size` and `opacity` knots, the origin offset
+    compensated, the pixel engine only, `preset_sha256` required, mask paint refused.
+  - `bridge_core/dynamics.py`, pure.
+  - The restore rule, and the hold on a preset left edited, for stroke and fill.
+  - `effective_brush.dynamics` in the receipt.
+  - `stroke.dynamics`, true since 0.24.0, and `harness.preset_dirty`.
+  - Parity pairs for the knot rules, the sha, mask paint and the 1 px floor.
+  - `probe/dynamics.py`: eight checks.
+- **Amendments:**
+  - **The curve is shifted by the origin offset,** which the block's XML did not foresee. The
+    owner's call, at the go/no-go.
+  - **A changed `useDirtyPresets` is refused** rather than measured by a hand toggle. The owner's
+    choice, at the go/no-go.
+  - **The resource database was not read for version rows.** Every version of a preset is a file,
+    so the file listing covers it, and the database's times were reported only. The session's own
+    finding.
+  - **The probe's preset meets the tapers already dirty,** so the live probe exercises the
+    restore by XML. The reload route is held by unit tests and the go/no-go, and is on the backlog.
+  - **`harness.preset_dirty` is a new op (33).** The block named the probe check, not the op.
+  - **The block's "`stroke.dynamics` stays false" on a no-go** did not arise.
+- **Checked live:** Krita restarted at 0 unsaved six times (the instrument twice, cleaning up the
+  edited presets, 0.24.0, the falsification build, 0.24.0 again), with `doctor` 6 of 6 each time.
+- **Falsified,** each once, the tree restored byte for byte:
+  - **37 unit checks,** each failing at its own test: the knot rules (start, gap, count, range,
+    fields, none named), sha, mask, floor, the arc, the curve's first point, the edit's params and
+    raised strength, `took`, the reload in both directions, `remember` after the edit, the three
+    refusals, the restore's check and its raise, the read-back, the fill's hold and its clearing,
+    the harness gate, the matrix, the server's rules, op args, arc and schema, and two parity
+    pairs.
+  - **Strengthened when they first passed:** the 1-knot case was caught by the end rule, so a
+    17-knot case was added. The engine refusal was masked by region scope's own refusal, so both
+    the test and the probe now require the engine in the details.
+  - **The probe:** one build with four mutations (the capability's `since`, no offset, no engine
+    check, always reload with the flag ignored) failed the eight new checks and no others.
+- **Numbers:** 1033 server tests (+20), 972 plugin tests (+27), probe 182 PASS (+8), 0 FAIL, 25
+  MEASURED, 137.9 s with 0 documents open; the journal check read 713 dispatched lines. 20 tools,
+  20 schema files, 30 error codes, 33 ops (+1), 13 capabilities (+1), instructions 3,104
+  characters, `api_version` 0.4.0.
+
 ---
 
 ## L1: Layers

@@ -374,6 +374,12 @@ class KritaDocuments:
     def fill_path(self, document: Any, layer_id: str, shape: dict[str, Any]) -> None:
         painting.fill_path(document, _node(document, layer_id), shape)
 
+    def edit_preset(self, document: Any, xml: str) -> str:
+        return painting.edit_preset(document, xml)
+
+    def restore_preset(self, document: Any, xml: str, reload: bool) -> str:
+        return painting.restore_preset(document, xml, reload)
+
     def cumulative_undo(self) -> bool:
         return painting.cumulative_undo()
 

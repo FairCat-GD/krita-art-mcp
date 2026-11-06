@@ -11,6 +11,7 @@ CAPABILITIES = {
     "paint.fill",
     "mask.transparency",
     "stroke.native_brush",
+    "stroke.dynamics",
     "stroke.per_point_input",
     "stroke.smoothing",
     "undo.grouping",
@@ -48,6 +49,7 @@ def test_only_what_is_built_is_supported() -> None:
         "mask.transparency",
         "stroke.native_brush",
         "stroke.smoothing",
+        "stroke.dynamics",
         "selection.enforced",
     }
 

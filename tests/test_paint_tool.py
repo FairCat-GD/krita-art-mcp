@@ -1,5 +1,6 @@
 import copy
 import json
+import math
 from collections.abc import Iterator
 from pathlib import Path
 from typing import Any
@@ -9,7 +10,7 @@ from jsonschema import Draft202012Validator
 from mcp.types import ImageContent
 from worlds import NOW, World, running_world
 
-from krita_art_mcp import schemas, verification
+from krita_art_mcp import schemas, strokes, verification
 from krita_art_mcp.bridge_client import BridgeClient, Done, Failed, Outcome
 from krita_art_mcp.tools import changes, painting
 
@@ -107,6 +108,95 @@ REFUSALS = [
 ]
 
 
+SHA = "e" * 64
+ENDS = [{"at": 0, "value": 0.2}, {"at": 0.5, "value": 1}, {"at": 1, "value": 0.2}]
+
+
+def _tapered(**dynamics: Any) -> dict[str, Any]:
+    arguments = _with_brush(preset_sha256=SHA)
+    arguments["dynamics"] = dynamics
+    return arguments
+
+
+def _knots(*at: float) -> list[dict[str, float]]:
+    return [{"at": value, "value": 0.5} for value in at]
+
+
+TAPER_REFUSALS = [
+    (_tapered(size=_knots(0.1, 1)), {"field": "dynamics.size"}),
+    (_tapered(opacity=_knots(0, 0.9)), {"field": "dynamics.opacity"}),
+    (_tapered(size=_knots(0, 0.0005, 1)), {"field": "dynamics.size"}),
+    (_tapered(size=_knots(0, 0.6, 0.6, 1)), {"field": "dynamics.size"}),
+    ({**_tapered(size=ENDS), "brush": {**BRUSH}}, {"field": "brush.preset_sha256"}),
+    (
+        {**_tapered(size=ENDS), "points": [{"x": 4.5, "y": 4.5}, {"x": 5.2, "y": 4.5}]},
+        {"field": "dynamics"},
+    ),
+]
+
+
+@pytest.mark.parametrize(
+    ("arguments", "details"),
+    TAPER_REFUSALS,
+    ids=["size-start", "opacity-end", "too-close", "not-rising", "no-sha", "too-short"],
+)
+def test_a_taper_s_refusal_comes_before_the_journal(
+    world: World,
+    sent: list[tuple[str, dict[str, Any]]],
+    arguments: dict[str, Any],
+    details: dict[str, Any],
+) -> None:
+    content = world.server().content("krita_paint_stroke", arguments)
+    assert content["operation_id"] is None and content["error"]["code"] == "INVALID_ARGUMENT"
+    assert details.items() <= content["error"]["details"].items()
+    assert sent == [] and _journal(world) == []
+
+
+@pytest.mark.parametrize(
+    "dynamics",
+    [
+        {},
+        {"size": _knots(0)},
+        {"size": [{"at": 0, "value": 0.5}, {"at": 1, "value": 1.5}]},
+        {"size": [{"at": 0, "value": 0.5}, {"at": 1, "value": 1, "x": 1}]},
+        {"width": ENDS},
+        {"size": _knots(*[index / 16 for index in range(17)])},
+    ],
+    ids=["empty", "one-knot", "value-past-1", "unknown-knot-field", "unknown-option", "17-knots"],
+)
+def test_the_schema_holds_a_taper_s_shape(
+    world: World, sent: list[tuple[str, dict[str, Any]]], dynamics: dict[str, Any]
+) -> None:
+    content = world.server().content("krita_paint_stroke", _tapered(**dynamics))
+    assert content["error"]["code"] == "INVALID_ARGUMENT" and sent == []
+
+
+def test_a_taper_reaches_the_op_with_both_options_named(
+    world: World, sent: list[tuple[str, dict[str, Any]]]
+) -> None:
+    world.server().call("krita_paint_stroke", _tapered(size=ENDS))
+    [(op, args)] = sent
+    assert (op, args["dynamics"]) == ("paint.stroke", {"size": ENDS, "opacity": None})
+
+
+def test_mask_paint_takes_no_taper(world: World, sent: list[tuple[str, dict[str, Any]]]) -> None:
+    arguments = _tapered(size=ENDS)
+    del arguments["brush"]["color"]
+    arguments["brush"]["mask"] = "reveal"
+    content = world.server().content("krita_paint_stroke", arguments)
+    assert content["error"]["details"]["field"] == "dynamics" and sent == []
+
+
+def test_a_curve_s_length_is_its_arc_not_its_chord() -> None:
+    # A half circle of radius 10 from four cubics, against pi * r; a straight cubic is its chord.
+    k = 4 * (2**0.5 - 1) / 3 * 10
+    quarter = [[10, k, k, 10, 0, 10], [-k, 10, -10, k, -10, 0]]
+    half = strokes.arc_length({"start": [10, 0], "segments": quarter})
+    assert abs(half - 10 * math.pi) < 0.01
+    straight = {"start": [0, 0], "segments": [[1, 0, 2, 0, 3, 0], [3, 4]]}
+    assert abs(strokes.arc_length(straight) - 7) < 1e-9
+
+
 @pytest.mark.parametrize(("arguments", "code", "details"), REFUSALS)
 def test_a_refusal_is_returned_before_the_journal(
     world: World,
@@ -196,6 +286,7 @@ def test_the_defaults_are_filled_and_the_path_sent(
                     "rotation_deg": 0,
                 },
                 "path": {"start": [1.5, 2.5], "segments": [[7.5, 3.5]]},
+                "dynamics": None,
             },
         )
     ]
@@ -287,6 +378,7 @@ def _result(checked: dict[str, Any]) -> dict[str, Any]:
             "antialias": True,
             "spacing": None,
             "reach": {"tip": "round", "scatter": 0, "margin_px": 32},
+            "dynamics": None,
         },
         "changed_bounds_px": {"x": 1, "y": 0, "width": 1, "height": 1},
         "layer_bounds_px": {"x": 1, "y": 0, "width": 1, "height": 1},

@@ -5,6 +5,10 @@ Point = tuple[float, float]
 # Below this share of the two edges' lengths, a cross product is rounding, not area; the plugin
 # holds the same bound.
 COLLINEAR = 1e-9
+# Flatness, in pixels, below which a cubic's length is its chord and control polygon's mean; the
+# plugin measures the same way.
+FLAT_PX = 0.01
+MAX_DEPTH = 16
 
 
 def path(points: list[dict[str, Any]], smooth: str) -> dict[str, Any]:
@@ -54,3 +58,30 @@ def collinear(points: list[list[float]]) -> bool:
         abs(ax * (y - y0) - ay * (x - x0)) <= COLLINEAR * reach * math.hypot(x - x0, y - y0)
         for x, y in points
     )
+
+
+def arc_length(path: dict[str, Any]) -> float:
+    total, (x, y) = 0.0, path["start"]
+    for segment in path["segments"]:
+        if len(segment) == 2:
+            total += math.hypot(segment[0] - x, segment[1] - y)
+        else:
+            p1, p2, p3 = segment[0:2], segment[2:4], segment[4:6]
+            total += _cubic_length((x, y), p1, p2, p3, 0)
+        x, y = segment[-2], segment[-1]
+    return total
+
+
+def _cubic_length(p0: Any, p1: Any, p2: Any, p3: Any, depth: int) -> float:
+    chord = math.dist(p0, p3)
+    polygon = math.dist(p0, p1) + math.dist(p1, p2) + math.dist(p2, p3)
+    if polygon - chord <= FLAT_PX or depth >= MAX_DEPTH:
+        return float((chord + polygon) / 2)
+    a, b, c = _mid(p0, p1), _mid(p1, p2), _mid(p2, p3)
+    d, e = _mid(a, b), _mid(b, c)
+    f = _mid(d, e)
+    return _cubic_length(p0, a, d, f, depth + 1) + _cubic_length(f, e, c, p3, depth + 1)
+
+
+def _mid(p: Any, q: Any) -> Point:
+    return (p[0] + q[0]) / 2, (p[1] + q[1]) / 2

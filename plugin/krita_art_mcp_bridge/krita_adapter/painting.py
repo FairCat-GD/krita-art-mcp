@@ -13,6 +13,8 @@ from .qt import QAbstractScrollArea, QMdiArea, QPainterPath, QPointF, QRectF
 CHANNELS = (2, 1, 0, 3)
 MIRRORS = ("hmirror_action", "vmirror_action")
 PRESET_FIELDS = ("size_px", "opacity", "flow", "blend_mode", "eraser")
+# Krita's own action behind the brush editor's reload button (K51).
+RELOAD_PRESET = "reload_preset_action"
 
 
 def view_of(document: Any) -> Any:
@@ -193,6 +195,30 @@ def _restore_wrap(canvas: Any, wrapped: list[bool]) -> None:
         canvas.setWrapAroundMode(True)
     except Exception:
         logging.getLogger(log.NAME).exception("wrap-around mode was not put back")
+
+
+def edit_preset(document: Any, xml: str) -> str:
+    view = _window_view()
+    _held(view).fromXML(xml)
+    return str(_held(view).toXML())
+
+
+def restore_preset(document: Any, xml: str, reload: bool) -> str:
+    view = _window_view()
+    _held(view).fromXML(xml)
+    if reload:
+        action = Krita.instance().action(RELOAD_PRESET)
+        if action is None:
+            raise BridgeError("INTERNAL_ERROR", "Krita has no action to reload a preset.")
+        action.trigger()
+    return str(_held(view).toXML())
+
+
+def _held(view: Any) -> Any:
+    preset = view.currentBrushPreset()
+    if preset is None:
+        raise BridgeError("INTERNAL_ERROR", "Krita has no brush preset in front.")
+    return Preset(preset)
 
 
 def cumulative_undo() -> bool:

@@ -7,7 +7,7 @@ from .errors import BridgeError, exact, integer, no_arguments, number
 from .history import in_front
 from .jobs import Call, Handler
 from .pixels import check_rect
-from .port import DocumentsPort
+from .port import DocumentsPort, ResourcesPort
 from .registry import Handle, Registry
 
 EXPORT_FIELDS = {"document_id", "target_path"}
@@ -22,6 +22,7 @@ VIEW_FIELDS = {"document_id", "view"}
 VIEW_KEYS = {"zoom", "rotation_deg", "pan_px"}
 BRUSH_READ_FIELDS = {"document_id", "action", "preset_ids"}
 BRUSH_WRITE_FIELDS = {"document_id", "action", "state"}
+PRESET_FIELDS = {"document_id", "preset_ids"}
 MAX_PRESETS = 100
 
 
@@ -35,7 +36,12 @@ def require_inside_harness(data: Path, path: Any, field: str) -> str:
     return real
 
 
-def handlers(registry: Registry, port: DocumentsPort, data: Path) -> dict[str, Handler]:
+def handlers(
+    registry: Registry,
+    port: DocumentsPort,
+    data: Path,
+    resources: ResourcesPort | None = None,
+) -> dict[str, Handler]:
     def fixture(document_id: Any) -> Handle:
         registry.refuse_at_job_start()
         handle = registry.find(document_id)
@@ -192,6 +198,24 @@ def handlers(registry: Registry, port: DocumentsPort, data: Path) -> dict[str, H
             return {"document_id": handle.document_id}
         raise BridgeError("INVALID_ARGUMENT", "action is read or write.")
 
+    def preset_dirty(args: dict[str, Any], call: Call) -> dict[str, Any]:
+        # Whether Krita holds unsaved changes to each named preset, as a taper's restore reads it.
+        exact(args, PRESET_FIELDS)
+        ids = args["preset_ids"]
+        if (
+            not isinstance(ids, list)
+            or len(ids) > MAX_PRESETS
+            or not all(isinstance(one, str) and one for one in ids)
+        ):
+            raise BridgeError("INVALID_ARGUMENT", f"preset_ids is up to {MAX_PRESETS} preset ids.")
+        handle = fixture(args["document_id"])
+        if resources is None:
+            raise BridgeError("INTERNAL_ERROR", "This bridge reads no presets.")
+        return {
+            "document_id": handle.document_id,
+            "dirty": {one: resources.preset_dirty(one) for one in ids},
+        }
+
     def undo(args: dict[str, Any], call: Call) -> dict[str, Any]:
         # Krita's own Undo, as a hand would press it: the ledger is left for history to catch.
         exact(args, {"document_id"})
@@ -213,6 +237,7 @@ def handlers(registry: Registry, port: DocumentsPort, data: Path) -> dict[str, H
         "harness.add_node": add_node,
         "harness.view": view,
         "harness.brush_state": brush_state,
+        "harness.preset_dirty": preset_dirty,
         "harness.undo": undo,
     }
 
