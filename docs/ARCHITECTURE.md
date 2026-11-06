@@ -474,6 +474,8 @@ request, invariant 9's stated limit.
 
 The index also keeps each finished line by its `operation_id` and by the `bridge_operation_id` a
 retry was answered under, so `krita_operation_get` can answer once Krita has moved on.
+- **A `no_effect` line names its own id,** and the bridge's when it has one; an older line
+  without `bridge_operation_id` settles its own attempt alone.
 - **A retry that joined a running call** comes back running under the original's id. Its own
   attempt then gets an `unknown` line with no result, naming that id. It settles nothing and
   answers for its own id alone, but a `no_effect` for the original then settles it too.
@@ -536,8 +538,9 @@ state are not changes here, because an op sets them before its marker:
   stays out of a read. The view goes back; the active node stays on the layer, because
   `setActiveNode` cannot make the global selection's mask current again (measured).
   `krita_layer_update`'s `active` is the same call, but there the active node is what the agent
-  asked for, so it is marked first. The fake's marker gate lets an activation off a selection
-  mask through, and an armed test drives a stroke with each kind of mask active.
+  asked for, so it is marked first. The fake's marker gate lets through only the activation off
+  an active selection mask onto the layer `nodes.unmasked` names, and an armed test drives a
+  stroke with each kind of mask active.
 
 | Op | First change |
 |---|---|
@@ -1039,9 +1042,11 @@ finish's failure keeps `not_applied` only on proof:
 - **Everything else is `uncertain`, not retryable:** a refusal at job start, a restarted Krita, a
   finish that reached no bridge, a session mismatch. The hidden file then stays, the known debt
   below.
-- **What a retry does.** For a finish refused retryably, the message says that retrying the save
-  under its `request_id` finishes it. That retry is a same-session resend: the bridge dedups the
-  save, and the finish runs again in the retrying process.
+- **What a retry does.** For a finish this process sent and Krita refused retryably, the message
+  says that retrying the save under its `request_id` finishes it. That retry is a same-session
+  resend: the bridge dedups the save, and the finish runs again in the retrying process. A
+  finish cancelled at Krita's quit, or one another process's poll reads, gets no such sentence,
+  since its retry would meet a new session or another process's lease.
 
 ## The server
 
@@ -1082,8 +1087,9 @@ journal on every path. When the bridge cannot answer, because Krita restarted or
 line answers with its own outcome; with no line it stays `uncertain`.
 
 **A poll finishes a save only in the process that made the call.**
-- **The record.** `BridgeClient._made` holds the id of every call this process sent, and the id
-  the bridge answered it under. `_sent`, which pins a running call's session, also takes ids a
+- **The record.** `BridgeClient._made` holds the id of every call this process sent with a
+  `request_id`, and the id the bridge answered it under. Reads, whose ids the process mints, are
+  never polled for a finish, so they stay out of it. `_sent`, which pins a running call's session, also takes ids a
   poll followed, so it cannot say who made a call.
 - **The maker's poll** runs the finish.
 - **Any other poll only reads.** It GETs the finish's own record and reports it with the save's
@@ -1359,8 +1365,8 @@ depend on it: 87 open documents cost about 50 s more.
 | Check | Expected |
 |---|---|
 | `uv run scripts/verify.py` | 6 stages, all PASS |
-| Server tests (3.12) | 1006 passed, 0 skipped |
-| Plugin-core tests (3.10) | 944 passed, 0 skipped |
+| Server tests (3.12) | 1013 passed, 0 skipped |
+| Plugin-core tests (3.10) | 945 passed, 0 skipped |
 | `uv run krita-art-mcp probe` | 174 PASS, 0 FAIL, 25 MEASURED; about 135 s |
 | `uv run krita-art-mcp doctor` | 6 steps, all PASS, with a root allowed |
 | Registered tools | 20 |

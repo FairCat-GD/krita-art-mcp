@@ -94,8 +94,9 @@ class BridgeClient:
         # The Krita session of each call this process left running, so a later poll can tell a
         # call still on its way from one the bridge never heard of.
         self._sent: dict[str, str] = {}
-        # Every operation this process sent a call for, as sent and as the bridge answered it:
-        # the one record of which process made a call.
+        # Every operation this process sent a call with a request_id for, as sent and as the
+        # bridge answered it: the one record of which process made a call. Reads, whose ids
+        # this process mints, are never polled for a finish.
         self._made: set[str] = set()
 
     @property
@@ -156,6 +157,8 @@ class BridgeClient:
         refused = before_send(bridge.session_id, operation_id) if before_send else None
         if refused is not None:
             return refused
+        if request_id is None:
+            return self._follow(bridge, operation_id, body, deadline, op=op)
         self._made.add(operation_id)
         outcome = self._follow(bridge, operation_id, body, deadline, op=op)
         if outcome.operation_id is not None:

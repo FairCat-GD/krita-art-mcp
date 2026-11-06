@@ -802,6 +802,21 @@ def test_k46_moving_the_active_node_off_a_selection_mask_is_no_change(
     assert tree["active_id"] == (PAINT if where == "global" else BASE)
 
 
+def test_the_fake_lets_only_k46_s_activation_pass_before_a_marker(world: World) -> None:
+    document_id = world.document()
+    world.port.mask(1, BASE)
+    document = world.registry.find(document_id).document
+    world.port.bring_forward(document)
+    world.port.marker = Call("op-x", "req-x", A)
+    try:
+        world.port.activate(document, BASE)
+        world.port.mask(1, BASE)
+        with pytest.raises(AssertionError):
+            world.port.activate(document, PAINT)
+    finally:
+        world.port.marker = None
+
+
 def test_a_layer_krita_refused_is_confirmed_not_applied(world: World) -> None:
     document_id = world.document()
     world.port.fail["create_layer"] = BridgeError("INTERNAL_ERROR", "Krita did not add the layer.")

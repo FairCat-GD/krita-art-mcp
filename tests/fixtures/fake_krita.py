@@ -8,7 +8,7 @@ import zipfile
 import zlib
 from typing import Any
 
-from bridge_core import documents, history, saving, shapes
+from bridge_core import documents, history, nodes, saving, shapes
 from bridge_core.bridge import Bridge
 from bridge_core.errors import BridgeError
 
@@ -262,8 +262,9 @@ class FakePort:
         return tree
 
     def activate(self, document: Any, node_id: str) -> None:
-        # K46's activation, off a selection mask before a read, is window state, not a change.
-        if not self.mask_active(document):
+        # K46's activation, off a selection mask onto the layer that stands in for it before a
+        # read, is window state, not a change; any other activation is.
+        if not (self.mask_active(document) and node_id == nodes.unmasked(self.tree(document))):
             self._marked()
         # setActiveNode acts on the document in front only.
         self.calls.append("activate")

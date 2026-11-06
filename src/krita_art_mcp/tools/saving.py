@@ -100,14 +100,15 @@ def poll_finish(call: ToolCall, outcome: Outcome, left_s: float) -> Outcome:
     found = call.bridge.operation(finish_id, budget_s=_finish_budget(call, left_s))
     if isinstance(found, Failed) and found.op is None and found.error["code"] == "INVALID_ARGUMENT":
         return _unfinished(outcome)
-    return _as_save(outcome, found)
+    # Another process's retry may not run the finish, so its answer promises none.
+    return _as_save(outcome, found, hint=False)
 
 
 def _finish_budget(call: ToolCall, left_s: float) -> float:
     return max(left_s, min(MIN_FINISH_S, call.bridge.budget_s))
 
 
-def _as_save(save: Done, finished: Outcome) -> Outcome:
+def _as_save(save: Done, finished: Outcome, hint: bool = True) -> Outcome:
     if isinstance(finished, Pending):
         # Followed by the save's own operation id, which finishes the same way.
         return Pending(finished.status, save.operation_id or finished.operation_id, save.op)
@@ -119,7 +120,7 @@ def _as_save(save: Done, finished: Outcome) -> Outcome:
         )
     return replace(
         finished,
-        error=_finish_error(save, finished),
+        error=_finish_error(save, finished, hint),
         submitted=True,
         operation_id=operation_id,
         request_id=request_id,
@@ -127,7 +128,7 @@ def _as_save(save: Done, finished: Outcome) -> Outcome:
     )
 
 
-def _finish_error(save: Done, finished: Failed) -> dict[str, Any]:
+def _finish_error(save: Done, finished: Failed, hint: bool) -> dict[str, Any]:
     error = finished.error
     details = error["details"]
     same_session = finished.session_id == save.session_id
@@ -141,7 +142,9 @@ def _finish_error(save: Done, finished: Failed) -> dict[str, Any]:
         return error
     # The save reached Krita and may have left its file, or dropped an earlier unfinished one.
     message = error["message"]
-    if finished.submitted and error["retryable"] and same_session:
+    # A finish cancelled at Krita's quit never runs again: a retry meets a new Krita session.
+    rerun = finished.submitted and error["retryable"] and error["code"] != "CANCELLED"
+    if hint and rerun and same_session:
         message = f"{message} {_retry_hint(details)}"
     details = {**details, "outcome": UNCERTAIN}
     return {**error, "message": message, "retryable": False, "details": details}

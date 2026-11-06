@@ -16,8 +16,9 @@ Release 0.24.0 on go; on a no-go E1 ships no version, and every later version mo
 
 - **Round 2 is recovery and construction**: R1, R2, R3, D1, F1, C1, M1, X1 and X1a are done; E1,
   L1, B1, T1, S1, X2 and V1 remain, in that order.
-- **X1a and its review fixes are committed locally, not pushed.** `origin/main` holds everything
-  through `0875bf2`, X1's review fixes. List `origin/main..HEAD` before any push.
+- **X1a and its review fixes are pushed.** `origin/main` holds everything through "review: a
+  no_effect line naming no bridge op settled all, and 5 smaller". List `origin/main..HEAD` before
+  any push.
 - **What X1a left that E1 builds on:**
   - **The digest memory** is `activated` and `remember` in `bridge_core/painting.py`, with
     `remember` called from the stroke and from the fill, and `_listed`'s preset lookup. Name
@@ -31,7 +32,8 @@ Release 0.24.0 on go; on a no-go E1 ships no version, and every later version mo
   - **Every rollback's details carry `history_sealed`.** The stroke's receipt already had it.
   - **Mask paint refuses `eraser`** in `_check_mask_paint`, which now reads `style.get("eraser")`.
   - **K46's activation is window state, not a change,** like the brush. The fake's `activate` gate
-    lets an activation through while a selection mask is active.
+    lets through only the activation off an active selection mask onto the layer
+    `nodes.unmasked` names.
 - **What the spec said that turned out wrong or harder:**
   - **`_sent` was the wrong record for X1a's poll rule:** a poll's own wait writes it. The record
     is `BridgeClient._made`.
@@ -47,7 +49,7 @@ Release 0.24.0 on go; on a no-go E1 ships no version, and every later version mo
   - `eraserMode()` reads false after `setEraserMode(True)` on 5.3.4.1.
   - The fake honours the eraser, and restores whole snapshots on undo.
 - **Baseline** (ARCHITECTURE's table, v0.23.0):
-  - `verify` 6 stages, all PASS; 1006 server tests and 944 plugin-core tests, 0 skipped;
+  - `verify` 6 stages, all PASS; 1013 server tests and 945 plugin-core tests, 0 skipped;
   - `probe` 174 PASS, 0 FAIL, 25 MEASURED, 136 s with 0 documents open, the journal check reading
     682 dispatched lines;
   - 20 tools; 20 schema files; 30 error codes; 32 bridge ops; 12 capabilities; instructions 2,945

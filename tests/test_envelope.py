@@ -185,7 +185,7 @@ def test_the_instructions_fit_in_4096_characters_and_name_the_wait_budget() -> N
     assert f"{WAIT_BUDGET_S:.0f}-second wait" in INSTRUCTIONS
 
 
-# Five planned sessions each add a line, about 730 characters in all.
+# Room for the instruction lines tools still to come will each need.
 SPARE_FLOOR = 700
 
 

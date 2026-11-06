@@ -1360,6 +1360,25 @@ strategy*.
 - **Numbers:** 1006 server tests (+36), 944 plugin tests (+13), probe 174 PASS (+3), 0 FAIL, 25
   MEASURED, 136.5 s with 0 documents open. 20 tools, 20 schema files, 30 error codes, 32 ops, 12
   capabilities, instructions 2,945 characters, `api_version` 0.4.0.
+- **Review (`/code-review high`), 6 findings: 6 fixed and 0 skipped.**
+  - **A `no_effect` line with no `bridge_operation_id` settled every attempt of its request.**
+    An older line's missing id put `None` among the ids it names, which matched every attempt
+    with no alias. Such an attempt may have run after the release. `named` now holds strings
+    alone.
+  - **The retry sentence was promised where a retry cannot finish:** on a finish another
+    process's poll reads, and on one cancelled at Krita's quit. Both now go without it.
+  - **The fake's K46 exemption let every activation through while a mask was active.** It now
+    passes only the activation onto the layer `nodes.unmasked` names.
+  - **`_made` grew with every call, reads included.** It now records only calls with a
+    `request_id`.
+  - **The probe's `_left_as` parsed an outcome by hand.** It uses `operations.said`, made public
+    and safe on loose data.
+  - **Two comments cited a version and planned sessions.** Reworded to the present.
+  - **Falsified:** the line naming no bridge operation, both cases of no retry sentence, the
+    fake's narrow exemption, reads not recorded as made, and `said` on loose data. Each failed at
+    its own test, the tree restored byte for byte.
+  - **Numbers after the review:** 1013 server tests (+7), 945 plugin tests (+1), probe 174 PASS,
+    0 FAIL, 25 MEASURED, 139.3 s with 0 documents open; the journal check read 682 lines.
 
 ---
 

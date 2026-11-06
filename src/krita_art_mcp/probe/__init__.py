@@ -19,15 +19,14 @@ from krita_art_mcp.instructions import INSTRUCTIONS
 from krita_art_mcp.probe import changes, opening, painting, pixels, previews, updates, writes
 from krita_art_mcp.probe.common import close
 from krita_art_mcp.probe.report import Report, code, tool
-from krita_art_mcp.tools import BUILT_TOOLS
+from krita_art_mcp.tools import BUILT_TOOLS, operations
 from krita_art_mcp.tools.documents import SRGB_PROFILE
 
 H4_CALLS = 500
 H4_P95_BUDGET_S = 0.050
 MAX_INSTRUCTIONS = 4096
 CYCLES = 20
-# About half the 682 calls a whole run journaled at 0.23.0; fewer means the check read the
-# wrong place.
+# About half the calls a whole run journals; fewer means the check read the wrong place.
 MIN_JOURNALED = 340
 # Another client's transfer file lives for milliseconds; one the probe leaked stays.
 LEFTOVER_SETTLE_S = 1.0
@@ -306,9 +305,9 @@ def _left_as(reader: journal.Journal, operation_id: str) -> str:
     line = reader.finished_line(operation_id)
     if line is None:
         return "dispatched with no finished line"
-    error = ((line.result or {}).get("structured") or {}).get("error") or {}
-    said = (error.get("details") or {}).get("outcome")
-    return str(said) if said in ("uncertain", "unregistered") else "finished unknown"
+    if line.result is None:
+        return "joined another call that never settled"
+    return operations.said(((line.result or {}).get("structured") or {}).get("error"))
 
 
 def _nothing_stray(report: Report, listed: writes.Listing) -> None:

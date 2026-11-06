@@ -683,6 +683,7 @@ VERIFIED = {"outcome": "not_applied", "rollback_verified": True}
             "uncertain",
             None,
         ),
+        ("CANCELLED", True, {"outcome": "not_applied"}, "krita-1", False, "uncertain", None),
     ],
     ids=[
         "its-own-discard-verified",
@@ -692,6 +693,7 @@ VERIFIED = {"outcome": "not_applied", "rollback_verified": True}
         "another-process-s-lease",
         "a-restarted-krita",
         "no-save-waits",
+        "cancelled-at-quit",
     ],
 )
 def test_a_finish_keeps_not_applied_only_when_its_own_discard_verified(
@@ -726,6 +728,22 @@ def test_a_finish_keeps_not_applied_only_when_its_own_discard_verified(
         assert "Retrying" not in said_now["message"]
     else:
         assert hint in said_now["message"]
+
+
+def test_a_finish_another_process_reads_promises_no_retry() -> None:
+    # Its retry would run the finish under that process's client, which may not hold the lease.
+    error = error_body("KRITA_MODAL_DIALOG", retryable=True, details={"outcome": "not_applied"})
+    refused = Failed(error, "op-f", submitted=True, op="document.save_finish", session_id="krita-1")
+    read = saving._as_save(_saved(), refused, hint=False)
+    assert isinstance(read, Failed) and read.error["details"]["outcome"] == "uncertain"
+    assert "Retrying" not in read.error["message"]
+
+
+@pytest.mark.parametrize(
+    "error", [None, {}, {"details": None}, {"details": {"outcome": "kept"}}], ids=str
+)
+def test_an_unreadable_statement_is_uncertain(error: Any) -> None:
+    assert operations.said(error) == "uncertain"
 
 
 def test_a_merged_image_that_raises_never_stops_the_finish(

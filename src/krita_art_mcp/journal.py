@@ -277,7 +277,8 @@ class Journal:
         if not isinstance(elapsed_ms, int) or isinstance(elapsed_ms, bool):
             elapsed_ms = None
         bridge_operation_id = line.get("bridge_operation_id")
-        named = {operation_id, bridge_operation_id} if outcome == NO_EFFECT else set()
+        # Only ids a line names: an older line without bridge_operation_id names its own alone.
+        named = {name for name in (operation_id, bridge_operation_id) if isinstance(name, str)}
         prior = self._requests.setdefault(request_id, Prior())
         for attempt in prior.attempts:
             if attempt.operation_id == operation_id and isinstance(bridge_operation_id, str):

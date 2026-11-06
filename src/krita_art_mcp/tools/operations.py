@@ -135,12 +135,14 @@ def _receipt(known: Known, outcome: Done | Failed) -> CallToolResult:
 def _outcome_of(outcome: Done | Failed) -> str:
     if isinstance(outcome, Done):
         return APPLIED
-    return _said(outcome.error)
+    return said(outcome.error)
 
 
-def _said(error: Any) -> str:
-    said = error["details"].get("outcome") if isinstance(error, dict) else None
-    return said if said in OUTCOMES else UNCERTAIN
+def said(error: Any) -> str:
+    # What a failure's own details state, from data nothing has validated; unstated is uncertain.
+    details = error.get("details") if isinstance(error, dict) else None
+    found = details.get("outcome") if isinstance(details, dict) else None
+    return found if found in OUTCOMES else UNCERTAIN
 
 
 def _from_journal(call: ToolCall, operation_id: str) -> CallToolResult | None:
@@ -178,7 +180,7 @@ def _journaled_outcome(line: Finished, state: str, content: dict[str, Any]) -> s
         return UNCERTAIN
     if line.outcome in (journal.NO_EFFECT, journal.NOT_SENT, journal.CONFLICT):
         return NOT_APPLIED
-    return APPLIED if state == "completed" else _said(content.get("error"))
+    return APPLIED if state == "completed" else said(content.get("error"))
 
 
 def _state(outcome: Outcome) -> str:

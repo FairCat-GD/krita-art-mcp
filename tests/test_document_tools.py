@@ -593,11 +593,13 @@ def _finish(
         (journal.NO_EFFECT, "op-1", [journal.NO_EFFECT, journal.NO_EFFECT]),
         # Its own operation: op-1 may be another attempt, sent after a release, that ran.
         (journal.NO_EFFECT, "op-2", [journal.UNKNOWN, journal.NO_EFFECT]),
+        # An older line names no bridge operation: still its own attempt alone.
+        (journal.NO_EFFECT, None, [journal.UNKNOWN, journal.NO_EFFECT]),
     ],
-    ids=["a receipt", "a deduplicated refusal", "a refusal of its own"],
+    ids=["a receipt", "a deduplicated refusal", "a refusal of its own", "a-line-naming-none"],
 )
 def test_a_receipt_settles_every_attempt_it_deduplicated_and_a_refusal_only_those_it_names(
-    tmp_path: Path, outcome: str, bridge_operation: str, settled: list[str]
+    tmp_path: Path, outcome: str, bridge_operation: str | None, settled: list[str]
 ) -> None:
     writer = _journal_on(tmp_path, NOW)
     _attempt(writer, "op-1")
@@ -797,6 +799,10 @@ def test_a_finished_call_is_not_remembered_by_the_client(world: World) -> None:
     again = client.operation(done.operation_id)
     assert isinstance(again, Done)
     assert client._sent == {}
+    # A read is no call this process could finish a save for, so it is not recorded as made.
+    assert not client.made(done.operation_id)
+    made = client.call("document.list", request_id="req-made")
+    assert made.operation_id is not None and client.made(made.operation_id)
 
 
 def _art(world: World) -> Path:
