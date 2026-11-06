@@ -92,7 +92,8 @@ def origin_offset(path: dict[str, Any]) -> float:
 
 
 def sensor_length(arc: float, offset: float) -> int:
-    return math.floor(arc + offset + 0.5)
+    # Rounded up, so no knot lands past the curve's end.
+    return math.ceil(arc + offset)
 
 
 def curve(knots: list[dict[str, Any]], arc: float, offset: float, length: int) -> str:
@@ -151,10 +152,10 @@ def edited(xml: str, dynamics: dict[str, Any], path: dict[str, Any]) -> tuple[st
     return ElementTree.tostring(root, encoding="unicode"), applied
 
 
-def took(xml: str, dynamics: dict[str, Any], path: dict[str, Any]) -> list[str]:
-    # The options whose sensor Krita did not take as written.
-    arc, offset = arc_length(path), origin_offset(path)
-    length = sensor_length(arc, offset)
+def took(xml: str, dynamics: dict[str, Any], applied: dict[str, Any]) -> list[str]:
+    # The options whose sensor Krita did not take as edited() wrote it.
+    arc, offset = applied["arc_length_px"], applied["origin_offset_px"]
+    length = applied["sensor_length_px"]
     try:
         root = ElementTree.fromstring(xml)
     except ElementTree.ParseError:

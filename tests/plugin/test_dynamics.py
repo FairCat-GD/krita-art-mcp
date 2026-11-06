@@ -18,6 +18,7 @@ PATH = {"start": [40, 60], "segments": [[50, 60]]}
 BRUSH = {"preset_sha256": SHA, "mask": None}
 # What a stroke would have painted, and where.
 STROKE = box(30, 50, 30, 20)
+SCATTER = {"PressureScatter": "false", "ScatterValue": "1", "Scattering/AxisX": "true"}
 
 
 @pytest.fixture
@@ -114,7 +115,19 @@ def test_the_curve_moves_each_knot_past_the_origin_offset() -> None:
     # A stroke from the origin needs no first point of its own; a rounded length never passes 1.
     assert dynamics.curve(ENDS, 100.0, 0.0, 100).startswith("0,0.2,is_corner;0.5,")
     assert dynamics.curve(ENDS, 100.4, 0.0, 100).endswith("1,0.2,is_corner;")
-    assert dynamics.sensor_length(100.2, 50.3) == 151
+    # Rounded up, so no knot passes the curve's end, however close to it.
+    assert (dynamics.sensor_length(100.2, 50.3), dynamics.sensor_length(100.0, 50.0)) == (151, 150)
+    near: list[dict[str, Any]] = [
+        {"at": 0, "value": 1},
+        {"at": 0.95, "value": 1},
+        {"at": 1, "value": 0.1},
+    ]
+    length = dynamics.sensor_length(5.0, 0.28)
+    xs = [
+        float(point.split(",")[0])
+        for point in dynamics.curve(near, 5.0, 0.28, length).split(";")[:-1]
+    ]
+    assert xs == sorted(set(xs)) and xs[-1] < 1
 
 
 def test_the_edit_drives_each_option_by_distance_alone() -> None:
@@ -161,8 +174,8 @@ def test_the_edit_drives_each_option_by_distance_alone() -> None:
         "replaced": {"size": ["pressure", "fuzzy"], "opacity": []},
         "raised_size_strength": 0.5,
     }
-    assert dynamics.took(text, {"size": ENDS, "opacity": ENDS}, path) == []
-    assert dynamics.took(xml, {"size": ENDS, "opacity": None}, path) == ["size"]
+    assert dynamics.took(text, {"size": ENDS, "opacity": ENDS}, applied) == []
+    assert dynamics.took(xml, {"size": ENDS, "opacity": None}, applied) == ["size"]
 
 
 # The stroke.
@@ -172,7 +185,7 @@ def test_a_taper_edits_the_preset_for_its_stroke_and_puts_it_back(world: World) 
     document_id, _ = world.document()
     done = _tapered(world, document_id)
     taper = done["effective_brush"]["dynamics"]
-    assert (taper["size"], taper["opacity"], taper["sensor_length_px"]) == (ENDS, None, 82)
+    assert (taper["size"], taper["opacity"], taper["sensor_length_px"]) == (ENDS, None, 83)
     assert taper["replaced"] == {"size": [], "opacity": None}
     [edit] = world.port.preset_edits
     assert ElementTree.fromstring(_params(edit)["SizeSensor"]).get("id") == "distance"
@@ -187,8 +200,7 @@ def test_a_taper_edits_the_preset_for_its_stroke_and_puts_it_back(world: World) 
 
 def test_unsaved_changes_to_the_preset_survive_its_taper(world: World) -> None:
     document_id, _ = world.document()
-    scatter = {"PressureScatter": "false", "ScatterValue": "1", "Scattering/AxisX": "true"}
-    tweaked = preset_xml(NAME, scatter={**scatter, "Scattering/AxisY": "true"})
+    tweaked = preset_xml(NAME, scatter={**SCATTER, "Scattering/AxisY": "true"})
     world.resources.xmls[NAME] = world.port.preset_xml[NAME] = tweaked
     world.resources.dirty[NAME] = True
     _tapered(world, document_id, brush={"preset_sha256": fingerprint(tweaked)[1]})
@@ -230,7 +242,7 @@ def test_remember_reads_the_preset_before_its_edit_and_never_after(
             },
             {"engine": "colorsmudge"},
         ),
-        ({"setting": "true"}, {"reason": "dirty_presets_setting"}),
+        ({"setting": "false"}, {"reason": "dirty_presets_setting"}),
         ({"dirty": None}, {"reason": "preset_state_unread"}),
     ],
     ids=["another-engine", "setting-changed", "dirty-unread"],
@@ -269,6 +281,36 @@ def test_a_preset_left_edited_makes_the_stroke_uncertain_and_is_held(world: Worl
     assert (held["code"], held["details"]["reason"]) == ("RESOURCE_HASH_MISMATCH", "preset_held")
     world.port.restore_keeps_edit = False
     world.resources.xmls[NAME] = world.port.preset_xml[NAME] = world.resources.stored[NAME]
+    world.stroke(document_id)
+
+
+def test_a_reload_may_give_back_the_digest_the_preset_was_listed_with(
+    world: World, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # Krita fills in a tip on first activation: the stored digest moves, and a reload from
+    # storage gives back the one resource.list gave.
+    document_id, _ = world.document()
+    filled = preset_xml(NAME, scatter={**SCATTER, "Scattering/AxisY": "true"})
+    real = world.resources.preset_xml
+    monkeypatch.setattr(world.resources, "preset_xml", lambda resource: filled)
+    world.stroke(document_id, brush={"preset_sha256": SHA})
+    monkeypatch.setattr(world.resources, "preset_xml", real)
+    world.resources.xmls[NAME] = world.port.preset_xml[NAME] = filled
+    done = _tapered(world, document_id)
+    assert done["effective_brush"]["preset_sha256"] == SHA
+    assert world.resources.xmls[NAME] == world.resources.stored[NAME]
+
+
+def test_a_held_preset_is_free_once_krita_reloads_it(world: World) -> None:
+    document_id, _ = world.document()
+    tweaked = preset_xml(NAME, scatter={**SCATTER, "Scattering/AxisY": "true"})
+    world.resources.xmls[NAME] = world.port.preset_xml[NAME] = tweaked
+    world.resources.dirty[NAME] = True
+    world.port.restore_keeps_edit = True
+    _refused(world, document_id, brush={"preset_sha256": fingerprint(tweaked)[1]})
+    # The owner reloads it: Krita holds it as stored, clean, the tweak gone.
+    world.resources.xmls[NAME] = world.port.preset_xml[NAME] = world.resources.stored[NAME]
+    world.resources.dirty[NAME] = False
     world.stroke(document_id)
 
 

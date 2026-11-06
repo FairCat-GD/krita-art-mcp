@@ -84,15 +84,16 @@ def handlers(
         if listed is not None and loaded is not None and loaded != listed:
             activated[(preset_id, loaded)] = listed
 
-    # Presets a taper could not put back, by the digest each had before it: Krita still holds
-    # the edit, so no stroke or fill paints with one until it reads as before.
-    held: dict[str, str] = {}
+    # Presets a taper could not put back, by the digests each had before it: Krita still holds
+    # the edit, so no stroke or fill paints with one until it reads as before, or clean, as
+    # after a reload from storage.
+    held: dict[str, set[str]] = {}
 
     def unheld(preset_id: str, xml: str) -> None:
         if preset_id not in held:
             return
         _, found = preset_fingerprint(xml)
-        if found == held[preset_id]:
+        if found in held[preset_id] or resources.preset_dirty(preset_id) is False:
             del held[preset_id]
             return
         details = {"preset_id": preset_id, "reason": "preset_held"}
@@ -231,7 +232,7 @@ def handlers(
             tapered = None
             if taper is not None:
                 draw, tapered = _tapered(
-                    port, resources, document, args, preset, effective, dirty, held, draw
+                    port, resources, document, args, preset, listed, effective, dirty, held, draw
                 )
             frame, applied = painted(
                 handle,
@@ -542,9 +543,10 @@ def _tapered(
     document: Any,
     args: dict[str, Any],
     preset: dict[str, Any],
+    listed: str,
     effective: dict[str, Any],
     dirty: bool | None,
-    held: dict[str, str],
+    held: dict[str, set[str]],
     draw: Callable[[], None],
 ) -> tuple[Callable[[], None], dict[str, Any]]:
     # The paint, with the preset edited for it and put back after: by its own XML, then from
@@ -555,7 +557,9 @@ def _tapered(
     _, stored = preset_fingerprint(preset["xml"])
     _, set_digest = preset_fingerprint(before)
     reload = dirty is False
-    wanted = stored if reload else set_digest
+    # A reload gives back the preset as stored: its digest before the brush was set, or, for one
+    # Krita filled in on first activation, the digest it was listed with.
+    wanted = {stored, listed} if reload else {set_digest}
     text, tapered = dynamics.edited(before, taper, path)
     brush = {key: value for key, value in effective.items() if key != "preset_xml"}
 
@@ -565,8 +569,8 @@ def _tapered(
             now = port.restore_preset(document, before, reload)
             kept = resources.preset_xml(preset["resource"])
             return (
-                preset_fingerprint(now)[1] == wanted
-                and preset_fingerprint(kept)[1] == wanted
+                preset_fingerprint(now)[1] in wanted
+                and preset_fingerprint(kept)[1] in wanted
                 and resources.preset_dirty(preset_id) == dirty
             )
         except Exception:
@@ -574,7 +578,7 @@ def _tapered(
             return False
 
     def lost() -> BridgeError:
-        held[preset_id] = stored or ""
+        held[preset_id] = {digest for digest in (stored, listed) if digest is not None}
         details = {"preset_id": preset_id, "preset_restored": False, "outcome": "uncertain"}
         message = (
             "Krita's brush preset could not be put back after the taper, so the stroke was "
@@ -585,7 +589,7 @@ def _tapered(
     def paint() -> None:
         try:
             now = port.edit_preset(document, text)
-            wrong = dynamics.took(now, taper, path)
+            wrong = dynamics.took(now, taper, tapered)
             if wrong:
                 details = {"preset_id": preset_id, "fields": [f"dynamics.{key}" for key in wrong]}
                 message = "Krita did not take the taper as asked, so the stroke was not painted."

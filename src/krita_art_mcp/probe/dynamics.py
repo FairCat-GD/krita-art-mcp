@@ -274,7 +274,7 @@ def _receipts(report: Report, tapers: Tapers) -> None:
         path = strokes.path(painted["points"], painted["smooth"])
         arc = strokes.arc_length(path)
         offset = math.hypot(*path["start"])
-        if taper["sensor_length_px"] != math.floor(arc + offset + 0.5):
+        if taper["sensor_length_px"] != math.ceil(arc + offset):
             problems.append(f"length {taper['sensor_length_px']}")
     report.check(
         "each taper's receipt matches its schema and states the sensor length Krita took",

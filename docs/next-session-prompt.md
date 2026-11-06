@@ -13,11 +13,13 @@ reorder, remove, group). Release 0.25.0.
   - Remaining, in order: L1, B1, T1, S1, X2 and V1.
 - **E1 went: 0.24.0 shipped `dynamics`.** The versions stand as the table says: L1 0.25.0, B1
   0.26.0, T1 0.27.0, S1 0.28.0 and V1 0.29.0.
-- **E1 is committed locally, with its review commit.** `origin/main` ends at X1a's review. List
-  `origin/main..HEAD` before any push, and push only on the owner's approval.
+- **E1 and its review fixes are pushed** (8 findings: 7 fixed, 1 no change). `origin/main` holds
+  everything through "review: a taper's sensor length rounded down past the curve's end, and 6
+  smaller". List `origin/main..HEAD` before any push, and push only on the owner's approval.
 - **What E1 left that L1 meets:**
   - **The hold.** `held` sits beside `activated` in `painting.handlers`. A preset a taper could
-    not put back is refused by every stroke and fill until its digest reads as before.
+    not put back is refused by every stroke and fill until its digest reads as before, or it
+    reads clean after a reload.
   - **The fake.** `FakePort.resources` links the fake port to `FakeResources`, as the view's preset
     and the stored one are one object (K51). `restore_keeps_edit` and `fail["edit_preset"]` /
     `fail["restore_preset"]` inject faults.
@@ -38,8 +40,8 @@ reorder, remove, group). Release 0.25.0.
     heavily tested path, and ask which model. L1's reorder reworks the frame's two-step path.
   - F28 stays a fix, with `api_version` 0.4.0.
 - **Baseline** (ARCHITECTURE's table, v0.24.0):
-  - `verify`: 6 stages, all PASS; 1033 server tests and 972 plugin-core tests, 0 skipped;
-  - `probe`: 182 PASS, 0 FAIL, 25 MEASURED, 138 s with 0 documents open, the journal check reading
+  - `verify`: 6 stages, all PASS; 1036 server tests and 974 plugin-core tests, 0 skipped;
+  - `probe`: 182 PASS, 0 FAIL, 25 MEASURED, 136 s with 0 documents open, the journal check reading
     713 dispatched lines;
   - 20 tools, 20 schema files, 30 error codes, 33 bridge ops, 13 capabilities, instructions 3,104
     characters.

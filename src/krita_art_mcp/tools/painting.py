@@ -123,6 +123,16 @@ def _dynamics_rules(arguments: dict[str, Any]) -> CallToolResult | None:
         knots = taper.get(key)
         if knots is None:
             continue
+        # The schema holds the shape; a caller past it gets a refusal, never a raise.
+        if (
+            not isinstance(knots, list)
+            or len(knots) < 2
+            or not all(isinstance(knot, dict) and _number(knot.get("at")) for knot in knots)
+        ):
+            message = f"dynamics.{key} holds knots {{at, value}}."
+            return envelope.failure(
+                "INVALID_ARGUMENT", message, details={"field": f"dynamics.{key}"}
+            )
         at = [knot["at"] for knot in knots]
         if at[0] != 0 or at[-1] != 1:
             message = f"dynamics.{key} starts at 0 and ends at 1."
@@ -145,6 +155,10 @@ def _dynamics_rules(arguments: dict[str, Any]) -> CallToolResult | None:
         message = "dynamics paints colour on a paint layer, never mask paint."
         return envelope.failure("INVALID_ARGUMENT", message, details={"field": "dynamics"})
     return None
+
+
+def _number(value: Any) -> bool:
+    return isinstance(value, int | float) and not isinstance(value, bool) and finite(value)
 
 
 def _dynamics_length(arguments: dict[str, Any], path: dict[str, Any]) -> CallToolResult | None:

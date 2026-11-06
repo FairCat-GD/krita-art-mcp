@@ -1810,7 +1810,7 @@
           "dynamics": {
             "arc_length_px": 26.2925,
             "origin_offset_px": 31.9453,
-            "sensor_length_px": 58,
+            "sensor_length_px": 59,
             "size": [
               {
                 "at": 0,

@@ -8,12 +8,19 @@ from .qt import QAbstractItemView, QAbstractProxyModel, QApplication
 # Qt::UserRole as a number, and the columns of Krita's resource model read as roles past it
 # (K51); the bridge avoids Qt enums.
 USER_ROLE = 256
-FILENAME, RESOURCE_TYPE, DIRTY = 3, 8, 12
+FILENAME, RESOURCE_TYPE, DIRTY, RESOURCE_ACTIVE, STORAGE_ACTIVE = 3, 8, 12, 14, 15
 PRESETS = "paintoppresets"
+# useDirtyPresets as Krita reads it when kritarc says nothing, or as it writes that default
+# back (KisConfig::useDirtyPresets).
+DIRTY_PRESETS_DEFAULT = "true"
 
 
 class KritaResources:
     # Krita's resources as resource.list sees them; every method runs inside a job.
+    def __init__(self) -> None:
+        # The preset model found last, kept while Krita keeps it.
+        self._models: list[Any] = []
+
     def presets(self) -> list[dict[str, str]]:
         return _named(Krita.instance().resources("preset"))
 
@@ -38,18 +45,18 @@ class KritaResources:
             return ""
 
     def preset_dirty(self, preset_id: str) -> bool | None:
-        for model in _preset_models():
-            for row in range(model.rowCount()):
-                index = model.index(row, 0)
-                name = model.data(index, USER_ROLE + FILENAME)
-                if name is not None and os.path.basename(str(name)) == preset_id:
-                    dirty = model.data(index, USER_ROLE + DIRTY)
-                    return dirty if isinstance(dirty, bool) else None
-        return None
+        if self._models:
+            try:
+                return _dirty(self._models, preset_id)
+            except RuntimeError:
+                # A model Krita has since deleted: look again.
+                pass
+        self._models = _preset_models()
+        return _dirty(self._models, preset_id)
 
     def dirty_presets_setting(self) -> str | None:
         text = str(Krita.instance().readSetting("", "useDirtyPresets", ""))
-        return text or None
+        return None if text in ("", DIRTY_PRESETS_DEFAULT) else text
 
     def profiles(self, model: str, depth: str) -> list[str]:
         return [str(profile) for profile in Krita.instance().profiles(model, depth)]
@@ -58,21 +65,37 @@ class KritaResources:
         return _named(Krita.instance().resources("palette"))
 
 
+def _dirty(models: list[Any], preset_id: str) -> bool | None:
+    # Where two storages hold the file name, the row of an active preset in an active storage.
+    rows = []
+    for model in models:
+        for row in range(model.rowCount()):
+            index = model.index(row, 0)
+            name = model.data(index, USER_ROLE + FILENAME)
+            if name is not None and os.path.basename(str(name)) == preset_id:
+                active = model.data(index, USER_ROLE + RESOURCE_ACTIVE) is True
+                active = active and model.data(index, USER_ROLE + STORAGE_ACTIVE) is True
+                rows.append((not active, model.data(index, USER_ROLE + DIRTY)))
+    if not rows:
+        return None
+    dirty = min(rows, key=lambda found: found[0])[1]
+    return dirty if isinstance(dirty, bool) else None
+
+
 def _preset_models() -> list[Any]:
-    # The brush presets' own models behind Krita's resource choosers. Only resource views are
-    # asked: another docker's model can crash on a stray data() call.
-    found: list[Any] = []
+    # The brush presets' own model behind Krita's resource choosers, which all show the same
+    # rows. Only resource views are asked: another docker's model can crash on a stray data().
     for widget in QApplication.allWidgets():
         if not isinstance(widget, QAbstractItemView) or "Resource" not in _class(widget):
             continue
         model = widget.model()
         while isinstance(model, QAbstractProxyModel) and model.sourceModel() is not None:
             model = model.sourceModel()
-        if model is None or "Resource" not in _class(model) or model in found:
+        if model is None or "Resource" not in _class(model):
             continue
         if model.rowCount() and model.data(model.index(0, 0), USER_ROLE + RESOURCE_TYPE) == PRESETS:
-            found.append(model)
-    return found
+            return [model]
+    return []
 
 
 def _class(thing: Any) -> str:

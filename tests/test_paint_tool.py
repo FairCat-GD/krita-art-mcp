@@ -7,7 +7,7 @@ from typing import Any
 
 import pytest
 from jsonschema import Draft202012Validator
-from mcp.types import ImageContent
+from mcp.types import CallToolResult, ImageContent
 from worlds import NOW, World, running_world
 
 from krita_art_mcp import schemas, strokes, verification
@@ -185,6 +185,16 @@ def test_mask_paint_takes_no_taper(world: World, sent: list[tuple[str, dict[str,
     arguments["brush"]["mask"] = "reveal"
     content = world.server().content("krita_paint_stroke", arguments)
     assert content["error"]["details"]["field"] == "dynamics" and sent == []
+
+
+@pytest.mark.parametrize(
+    "knots", [[], [{"value": 1}, {"at": 1, "value": 1}], "knots"], ids=["empty", "no-at", "text"]
+)
+def test_a_taper_past_the_schema_is_refused_never_raised(knots: Any) -> None:
+    arguments = _tapered(size=ENDS)
+    arguments["dynamics"] = {"size": knots}
+    refused = painting.stroke_op(arguments)
+    assert isinstance(refused, CallToolResult) and refused.is_error
 
 
 def test_a_curve_s_length_is_its_arc_not_its_chord() -> None:

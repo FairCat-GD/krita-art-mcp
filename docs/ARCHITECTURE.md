@@ -927,7 +927,7 @@ Distance sensor (K51), on the pixel engine alone. `bridge_core/dynamics.py` is p
 - **Refused before any change,** after `_listed`:
   - another engine;
   - a preset held after a failed restore;
-  - `useDirtyPresets` set in kritarc (only Krita's default is measured);
+  - `useDirtyPresets` at anything but Krita's default, `true`, the only value measured;
   - a dirty flag no resource chooser reports.
 
   The flag read here, at A0, before the brush is set, is what the restore puts back.
@@ -939,8 +939,8 @@ Distance sensor (K51), on the pixel engine alone. `bridge_core/dynamics.py` is p
   `<Option>UseCurve` are true and `<Option>UseSameCurve` is false. The receipt lists the sensors
   replaced, and a size strength the edit raised.
 - **The origin offset (K51).** A scripted stroke's Distance sensor counts the first dab's distance
-  from the canvas origin. So the length is the arc plus |start|, rounded half up, and each knot sits
-  at (at × arc + |start|) / length, after a first corner for the first dab, which reads 0.
+  from the canvas origin. So the length is the arc plus |start|, rounded up so no knot passes the
+  curve's end, and each knot sits at (at × arc + |start|) / length, after a first corner for the first dab, which reads 0.
 - **The change,** after the marker:
   - `edit_preset` (`Preset.fromXML` on the window's current preset), then a read-back of the sensor
     exactly and of the brush values;
@@ -948,15 +948,19 @@ Distance sensor (K51), on the pixel engine alone. `bridge_core/dynamics.py` is p
   - then the restore: `fromXML` of the XML read after `set_brush`, then `reload_preset_action`
     when the flag was clean at A0;
   - then the check, by the stored and the view's digests, which are one object (K51), and by the
-    flag against A0.
+    flag against A0. After a reload, the digest before the brush was set or the listed one
+    (`activated`), since a reload drops what Krita filled in on first activation.
 - **A failed restore,** a raise in it included, becomes `INTERNAL_ERROR` with `preset_restored:
   false` and `outcome: uncertain`, since the window-wide preset is a change after the marker.
   - The frame still undoes the paint.
   - The preset is held beside `activated`: every stroke and fill refuses it with
-    `RESOURCE_HASH_MISMATCH` (`reason: preset_held`) until its raw digest reads as before.
+    `RESOURCE_HASH_MISMATCH` (`reason: preset_held`) until its raw digest reads as before, or its
+    flag reads clean, as after a reload.
   - `remember` never runs after the edit.
 - **The dirty flag** is the resource model's `Dirty` column, read through the preset choosers'
-  views. Only views and models whose class names a resource are asked: another docker's model
+  views, where two storages hold the file name, from an active preset in an active storage. The
+  model is found once and kept while Krita keeps it. Only views and models whose class names a
+  resource are asked: another docker's model
   crashed Krita on a stray `data()` call (measured). The probe reads it through
   `harness.preset_dirty`.
 
@@ -1422,9 +1426,9 @@ depend on it: 87 open documents cost about 50 s more.
 | Check | Expected |
 |---|---|
 | `uv run scripts/verify.py` | 6 stages, all PASS |
-| Server tests (3.12) | 1033 passed, 0 skipped |
-| Plugin-core tests (3.10) | 972 passed, 0 skipped |
-| `uv run krita-art-mcp probe` | 182 PASS, 0 FAIL, 25 MEASURED; about 138 s |
+| Server tests (3.12) | 1036 passed, 0 skipped |
+| Plugin-core tests (3.10) | 974 passed, 0 skipped |
+| `uv run krita-art-mcp probe` | 182 PASS, 0 FAIL, 25 MEASURED; about 136 s |
 | `uv run krita-art-mcp doctor` | 6 steps, all PASS, with a root allowed |
 | Registered tools | 20 |
 | Schema files | 20 |

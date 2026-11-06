@@ -30,7 +30,8 @@ a restart of the MCP client.
 - **The preset is put back after every taper.** It is restored from its own XML, then reloaded
   from Krita's storage when it had no unsaved change before, so unsaved tweaks survive. The
   put-back is checked by digest and by Krita's dirty flag. If it fails, the stroke is undone and
-  reported `uncertain`, and no stroke or fill paints with that preset until it reads as before.
+  reported `uncertain`, and no stroke or fill paints with that preset until it reads as before or
+  Krita reloads it.
 - **Taper refusals:**
   - with Krita's "save tweaks to presets temporarily" setting changed from its default, which no
     taper has been measured under;

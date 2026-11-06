@@ -1526,6 +1526,29 @@ unverified; measure it first. E1 ships 0.24.0 on go, after X1a.
   MEASURED, 137.9 s with 0 documents open; the journal check read 713 dispatched lines. 20 tools,
   20 schema files, 30 error codes, 33 ops (+1), 13 capabilities (+1), instructions 3,104
   characters, `api_version` 0.4.0.
+- **Review (`/code-review high`), 8 findings: 7 fixed and 1 needing no change.**
+  - **The sensor length rounded half up,** so knots near the end of a short stroke could land past
+    the curve's end and collapse onto it. It now rounds up.
+  - **A reload was checked against one digest,** A0's, so a preset Krita filled in on first
+    activation could come back from storage as listed, be called lost, and stay held. It now
+    accepts A0's digest or the listed one.
+  - **A held preset could stay held after the reload its message asks for,** when it held a tweak.
+    The hold now also clears once the preset reads clean.
+  - **An explicit `useDirtyPresets=true`,** which is Krita's default (`KisConfig`), was refused as
+    changed. Now only another value is refused.
+  - **The server's taper rules raised on knots past the schema,** through `stroke_op`. They now
+    refuse.
+  - **The arc was measured three times a stroke,** and `took` now reads `edited`'s numbers.
+  - **The dirty read rescanned every widget,** and took the first row with the file name. It now
+    keeps one model, and prefers an active preset in an active storage.
+  - **No change: a stale A0 flag after activation reloads the preset.** That happens only with
+    dirty presets off, and Krita's default is on (`KisConfig::useDirtyPresets`); off is refused.
+  - **Falsified:** the round-up, the listed digest, the hold's clean release and the server's
+    guard. Each failed at its own test, the tree restored byte for byte. The guard's first
+    mutation removed one clause the others still caught; the whole condition, broken, failed.
+  - **Checked live:** `install-plugin`, a Krita restart at 0 unsaved, `doctor` 6 of 6.
+  - **Numbers after the review:** 1036 server tests (+3), 974 plugin tests (+2), probe 182 PASS,
+    0 FAIL, 25 MEASURED, 135.9 s with 0 documents open; the journal check read 713 lines.
 
 ---
 
