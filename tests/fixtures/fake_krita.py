@@ -262,7 +262,9 @@ class FakePort:
         return tree
 
     def activate(self, document: Any, node_id: str) -> None:
-        self._marked()
+        # K46's activation, off a selection mask before a read, is window state, not a change.
+        if not self.mask_active(document):
+            self._marked()
         # setActiveNode acts on the document in front only.
         self.calls.append("activate")
         if self.front_key == document.key:

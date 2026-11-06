@@ -26,6 +26,9 @@ H4_CALLS = 500
 H4_P95_BUDGET_S = 0.050
 MAX_INSTRUCTIONS = 4096
 CYCLES = 20
+# About half the 682 calls a whole run journaled at 0.23.0; fewer means the check read the
+# wrong place.
+MIN_JOURNALED = 340
 # Another client's transfer file lives for milliseconds; one the probe leaked stays.
 LEFTOVER_SETTLE_S = 1.0
 # Every document the probe makes carries this name, so a killed run's leftovers can be found.
@@ -272,18 +275,40 @@ async def _documents(report: Report, client: BridgeClient, serve: list[str], har
 
 
 def _nothing_uncertain(report: Report, harness: Path) -> None:
-    # A failed call the run provoked proves what it did, so a misplaced marker shows here.
-    uncertain = []
-    for path in sorted(harness.glob("server-*/journal/*.jsonl")):
-        for line in path.read_text(encoding="utf-8").splitlines():
-            found = json.loads(line)
-            if found["phase"] == "finished" and found["outcome"] == journal.UNKNOWN:
-                uncertain.append(found["tool"])
+    # A failed call the run provoked proves what it did, so a misplaced marker shows here. Only
+    # calls with a request_id are journaled: reads, harness ops and the probe's own bridge calls
+    # are outside it.
+    dispatched, left = 0, []
+    for folder in sorted(harness.glob("server-*/journal")):
+        requests: dict[str, None] = {}
+        for path in sorted(folder.glob("*.jsonl")):
+            for line in path.read_text(encoding="utf-8").splitlines():
+                found = json.loads(line)
+                if found["phase"] == "dispatched":
+                    dispatched += 1
+                    requests[found["request_id"]] = None
+        reader = journal.Journal(folder)
+        for request_id in requests:
+            prior = reader.lookup(request_id)
+            for attempt in prior.attempts if prior is not None else []:
+                if attempt.outcome == journal.UNKNOWN:
+                    left.append(f"{attempt.tool} {_left_as(reader, attempt.operation_id)}")
     report.check(
-        "no call in this run was left uncertain",
-        not uncertain,
-        ", ".join(uncertain),
+        "no journaled call in this run was left unsettled (reads, harness ops and direct bridge "
+        "calls are not journaled)",
+        dispatched >= MIN_JOURNALED and not left,
+        f"{dispatched} dispatched, at least {MIN_JOURNALED}" + "".join(f"; {it}" for it in left),
     )
+
+
+def _left_as(reader: journal.Journal, operation_id: str) -> str:
+    # What an unsettled attempt's own line says of it, if it has one.
+    line = reader.finished_line(operation_id)
+    if line is None:
+        return "dispatched with no finished line"
+    error = ((line.result or {}).get("structured") or {}).get("error") or {}
+    said = (error.get("details") or {}).get("outcome")
+    return str(said) if said in ("uncertain", "unregistered") else "finished unknown"
 
 
 def _nothing_stray(report: Report, listed: writes.Listing) -> None:

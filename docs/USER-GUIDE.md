@@ -79,7 +79,7 @@ do. Undoable is not the same as additive, so a stroke stays destructive.
 
 | Hints | Tools | Worst it can do |
 |---|---|---|
-| Read-only | `krita_server_info`, `krita_document_list`, `krita_document_inspect`, `krita_resource_list`, `krita_capture`, `krita_sample`, `krita_preview_render`, `krita_operation_get` | Change no document. Captures and previews write their PNGs to the data folder |
+| Read-only | `krita_server_info`, `krita_document_list`, `krita_document_inspect`, `krita_resource_list`, `krita_capture`, `krita_sample`, `krita_preview_render`, `krita_operation_get` | Change no document. Captures and previews write their PNGs to the data folder. One exception, chosen on purpose: `krita_operation_get` polled for a save that came back running finishes it, putting its file in place, but only in the server process that made the call |
 | Not destructive | `krita_protection_set`, `krita_document_open`, `krita_document_create`, `krita_document_save` | Add: tighter protection, a working copy, a document, a new file |
 | Destructive | `krita_layer_create`, `krita_paint_stroke`, `krita_paint_fill`, `krita_selection_set`, `krita_layer_update`, `krita_history_step`, `krita_operation_cancel`, `krita_document_close` | Change what is there: what a layer shows (a new mask can hide it), pixels, the selection, a layer, history, a queued call, or unsaved changes a close discards |
 
@@ -251,6 +251,11 @@ strokes and fills, on layers and masks, undo; other property changes cannot.
 **9. Save to a new path.** The file is written beside the path, reopened in Krita, compared, and only
 then moved into place. It never overwrites.
 
+If that last move fails, the save answers `uncertain`, since its file was written. One exception:
+when the move's own cleanup removed the file and confirmed it, the answer is `not_applied`. When
+Krita refused the move at its start, a dialog open or another server holding the document, the
+message says so: close the dialog, then retry with the same `request_id`, and the save finishes.
+
 ```json
 {"guard": {"document_id": "doc-1", "request_id": "<a fresh UUID>"},
  "path": "/art/revisions/hero-r02.kra", "overwrite": false, "verify_reopen": true}
@@ -288,13 +293,18 @@ Krita still marks the document modified. `"discard"` drops everything.
   | `unregistered` | The bridge has no record of the call, which most likely never arrived | Retry with the same `request_id`. It is never sent to another Krita session |
 
   `rolled_back`, `rollback_verified` and the receipt's own `verification` are separate facts beside
-  it.
+  it. A rolled-back change also says `history_sealed`: true when undo can no longer reach below it,
+  because Krita may hold a step the bridge cannot name.
 - **`status: running` means Krita was still busy** when the server's 45-second wait ran out. Call
   `krita_operation_get` with its `operation_id`; never repeat the call.
 - **`krita_operation_get` says what became of a call:** `outcome` is as above and null while the call
   is queued or running. A receipt that breaks its tool's contract still comes back, as plain data,
   with `receipt_valid: false` and `receipt_problem` naming the rule. After a Krita restart it answers
   from the journal, if the call's end was recorded, and otherwise `uncertain`.
+- **A save is finished only by the server process that made the call.** Polled from another one,
+  for instance after your MCP client restarted its server, `krita_operation_get` reads the save
+  without finishing it. It answers `uncertain`, with a message saying that retrying
+  `krita_document_save` with the same `request_id` finishes it.
 - **`krita_operation_cancel` stops only a queued call.** A running Krita call cannot be interrupted.
 - **A retry of an `applied` or `uncertain` failure paints nothing new.** The first returns the same
   failure from the journal, with its ids. The second goes to the same Krita session, which answers
@@ -320,7 +330,7 @@ Every failure returns `error: {code, message, retryable, details}`. The table gi
 | `REQUEST_ID_CONFLICT` | no | That `request_id` was used with other arguments | Use a fresh UUID |
 | `DOCUMENT_NOT_FOUND` | no | The document was closed, or Krita restarted | List the documents, and reopen if you need it |
 | `LAYER_NOT_FOUND` | no | No layer has that id here | Inspect. A reopened ORA or PNG has new ids; match by name |
-| `LOCKED_TARGET` | no | The layer is protected, or holds or is a protected layer | Add a layer of your own |
+| `LOCKED_TARGET` | no | The layer is protected, or holds or is a protected layer; or a mask's layer, or a group above it, is protected | Add a layer of your own |
 | `LAYER_NOT_PAINTABLE` | no | The target is not a paint layer, or Krita refuses paint on it | Paint on a paint layer of your own |
 | `LAYER_HAS_LOCAL_SELECTION` | no | The layer has a local selection mask, which would confine the stroke or fill | Paint on another layer |
 | `PROTECTED_REGION_CHANGED` | no | The change reached protected pixels, and was undone and confirmed | Read `details.verification` and the diff image, then confine the stroke with a selection |

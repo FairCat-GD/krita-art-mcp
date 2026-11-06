@@ -64,6 +64,7 @@
             "type": "boolean"
           },
           "inherit_alpha": {
+            "description": "true clips the layer to the layers below it. To recolour a silhouette under preserve_composite_alpha, set it on a new layer of your own and paint there.",
             "type": "boolean"
           },
           "active": {
@@ -75,6 +76,7 @@
         "minProperties": 1
       },
       "verify": {
+        "description": "region, the default, checks the layer's bounds. full checks the whole canvas: use it when a filter, mask, style, clone or copy blend could spread a change.",
         "type": "string",
         "enum": [
           "region",

@@ -94,6 +94,9 @@ class BridgeClient:
         # The Krita session of each call this process left running, so a later poll can tell a
         # call still on its way from one the bridge never heard of.
         self._sent: dict[str, str] = {}
+        # Every operation this process sent a call for, as sent and as the bridge answered it:
+        # the one record of which process made a call.
+        self._made: set[str] = set()
 
     @property
     def budget_s(self) -> float:
@@ -153,12 +156,23 @@ class BridgeClient:
         refused = before_send(bridge.session_id, operation_id) if before_send else None
         if refused is not None:
             return refused
-        return self._follow(bridge, operation_id, body, deadline, op=op)
+        self._made.add(operation_id)
+        outcome = self._follow(bridge, operation_id, body, deadline, op=op)
+        if outcome.operation_id is not None:
+            # A retry is answered under the original's id.
+            self._made.add(outcome.operation_id)
+        return outcome
 
-    def operation(self, operation_id: str, *, sent_in: str | None = None) -> Outcome:
-        # Follows a call already sent, for one more wait budget. `sent_in` names the Krita
-        # session another process sent it to; an id sent nowhere known is refused at once.
-        deadline = time.monotonic() + self._budget_s
+    def made(self, operation_id: str) -> bool:
+        return operation_id in self._made
+
+    def operation(
+        self, operation_id: str, *, sent_in: str | None = None, budget_s: float | None = None
+    ) -> Outcome:
+        # Follows a call already sent, for one more wait budget, or budget_s when it follows
+        # another read in one tool call. `sent_in` names the Krita session another process sent
+        # it to; an id sent nowhere known is refused at once.
+        deadline = time.monotonic() + (self._budget_s if budget_s is None else budget_s)
         bridge = self._open()
         if isinstance(bridge, Failed):
             return bridge

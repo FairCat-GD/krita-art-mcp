@@ -5,9 +5,10 @@ Usage: uv run scripts/amend_schemas.py [--check]
 A tool's session edits its schema's input, the `data` under its output's properties, and its
 example. This script then writes the envelope, `guard` and `source` into every schema, copies
 each `data` into the completed rule, open's `layers` into inspect's, layer_update's
-`verification` object into paint_stroke's and paint_fill's, the stroke's colour into sample's
-`color` and the fill's, selection_set's rect, ellipse and polygon shapes into the fill's, and
-formats the files.
+`verification` object into paint_stroke's and paint_fill's and its whole `verification` into
+layer_create's, the stroke's colour into sample's `color` and the fill's, the stroke's mask paint
+into the fill's `mask`, selection_set's rect, ellipse and polygon shapes into the fill's, and the
+outcome values into operation_get's `outcome`, and formats the files.
 With --check it changes nothing and exits 1 if any file would change.
 """
 

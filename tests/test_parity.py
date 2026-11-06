@@ -200,3 +200,109 @@ def test_both_sides_want_a_colour_or_mask_paint(
         "points": [{"x": 1, "y": 1}, {"x": 9, "y": 1}],
     }
     refused_alike(world, monkeypatch, "krita_paint_stroke", stroke, (painting, "_brush_rules"))
+
+
+def test_both_sides_want_a_stroke_s_colour_opaque(
+    world: World, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    document_id = _document(world)
+    stroke = _stroke(document_id, color={"space": "srgb", "rgba": [0.8, 0.2, 0.4, 0.5]})
+    refused_alike(world, monkeypatch, "krita_paint_stroke", stroke, (painting, "_brush_rules"))
+
+
+COLOUR = {"space": "srgb", "rgba": [0.8, 0.2, 0.4, 1]}
+STROKE_BRUSH = ("inputSchema", "properties", "brush", "dependentSchemas")
+FILL = ("inputSchema", "dependentSchemas")
+
+
+@pytest.mark.parametrize(
+    ("paint", "cut"),
+    [
+        ({"color": COLOUR, "mask": "reveal"}, "color"),
+        ({"mask": "reveal", "blend_mode": "multiply"}, "mask"),
+        ({"mask": "reveal", "alpha_lock": True}, "mask"),
+    ],
+    ids=["colour-and-mask", "mask-with-a-blend", "mask-with-alpha-lock"],
+)
+@pytest.mark.parametrize("tool", ["krita_paint_stroke", "krita_paint_fill"])
+def test_both_sides_hold_what_mask_paint_takes(
+    world: World, monkeypatch: pytest.MonkeyPatch, tool: str, paint: dict[str, Any], cut: str
+) -> None:
+    # The schema refuses a blend or alpha lock by its presence; the plugin, which gets the
+    # server's defaults, refuses any value that does something.
+    document_id = _document(world)
+    path: tuple[str, ...]
+    if tool == "krita_paint_stroke":
+        arguments = _stroke(document_id, **{"color": None, **paint})
+        path = (*STROKE_BRUSH, cut)
+    else:
+        arguments = _fill(document_id, **paint)
+        path = (*FILL, cut)
+    refused_alike(world, monkeypatch, tool, arguments, schema=path)
+
+
+def test_both_sides_give_coverage_to_a_mask_alone(
+    world: World, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    document_id = _document(world)
+    arguments = {
+        "guard": {"document_id": document_id, "request_id": "req-layer"},
+        # The plugin reads the coverage before any id, so these need only be well formed.
+        "parent_id": A_LAYER,
+        "above_id": None,
+        "type": "paint",
+        "name": "flat",
+        "coverage": "all",
+    }
+    path = ("inputSchema", "dependentSchemas", "type")
+    refused = refused_alike(world, monkeypatch, "krita_layer_create", arguments, schema=path)
+    assert refused["details"]["field"] == "coverage"
+
+
+def test_both_sides_give_a_working_dir_to_a_working_copy_alone(
+    world: World, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    arguments = _open(world, mode="read_only")
+    path = ("inputSchema", "dependentSchemas", "mode")
+    refused_alike(world, monkeypatch, "krita_document_open", arguments, schema=path)
+    assert world.port.opened == []
+
+
+def test_both_sides_refuse_a_nearly_flat_closed_curve(
+    world: World, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # From a seeded search: its points lie on one line to 1e-9, its control points do not.
+    points = [
+        [27.013786811462, 6.693029212093],
+        [34.193283113747, 12.794430413475],
+        [25.591661617824, 5.484454683674],
+        [23.195680188611, 3.448261145016],
+        [34.083412529148, 12.701058331805],
+    ]
+    arguments = _fill(document_id=_document(world), color=COLOUR)
+    arguments["shape"] = {"type": "path", "points": points}
+    refused_alike(world, monkeypatch, "krita_paint_fill", arguments, (painting, "_fill_rules"))
+
+
+def _stroke(document_id: str, **brush: Any) -> dict[str, Any]:
+    found = {"preset_id": "basic-round.kpp", "size_px": 4, "opacity": 1, "flow": 1}
+    found.update(eraser=False, color=COLOUR)
+    found.update(brush)
+    if found["color"] is None:
+        del found["color"]
+    return {
+        "guard": {"document_id": document_id, "request_id": "req-stroke"},
+        "layer_id": A_LAYER,
+        "brush": found,
+        "points": [{"x": 1, "y": 1}, {"x": 9, "y": 1}],
+    }
+
+
+def _fill(document_id: str, **paint: Any) -> dict[str, Any]:
+    return {
+        "guard": {"document_id": document_id, "request_id": "req-fill"},
+        "layer_id": A_LAYER,
+        "shape": {"type": "rect", "rect": {"x": 1, "y": 1, "width": 4, "height": 4}},
+        "opacity": 1,
+        **paint,
+    }

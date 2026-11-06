@@ -311,6 +311,23 @@ def test_a_number_that_is_not_finite_is_one_problem(field: str, number: Any) -> 
     assert errors == [{"path": f"/brush/{field}", "message": "not a finite number"}]
 
 
+@pytest.mark.parametrize(
+    ("rect", "paths"),
+    [({}, ["/shape/rect/x"]), ({"z": 1}, ["/shape", "/shape/rect/x"])],
+    ids=["alone", "beside-another-problem"],
+)
+def test_a_number_that_is_not_finite_in_a_union_is_reported_once(
+    rect: dict[str, Any], paths: list[str]
+) -> None:
+    # The union's own problem goes only when the number alone made one of its branches fail.
+    arguments = _example("krita_selection_set")
+    shape = {"type": "rect", "rect": {"x": float("nan"), "y": 0, "width": 4, "height": 4, **rect}}
+    result = tools.build("krita_selection_set", _completed).fn({**arguments, "shape": shape}, None)
+    errors = result.structured_content["error"]["details"]["errors"]
+    assert [error["path"] for error in errors] == paths
+    assert errors[-1]["message"] == "not a finite number"
+
+
 def test_a_raising_tool_returns_internal_error() -> None:
     def run(arguments: dict[str, Any], *_: Any) -> CallToolResult:
         raise RuntimeError("boom")

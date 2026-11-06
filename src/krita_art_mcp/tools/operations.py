@@ -26,7 +26,7 @@ from krita_art_mcp.tools.dispatch import (
 log = logging.getLogger(__name__)
 
 Resolver = Callable[[Places, Outcome], Outcome]
-# Sends what an op's tool sends after it, with the budget left; a save's second half.
+# What a poll sends after an op, with the budget left: a save's second half.
 Finisher = Callable[[ToolCall, Outcome, float], Outcome]
 
 
@@ -62,7 +62,7 @@ RECEIPTS: dict[str, Known] = {
     "paint.stroke": Known("krita_paint_stroke", painting.paint_receipt, changes.resolve_update),
     "paint.fill": Known("krita_paint_fill", painting.fill_receipt, changes.resolve_update),
     "preview.read": Known("krita_preview_render", preview.preview_receipt, preview.resolve_preview),
-    "document.save": Known("krita_document_save", saving.save_receipt, finish=saving.finish_save),
+    "document.save": Known("krita_document_save", saving.save_receipt, finish=saving.poll_finish),
 }
 
 

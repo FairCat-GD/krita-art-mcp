@@ -108,7 +108,7 @@ def handlers(registry: Registry, port: DocumentsPort, data: Path) -> dict[str, H
                 raise BridgeError("BUSY", message, True, {"document_id": handle.document_id})
             if port.describe(handle.document)["path"] != info["path"]:
                 # Removing the file cannot undo this.
-                moved = {"outcome": UNCERTAIN}
+                moved = {"outcome": UNCERTAIN, "rollback_verified": False}
                 message = "The export moved the document to its file."
                 raise BridgeError("INTERNAL_ERROR", message, False, moved)
             live = port.tree(handle.document)
@@ -175,6 +175,8 @@ def handlers(registry: Registry, port: DocumentsPort, data: Path) -> dict[str, H
             "written": written,
             "composite_sha256": composite,
             "size_px": info["size_px"],
+            # The earlier save's file went with it, so this save's failure is never nothing.
+            "replaced_pending": isinstance(earlier, Pending),
         }
 
     def finish(handle: Handle, args: dict[str, Any], call: Call) -> dict[str, Any]:
@@ -226,7 +228,7 @@ def handlers(registry: Registry, port: DocumentsPort, data: Path) -> dict[str, H
         }
 
     guarded_save = registry.guarded(save)
-    guarded_finish = registry.guarded(finish, allow_unsafe=True)
+    guarded_finish = registry.guarded(finish, allow_unsafe=True, lease_retryable=True)
 
     def save_document(args: dict[str, Any], call: Call) -> dict[str, Any]:
         exact(args, SAVE_FIELDS)

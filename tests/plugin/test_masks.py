@@ -241,6 +241,16 @@ def test_mask_paint_that_does_not_fit_is_refused(
         assert body["details"]["field"] == field
 
 
+def test_mask_paint_never_erases(world: World) -> None:
+    # Krita erasing with white would hide where the receipt says reveal.
+    document_id, _ = painted(world)
+    mask = masked(world, document_id, "none")
+    brush = {"color": None, "mask": "reveal", "eraser": True}
+    body = world.stroke_refused(document_id, layer_id=mask, brush=brush)
+    assert body["code"] == "INVALID_ARGUMENT" and body["details"]["field"] == "brush.mask"
+    assert world.port.paths == []
+
+
 def test_a_protected_layer_under_a_mask_refuses_its_paint(world: World) -> None:
     document_id, handle = painted(world)
     mask = masked(world, document_id, "all")

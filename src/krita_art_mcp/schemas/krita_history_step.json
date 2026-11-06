@@ -1,6 +1,6 @@
 {
   "name": "krita_history_step",
-  "description": "Undo or redo up to 50 of the steps the bridge made, never below the last protection change; each step is confirmed before and after.",
+  "description": "Undo or redo up to 50 of the steps the bridge made, never below the last protection change; each step is confirmed before and after. Steps are layer and mask creation, strokes, fills, selection commits and blend changes; other property changes cannot be undone.",
   "inputSchema": {
     "type": "object",
     "properties": {

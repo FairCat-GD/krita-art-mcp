@@ -1,6 +1,6 @@
 {
   "name": "krita_document_inspect",
-  "description": "Read a document's state at frame 0: layer tree, selection and protection.",
+  "description": "Read a document's state at frame 0: layer tree, selection, protection and how far history goes (undo_available, redo_available).",
   "inputSchema": {
     "type": "object",
     "properties": {

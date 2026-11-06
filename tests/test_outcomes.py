@@ -145,7 +145,7 @@ def _past(
         args_sha256="0" * 64,
         session_id="an-earlier-krita",
         outcome=outcome,
-        result=result,  # type: ignore[arg-type]
+        result=result,
     )
     return operation_id
 
@@ -638,14 +638,94 @@ def test_a_finish_that_says_nothing_leaves_the_save_uncertain(
     assert failed.error["retryable"] is False and failed.operation_id == "op-1"
 
 
-def test_a_finish_that_states_its_outcome_keeps_it(monkeypatch: pytest.MonkeyPatch) -> None:
+VERIFIED = {"outcome": "not_applied", "rollback_verified": True}
+
+
+@pytest.mark.parametrize(
+    ("code", "retryable", "details", "session", "replaced", "said", "hint"),
+    [
+        ("SAVE_VERIFY_FAILED", False, VERIFIED, "krita-1", False, "not_applied", None),
+        ("SAVE_VERIFY_FAILED", False, VERIFIED, "krita-2", False, "uncertain", None),
+        ("SAVE_VERIFY_FAILED", False, VERIFIED, "krita-1", True, "uncertain", None),
+        (
+            "KRITA_MODAL_DIALOG",
+            True,
+            {"outcome": "not_applied"},
+            "krita-1",
+            False,
+            "uncertain",
+            "with the same request_id finishes the save.",
+        ),
+        (
+            "DOCUMENT_IN_USE",
+            True,
+            {"outcome": "not_applied", "holder_pid": 101},
+            "krita-1",
+            False,
+            "uncertain",
+            "from the server process 101 that holds the document",
+        ),
+        (
+            "DOCUMENT_NOT_FOUND",
+            False,
+            {"outcome": "not_applied"},
+            "krita-2",
+            False,
+            "uncertain",
+            None,
+        ),
+        (
+            "INVALID_ARGUMENT",
+            False,
+            {"outcome": "not_applied"},
+            "krita-1",
+            False,
+            "uncertain",
+            None,
+        ),
+    ],
+    ids=[
+        "its-own-discard-verified",
+        "from-another-krita-session",
+        "after-replacing-an-unfinished-save",
+        "a-dialog-at-job-start",
+        "another-process-s-lease",
+        "a-restarted-krita",
+        "no-save-waits",
+    ],
+)
+def test_a_finish_keeps_not_applied_only_when_its_own_discard_verified(
+    monkeypatch: pytest.MonkeyPatch,
+    code: str,
+    retryable: bool,
+    details: dict[str, Any],
+    session: str,
+    replaced: bool,
+    said: str,
+    hint: str | None,
+) -> None:
+    # The save itself reached Krita, so only the finish's verified discard proves nothing stayed.
     monkeypatch.setattr(saving, "_merged", lambda places, result: (None, "no"))
-    error = error_body("SAVE_VERIFY_FAILED", details={"outcome": "not_applied"})
-    refused = Failed(error, "op-f", submitted=True)
-    failed = saving.finish_save(_call_with(refused), _saved(), 5.0)
+    saved = _saved()
+    if replaced:
+        saved = Done(
+            {**saved.result, "replaced_pending": True}, "op-1", "document.save", "req-1", "krita-1"
+        )
+    error = error_body(code, retryable=retryable, details=details)
+    refused = Failed(error, "op-f", submitted=True, op="document.save_finish", session_id=session)
+    failed = saving.finish_save(_call_with(refused), saved, 5.0)
     assert isinstance(failed, Failed)
-    assert failed.error["details"]["outcome"] == "not_applied"
-    assert failed.operation_id == "op-1"
+    assert (failed.operation_id, failed.request_id, failed.session_id) == (
+        "op-1",
+        "req-1",
+        "krita-1",
+    )
+    said_now = failed.error
+    assert said_now["details"]["outcome"] == said and said_now["retryable"] is False
+    if hint is None:
+        assert "Retrying" not in said_now["message"]
+    else:
+        assert hint in said_now["message"]
 
 
 def test_a_merged_image_that_raises_never_stops_the_finish(

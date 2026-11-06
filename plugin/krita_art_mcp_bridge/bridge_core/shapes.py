@@ -37,12 +37,13 @@ def check(shape: Any) -> None:
 
 
 def points(shape: dict[str, Any]) -> list[tuple[float, float]]:
-    # Every point the shape is drawn through, a path's control points included.
+    # The points the shape passes through: a path's ends of segments, never its control points,
+    # so the area rule reads what the server reads.
     if shape["kind"] == "polygon":
         return [(x, y) for x, y in shape["points"]]
     found = [(shape["start"][0], shape["start"][1])]
-    for c1x, c1y, c2x, c2y, x, y in shape["segments"]:
-        found += [(c1x, c1y), (c2x, c2y), (x, y)]
+    for _, _, _, _, x, y in shape["segments"]:
+        found.append((x, y))
     return found
 
 

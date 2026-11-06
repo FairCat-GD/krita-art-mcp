@@ -695,6 +695,8 @@ def test_a_new_save_or_a_close_drops_the_one_never_finished(world: World) -> Non
     first = world.save(document_id)
     second = world.save(document_id, "hero-r03.kra")
     assert world.files() == [Path(second["written"]).name]
+    # The second save says so, since a failure of its own can no longer mean nothing changed.
+    assert (first["replaced_pending"], second["replaced_pending"]) == (False, True)
     assert world.code("finish", first) == "INVALID_ARGUMENT"
     world.run("document.close", {"document_id": document_id, "dirty_policy": "discard"})
     assert world.files() == []

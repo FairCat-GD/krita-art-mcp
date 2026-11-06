@@ -139,3 +139,54 @@ def test_one_byte_pixels_are_counted_and_cropped_by_their_channels() -> None:
     )
     inner = {"x": 11, "y": 20, "width": 2, "height": 2}
     assert verification.crop(bytes(range(6)), rect, inner, 1) == bytes([1, 2, 4, 5])
+
+
+def test_a_step_krita_holds_above_the_ops_own_is_never_undone(world: World) -> None:
+    ids = world.ids()
+
+    def change(steps: mutation.Steps) -> None:
+        world.added(steps, "own")
+        # Krita then holds a step on top that the ledger never saw.
+        world.add("stranger")
+
+    world.port.calls.clear()
+    with pytest.raises(BridgeError) as raised:
+        world.frame((ADD,)).run(change, _refuses, world.back(ids))
+    assert raised.value.body["code"] == "ROLLBACK_FAILED"
+    assert "undo" not in world.port.calls and len(world.ids()) == len(ids) + 2
+
+
+def test_a_rollback_that_fails_seals_history_on_the_unsafe_document(world: World) -> None:
+    def change(steps: mutation.Steps) -> None:
+        world.added(steps, "own")
+        world.add("stranger")
+
+    with pytest.raises(BridgeError) as raised:
+        world.frame((ADD,)).run(change, _refuses, world.back(world.ids()))
+    assert raised.value.body["details"]["history_sealed"] is True
+    assert world.handle.unsafe and world.handle.ledger.undo_available() == 0
+
+
+def test_a_rollback_says_whether_it_sealed_history(world: World) -> None:
+    ids = world.ids()
+    with pytest.raises(BridgeError) as pushed:
+        world.frame((ADD,)).run(lambda steps: world.added(steps, "own"), _refuses, world.back(ids))
+    assert pushed.value.body["details"]["history_sealed"] is False
+    # A step named and never pushed may still be on Krita's stack, however still the state.
+    with pytest.raises(BridgeError) as unnamed:
+        world.frame((ADD,)).run(lambda steps: None, _refuses, world.back(ids))
+    details = unnamed.value.body["details"]
+    assert details["rollback_verified"] is True and details["history_sealed"] is True
+
+
+def test_a_protected_mask_s_pixels_are_counted_one_byte_each(
+    world: World, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    rect = {"x": 0, "y": 0, "width": 4, "height": 2}
+    old, now = bytes(8), bytes([5, 0, 0, 5, 0, 0, 0, 0])
+    monkeypatch.setattr(world.port, "layer_rects", lambda document, layer, rects: [now])
+    reading: Any = type("Reading", (), {"rects": {"mask": rect}, "rect": rect})()
+    frame = world.frame(())
+    steps = mutation.Steps(world.port, world.handle, frame.op, "op-x", (), ((), None))
+    # Two pixels of a one-byte mask, which four bytes a pixel would read as one.
+    assert frame._counted(mutation.Applied(reading, steps), ("mask", old), True) == 2

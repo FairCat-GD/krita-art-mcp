@@ -274,6 +274,59 @@ def test_a_retryable_failure_releases_its_request_id_but_keeps_the_arguments_bou
     assert other is not None and other.reply()["error"]["code"] == "REQUEST_ID_CONFLICT"
 
 
+def _refused_once() -> tuple[Jobs, list[str]]:
+    attempts: list[str] = []
+
+    def refused_once(args: dict[str, Any], call: Call) -> dict[str, Any]:
+        attempts.append(call.operation_id)
+        if len(attempts) == 1:
+            raise BridgeError("KRITA_MODAL_DIALOG", "A dialog is open.", True)
+        return {"ran": True}
+
+    jobs, _, _ = _jobs({"record": refused_once})
+    return jobs, attempts
+
+
+def test_a_retryable_failure_runs_again_under_its_own_operation_id() -> None:
+    # A save's finish is always sent under one id derived from the save's.
+    jobs, attempts = _refused_once()
+    jobs.submit("op-1", "req-1", "record", {"x": 1}, CLIENT)
+    jobs.drain()
+    again = jobs.submit("op-1", "req-1", "record", {"x": 1}, CLIENT)
+    jobs.drain()
+    assert attempts == ["op-1", "op-1"]
+    assert again is not None and again.reply()["status"] == "done"
+    assert jobs.wait("op-1", 0) == again.reply()
+    # Done, it is the receipt: a third send runs nothing.
+    jobs.submit("op-1", "req-1", "record", {"x": 1}, CLIENT)
+    jobs.drain()
+    assert attempts == ["op-1", "op-1"]
+
+
+def test_a_rerun_with_other_arguments_conflicts_and_leaves_the_id_to_run_again() -> None:
+    jobs, attempts = _refused_once()
+    jobs.submit("op-1", "req-1", "record", {"x": 1}, CLIENT)
+    jobs.drain()
+    other = jobs.submit("op-1", "req-1", "record", {"x": 2}, CLIENT)
+    assert other is not None and other.reply()["error"]["code"] == "REQUEST_ID_CONFLICT"
+    held = jobs.wait("op-1", 0)
+    assert held is not None and held["error"]["code"] == "KRITA_MODAL_DIALOG"
+    again = jobs.submit("op-1", "req-1", "record", {"x": 1}, CLIENT)
+    jobs.drain()
+    assert attempts == ["op-1", "op-1"]
+    assert again is not None and again.reply()["status"] == "done"
+
+
+def test_a_rerun_joins_a_retry_already_under_way() -> None:
+    jobs, attempts = _refused_once()
+    jobs.submit("op-1", "req-1", "record", {"x": 1}, CLIENT)
+    jobs.drain()
+    retry = jobs.submit("op-2", "req-1", "record", {"x": 1}, CLIENT)
+    joined = jobs.submit("op-1", "req-1", "record", {"x": 1}, CLIENT)
+    jobs.drain()
+    assert joined is retry and attempts == ["op-1", "op-2"]
+
+
 def test_a_non_retryable_failure_is_the_receipt_for_its_request_id() -> None:
     attempts: list[str] = []
 

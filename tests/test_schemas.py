@@ -197,9 +197,26 @@ def test_example_validates_against_its_schemas(tool_name: str) -> None:
         assert errors == [], [error.message for error in errors]
 
 
+def _objects(schema: Any, path: str = "") -> Iterator[tuple[str, dict[str, Any]]]:
+    # Every object an input can hold, however deep, through properties, items and unions.
+    if isinstance(schema, dict):
+        if schema.get("type") == "object" or "properties" in schema:
+            yield path, schema
+        for key, value in schema.items():
+            yield from _objects(value, f"{path}/{key}")
+    elif isinstance(schema, list):
+        for index, value in enumerate(schema):
+            yield from _objects(value, f"{path}/{index}")
+
+
 @pytest.mark.parametrize("tool_name", PHASE_1_TOOLS)
 def test_input_schema_rejects_unknown_fields(tool_name: str) -> None:
-    assert schemas.load(tool_name)["inputSchema"]["additionalProperties"] is False
+    open_ones = [
+        path
+        for path, found in _objects(schemas.load(tool_name)["inputSchema"])
+        if found.get("type") == "object" and found.get("additionalProperties") is not False
+    ]
+    assert open_ones == []
 
 
 def _shapes(value: Any, key: str) -> list[Any]:

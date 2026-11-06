@@ -6,6 +6,52 @@ All notable changes to krita-art-mcp are documented here. The format follows
 
 ## [Unreleased]
 
+## [0.23.0] — 2026-11-06
+
+A save's answer now says what happened to its file, and a second server can no longer break a save
+it polls. The frame's rollback reads the state before its first undo. The server's instructions
+moved into the tools' own descriptions, leaving room for the round's later tools. `api_version`
+stays 0.4.0: values and fields changed, and nothing was renamed or removed. This release needs
+`install-plugin`, a Krita restart and a restart of the MCP client.
+
+### Changed
+
+- **The server instructions are 2,945 characters, from 3,908.** Each rule that belongs to one
+  tool now lives in that tool's or field's description: inspect, capture, the stroke's and the
+  update's `verify`, `inherit_alpha`, sample, history_step and open's `mode`. They now also name
+  `unregistered`.
+- **A save whose finish failed reads `uncertain`, not retryable,** unless the finish's own cleanup
+  removed the file and confirmed it. It used to read `not_applied`, and retryable, while its hidden
+  file stayed. When Krita refused the finish at its start, a dialog or another server's lease, the
+  message says that retrying with the same `request_id` finishes the save.
+- **`krita_operation_get` finishes a save only in the server process that made the call.** Any
+  other poll reads the save as Krita holds it, `uncertain` until it is finished, and says how to
+  finish it. Its hint stays read-only.
+- **A rolled-back change reports `history_sealed`,** true when undo can no longer reach below it.
+- **`selection.enforced`'s note** says mask paint keeps to the global selection alone.
+
+### Fixed
+
+- A finish refused at its start can run again: a retry of the save finishes it, where it used to
+  get the same refusal back for the whole Krita session.
+- A poll from a second server no longer takes a save's finish, which used to leave the save
+  unfinished for good.
+- A rollback no longer undoes a step Krita holds above the change's own, and one that fails seals
+  history, so an unsafe document reports no undo left.
+- A selection that raised past its marker, other than with its own refusal, marks the document
+  unsafe, as every frame op does.
+- Mask paint refuses `eraser`, which on Krita hides where the receipt would say reveal.
+- A save whose export moved the document no longer reports its rollback verified.
+- A protected mask's changed pixels are counted one byte a pixel.
+- A retry that joined a running call settles with it when the call is refused and polled, so a
+  later restart can still send it.
+- A number that is not finite inside a union, such as a selection rect's `x`, is reported once.
+- A fill's closed curve is tested for area over the same points on both sides.
+- **The probe:**
+  - its journal check now reads what it finds, with a floor on the lines it read;
+  - three mask checks join it, a reveal stroke, a half-opacity stroke and an undone mask;
+  - the mask hide stroke's check judges its own change.
+
 ## [0.22.0] — 2026-11-05
 
 Soft edges and revised silhouettes no longer cost colour: a transparency mask hides or shows a

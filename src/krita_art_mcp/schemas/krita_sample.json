@@ -1,6 +1,6 @@
 {
   "name": "krita_sample",
-  "description": "Sample known pixel locations with explicit layer/composite scope. A sample's color is the brush.color a stroke takes: paint it back unchanged.",
+  "description": "Sample known pixel locations with explicit layer/composite scope, for exact colours. A sample's color is the brush.color a stroke takes, or a fill's color: paint it back unchanged.",
   "inputSchema": {
     "type": "object",
     "properties": {

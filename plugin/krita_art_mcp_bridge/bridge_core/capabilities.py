@@ -52,8 +52,8 @@ _MATRIX: dict[str, tuple[bool, str | None, str]] = {
     "selection.enforced": (
         True,
         "0.9.0",
-        "Strokes and fills keep to the global selection; a layer with a local selection mask is "
-        "refused.",
+        "Strokes and fills keep to the global selection; colour paint on a layer with a local "
+        "selection mask is refused, and mask paint keeps to the global selection alone.",
     ),
     "color_spaces": (
         False,

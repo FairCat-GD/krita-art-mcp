@@ -1,6 +1,6 @@
 {
   "name": "krita_capture",
-  "description": "Return a fresh crop of a layer, a transparency mask, the composite or the selection, in one of two forms. Native: scale 1, the stored pixels, e.g. {scale: 1, filter: nearest}. Resampled: any other scale, e.g. {scale: 0.25, filter: lanczos, background: checker}.",
+  "description": "Return a fresh crop of a layer, a transparency mask, the composite or the selection, in one of two forms. Native: scale 1, the stored pixels, e.g. {scale: 1, filter: nearest}. Resampled: any other scale, e.g. {scale: 0.25, filter: lanczos, background: checker}. It returns the image and its PNG's path.",
   "inputSchema": {
     "type": "object",
     "properties": {

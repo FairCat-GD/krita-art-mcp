@@ -48,6 +48,7 @@ RETRYABLE = [
     ("bridge_core/history.py", "INTERNAL_ERROR"),
     ("bridge_core/jobs.py", "CANCELLED"),
     ("bridge_core/jobs.py", "CANCELLED"),
+    ("bridge_core/registry.py", "DOCUMENT_IN_USE (computed)"),
     ("bridge_core/saving.py", "BUSY"),
     ("bridge_core/transfer.py", "IO_ERROR"),
     ("krita_adapter/documents.py", "KRITA_MODAL_DIALOG"),
@@ -550,6 +551,19 @@ def test_a_lease_refusal_changed_nothing(world: World) -> None:
     document_id = world.document()
     body = world.failure("paint.stroke", world.stroke_args(document_id), B)
     assert body["code"] == "DOCUMENT_IN_USE" and _outcome(body) == NOT_APPLIED
+    assert body["retryable"] is False
+
+
+def test_a_finish_refused_for_its_lease_changed_nothing_and_runs_again(world: World) -> None:
+    # Retryable at the finish alone, so its derived id runs once the holder asks.
+    document_id = world.document()
+    saved = world.done("document.save", world.save_args(document_id))
+    body = world.failure("document.save_finish", world.finish_args(saved), B)
+    assert body["code"] == "DOCUMENT_IN_USE" and body["retryable"] is True
+    assert _outcome(body) == NOT_APPLIED and body["details"]["holder_pid"] == A["pid"]
+    assert Path(saved["written"]).exists() and not (world.saves / "hero-r02.kra").exists()
+    world.done("document.save_finish", world.finish_args(saved))
+    assert (world.saves / "hero-r02.kra").exists()
 
 
 # Each op, past its marker: only a verified cleanup or rollback proves it changed nothing.
@@ -655,7 +669,8 @@ def test_a_save_that_moved_the_document_is_uncertain_however_clean_its_file(
 
     monkeypatch.setattr(world.port, "describe", moved)
     body = world.failure("document.save", world.save_args(document_id))
-    assert _outcome(body) == UNCERTAIN and body["details"]["rollback_verified"] is True
+    # Its file is gone, yet removing it cannot move the document back: nothing is verified.
+    assert _outcome(body) == UNCERTAIN and body["details"]["rollback_verified"] is False
     assert not world.saves.exists()
 
 
@@ -752,6 +767,39 @@ def test_a_selection_krita_refused_is_uncertain(world: World) -> None:
     world.port.fail["set_selection"] = BridgeError("INTERNAL_ERROR", "No.")
     args = world.selection_args(document_id, "all")
     assert _outcome(world.failure("selection.set", args)) == UNCERTAIN
+
+
+@pytest.mark.parametrize(
+    ("raised", "unsafe"),
+    [(BridgeError("INTERNAL_ERROR", "No."), False), (RuntimeError("Krita raised."), True)],
+    ids=["its-own-error", "anything-else"],
+)
+def test_a_selection_that_raised_past_its_marker_is_unsafe_unless_it_said_why(
+    world: World, raised: BaseException, unsafe: bool
+) -> None:
+    document_id = world.document()
+    world.port.fail["set_selection"] = raised
+    body = world.failure("selection.set", world.selection_args(document_id, "all"))
+    handle = world.registry.find(document_id)
+    assert _outcome(body) == UNCERTAIN and handle.unsafe is unsafe
+    assert handle.ledger.undo_available() == 0
+
+
+@pytest.mark.parametrize("where", ["global", "local"])
+def test_k46_moving_the_active_node_off_a_selection_mask_is_no_change(
+    world: World, where: str
+) -> None:
+    # Like the brush, the current node is window state the reads need, set before the marker.
+    document_id = world.document()
+    tree = world.port._tree(1)
+    parent = tree["root_id"] if where == "global" else BASE
+    world.port.mask(1, parent)
+    world.done("paint.stroke", world.stroke_args(document_id))
+    world.port.mask(1, parent)
+    world.port.brush_drift = {"size_px": 99}
+    body = world.failure("paint.stroke", world.stroke_args(document_id))
+    assert body["code"] == "INTERNAL_ERROR" and _outcome(body) == NOT_APPLIED
+    assert tree["active_id"] == (PAINT if where == "global" else BASE)
 
 
 def test_a_layer_krita_refused_is_confirmed_not_applied(world: World) -> None:
@@ -895,18 +943,35 @@ def test_a_read_whose_file_stays_open_after_it_raised_says_so(world: World) -> N
 
 
 def _retryable_raises() -> list[tuple[str, str]]:
+    # Every raise whose retryable flag is true or computed, by position or by keyword; a
+    # computed one is named so, since only its own test says when it is true.
     found = []
     for path in sorted(PLUGIN.rglob("*.py")):
+        where = path.relative_to(PLUGIN).as_posix()
+        if where == "bridge_core/errors.py":
+            # The constructor and error() pass the flag through.
+            continue
         tree = ast.parse(path.read_text(encoding="utf-8"))
         for node in ast.walk(tree):
-            if not isinstance(node, ast.Call):
+            if not isinstance(node, ast.Call) or not _makes_an_error(node.func):
                 continue
-            name = getattr(node.func, "id", getattr(node.func, "attr", None))
             flag = node.args[2] if len(node.args) >= 3 else None
-            if name in ("BridgeError", "error") and isinstance(flag, ast.Constant) and flag.value:
-                code = ast.literal_eval(node.args[0])
-                found.append((path.relative_to(PLUGIN).as_posix(), code))
+            for keyword in node.keywords:
+                if keyword.arg == "retryable":
+                    flag = keyword.value
+            if flag is None or (isinstance(flag, ast.Constant) and not flag.value):
+                continue
+            code = ast.literal_eval(node.args[0])
+            computed = "" if isinstance(flag, ast.Constant) else " (computed)"
+            found.append((where, code + computed))
     return found
+
+
+def _makes_an_error(func: ast.expr) -> bool:
+    # BridgeError however it is reached, and errors.error by name; never a logger's error().
+    if isinstance(func, ast.Name):
+        return func.id in ("BridgeError", "error")
+    return isinstance(func, ast.Attribute) and func.attr == "BridgeError"
 
 
 def test_every_retryable_raise_is_one_this_file_answers_for() -> None:

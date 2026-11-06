@@ -314,12 +314,15 @@ class Mutation:
         # Invariant 5: undone, then confirmed, or the document is unsafe.
         rolled_back, confirmed, counted, seen = self._restore(applied, kept, back, compensate)
         found = problem.body["details"]
+        # A step Krita may hold that the ledger cannot name seals history below it.
+        sealed = len(applied.steps.pushed) < len(self.labels) or not confirmed
         details = {
             **found,
             "document_id": self.handle.document_id,
             **self.ids,
             "rolled_back": rolled_back,
             "rollback_verified": confirmed,
+            "history_sealed": sealed,
         }
         reads = self.reads
         if reads is not None and reads.hashed is not None:
@@ -336,7 +339,7 @@ class Mutation:
             self.handle.dirty = was
             # Never retryable: a retry under this request_id would make the change again.
             raise BridgeError(problem.body["code"], problem.body["message"], False, details)
-        self.handle.unsafe = True
+        self.handle.lost()
         details = {**seen, **details, "cause": problem.body["code"]}
         message = (
             f"The {self.noun} could not be undone and confirmed; the document is unsafe. Reopen it."
@@ -369,7 +372,7 @@ class Mutation:
                 for step in reversed(steps.pushed):
                     if failed:
                         break
-                    outcome, seen, known = move(port, handle, step, UNDO, known or step.after)
+                    outcome, seen, known = move(port, handle, step, UNDO, known)
                     if outcome != DONE:
                         failed = True
                         break
@@ -458,7 +461,9 @@ class Mutation:
         kept_id, pixels = kept
         rect = applied.before.rects.get(kept_id, applied.before.rect)
         [now] = self.port.layer_rects(self.handle.document, kept_id, [rect])
-        counted, _ = verification.changes(pixels, memoryview(now).cast("B"), rect)
+        # Its bytes per pixel, from the read itself: four for a paint layer, one for a mask.
+        channels = len(pixels) // (rect["width"] * rect["height"])
+        counted, _ = verification.changes(pixels, memoryview(now).cast("B"), rect, channels)
         return counted
 
 

@@ -19,8 +19,9 @@ WINDOW_DAYS = 7
 
 # What became of one attempt. The bridge dedups within a Krita session, so a receipt is the
 # outcome of every attempt it shares. A no-effect refusal releases the request_id, so an attempt
-# sent after it may have run: it settles only its own attempt and the one whose operation the
-# bridge named. A conflict, or a call that never reached the bridge, settles its own alone.
+# sent after it may have run: it settles only its own attempt, the one whose operation the bridge
+# named, and any attempt the bridge answered under that operation. A conflict, or a call that
+# never reached the bridge, settles its own alone.
 RECEIPT = "receipt"
 NO_EFFECT = "no_effect"
 NOT_SENT = "not_sent"
@@ -57,6 +58,8 @@ class Attempt:
     tool: str
     args_sha256: str
     outcome: str = UNKNOWN
+    # The operation the bridge answered it under, when that was another's.
+    answered: str | None = None
 
 
 @dataclass
@@ -169,7 +172,7 @@ class Journal:
         args_sha256: str,
         session_id: str,
         outcome: str,
-        result: dict[str, Any],
+        result: dict[str, Any] | None,
         bridge_operation_id: str | None = None,
         document_path: str | None = None,
         layer_names: Sequence[str] = (),
@@ -273,11 +276,14 @@ class Journal:
         # Timing alone: a bad value is dropped, never the outcome a retry depends on.
         if not isinstance(elapsed_ms, int) or isinstance(elapsed_ms, bool):
             elapsed_ms = None
-        named = {operation_id, line.get("bridge_operation_id")} if outcome == NO_EFFECT else set()
+        bridge_operation_id = line.get("bridge_operation_id")
+        named = {operation_id, bridge_operation_id} if outcome == NO_EFFECT else set()
         prior = self._requests.setdefault(request_id, Prior())
         for attempt in prior.attempts:
+            if attempt.operation_id == operation_id and isinstance(bridge_operation_id, str):
+                attempt.answered = bridge_operation_id
             if outcome == NO_EFFECT:
-                same = attempt.operation_id in named
+                same = attempt.operation_id in named or attempt.answered in named
             elif outcome in (CONFLICT, NOT_SENT):
                 same = attempt.operation_id == operation_id
             else:
@@ -286,8 +292,10 @@ class Journal:
                 attempt.outcome = outcome
         if outcome == RECEIPT:
             prior.receipt = result
-        # A retry's line names the operation the bridge answered with too.
+        # A retry's line names the operation the bridge answered with too; a line with no result
+        # only records which operation answered an attempt, so it stands for its own id alone.
         finished = Finished(outcome, session_id, request_id, tool, result, elapsed_ms)
-        for named_id in (operation_id, line.get("bridge_operation_id")):
+        answering = (operation_id,) if result is None else (operation_id, bridge_operation_id)
+        for named_id in answering:
             if isinstance(named_id, str) and (outcome != UNKNOWN or named_id not in self._finished):
                 self._finished[named_id] = finished

@@ -14,6 +14,7 @@
         "pattern": "^[0-9a-f]{64}$"
       },
       "mode": {
+        "description": "working_copy copies the source into working_dir and opens the copy; read_only opens the source itself and refuses every change. The source is never written.",
         "type": "string",
         "enum": [
           "working_copy",

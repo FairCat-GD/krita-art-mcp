@@ -17,6 +17,7 @@ from krita_art_mcp.probe.common import (
     guard,
     harness_call,
     history_args,
+    inspect_data,
     line_points,
     open_working,
     protect,
@@ -110,6 +111,7 @@ async def run(
         await _from_selection(report, a, client, folder, document_id, root)
         await _all_and_none(report, a, document_id, root)
         await _reveal_and_hide(report, a, document_id, root, presets["hard"])
+        await _create_undone(report, a, document_id, root)
         await _round_trips(report, a, folder, harness, document_id, root)
         await _refusals(report, a, document_id, root, data["layers"], presets["hard"])
     finally:
@@ -275,31 +277,31 @@ async def _reveal_and_hide(
         not problems,
         "; ".join(problems) or "exact",
     )
-    before = await _read_mask(a, document_id, hide)
-    brush = {**brush_args(hard, size_px=6), "mask": "hide"}
-    del brush["color"]
-    stroked = await tool(
-        a, "krita_paint_stroke", stroke_args(document_id, hide, brush, line_points(50, 40, 70, 40))
-    )
-    after = await _read_mask(a, document_id, hide)
-    bounds = (stroked.get("data") or {}).get("changed_bounds_px")
-    changed = None if before is None or after is None else np.argwhere(before != after)
-    inside = (
-        changed is not None
-        and bounds is not None
-        and changed.size > 0
-        and bool((changed[:, 1] >= bounds["x"]).all())
-        and bool((changed[:, 1] < bounds["x"] + bounds["width"]).all())
-        and bool((changed[:, 0] >= bounds["y"]).all())
-        and bool((changed[:, 0] < bounds["y"] + bounds["height"]).all())
-    )
+    # Below the fills, so each stroke is judged against its own change alone.
+    revealed = await _stroked(a, document_id, reveal, hard, "reveal", 1, 50)
+    broke = _moved(revealed, higher=True, centre={255})
     report.check(
-        "a hide stroke on a mask lowers coverage only inside its reported bounds",
-        stroked.get("status") == "completed"
-        and inside
-        and after is not None
-        and int(after.min()) == 0,
-        f"{code(stroked) or 'stroked'}, bounds {bounds}",
+        "a reveal stroke on a mask raises coverage only inside its reported bounds, to 255 at "
+        "its centre",
+        not broke,
+        f"{revealed[4]}; {broke}" if broke else revealed[4],
+    )
+    halved = await _stroked(a, document_id, hide, hard, "hide", 0.5, 50)
+    broke = _moved(halved, higher=False, centre={127, 128}, floor=127)
+    report.check(
+        "a hide stroke at opacity 0.5 lowers coverage only inside its bounds, to half at its "
+        "centre and never below",
+        not broke,
+        f"{halved[4]}; {broke}" if broke else halved[4],
+    )
+    stroked = await _stroked(a, document_id, hide, hard, "hide", 1, 40)
+    _, before, after, _, _ = stroked
+    broke = _moved(stroked, higher=False, centre={0})
+    report.check(
+        "a hide stroke on a mask lowers coverage only inside its reported bounds, to 0 at its "
+        "centre",
+        not broke,
+        f"{stroked[4]}; {broke}" if broke else stroked[4],
     )
     undone = await tool(a, "krita_history_step", history_args(document_id, "undo"))
     back = await _read_mask(a, document_id, hide)
@@ -316,6 +318,95 @@ async def _reveal_and_hide(
         and after is not None
         and np.array_equal(again, after),
         f"{code(undone) or 'undone'}, {code(redone) or 'redone'}",
+    )
+
+
+# The receipt, the mask before and after, the row stroked along, and what to print.
+Stroked = tuple[dict[str, Any], np.ndarray | None, np.ndarray | None, int, str]
+
+
+async def _stroked(
+    a: Client,
+    document_id: str,
+    mask: str,
+    hard: dict[str, Any],
+    paint: str,
+    opacity: float,
+    row: int,
+) -> Stroked:
+    # A stroke along one row, and the mask read before and after it.
+    before = await _read_mask(a, document_id, mask)
+    brush = {**brush_args(hard, size_px=6, opacity=opacity), "mask": paint}
+    del brush["color"]
+    points = line_points(50, row, 70, row)
+    done = await tool(a, "krita_paint_stroke", stroke_args(document_id, mask, brush, points))
+    after = await _read_mask(a, document_id, mask)
+    bounds = (done.get("data") or {}).get("changed_bounds_px")
+    detail = f"{code(done) or 'stroked'}, bounds {bounds}"
+    if after is not None:
+        detail += f", centre {sorted(set(_centre(after, row).flatten().tolist()))}"
+    return done, before, after, row, detail
+
+
+def _centre(pixels: np.ndarray, row: int) -> np.ndarray:
+    # The two rows either side of the line a stroke ran along, well inside its ends.
+    return pixels[row - 1 : row + 1, 55:66]
+
+
+def _moved(stroked: Stroked, higher: bool, centre: set[int], floor: int | None = None) -> str:
+    # Every changed byte inside the bounds and moved one way, and the stroke's middle at what
+    # its opacity gives; what broke, or "" when nothing did.
+    done, before, after, row, _ = stroked
+    bounds = (done.get("data") or {}).get("changed_bounds_px")
+    if done.get("status") != "completed" or before is None or after is None or bounds is None:
+        return "not stroked"
+    rows, columns = np.nonzero(before != after)
+    if rows.size == 0:
+        return "nothing changed"
+    old, new = before[rows, columns].astype(int), after[rows, columns].astype(int)
+    outside = ~(
+        (columns >= bounds["x"])
+        & (columns < bounds["x"] + bounds["width"])
+        & (rows >= bounds["y"])
+        & (rows < bounds["y"] + bounds["height"])
+    )
+    wrong = (new <= old) if higher else (new >= old)
+    middle = set(_centre(after, row).flatten().tolist())
+    problems = []
+    if outside.any():
+        spots = list(zip(rows[outside].tolist(), columns[outside].tolist(), strict=True))[:4]
+        problems.append(f"{int(outside.sum())} changed outside the bounds, at {spots}")
+    if wrong.any():
+        problems.append(f"{int(wrong.sum())} moved the other way")
+    if not middle <= centre:
+        problems.append(f"centre {sorted(middle)}")
+    if floor is not None and int(new.min()) < floor:
+        problems.append(f"down to {int(new.min())}")
+    return "; ".join(problems)
+
+
+async def _create_undone(report: Report, a: Client, document_id: str, root: str) -> None:
+    # Amber, unlike what lies under it, so the mask that hides it shows in the composite.
+    layer = await _subject(a, document_id, root, "mask undone", AMBER)
+    before = await capture_composite(a, document_id, WIDTH, HEIGHT)
+    made = None if layer is None else await _mask(a, document_id, layer, "none", "undone mask")
+    mask = ((made or {}).get("data") or {}).get("layer_id")
+    hidden = await capture_composite(a, document_id, WIDTH, HEIGHT)
+    undone = await tool(a, "krita_history_step", history_args(document_id, "undo"))
+    back = await capture_composite(a, document_id, WIDTH, HEIGHT)
+    layers = (await inspect_data(a, document_id)).get("layers") or []
+    data = undone.get("data") or {}
+    tools = [step.get("tool") for step in data.get("steps") or []]
+    report.check(
+        "a mask's create is one undo step: undone, the mask is gone and the composite as before",
+        mask is not None
+        and bool(differs(hidden, before))
+        and data.get("steps_applied") == 1
+        and tools == ["krita_layer_create"]
+        and not differs(back, before)
+        and mask not in {entry.get("id") for entry in layers},
+        f"{code(made or {}) or code(undone) or 'undone'}, steps {tools}, "
+        f"{differs(back, before) or 'composite back'}",
     )
 
 

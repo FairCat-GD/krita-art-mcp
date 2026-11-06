@@ -222,7 +222,7 @@
         ]
       },
       "verify": {
-        "description": "region, the default, checks the stroke's reach and needs the pixel brush engine. full checks the whole canvas: for any other preset, or a filter, mask, style or clone that spreads a change.",
+        "description": "region, the default, checks the stroke's reach, and needs the pixel brush engine with a tip and scatter it can read. full checks the whole canvas: for any other preset, or a filter, mask, style or clone that spreads a change.",
         "type": "string",
         "enum": [
           "region",

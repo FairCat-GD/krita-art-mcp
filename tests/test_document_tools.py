@@ -634,6 +634,55 @@ def test_a_refusal_a_retry_shared_settles_both_attempts(world: World) -> None:
     assert [attempt.outcome for attempt in prior.attempts] == [journal.NO_EFFECT] * 2
 
 
+def test_a_retry_that_joined_a_running_call_settles_with_it_when_it_is_polled(
+    world: World,
+) -> None:
+    def refused_once_released() -> None:
+        world.gate.wait(10)
+        raise BridgeError("KRITA_MODAL_DIALOG", "A dialog is open.", True)
+
+    world.gate.clear()
+    world.port.on_create.append(refused_once_released)
+    running = world.server(budget_s=0.4).content("krita_document_create", _create())
+    joined = world.server(budget_s=0.4).content("krita_document_create", _create())
+    assert joined["status"] == "running" and joined["operation_id"] == running["operation_id"]
+    world.gate.set()
+    polled = world.server().content(
+        "krita_operation_get", {"operation_id": running["operation_id"]}
+    )
+    assert polled["data"]["outcome"] == "not_applied"
+    prior = world.journal().lookup("req-new")
+    assert prior is not None
+    assert [attempt.outcome for attempt in prior.attempts] == [journal.NO_EFFECT] * 2
+
+
+def test_an_alias_line_settles_only_the_attempt_the_bridge_joined(tmp_path: Path) -> None:
+    writer = _journal_on(tmp_path, NOW)
+    _attempt(writer, "op-1")
+    _attempt(writer, "op-2")
+    # op-2 came back running under op-1.
+    writer.finished(
+        client=None,
+        request_id="req-1",
+        operation_id="op-2",
+        tool="t",
+        args_sha256="0" * 64,
+        session_id="s",
+        outcome=journal.UNKNOWN,
+        result=None,
+        bridge_operation_id="op-1",
+    )
+    # It answers for op-2 alone, so op-1 reads as it did before.
+    assert _journal_on(tmp_path, NOW).finished_line("op-1") is None
+    # op-3 went out after op-1's refusal released the request, and may have run.
+    _attempt(writer, "op-3")
+    _finish(writer, "op-1", journal.NO_EFFECT, "op-1")
+    prior = _journal_on(tmp_path, NOW).lookup("req-1")
+    assert prior is not None
+    outcomes = [attempt.outcome for attempt in prior.attempts]
+    assert outcomes == [journal.NO_EFFECT, journal.NO_EFFECT, journal.UNKNOWN]
+
+
 def test_a_call_that_never_reached_the_bridge_settles_only_itself(tmp_path: Path) -> None:
     writer = _journal_on(tmp_path, NOW)
     _attempt(writer, "op-1")

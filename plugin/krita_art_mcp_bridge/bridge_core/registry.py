@@ -176,6 +176,7 @@ class Registry:
         *,
         writes: bool = True,
         allow_unsafe: bool = False,
+        lease_retryable: bool = False,
     ) -> Handler:
         # Every mutation of a document passes the same checks, in the same order; the handler
         # itself marks the document dirty, just before it changes anything.
@@ -190,15 +191,17 @@ class Registry:
                 details = {"document_id": handle.document_id}
                 message = "A rollback on this document failed; reopen it."
                 raise BridgeError("DOCUMENT_UNSAFE", message, False, details)
-            self._lease(handle, call.client)
+            self._lease(handle, call.client, lease_retryable)
             return handler(handle, args, call)
 
         return run
 
-    def _lease(self, handle: Handle, client: dict[str, Any]) -> None:
+    def _lease(self, handle: Handle, client: dict[str, Any], retryable: bool) -> None:
+        # Retryable only where a refused op must run again under its own id once the holder lets
+        # go: the save's finish.
         holder = handle.lease
         if holder is not None and holder != client and self._holder_alive(holder):
             details = {"document_id": handle.document_id, "holder_pid": holder["pid"]}
             message = "Another server process holds this document's writer lease."
-            raise BridgeError("DOCUMENT_IN_USE", message, False, details)
+            raise BridgeError("DOCUMENT_IN_USE", message, retryable, details)
         handle.lease = dict(client)

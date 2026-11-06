@@ -185,6 +185,45 @@ def test_the_instructions_fit_in_4096_characters_and_name_the_wait_budget() -> N
     assert f"{WAIT_BUDGET_S:.0f}-second wait" in INSTRUCTIONS
 
 
+# Five planned sessions each add a line, about 730 characters in all.
+SPARE_FLOOR = 700
+
+
+def test_the_instructions_leave_room_for_the_round_s_later_lines() -> None:
+    assert len(INSTRUCTIONS) <= 4096 - SPARE_FLOOR
+
+
+# Each rule that left the instructions, where an agent now reads it: (tool, path, phrase).
+MOVED = [
+    ("krita_document_inspect", (), "how far history goes"),
+    ("krita_capture", (), "It returns the image and its PNG's path."),
+    ("krita_capture", (), "Native: scale 1"),
+    ("krita_paint_stroke", (), "as one undo step"),
+    ("krita_paint_stroke", ("verify",), "a tip and scatter it can read"),
+    ("krita_layer_update", ("verify",), "filter, mask, style, clone or copy blend"),
+    ("krita_layer_update", ("properties", "inherit_alpha"), "under preserve_composite_alpha"),
+    ("krita_paint_fill", (), "one flat antialiased colour"),
+    ("krita_sample", (), "or a fill's color: paint it back unchanged"),
+    ("krita_history_step", (), "selection commits and blend changes"),
+    ("krita_history_step", (), "never below the last protection change"),
+    ("krita_document_open", ("mode",), "The source is never written."),
+]
+
+
+@pytest.mark.parametrize(
+    ("tool", "path", "phrase"), MOVED, ids=[f"{m[0]}-{i}" for i, m in enumerate(MOVED)]
+)
+def test_each_rule_moved_out_of_the_instructions_is_in_its_description(
+    tool: str, path: tuple[str, ...], phrase: str
+) -> None:
+    found: Any = schemas.load(tool)
+    if path:
+        found = found["inputSchema"]
+        for name in path:
+            found = found["properties"][name]
+    assert phrase in found["description"]
+
+
 def test_the_instructions_name_the_saves_bound() -> None:
     side = math.isqrt(bridge_pixels.MAX_READ_PIXELS)
     assert side * side == bridge_pixels.MAX_READ_PIXELS

@@ -8,8 +8,8 @@ from typing import Any
 from mcp.types import CallToolResult
 
 from krita_art_mcp import envelope, imaging, roots
-from krita_art_mcp.bridge_client import BeforeSend, Done, Outcome, Pending
-from krita_art_mcp.errors import UNCERTAIN
+from krita_art_mcp.bridge_client import BeforeSend, Done, Failed, Outcome, Pending
+from krita_art_mcp.errors import NOT_APPLIED, UNCERTAIN, error_body
 from krita_art_mcp.paths import Places
 from krita_art_mcp.tools.dispatch import ToolCall, from_outcome, journaled
 from krita_art_mcp.tools.documents import inside_roots
@@ -83,35 +83,99 @@ def finish_save(call: ToolCall, outcome: Outcome, left_s: float) -> Outcome:
         "document.save_finish",
         args,
         request_id=f"{outcome.request_id}:finish",
-        budget_s=max(left_s, min(MIN_FINISH_S, call.bridge.budget_s)),
+        budget_s=_finish_budget(call, left_s),
         operation_id=finish_operation_id(outcome.operation_id),
     )
+    return _as_save(outcome, finished)
+
+
+def poll_finish(call: ToolCall, outcome: Outcome, left_s: float) -> Outcome:
+    # A poll finishes a save only in the server process that made the call; any other only
+    # reads what the bridge holds of the finish.
+    if not isinstance(outcome, Done) or outcome.request_id is None or outcome.operation_id is None:
+        return outcome
+    finish_id = finish_operation_id(outcome.operation_id)
+    if call.bridge.made(outcome.operation_id) or call.bridge.made(finish_id):
+        return finish_save(call, outcome, left_s)
+    found = call.bridge.operation(finish_id, budget_s=_finish_budget(call, left_s))
+    if isinstance(found, Failed) and found.op is None and found.error["code"] == "INVALID_ARGUMENT":
+        return _unfinished(outcome)
+    return _as_save(outcome, found)
+
+
+def _finish_budget(call: ToolCall, left_s: float) -> float:
+    return max(left_s, min(MIN_FINISH_S, call.bridge.budget_s))
+
+
+def _as_save(save: Done, finished: Outcome) -> Outcome:
     if isinstance(finished, Pending):
         # Followed by the save's own operation id, which finishes the same way.
-        return Pending(finished.status, outcome.operation_id, outcome.op)
+        return Pending(finished.status, save.operation_id or finished.operation_id, save.op)
     # The receipt and the journal name the save's own operation and request.
-    operation_id, request_id, session_id = (
-        outcome.operation_id,
-        outcome.request_id,
-        outcome.session_id,
-    )
+    operation_id, request_id, session_id = save.operation_id, save.request_id, save.session_id
     if isinstance(finished, Done):
         return replace(
             finished, operation_id=operation_id, request_id=request_id, session_id=session_id
         )
-    # The save itself reached Krita, whatever became of the finish, so a finish that says nothing
-    # leaves its file's fate unknown.
-    error = finished.error
-    if "outcome" not in error["details"]:
-        details = {**error["details"], "outcome": UNCERTAIN}
-        error = {**error, "retryable": False, "details": details}
     return replace(
         finished,
-        error=error,
+        error=_finish_error(save, finished),
         submitted=True,
         operation_id=operation_id,
         request_id=request_id,
         session_id=session_id,
+    )
+
+
+def _finish_error(save: Done, finished: Failed) -> dict[str, Any]:
+    error = finished.error
+    details = error["details"]
+    same_session = finished.session_id == save.session_id
+    if (
+        details.get("outcome") == NOT_APPLIED
+        and details.get("rollback_verified") is True
+        and same_session
+        and not save.result.get("replaced_pending")
+    ):
+        # The finish removed the save's file and folders and confirmed it.
+        return error
+    # The save reached Krita and may have left its file, or dropped an earlier unfinished one.
+    message = error["message"]
+    if finished.submitted and error["retryable"] and same_session:
+        message = f"{message} {_retry_hint(details)}"
+    details = {**details, "outcome": UNCERTAIN}
+    return {**error, "message": message, "retryable": False, "details": details}
+
+
+def _retry_hint(details: dict[str, Any]) -> str:
+    # A finish refused retryably changed nothing, so the bridge runs it again on a retry.
+    holder = details.get("holder_pid")
+    if holder is not None:
+        return (
+            "Retrying krita_document_save with the same request_id finishes the save from the "
+            f"server process {holder} that holds the document, or once that process has ended."
+        )
+    return "Retrying krita_document_save with the same request_id finishes the save."
+
+
+def _unfinished(save: Done) -> Failed:
+    message = (
+        "Krita wrote and verified this save, but its file is not in place: a poll finishes a "
+        "save only in the server process that made the call. Retrying krita_document_save with "
+        "the same request_id finishes it."
+    )
+    details = {
+        "outcome": UNCERTAIN,
+        "document_id": save.result.get("document_id"),
+        "operation_id": save.operation_id,
+    }
+    return Failed(
+        error_body("INTERNAL_ERROR", message, retryable=False, details=details),
+        save.operation_id,
+        submitted=True,
+        op=save.op,
+        request_id=save.request_id,
+        session_id=save.session_id,
     )
 
 

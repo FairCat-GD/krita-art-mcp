@@ -164,6 +164,8 @@ def journaled(
             raise
         log.exception("%s raised after it was sent", tool)
         outcome, result = _after_send(outcome, sent["operation_id"])
+    if sent and isinstance(outcome, Pending) and outcome.operation_id != sent["operation_id"]:
+        _answered_under(call, tool, request_id, digest, sent, outcome.operation_id)
     if sent and not isinstance(outcome, Pending):
         record(
             call,
@@ -206,6 +208,32 @@ def record(
     except Exception:
         # The call is done either way; a retry will find its dispatched line and ask the bridge.
         log.exception("the journal's finished line for %s was not written", request_id)
+
+
+def _answered_under(
+    call: ToolCall,
+    tool: str,
+    request_id: str,
+    digest: str,
+    sent: dict[str, str],
+    operation_id: str,
+) -> None:
+    # A retry joined a running original: its attempt settles with that operation, so the
+    # journal must know which one it was. Unknown, it settles nothing itself.
+    try:
+        call.journal.finished(
+            client=call.client_name,
+            request_id=request_id,
+            operation_id=sent["operation_id"],
+            tool=tool,
+            args_sha256=digest,
+            session_id=sent["session_id"],
+            outcome=journal.UNKNOWN,
+            result=None,
+            bridge_operation_id=operation_id,
+        )
+    except Exception:
+        log.exception("the journal's alias line for %s was not written", request_id)
 
 
 def _after_send(outcome: Outcome | None, operation_id: str) -> tuple[Done | Failed, CallToolResult]:

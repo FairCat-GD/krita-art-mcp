@@ -8,6 +8,7 @@ from typing import Any
 
 import numpy as np
 import pytest
+from bridge_core.errors import BridgeError
 from fake_krita import bgra, png
 from PIL import Image, PngImagePlugin
 from worlds import B, World, running_world
@@ -189,24 +190,106 @@ def test_a_retry_after_the_file_went_returns_the_original_receipt(world: World) 
     assert from_b == first and world.port.calls.count("export") == 1
 
 
-def test_a_save_that_runs_past_the_wait_is_finished_by_operation_get(world: World) -> None:
-    document_id = _opened(world)
+def _held(world: World) -> None:
+    # The save waits in Krita until the gate opens, past a short wait.
     world.gate.clear()
 
     def slow(saved: dict[str, Any]) -> None:
         world.gate.wait(10)
 
     world.port.on_export.append(slow)
+
+
+def _settled(server: Any, operation_id: str) -> dict[str, Any]:
+    # Polled until the call is no longer queued or running.
+    for _ in range(40):
+        got = server.content("krita_operation_get", {"operation_id": operation_id})
+        if got["data"]["state"] not in ("queued", "running"):
+            return dict(got["data"])
+    raise AssertionError(f"{operation_id} never settled")
+
+
+def _in_place(world: World) -> list[str]:
+    return [name for name in _saves(world) if not name.startswith(".")]
+
+
+def test_a_save_that_runs_past_the_wait_is_finished_by_operation_get(world: World) -> None:
+    # Only the server process that made the call finishes it from a poll.
+    document_id = _opened(world)
+    _held(world)
     target = world.tmp_path / "art" / "revisions" / "hero-r02.kra"
-    running = world.server(budget_s=0.5).content("krita_document_save", _save(document_id, target))
+    server = world.server(budget_s=0.5)
+    running = server.content("krita_document_save", _save(document_id, target))
     assert running["status"] == "running" and _saves(world) == []
     world.gate.set()
-    got = world.server().content("krita_operation_get", {"operation_id": running["operation_id"]})
-    receipt = got["data"]["receipt"]
+    receipt = _settled(server, running["operation_id"])["receipt"]
     assert receipt["status"] == "completed" and receipt["operation_id"] == running["operation_id"]
     assert _saves(world) == ["hero-r02.kra"]
     again = world.server().content("krita_document_save", _save(document_id, target))
     assert again == receipt
+
+
+def test_a_poll_from_another_process_finishes_no_save_and_says_how_to(world: World) -> None:
+    document_id = _opened(world)
+    _held(world)
+    target = world.tmp_path / "art" / "revisions" / "hero-r02.kra"
+    a = world.server(budget_s=0.5)
+    running = a.content("krita_document_save", _save(document_id, target))
+    operation_id = running["operation_id"]
+    b = world.server(B, "b", budget_s=0.5)
+    # B's own wait runs out while the save runs, as A's did.
+    early = b.content("krita_operation_get", {"operation_id": operation_id})
+    assert early["data"]["state"] == "running"
+    world.gate.set()
+    polled = _settled(b, operation_id)
+    assert (polled["state"], polled["outcome"]) == ("failed", "uncertain")
+    error = polled["receipt"]["error"]
+    assert error["retryable"] is False and "the same request_id finishes it" in error["message"]
+    assert saving.finish_operation_id(operation_id) not in world.bridge.jobs._operations
+    assert _in_place(world) == [] and _saves(world) != []
+    done = _settled(a, operation_id)
+    assert done["receipt"]["status"] == "completed" and _saves(world) == ["hero-r02.kra"]
+    # Once A has finished it, B reads the finish the bridge holds.
+    assert _settled(b, operation_id)["receipt"] == done["receipt"]
+
+
+def test_a_retry_from_another_process_leaves_the_finish_to_the_lease_holder(
+    world: World,
+) -> None:
+    document_id = _opened(world)
+    _held(world)
+    target = world.tmp_path / "art" / "revisions" / "hero-r02.kra"
+    a = world.server(budget_s=0.5)
+    running = a.content("krita_document_save", _save(document_id, target))
+    world.gate.set()
+    retried = world.server(B, "b").content("krita_document_save", _save(document_id, target))
+    error = retried["error"]
+    assert (error["code"], error["retryable"]) == ("DOCUMENT_IN_USE", False)
+    assert error["details"]["outcome"] == "uncertain" and "process 101" in error["message"]
+    assert retried["operation_id"] == running["operation_id"] and _in_place(world) == []
+    # The refusal changed nothing, so the finish runs for the process that holds the document.
+    done = _settled(a, running["operation_id"])
+    assert done["receipt"]["status"] == "completed" and _saves(world) == ["hero-r02.kra"]
+
+
+def test_a_finish_that_met_a_dialog_runs_when_the_save_is_retried(world: World) -> None:
+    document_id = _opened(world)
+
+    def dialog(saved: dict[str, Any]) -> None:
+        world.port.refuse = BridgeError("KRITA_MODAL_DIALOG", "A dialog is open.", True)
+
+    world.port.on_export.append(dialog)
+    target = world.tmp_path / "art" / "revisions" / "hero-r02.kra"
+    first = world.server().content("krita_document_save", _save(document_id, target))
+    error = first["error"]
+    assert (error["code"], error["retryable"]) == ("KRITA_MODAL_DIALOG", False)
+    assert error["details"]["outcome"] == "uncertain" and "same request_id" in error["message"]
+    assert _in_place(world) == []
+    world.port.on_export.clear()
+    world.port.refuse = None
+    again = world.server().content("krita_document_save", _save(document_id, target))
+    assert again["status"] == "completed" and again["operation_id"] == first["operation_id"]
+    assert world.port.calls.count("export") == 1 and _saves(world) == ["hero-r02.kra"]
 
 
 @pytest.mark.parametrize(

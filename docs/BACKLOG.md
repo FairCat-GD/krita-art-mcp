@@ -162,16 +162,27 @@ contract", "Phase N" and "review N" mean.
   at 87 documents; a Krita holding hundreds may feel it.
 - **`Jobs.follow` and `wait` take their deadline from `time.monotonic()`,** where every other time
   in the class comes from the injectable clock. Nothing is wrong; it is the one seam.
-- **Test fixtures are repeated.** Eighteen test files define their own `world` around
+- **Test fixtures are repeated.** Twenty-five test files define their own `world` around
   `running_world`, `_render`, `_pixels` and `_document` appear four times each, and there is no
   `conftest.py`.
-- **The plugin's eraser plumbing is unreachable** while the schema takes only `false`, and
-  `schemas.tool_names` is reached by tests only.
+- **The plugin's eraser plumbing is unreachable** while the schema takes only `false`; mask paint
+  refuses it on both sides.
 - **A client's `serve` runs this checkout as it stands** (0.18.0). Both registrations run
   `uv run --project <repo>`, so an MCP client started mid-session imports that session's uncommitted
   code. Once the version is bumped and the plugin installed, nothing refuses it. R2's Codex session
   ran that way, on finished code. A released copy to serve from would keep a client off work in
   progress.
+- **A selection whose mask file cannot be written reads `uncertain`,** though the selection
+  applied and its undo step is on the ledger (`selections.py`, `transfer.write` after the push).
+  Decision 5 lets only a returned handler say `applied`; returning the receipt without its mask
+  file, as a history step does with its capture, would need the selection receipt to allow it.
+  It fails safe: an agent inspects rather than repeating it.
+- **Two probe gaps X1's review named, which X1a left.** C1's edge checks run without a
+  selection, so a fill or stroke at the canvas edge under one is not exercised live.
+  `edges.py`'s replay comparison reads two answers the journal gave from one line, so it proves
+  the journal, not a second bridge answer.
+- **Preview's `baseline_id` on a target that is not the composite** is a rule both sides hold
+  with no parity case between them (X1's review, F10).
 - **A property write leaves Krita's flag clear.** A name, opacity, visibility or alpha-lock change
   through libkis is no undo step (K22), so Krita does not mark the document modified, and a tab
   close would drop it without asking; the bridge's `dirty` still holds it. Marking Krita's flag after

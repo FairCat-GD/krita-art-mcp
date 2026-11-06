@@ -195,12 +195,20 @@ def _invalid(problems: list[ValidationError]) -> CallToolResult:
 def _schema_problems(
     inputs: Draft202012Validator, arguments: dict[str, Any]
 ) -> list[ValidationError]:
-    # A number that is not finite is reported once, as such, not also as out of bounds or type.
-    return [
-        problem
-        for problem in inputs.iter_errors(arguments)
-        if not (isinstance(problem.instance, int | float) and not finite(problem.instance))
-    ]
+    return [problem for problem in inputs.iter_errors(arguments) if not _not_finite_alone(problem)]
+
+
+def _not_finite_alone(problem: ValidationError) -> bool:
+    # A number that is not finite is reported once, as such: not also as a bound or type it
+    # breaks, nor as the union one of whose branches it alone made fail.
+    if isinstance(problem.instance, int | float) and not finite(problem.instance):
+        return True
+    if problem.validator not in ("oneOf", "anyOf"):
+        return False
+    branches: dict[Any, list[ValidationError]] = {}
+    for found in problem.context or []:
+        branches.setdefault(found.relative_schema_path[0], []).append(found)
+    return any(all(_not_finite_alone(found) for found in errors) for errors in branches.values())
 
 
 def _not_finite(arguments: dict[str, Any]) -> list[ValidationError]:

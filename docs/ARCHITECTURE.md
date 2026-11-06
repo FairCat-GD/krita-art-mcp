@@ -1,6 +1,6 @@
 # krita-art-mcp — architecture, as built
 
-This is the system as it stands at 0.22.0, in round 2, on the Phase 1 round 1 built. Every session
+This is the system as it stands at 0.23.0, in round 2, on the Phase 1 round 1 built. Every session
 keeps it true, in the same commit as the change. Each section stands on its own: a session reads
 the overview, the invariants and the baseline, then only the sections its work touches.
 `docs/USER-GUIDE.md` is the same system from the user's side.
@@ -187,6 +187,10 @@ It polls with 2 s waits and a socket timeout 3 s longer, and after the budget re
 - A retryable failure releases the id but keeps its hash bound. *Retryable means the op changed
   nothing,* a rule the outcome rule (see *Bridge and jobs*) reads and a test holds at every
   retryable raise.
+- So the same `operation_id` sent again runs afresh, which a save's finish needs: it is always
+  sent under one id derived from the save's. Other arguments under it answer
+  `REQUEST_ID_CONFLICT` without replacing the failure, since the finish's arguments are the
+  server's own and can differ between attempts.
 - Finished operations keep their results and drop their arguments. Requests an agent named stay for
   the session. Reads, which the server names itself, are `ephemeral`: pruned at most once a minute,
   10 minutes after delivery or an hour after finishing undelivered.
@@ -237,7 +241,9 @@ values are `applied`, `not_applied`, `uncertain` and `unregistered`.
 **`api_version` moves when a field or an input value is removed or renamed, or a field changes
 meaning.** Added fields and tools do not move it. At 0.22.0 `transparency_mask` went live, `coverage`,
 `mask` and a capture's `mask` target were added, and a receipt's `color` reads null for mask paint;
-nothing changed for a paint layer, so `api_version` stayed 0.4.0.
+nothing changed for a paint layer, so `api_version` stayed 0.4.0. At 0.23.0 a save whose finish
+failed after the save reads `uncertain`, a rollback's failure adds `history_sealed`, and a save's
+poll from another process finishes nothing: values and fields, no rename, so it stays.
 
 **Schemas are data.** Each of the 20 `schemas/krita_<tool>.json` holds `name`, `description`,
 `inputSchema`, `outputSchema`, `annotations` and `example`. `MCPServer` tools are built by hand with
@@ -245,9 +251,10 @@ nothing changed for a paint layer, so `api_version` stayed 0.4.0.
 arguments; `ExactArguments` passes them through and the runner validates with Draft 2020-12.
 `scripts/amend_schemas.py` writes the shapes the files share (the envelope with its typed error,
 `guard`, `source`, the completed rule's copy of `data`, inspect's `layers`, the stroke's colour as
-the sample's `color` and the fill's, the selection's rect, ellipse and polygon as the fill's, and
-layer_update's `verification` as the stroke's and the fill's) and formats them; a test holds the
-files to it.
+the sample's `color` and the fill's, the stroke's mask paint as the fill's `mask`, the selection's
+rect, ellipse and polygon as the fill's, layer_update's `verification` as the stroke's, the fill's
+and layer_create's, and the outcome values as operation_get's `outcome`) and formats them; a test
+holds the files to it.
 
 **A field's range or unit is in its `description`.** Codex shows a property's description as a
 comment and drops `minimum` and `maximum`, so every input property with both bounds, on itself or on
@@ -258,7 +265,9 @@ Fields whose unit or rule matters say it too: `points`, the colours (sRGB 0 to 1
 sample's `color` sent as a stroke's colour.
 
 **Hints follow each tool's worst permitted behaviour.**
-- The eight reads are `readOnlyHint: true`.
+- The eight reads are `readOnlyHint: true`. One exception is written down, the owner's choice at
+  X1: `krita_operation_get` finishes a save it is polled for, putting its file in place, but only
+  in the server process that made the call (*The server*). Any other poll only reads.
 - Four mutating tools only add, and are `destructiveHint: false`: `krita_protection_set`,
   `krita_document_open`, `krita_document_create` and `krita_document_save`.
 - The other eight are destructive, because undoable is not additive. A fill overwrites what is
@@ -279,7 +288,9 @@ valid schema can still arrive as `unknown`. `tests/test_schemas.py` holds these 
 - a tuple is `items` with `minItems` equal to `maxItems`;
 - a union has nothing beside it, and each branch is typed;
 - a conditional sits under `dependentSchemas` on the field it reads, because an `if` passes on an
-  absent field and adds a false problem; Codex drops the keyword, as it drops `if`;
+  absent field and adds a false problem; Codex drops the keyword, as it drops `if`. Preview's
+  recipe keeps one `if`, on presence alone: one of two fields required, which `dependentSchemas`
+  cannot say;
 - "field absent" is `{"properties": {"f": {"not": {}}}}`, because a bare `false` loses the error's
   path;
 - outputs are one chain written by `amend_schemas.py`: completed, else failed, else pending.
@@ -289,9 +300,9 @@ an input passes through and its TypeScript renderer, from `rust-v0.166.0` (the s
 2026-11-04), and renders Codex's own test case as Codex's test expects. For every tool,
 `test_codex_shows_every_input_and_output_whole` holds:
 - the normalised input at most 5,000 bytes, past which Codex strips descriptions and then deeper
-  shapes (the largest is `krita_paint_stroke`'s, 2,948);
+  shapes (the largest is `krita_paint_stroke`'s, 3,190);
 - the rendered input at most 16,000 bytes, past which it becomes `unknown`, and with no `unknown`
-  in it (the largest is 1,909);
+  in it (the largest is 2,127);
 - the rendered output at most 16,000 bytes and not `unknown` (the largest is
   `krita_preview_render`'s, 2,362).
 
@@ -308,7 +319,8 @@ tokens (C4). A forbidden field reads "not allowed with these arguments".
 `1e400` as floats, and a number schema's bounds pass NaN. `_checked` walks every tool's arguments
 beside the schema and reports each NaN, infinity or integer past a double's range as `<path>: not a
 finite number`, among the schema's problems and under the same cap; the schema's own problem with
-that number (a bound or a type) is left out, so each is reported once. A tool's own check stays only
+that number (a bound or a type) is left out, and so is a union's problem when one of its branches
+failed on such numbers alone, so each is reported once. A tool's own check stays only
 for a number it computes, such as a smoothed stroke's control points.
 
 **Semantic checks stop at their first refusal.** One envelope carries one code with its own
@@ -318,13 +330,24 @@ schema, where a job ends at its first raise and each check reads what the one be
 document before the layer before the pixels.
 
 **Argument rules are written twice on purpose.** Each side trusts no caller, and a refusal the server
-makes carries no `operation_id`. Each pair is held by a parity test in `tests/test_parity.py`: eight
-today, from open's format and editable lists to a capture's area, a fill's colour and area, and a
-stroke's colour or mask paint. The server's half of a pair is a named function, and `tests/support/parity.py`'s `refused_alike` calls the tool, turns that function
-off, and calls again, so the server's own translation carries the same arguments to the plugin. Both
-must refuse with one code and one `retryable`, the plugin before its marker. A new pair needs its
-named function and one call. A stroke's colour or mask paint is `_brush_rules`; a fill's is part of
-its `_fill_rules`.
+makes carries no `operation_id`. Each pair is held by a parity test in `tests/test_parity.py`: 13
+today, from open's format, editable lists and mode to a capture's area, a layer's coverage, a
+fill's colour and area, and a stroke's or fill's colour and mask paint. `tests/support/parity.py`'s
+`refused_alike` calls the tool, turns the server's half off, and calls again, so the server's own
+translation carries the same arguments to the plugin. Both must refuse with one code and one
+`retryable`, the plugin before its marker.
+- **A rule in a named function** is switched off by name: a stroke's colour is `_brush_rules`, a
+  fill's colour and area its `_fill_rules`.
+- **A rule in the schema** is cut, by its path, from the schema a second server is built with:
+  colour and mask both given, mask paint with a blend or alpha lock, `coverage` on a layer, a
+  `working_dir` for a read-only open.
+- **The area rule** reads one set of points on both sides: a polygon's, or a closed curve's input
+  points, never its control points.
+- **One asymmetry:** the schema refuses mask paint's `blend_mode` and `alpha_lock` by presence,
+  and the plugin, which gets the server's defaults, any value that does something.
+- **Not held:** `eraser`, which the schema takes only as `false` while the plugin keeps erasing
+  for when it comes; preview's `baseline_id` on a target that is not the composite (the backlog);
+  and the `frame` rule, since the server always sends 0.
 
 **The error codes: 30.** The default `retryable` is the server's; a site may override it, and
 `docs/USER-GUIDE.md` says what an agent should do with each.
@@ -346,7 +369,7 @@ its `_fill_rules`.
 | `RESOURCE_HASH_MISMATCH` | no | both sides |
 | `SOURCE_HASH_MISMATCH` | no | plugin |
 | `COLOR_PROFILE_MISMATCH` | no | both sides |
-| `DOCUMENT_DIRTY`, `DOCUMENT_UNSAFE`, `DOCUMENT_READ_ONLY`, `DOCUMENT_IN_USE` | no | plugin |
+| `DOCUMENT_DIRTY`, `DOCUMENT_UNSAFE`, `DOCUMENT_READ_ONLY`, `DOCUMENT_IN_USE` | no | plugin. `DOCUMENT_IN_USE` is retryable at a save's finish alone, so its id runs again for the lease holder; the server reports that finish `uncertain`, so no agent sees it retryable |
 | `SAVE_VERIFY_FAILED` | no | plugin |
 | `PATH_NOT_ALLOWED` | no | both sides |
 | `FILE_EXISTS` | no | plugin (retryable when a working copy's name collides) |
@@ -400,9 +423,11 @@ presets have no seed), `operation.cancel_running`, `color_spaces`, `filters` (Ph
 (Phase 5). True since 0.9.0: `stroke.native_brush`, `stroke.smoothing`, `selection.enforced`; since
 0.21.0, `paint.fill`; since 0.22.0, `mask.transparency`.
 
-**The instructions.** `instructions.py` is 3,908 of Claude Code's 4,096 characters (C4), held by a
-test. It states the rules an agent would otherwise learn from a refusal, and leaves a field's range,
-unit and form to that field's description.
+**The instructions.** `instructions.py` is 2,945 of Claude Code's 4,096 characters (C4). A test
+holds at least 700 spare, room for the round's later sessions. It states the rules an agent would
+otherwise learn from a refusal, and leaves to the tools what belongs to one: a field's range, unit
+and form to its description, and a tool's own rule to the tool's, each moved rule held there by a
+test.
 
 ## The data layer
 
@@ -438,7 +463,7 @@ lines other processes append. Each attempt's outcome is one of:
 | Outcome | Settles |
 |---|---|
 | `receipt` | Every attempt the bridge deduplicated in that session |
-| `no_effect` | Its own attempt, and the one whose operation the bridge named |
+| `no_effect` | Its own attempt, the one whose operation the bridge named, and any the bridge answered under that operation |
 | `not_sent`, `conflict` | Its own attempt alone |
 | `unknown` | Nothing yet; an attempt unknown in another Krita session is never re-sent |
 
@@ -448,7 +473,12 @@ session whose dedup state covers that exact `request_id`. Past the 7-day window 
 request, invariant 9's stated limit.
 
 The index also keeps each finished line by its `operation_id` and by the `bridge_operation_id` a
-retry was answered under, so `krita_operation_get` can answer once Krita has moved on. An `unknown`
+retry was answered under, so `krita_operation_get` can answer once Krita has moved on.
+- **A retry that joined a running call** comes back running under the original's id. Its own
+  attempt then gets an `unknown` line with no result, naming that id. It settles nothing and
+  answers for its own id alone, but a `no_effect` for the original then settles it too.
+- **Why not more.** A `no_effect` cannot settle every attempt with the same arguments: one sent
+  after the refusal released the request may have run. An `unknown`
 line never replaces a settled one, and "finished" alone never means applied: the line keeps its
 outcome, session, request and result.
 
@@ -498,9 +528,16 @@ during confirmed rollbacks and reversed steps.
 
 **The marker.** `Call.mark()` goes before an op's first change of any kind, on each path: document,
 protection state, file or registration. The frame places it for the ops on it (see *The
-verification core*); every other op places it by hand. The window-wide brush is not a change here, because
-a stroke sets it before its marker. `move()` takes it as a callback that only `history.step` passes,
-because a rollback is already past its own op's marker.
+verification core*); every other op places it by hand. `move()` takes it as a callback that only
+`history.step` passes, because a rollback is already past its own op's marker. Two kinds of window
+state are not changes here, because an op sets them before its marker:
+- **The window-wide brush,** which a stroke sets.
+- **K46's activation.** It moves the current node off a selection mask, so the mask's overlay
+  stays out of a read. The view goes back; the active node stays on the layer, because
+  `setActiveNode` cannot make the global selection's mask current again (measured).
+  `krita_layer_update`'s `active` is the same call, but there the active node is what the agent
+  asked for, so it is marked first. The fake's marker gate lets an activation off a selection
+  mask through, and an armed test drives a stroke with each kind of mask active.
 
 | Op | First change |
 |---|---|
@@ -748,8 +785,10 @@ selection, which has no verdict, pushes its step by hand.
   1. A step named but never pushed is the newest Krita may hold, so it goes first. A pixel step is
      undone by a witness built from a re-read, unless the re-read shows the document back. A node
      step is undone by its label and state, unless the state never moved.
-  2. Each pushed step is undone, newest first, through `history.move`. The view comes forward
-     (K7) only when a step may move, so a rollback that only writes values back leaves it alone.
+  2. Each pushed step is undone, newest first, through `history.move`. The first reads the state
+     afresh, so a step Krita holds above the op's own is never undone in its place. The view comes
+     forward (K7) only when a step may move, so a rollback that only writes values back leaves it
+     alone.
   3. History is sealed below a step it never named, after the pushed steps are off the ledger, so
      the floor never stands above `applied`.
   4. The op's `compensate` writes back what no undo holds: the update's property values, because
@@ -758,11 +797,16 @@ selection, which has no verdict, pushes its step by hand.
      `back`: the stroke's target bounds, or the watched tree for the layer ops.
 - **Every rollback reports alike.**
   - Confirmed: `dirty` comes back and the problem is raised with `document_id`, the op's ids,
-    `rolled_back` (no move failed, and something was undone or written back) and
-    `rollback_verified`. An op that reads pixels adds `protected_layer_ids`,
+    `rolled_back` (no move failed, and something was undone or written back),
+    `rollback_verified` and `history_sealed`. An op that reads pixels adds `protected_layer_ids`,
     `protected_pixels_changed` and `target_outside_reach`, and the failed `verification`.
-  - Not confirmed: the document is unsafe, and the call is `ROLLBACK_FAILED`, with `cause` and what
-    a failed move saw.
+  - `history_sealed` is true when history stopped below the op. That happens when a step was
+    named and never pushed, since Krita may hold it whether or not the state moved, or when the
+    document went unsafe.
+  - Not confirmed: the document is unsafe, its history sealed through `Handle.lost()`, and the
+    call is `ROLLBACK_FAILED`, with `cause` and what a failed move saw.
+  - `protected_pixels_changed` counts the protected layer's own bytes a pixel, read from what was
+    read: four for a paint layer, one for a mask.
 
 **`krita_layer_update`.** Only values that differ are written; the blend first, then the rest in a
 fixed order, then a refresh (K42), the tree, and the check that nothing else moved, all inside its
@@ -837,7 +881,8 @@ no dab, in one "Scripted Brush Stroke" step, confined and weighted by the select
 - **The shapes** (`bridge_core/shapes.py`, pure): a rect and an ellipse take whole pixels; a polygon
   and a closed curve take 3 to 4096 points and fill even-odd. The server turns a curve's points
   into a closed uniform Catmull-Rom, exact cubics whose neighbours wrap round. The area rule (no
-  shape whose points lie on one line, to a relative 1e-9) is a parity pair, as is the colour's
+  shape whose points lie on one line, to a relative 1e-9, over the points it passes through and
+  never a curve's control points) is a parity pair, as is the colour's
   alpha of 1.
 - **Order.** Before the job: the fields, the shape and the area rule. Then the space, the target,
   the shape on the canvas (a curve by its extrema, found with the stable quadratic, not its
@@ -859,7 +904,8 @@ no dab, in one "Scripted Brush Stroke" step, confined and weighted by the select
 
 **A mask target.** A stroke or fill on a transparency mask brings `mask: "reveal" | "hide"` in place
 of a colour; the server sends `color` and `mask`, one null, and both sides want exactly one. Mask
-paint takes no blend or alpha lock. The target check reads the paint kind first, so a colour on a
+paint takes no blend, alpha lock or eraser. The target check reads protection first, so a colour on a
+protected mask is `LOCKED_TARGET`; then the paint kind, so a colour on a
 mask or mask paint on a layer is `INVALID_ARGUMENT`, then the held line, then the mask's space (`A`,
 `U8`). A local selection mask on the layer does not confine mask paint, so it is not refused
 (measured); the global selection does. The paint is Krita's own on the mask's Alpha8 device, with
@@ -969,7 +1015,9 @@ fails the save.
 values come back one lower. A visible one changes the composite, so that save fails.
 
 `document.save_finish {save_id, merged_sha256, merged_problem}` runs under an operation id derived
-from the save's (`finish_operation_id`), so every poll and retry gets the finish's own outcome. It
+from the save's (`finish_operation_id`), so every poll and retry gets the finish's own outcome, and
+one refused retryably runs again under it (*The bridge contract*). Its lease refusal alone is
+retryable for that, so a server that is not the holder never locks the holder's finish. It
 compares the written file's inode, size and modification time with what the save took, and the server's
 `mergedimage.png` hash with the live composite's. It then `os.link`s the file into place and unlinks it,
 or, where links fail, checks `lexists` and renames. It clears dirt only if `Handle.changes` is
@@ -978,8 +1026,22 @@ unchanged, and then keeps what the save compared as the handle's `saved_state`. 
 the export moves neither (K39, K45). A new verified save, a close or a document gone from `sync` drops a save never finished,
 and folders the save made go with it, deepest first and only while empty.
 
-The server's `_merged` never raises, so the finish always runs and no hidden file stays. A problem
-reading the file goes to the plugin as `merged_problem`, which discards it.
+The server's `_merged` never raises, so the finish is always sent. A problem reading the file goes to
+the plugin as `merged_problem`, which discards it.
+
+**What a failed finish says.** The save itself reached Krita and wrote its hidden file, so a
+finish's failure keeps `not_applied` only on proof:
+- **When it stands.** The finish states it, with `rollback_verified: true` (its own discard of the
+  file and folders confirmed), in the save's own Krita session.
+- **When it never stands.** A save that replaced an earlier unfinished save never keeps it, since
+  that save's file went with it (`replaced_pending` in the save's own result, kept out of the
+  receipt).
+- **Everything else is `uncertain`, not retryable:** a refusal at job start, a restarted Krita, a
+  finish that reached no bridge, a session mismatch. The hidden file then stays, the known debt
+  below.
+- **What a retry does.** For a finish refused retryably, the message says that retrying the save
+  under its `request_id` finishes it. That retry is a same-session resend: the bridge dedups the
+  save, and the finish runs again in the retrying process.
 
 ## The server
 
@@ -1018,6 +1080,17 @@ failure, because the first server took the pixels.
 call is queued or running. It returns a raw receipt as data, survives one that raises, and settles the
 journal on every path. When the bridge cannot answer, because Krita restarted or has gone, a finished
 line answers with its own outcome; with no line it stays `uncertain`.
+
+**A poll finishes a save only in the process that made the call.**
+- **The record.** `BridgeClient._made` holds the id of every call this process sent, and the id
+  the bridge answered it under. `_sent`, which pins a running call's session, also takes ids a
+  poll followed, so it cannot say who made a call.
+- **The maker's poll** runs the finish.
+- **Any other poll only reads.** It GETs the finish's own record and reports it with the save's
+  identity. If the bridge holds no finish, it reports the save `uncertain`, with a message saying
+  that retrying the save under its `request_id` finishes it.
+- **Why not the journal.** It cannot decide this: two servers on one data folder read the same
+  lines.
 
 **Serve.** Orphaned baselines are swept on a daemon thread under `CALLS`, with a 2 s budget, so a busy
 Krita never delays the client's handshake.
@@ -1071,6 +1144,15 @@ fails, and a driver must stop if it does. A dialog open in Krita refuses calls t
 document, and fails the checks it overlaps. The stock presets `b) Basic-2 Opacity`,
 `b) Airbrush Soft`, `y) Texture Spray` and `y) Texture Wood Fiber` must be listed.
 
+**The journal check comes last.** It is the live evidence that `uncertain` stays rare.
+- **What it reads.** Every line the probe's servers journaled, through the journal's own reader,
+  so a line a later one settled counts as settled.
+- **When it fails.** On fewer than 340 dispatched lines, about half a whole run's 682, since that
+  means it read the wrong place. Or on any request left with an unknown attempt, which it names:
+  uncertain, unregistered, or dispatched with no finished line.
+- **What it cannot see.** Reads, harness ops and the probe's own direct bridge calls, none of which
+  are journaled.
+
 **N-04's limit.** `probe/writes.py` lists the data directory, strictly, by `DATA_FILES`, and five other
 places for new names that look like ours (the cwd, the home folder, Krita's temp folder,
 `~/Library/Application Support`, `~/Library/Preferences`), because other processes write in all of
@@ -1079,18 +1161,19 @@ only those names. `~/Desktop` and `~/Downloads` are left out, because listing th
 permission prompt.
 
 **What the probe measures and does not gate.** A MEASURED line stays only if something rests on it
-and no check would notice it changing. The 23 lines:
+and no check would notice it changing. The 25 lines:
 
 | Lines | Why they stay |
 |---|---|
 | Krita's runtime; 11 stage times | The run's condition, and where its time goes |
 | `Node.paintPolylineStroke` | The one reader of Phase 6's switch |
 | An active selection mask's overlay | Why K46's guard is measured, not checked |
-| `setActiveNode` on the global selection's mask | Why K46's global branch is unit-tested only |
+| `setActiveNode` on the global selection's mask | Why K46's global branch is unit-tested only, and why its activation is not undone |
 | The tall tip against R's margin | Assumption (b) of the margin model |
+| A polygon fill's call | A fill has no budget; its time is measured, not gated |
 | N-01 and N-09 opening the master, and their corner-to-corner strokes | Costs no budget gates; Krita's memory is on the backlog |
 | Retention after N-01; the journal after N-01 | Growth watches behind backlog items |
-| H4's long save | A save has no budget |
+| H4's long save, and the refused close after it | A save has no budget, and the close re-reads what the save compared |
 
 A line can also appear as a skip: "paths outside every root" when a root covers them, or the tall tip
 when its preset is missing. The journal line takes the fastest of five lookups, because one read in
@@ -1171,7 +1254,7 @@ Each has its detail in `docs/BACKLOG.md`, or in `docs/spec/SESSIONS.md` where ro
 - The save has a ladder of its own, and a selection pushes its step outside the frame, with no
   verdict.
 - The journal is permanent and unbounded.
-- A Krita crash mid-save leaves a hidden file nothing sweeps.
+- A Krita crash mid-save, or a finish that never ran, leaves a hidden file nothing sweeps.
 - Labels are English; region scope is the pixel engine only; filters are classed by type.
 - Selection steps are confirmed by state alone.
 - Erasing, a single dab and antialiasing off are refused.
@@ -1267,25 +1350,25 @@ the code is shaped as it is.
   it. A Krita holding 87 documents ran document ops about three times slower, and left the paint
   benchmarks, the preview benchmark and H4 idle alone.
 
-## Baseline (v0.22.0)
+## Baseline (v0.23.0)
 
-Taken on 2026-11-05 on Krita 5.3.4.1, macOS, Apple Silicon, on a Krita restarted that session, with
+Taken on 2026-11-06 on Krita 5.3.4.1, macOS, Apple Silicon, on a Krita restarted that session, with
 **0 documents open**. The probe prints the open-document count beside its time, because document ops
 depend on it: 87 open documents cost about 50 s more.
 
 | Check | Expected |
 |---|---|
 | `uv run scripts/verify.py` | 6 stages, all PASS |
-| Server tests (3.12) | 970 passed, 0 skipped |
-| Plugin-core tests (3.10) | 931 passed, 0 skipped |
-| `uv run krita-art-mcp probe` | 171 PASS, 0 FAIL, 25 MEASURED; about 130 s |
+| Server tests (3.12) | 1006 passed, 0 skipped |
+| Plugin-core tests (3.10) | 944 passed, 0 skipped |
+| `uv run krita-art-mcp probe` | 174 PASS, 0 FAIL, 25 MEASURED; about 135 s |
 | `uv run krita-art-mcp doctor` | 6 steps, all PASS, with a root allowed |
 | Registered tools | 20 |
 | Schema files | 20 |
 | Error codes | 30 |
 | Bridge ops | 32 |
 | Bridge protocol; `api_version` | 1; 0.4.0 |
-| Server instructions | 3,908 of 4,096 characters |
+| Server instructions | 2,945 of 4,096 characters, at least 700 spare |
 | CLI commands | 5 |
 
 A documentation or refactoring change should not move any of these. If one moves, that is the

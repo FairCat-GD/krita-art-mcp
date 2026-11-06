@@ -183,7 +183,17 @@ class Jobs:
                 return None
             self._prune()
             known = self._operations.get(operation_id)
-            if known is not None:
+            # A retryable failure changed nothing and released its request, so the same id runs
+            # again: a call sent under an id derived from another's has no other.
+            rerun = (
+                known is not None
+                and known.request_id == request_id
+                and known.state == FAILED
+                and known.error is not None
+                and known.error["retryable"]
+                and self._requests.get(request_id) is not known
+            )
+            if known is not None and not rerun:
                 if known.request_id == request_id:
                     return known
                 refused = Operation(operation_id, request_id, op, {}, client)
@@ -197,7 +207,9 @@ class Jobs:
                 message = "That request_id was used with different arguments."
                 details = {"request_id": request_id, "outcome": NOT_APPLIED}
                 self._finish_failed(conflict, error("REQUEST_ID_CONFLICT", message, False, details))
-                self._operations[operation_id] = conflict
+                if not rerun:
+                    # A rerun's id keeps its retryable failure, so the bound arguments still run.
+                    self._operations[operation_id] = conflict
                 return conflict
             existing = self._requests.get(request_id)
             if existing is not None:

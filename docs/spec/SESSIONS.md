@@ -1247,6 +1247,120 @@ strategy*.
   Krita restart before the probe.
 - **The instructions are user-visible,** so the move is a `Changed` entry.
 
+**Done (2026-11-06, 0.23.0).**
+- **Decided with the owner at the start:**
+  - **F20 takes the alias line,** not the block's rule. The block's rule settles every
+    same-session, same-digest attempt dispatched before a `no_effect` line. That includes one sent
+    after the bridge released the request but before the line was written, which may have run, and
+    after a Krita restart could be resent.
+  - **The save's finish refuses its lease retryably,** so a second server's retry under the
+    holder's `request_id` never locks the holder's finish.
+  - **`install-plugin`, a Krita restart and the probe** ran once `verify` was green, with 0 unsaved
+    documents.
+  - **An adversarial review of the plan ran on Opus,** at the owner's request. It found three design
+    faults and five smaller gaps, all folded into the plan before approval (see *Amendments*).
+- **The save's finish** (`tools/saving.py`).
+  - **The call and its shared tail.** `finish_save` sends the finish, and `_as_save` gives the
+    answer the save's identity.
+  - **When `not_applied` stands.** A failed finish keeps it only when it states `not_applied` with
+    `rollback_verified: true`, in the save's own Krita session, for a save that replaced no earlier
+    unfinished one. The save op's result gains `replaced_pending`, kept out of the receipt.
+    Anything else is `uncertain`, not retryable.
+  - **The retry sentence.** A finish refused retryably says that retrying the save under its
+    `request_id` finishes it. For the lease, it names the holder's pid.
+  - **The poll.** `poll_finish` is the save's `Known.finish`. It finishes only when
+    `BridgeClient.made()` holds the save's or the finish's id. Otherwise it GETs the finish's
+    record, or answers `uncertain`, saying how to finish it.
+  - **The client.** `BridgeClient._made` records every id this process sent and the id it was
+    answered under. `operation()` takes a `budget_s`.
+  - **The plugin.** `Registry.guarded(lease_retryable=True)` is used for the finish alone.
+- **A retryable failure runs again under its own id** (`Jobs.submit`). The rerun falls through the
+  bound check and the `_requests` check. Its conflict leaves the old failure in place, so the id
+  stays rerunnable.
+- **The frame** (`mutation.py`).
+  - The first undo reads the state.
+  - The unsafe exit calls `Handle.lost()`.
+  - Every rollback's details carry `history_sealed`.
+  - `_counted` takes its bytes a pixel from the read.
+- **The selection** (`selections.py`): a non-`BridgeError` past the marker calls `lost()`.
+- **K46** is named as window state, not a change. The fake's gate lets an activation off a
+  selection mask through, and an armed test drives a stroke with a global and a local mask active.
+- **The smaller plugin fixes.**
+  - Mask paint refuses `eraser`.
+  - The moved-document save writes `rollback_verified: false`.
+  - `selection.enforced`'s note names mask paint.
+  - `shapes.points` gives on-curve points only.
+- **The server's smaller fixes.**
+  - **F20.** A retry that comes back running under another id writes an `unknown` alias line with
+    no result. `journal._index` keeps the alias on the attempt, a `no_effect` settles it, and the
+    line answers for its own id alone.
+  - **F23.** `_not_finite_alone` also drops a union's problem when one branch failed on not-finite
+    numbers alone.
+  - **F27.** The schema test walks every nested input object.
+  - **F19.** The retryable scan reads keyword and computed flags.
+- **The instructions** moved into seven tool and field descriptions, and name `unregistered`:
+  2,945 characters, 1,151 spare. A test holds 700 spare and each moved phrase in its description.
+- **Parity.**
+  - `refused_alike(…, schema=path)` cuts one keyword from a second server's schema.
+  - **Five new pairs:** the stroke's colour alpha; colour and mask, blend or alpha lock with mask
+    paint, on stroke and fill; `coverage` on a layer; a read-only open's `working_dir`; a
+    near-flat closed curve from a seeded search.
+- **The probe.**
+  - **The journal check** reads through `Journal`. It fails under 340 dispatched lines or on any
+    unsettled request, and names each.
+  - **The mask checks.** Reveal, half-opacity and hide strokes are each judged on their own change
+    and centre row, and a mask create is undone.
+- **Docs:** `ARCHITECTURE.md`, `USER-GUIDE.md`, `CLAUDE.md`'s and the script's `amend_schemas`
+  text, `BACKLOG.md`, `CHANGELOG.md` 0.23.0, `README.md`'s version.
+- **Amendments:**
+  - **The poll's record is `_made`, not `_sent`.**
+    - `_sent` is also written by a poll whose wait runs out, so a second server that polled a
+      running save would count as its maker. It also misses a save and finish that both answered
+      within the budget.
+    - The block's intent (the process that made the call) holds. Found by the plan review, decided
+      at plan time, with the owner.
+  - **A poll from another process reads the finish's record** before saying the save is
+    unfinished. Without that, a re-poll of a finished save, or the existing test of a poll after a
+    failed finish, would read "not finished". The session's own design, approved at plan time.
+  - **The retry sentence goes only on a finish refused retryably.** A non-retryable refusal would
+    get the same failure back. Found by the plan review.
+  - **A save that replaced an unfinished one never keeps `not_applied`.** Found by the plan review.
+  - **The rerun's conflict leaves the derived id rerunnable.** Found by the plan review.
+  - **F20's alias line answers for its own id alone,** so `krita_operation_get` of the original
+    after a restart reads as before. Found by the plan review.
+  - **F23 drops a union's problem only when one branch failed on not-finite numbers alone,** so a
+    second, real problem is never hidden. Found by the plan review.
+  - **Where three either/or fixes went.** F3 passes `known` as it is. F15 reports `history_sealed`
+    rather than not sealing, since a step that never moved the fingerprint can still be on Krita's
+    stack. F17 names the exclusion rather than restoring the node, since the global selection's
+    mask cannot be made current again (measured). The session's choices, in the approved plan.
+  - **Left, to `BACKLOG.md`:** F16's `transfer.write` tail, which decision 5 lets read only
+    `uncertain`; F24's edge checks under a selection and `edges.py`'s replay; F10's preview
+    `baseline_id` pair.
+  - **The probe's partial stroke** is a hide stroke at opacity 0.5. It measured 127 at its
+    centre, under the wash-mode `b) Basic-2 Opacity`.
+- **Measured,** on Krita 5.3.4.1, macOS, Apple Silicon:
+  - `probe`: 174 PASS, 0 FAIL, 25 MEASURED in 136.5 s with 0 documents open. The journal check read
+    682 dispatched lines, all settled.
+  - Mask strokes: reveal 255 and hide 0 at their centres, a half-opacity hide 127, each changed byte
+    inside its reported bounds and moved one way. A mask create is undone in one step.
+  - Codex's renderer: the stroke's input 3,190 normalised and 2,127 rendered bytes. The preview's
+    output is 2,362; the longest description is 448 (the fill).
+  - The area rule, seeded: near-flat closed paths the server refused and the old plugin rule
+    passed were found within the first few trials. One is the new parity case.
+  - `doctor` 6 of 6 after the restart, 0 open documents, 0 unsaved.
+- **Falsified,** each once, each failing at its own test, the tree restored byte for byte:
+  - **The plugin:** the rerun, its conflict, the finish's lease, `replaced_pending`, F3, F14, F15,
+    F13, F16, F17, F21, F18 and F19 (a keyword flag).
+  - **The server:** the finish's outcome rule, the maker's poll, `made()`, the lease end to end,
+    the dialog-then-retry, F20's settling and its alias index, F23, F27, the spare floor and a moved
+    phrase, the schema switch (eight cases), the stroke's alpha pair and the area rule.
+  - **The probe:** the reveal, half-opacity and hide strokes, the undone create and the journal
+    floor, all broken in one run that failed those five alone.
+- **Numbers:** 1006 server tests (+36), 944 plugin tests (+13), probe 174 PASS (+3), 0 FAIL, 25
+  MEASURED, 136.5 s with 0 documents open. 20 tools, 20 schema files, 30 error codes, 32 ops, 12
+  capabilities, instructions 2,945 characters, `api_version` 0.4.0.
+
 ---
 
 ## E1: Tapers

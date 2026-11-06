@@ -405,9 +405,12 @@ def _check_paint(style: dict[str, Any], field: str, transparency: str) -> None:
 
 
 def _check_mask_paint(style: dict[str, Any], field: str) -> None:
-    # Mask paint picks its own colour, so it takes no blend or alpha lock.
-    if style["mask"] is not None and (style["blend_mode"] != "normal" or style["alpha_lock"]):
-        message = f"{field}.mask paints in normal blend without alpha lock."
+    # Mask paint picks its own colour, so it takes no blend, alpha lock or eraser: an erase with
+    # white would hide under a receipt saying reveal.
+    if style["mask"] is not None and (
+        style["blend_mode"] != "normal" or style["alpha_lock"] or style.get("eraser")
+    ):
+        message = f"{field}.mask paints in normal blend, without alpha lock or eraser."
         raise BridgeError("INVALID_ARGUMENT", message, False, {"field": f"{field}.mask"})
 
 

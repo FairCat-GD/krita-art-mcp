@@ -85,8 +85,12 @@ def handlers(registry: Registry, port: DocumentsPort, data: Path) -> dict[str, H
             port.set_selection(document, recipe(shape, args, rect, mask))
             state = selection_state(port, document, size)
             end = fingerprint_of(port.tree(document), state)
-        except BaseException:
+        except BridgeError:
             handle.ledger.seal()
+            raise
+        except BaseException:
+            # Krita may hold a selection nothing confirmed, as in the frame.
+            handle.lost()
             raise
         step = Step("selection.set", call.operation_id, label, start, end)
         handle.ledger.push(step, port.undo_limit())
