@@ -21,8 +21,8 @@ Release 0.23.0.
 - **Round 2 is recovery and construction**: R1, R2, R3, D1, F1, C1, M1 and X1 are done; X1a, E1,
   L1, B1, T1, S1, X2 and V1 remain, in that order. X1 inserted X1a, so E1 is 0.24.0 and every
   later version moved up by one.
-- **X1 is committed locally, not pushed.** `origin/main` holds everything through "review: a
-  paint create's parent check was loosened, and 11 smaller". List `origin/main..HEAD` before any
+- **X1 and its review fixes are pushed.** `origin/main` holds everything through "review: X1a's
+  poll rule names the record the server has, and 4 smaller". List `origin/main..HEAD` before any
   push.
 - **What X1 left that X1a builds on:** every finding has its trace and `file:line` on `189ba26`
   in the review; the pointers below are the ones X1a changes.
@@ -32,6 +32,11 @@ Release 0.23.0.
     `rollback_verified` (`bridge_core/saving.py:190,197`).
   - **The poll:** `tools/operations.py:65,89-90` runs `Known.finish` for anyone; the plugin's lease
     is `registry.py:198-203`; `_finish_journaled` (`operations.py:192-220`) writes the finished line.
+    `BridgeClient._sent` (`bridge_client.py:96,261`) is the server's one record of the ops this
+    process followed past its wait, which the poll rule reads.
+  - **The session check:** the finish's `Done` or submitted `Failed` carries the bridge session
+    it ran in (`bridge_client.py:315-325`); compare it with `outcome.session_id` before
+    `finish_save` replaces the identity (`tools/saving.py:93-115`).
   - **The derived ids:** `jobs.submit` (`jobs.py:185-188`) answers a known op first;
     `_finish_failed` (`:296-298`) releases the request alone; the ids are
     `tools/saving.py:85,87,118-120`.
@@ -85,14 +90,21 @@ Release 0.23.0.
 - **A client's `serve` runs this checkout as it stands.** Keep the tree working between edits.
 - **Every plugin change needs `install-plugin` and a Krita restart** before `probe` or `doctor` step
   5 passes. Bump the version first: the plugin's hash and `serve`'s gate both read it.
+- **A measurement instrument** is easiest as a temporary op in the handlers that have what it
+  needs, gated to harness documents like `harness.*`. Its driver opens an ORA fixture under
+  `<data dir>/harness/` through a stdio `serve`, and keeps that `serve`'s data dir out of any
+  folder it deletes. Never run it alongside the probe, which sweeps the harness folder.
 - **Before the probe's paint checks, these stock presets must be listed in Krita:**
   `b) Basic-2 Opacity`, `b) Airbrush Soft`, `y) Texture Spray`, `y) Texture Wood Fiber` and
   `c) Pencil-3 Large 4B`.
 - **Brush state is window-wide (K3).** A scratchpad driver must read `harness.brush_state` first,
   from a document in the harness folder, with every preset it will activate, and write it back.
-- **In a probe check, clear a selection only after any undo that check makes.**
-- **Falsifying by test name:** a pytest `-k` with spaces selects nothing. Use parametrize ids
-  without spaces, and check each run selected a test.
+- **In a probe check, clear a selection only after any undo that check makes.** Otherwise the undo
+  takes back the clear, and the selection confines every later check.
+- **Falsifying by test name:** a pytest `-k` with spaces selects nothing, and "no tests ran" reads
+  as a failure. Use parametrize ids without spaces, and check each run selected a test.
+- **A probe check that compares a composite needs a layer unlike what lies under it,** or hiding it
+  changes nothing visible.
 - **X1a's own traps:** the block's *Watch for*. Decision 7 stands: a same-session resend of a save
   is still allowed. The `known` change must leave the two-step tests green and fail the stranger
   test alone. The instructions' two pinned phrases stay; the move is a `Changed` entry.

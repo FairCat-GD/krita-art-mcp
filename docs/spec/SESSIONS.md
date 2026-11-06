@@ -1128,13 +1128,28 @@ plan.
     `INVALID_ARGUMENT` failures from before the outcome field, 0 `unknown`, 0 unfinished.
   - Codex's renderer: the stroke's input 3,154 normalised and 2,091 rendered bytes; the preview's
     output 2,362.
-  - The fill's area rule: 22 of 30,000 and 26,282 of 300,000 near-flat closed paths refused by
-    the server alone, 63 of 300,000 by the plugin alone.
+  - The fill's area rule, one seeded generator: 22 of 30,000 and 266 of 300,000 near-flat closed
+    paths refused by the server alone, none by the plugin alone.
   - Eleven simulations on the test worlds, each written under its finding.
 - **Falsified:** nothing; a review adds no check.
 - **Numbers:** 970 server tests (+0), 931 plugin tests (+0), probe 171 PASS (+0), 0 FAIL, 25
   MEASURED, 134.1 s with 0 documents open. 20 tools, 20 schema files, 30 error codes, 32 ops, 12
   capabilities, instructions 3,908 characters, `api_version` 0.4.0.
+- **Review (`/code-review high`), 5 findings: 5 fixed and 0 skipped.**
+  - **X1a's poll rule named a lease check the server cannot make.** The server's one record of
+    which process followed a call is `BridgeClient._sent`; the block now names it, says a retry
+    of the save under its `request_id` finishes it, and why the journal cannot decide.
+  - **X1a's session check named no mechanism.** The finish's `Done` or submitted `Failed` already
+    carries its bridge session; the block now says to compare it with the save's.
+  - **The handoff dropped five standing traps, or cut them short:** the measurement instrument,
+    the unlike layer, and the reasons on the selection-clear and `-k` traps. Restored verbatim.
+  - **The area rule's large counts were a reader's, from another generator.** This session
+    reran it seeded: 266 of 300,000 refused by the server alone, none by the plugin alone. The
+    review and this note cite those, and say the plugin-only direction was not reproduced.
+  - **The review cited line ranges with no file** in the invariant 5 row and six other places;
+    each names its file.
+  - **Falsified:** nothing; the fixes are to documents.
+  - **Numbers after the review:** unchanged.
 
 ---
 
@@ -1154,13 +1169,19 @@ strategy*.
 - **The save's finish tells the truth** (F1, F5, F6; decisions 5, 7).
   - `finish_save` (`src/krita_art_mcp/tools/saving.py:104-107`) keeps a stated `not_applied` only
     when the finish's `details.rollback_verified` is true (its own discard paths); any other
-    failure after a completed save is `uncertain`, not retryable, and so is a finish whose
-    session differs from the save's.
-  - A poll finishes a save only from the process that made the call: `krita_operation_get` runs
-    `Known.finish` only when this server dispatched the save (its journal holds the dispatched
-    line and the bridge's lease is this client's); another process's poll reports the save as
-    the bridge holds it, `running` or `done` with no finish, and says so. The hint stays
-    `readOnlyHint: true`; the exception is written in the hints table and the guide.
+    failure after a completed save is `uncertain`, not retryable. So is a finish whose session
+    differs from the save's: the finish's `Done` or submitted `Failed` carries the bridge session
+    it ran in (`bridge_client.py:315-325`), so compare it with `outcome.session_id` before the
+    identity is replaced (`:93-115`); a `Failed` with no session never reached a bridge.
+  - A poll finishes a save only from the process that made the call. The server's one record of
+    that is `BridgeClient._sent`, which holds every op this process followed past its wait
+    (`bridge_client.py:96,261`): `krita_operation_get` runs `Known.finish` only for an op found
+    there, and any other poll reports the save as the bridge holds it, with no finish, and says
+    that a retry of the save under its `request_id` finishes it (that retry's `journaled` path
+    resends, the bridge dedups to the finished save, and the finish runs in the retrying
+    process). The journal cannot decide this: two servers on one data folder read the same
+    lines. The hint stays `readOnlyHint: true`; the exception is written in the hints table and
+    the guide.
 - **A retryable failure under a derived id runs again** (F4). `Jobs.submit` (`jobs.py:185-188`)
   treats a known op that failed retryably, whose request was released, as a new submission under
   the same id.
