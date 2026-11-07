@@ -196,8 +196,8 @@ def test_the_root_is_no_layer_to_change(world: World, op: str) -> None:
 
 
 def _clean(world: World, handle: Handle, before: dict[str, Any]) -> None:
-    # A rollback put the tree back, and left nothing on the ledger.
-    assert world.tree()["nodes"] == before["nodes"] or _watched(world.tree()) == _watched(before)
+    # A rollback put the tree back, bounds aside, and left nothing on the ledger.
+    assert _watched(world.tree()) == _watched(before)
     assert not handle.unsafe and handle.ledger.steps == [] and handle.ledger.applied == 0
 
 
@@ -391,8 +391,8 @@ def test_a_mask_is_not_duplicated_alone(world: World) -> None:
 
 @pytest.mark.parametrize(
     "changes",
-    [{"layer_id": "not-an-id"}, {"name": ""}, {"name": 3}],
-    ids=["layer_id", "empty_name", "name_type"],
+    [{"layer_id": "not-an-id"}, {"name": ""}, {"name": 3}, {"name": "n" * 257}],
+    ids=["layer_id", "empty_name", "name_type", "long_name"],
 )
 def test_a_duplicates_arguments_are_checked(world: World, changes: dict[str, Any]) -> None:
     document_id, _ = world.document()
@@ -455,6 +455,32 @@ def test_a_group_moves_with_every_node_inside_it_added_back(world: World) -> Non
     assert world.kids() == [BASE, LEFT, GROUP, HELD] and world.kids(GROUP) == [INNER, RIGHT]
     world.history(document_id, "redo", 5)
     assert world.kids() == [BASE, GROUP, LEFT, HELD] and world.kids(INNER) == [mask]
+
+
+def test_a_move_past_what_history_takes_back_at_once_is_refused(world: World) -> None:
+    document_id, handle = world.document()
+    # The fake keeps 30 undo steps, so 30 nodes and a group take 31.
+    tree = world.port._tree(1)
+    for index in range(29):
+        tree["nodes"].append(fake_node(1, 100 + index, f"strand {index}", GROUP, index + 1))
+    body = world.refused("layer.reorder", _reorder(document_id, GROUP, ROOT, BASE))
+    assert body["code"] == "UNSUPPORTED_CAPABILITY"
+    assert body["details"] == {
+        "layer_id": GROUP,
+        "reason": "too_many_nodes",
+        "undo_steps": 32,
+        "max_steps": 30,
+    }
+    assert not handle.dirty and handle.ledger.steps == []
+
+
+def test_a_reorder_reads_only_the_trees_shape_between_its_steps(world: World) -> None:
+    document_id, _ = world.document()
+    world.mask(document_id)
+    calls = len(world.port.calls)
+    world.run("layer.reorder", _reorder(document_id, GROUP, ROOT, BASE))
+    # One read after the remove and one after each of the three adds.
+    assert world.port.calls[calls:].count("structure") == 4
 
 
 def test_a_raise_while_adding_back_a_child_is_undone_and_confirmed(world: World) -> None:
@@ -636,6 +662,15 @@ def test_a_clones_source_is_refused(world: World, op: str, source: str | None) -
     assert body["code"] == "UNSUPPORTED_CAPABILITY"
     assert body["details"] == {"layer_id": RIGHT, "reason": "clone_source", "clone_ids": [clone]}
     assert not handle.dirty
+
+
+def test_history_says_when_an_operation_runs_past_its_reach(world: World) -> None:
+    document_id, handle = world.document()
+    world.run("layer.reorder", _reorder(document_id, RIGHT, GROUP, INNER))
+    # The floor stopped between the reorder's steps, as a batch stopped by a stranger leaves it.
+    handle.ledger.floor = 1
+    body = world.refused("history.step", {"document_id": document_id, "action": "undo", "steps": 1})
+    assert body["details"]["steps_needed"] == 2 and "no longer be undone whole" in body["message"]
 
 
 def test_history_moves_a_reorders_two_steps_together(world: World) -> None:

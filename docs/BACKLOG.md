@@ -106,6 +106,8 @@ contract", "Phase N" and "review N" mean.
   - moving or removing a layer a clone layer shows: Krita turns the clone into a paint layer, and
     the judge would have to accept that, its new id included;
   - `derived_from` on a copy in `krita_document_inspect`, not only in the duplicate's receipt;
+  - moving a subtree of more nodes than one history call takes back (49), which would need history
+    to move more than 50 steps at once;
   - placing a copy elsewhere than directly above its source, in one call.
 - **An edge stroke that once painted nothing** (0.25.0). In one probe run of three, the
   region-scope stroke past the top-left corner, with no selection, completed but painted no pixel,

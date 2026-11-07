@@ -337,10 +337,10 @@ schema, where a job ends at its first raise and each check reads what the one be
 document before the layer before the pixels.
 
 **Argument rules are written twice on purpose.** Each side trusts no caller, and a refusal the server
-makes carries no `operation_id`. Each pair is held by a parity test in `tests/test_parity.py`: 18
+makes carries no `operation_id`. Each pair is held by a parity test in `tests/test_parity.py`: 19
 today, from open's format, editable lists and mode to a capture's area, a layer's coverage, a
 fill's colour and area, a stroke's or fill's colour and mask paint, a taper's rules, a layer moved
-inside or above itself, a copy's name and a removal's `verify`. `tests/support/parity.py`'s
+inside or above itself, a copy's name, a layer's name length and a removal's `verify`. `tests/support/parity.py`'s
 `refused_alike` calls the tool, turns the server's half off, and calls again, so the server's own
 translation carries the same arguments to the plugin. Both must refuse with one code and one
 `retryable`, the plugin before its marker.
@@ -759,13 +759,17 @@ step) and `attach` (`addChildNode`, "Add Layer"), which the create also uses (K5
   takes each node off its own parent (K52, measured: a group came back empty). The moved node goes
   where it was asked; each node inside it goes back on top of its own parent, which is empty until
   its children return, in child order. So a reorder is 1 + its subtree's size undo steps, each
-  pushed once Krita holds it, so a rollback never has more than one step it did not push (F7). It
-  reads the whole canvas, and refuses a move into its own subtree. A node already in place moves
+  pushed once Krita holds it, so a rollback never has more than one step it did not push (F7).
+  Between steps it reads `port.structure`, the tree's ids, parents, order, types and blends alone,
+  which is all a step's state needs. It reads the whole canvas, and refuses a move into its own
+  subtree, and one of more steps than one history call (50) or Krita's undo stack takes, as
+  `too_many_nodes`, since nothing could then take it back whole. A node already in place moves
   nothing, takes no step, and still marks and dirties, as a clear with no selection does.
 - **The remove** takes `verify` as the update does: region refuses on `reach`, full reads the
   canvas. The document keeps at least one layer.
 - **Judges compare the watched fields** and each parent's children by rank, never bounds, which move
   with a group's projection: nothing but the asked node may move, and siblings keep their order.
+  `nodes.found` is the one lookup that refuses the root and an unknown id, the update's too.
 - **Ranks, not raw order.** Krita's child index counts the global selection's mask under the root,
   so `nodes.ranks` leaves it out, for the judges, the placements and the ledger's fingerprint.
 
@@ -1025,7 +1029,9 @@ region, witness}` and `Ledger{steps, applied, floor, redo, bottom}`.
 - An op may push several steps, each its own `Step` under one `operation_id`; a rollback undoes
   them newest first. `krita_history_step` moves an op's steps together: a count that would stop
   between two of them is refused before anything moves, naming `steps_needed` (`history.whole`). A
-  reorder's steps are the one case today.
+  reorder's steps are the one case today. When the steps it would need lie past what history
+  reaches (a floor or Krita's dropped bottom), the refusal says the op can no longer be moved
+  whole.
 - `bottom` follows Krita's `undoStackLimit`, default 200 (`UNDO_LIMIT_DEFAULT`), measured to be exactly
   what Krita keeps.
 - `undo_available = applied − max(floor, bottom)`.
@@ -1494,8 +1500,8 @@ depend on it: 87 open documents cost about 50 s more.
 | Check | Expected |
 |---|---|
 | `uv run scripts/verify.py` | 6 stages, all PASS |
-| Server tests (3.12) | 1082 passed, 0 skipped |
-| Plugin-core tests (3.10) | 1035 passed, 0 skipped |
+| Server tests (3.12) | 1084 passed, 0 skipped |
+| Plugin-core tests (3.10) | 1039 passed, 0 skipped |
 | `uv run krita-art-mcp probe` | 195 PASS, 0 FAIL, 25 MEASURED; about 136 s |
 | `uv run krita-art-mcp doctor` | 6 steps, all PASS, with a root allowed |
 | Registered tools | 23 |

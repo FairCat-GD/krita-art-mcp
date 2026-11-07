@@ -12,12 +12,15 @@ Release 0.26.0.
   - Remaining, in order: B1, T1, S1, X2 and V1.
 - **L1 shipped 0.25.0.** The versions stand as the table says: B1 0.26.0, T1 0.27.0, S1 0.28.0
   and V1 0.29.0.
-- **L1 is committed locally, not pushed.** `origin/main` holds everything through E1's review
-  commit. List `origin/main..HEAD` before any push, and push only on the owner's approval.
+- **L1 and its review fixes are pushed** (8 findings, all fixed). `origin/main` holds everything
+  through "review: a large group's move could never be undone, and 7 smaller". List
+  `origin/main..HEAD` before any push, and push only on the owner's approval.
 - **What L1 left that later sessions meet:**
   - **A reorder is 1 + its subtree's size undo steps.** Krita's "Remove Layer" takes each node of
     a subtree off its own parent, so `addChildNode` brings back the top alone (measured). The
-    reorder re-adds each node, pushing each step as Krita takes it.
+    reorder re-adds each node, pushing each step as Krita takes it, reading `port.structure`
+    between steps. A move of more steps than `min(50, undoStackLimit)` is refused as
+    `too_many_nodes`.
   - **History moves an operation's steps together** (`history.whole`): a count that would split
     one is refused with `steps_needed`. T1's and S1's multi-step ops get this for free.
   - **The fingerprint is `(id, blend, parent, rank)`;** ranks leave the global selection's mask
@@ -38,13 +41,14 @@ Release 0.26.0.
     a heavily tested path, and ask which model.
   - **B1's hint is proposed additive;** confirm at plan time, as the block says.
 - **Baseline** (ARCHITECTURE's table, v0.25.0):
-  - `verify`: 6 stages, all PASS; 1082 server tests and 1035 plugin-core tests, 0 skipped;
+  - `verify`: 6 stages, all PASS; 1084 server tests and 1039 plugin-core tests, 0 skipped;
   - `probe`: 195 PASS, 0 FAIL, 25 MEASURED, 136 s with 0 documents open, the journal check reading
     753 dispatched lines;
   - 23 tools, 23 schema files, 30 error codes, 36 bridge ops, 13 capabilities, instructions 3,149
     characters.
 - **Not done:** nothing from L1's block. What is left of layers is on `BACKLOG.md`: several ids per
-  call, masks moved on their own, clone sources, `derived_from` in inspect, a copy placed elsewhere.
+  call, masks moved on their own, clone sources, `derived_from` in inspect, a copy placed elsewhere,
+  a move of more than 49 nodes.
 
 ## Watch for
 

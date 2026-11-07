@@ -262,6 +262,13 @@ class FakePort:
                 node["bounds_px"] = dict(bounds[node["parent_id"]])
         return tree
 
+    def structure(self, document: Any) -> dict[str, Any]:
+        self.calls.append("structure")
+        tree = self.tree(document)
+        keys = ("id", "parent_id", "order", "type", "blend_mode")
+        shape = [{key: node[key] for key in keys} for node in tree["nodes"]]
+        return {"root_id": tree["root_id"], "nodes": shape}
+
     def _tree(self, key: int) -> dict[str, Any]:
         info = self.live[key]
         if "tree" not in info:

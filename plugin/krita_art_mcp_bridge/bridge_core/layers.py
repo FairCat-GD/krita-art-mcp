@@ -4,7 +4,7 @@ from typing import Any
 
 from . import mutation, nodes, verification
 from .errors import BridgeError, exact
-from .history import LABELS
+from .history import LABELS, MAX_STEPS
 from .jobs import Call, Handler
 from .opening import LAYER_ID
 from .port import DocumentsPort
@@ -18,6 +18,8 @@ REMOVE_FIELDS = {"document_id", "layer_id", "verify"}
 # The node types an agent creates, as Node.type() names them.
 KINDS = {"paint": "paintlayer", "group": "grouplayer", "transparency_mask": MASK}
 COVERAGES = ("all", "none", "selection")
+# A layer's name, as the schemas bound it.
+MAX_NAME = 256
 
 
 def handlers(registry: Registry, port: DocumentsPort, data: Path) -> dict[str, Handler]:
@@ -200,8 +202,24 @@ def handlers(registry: Registry, port: DocumentsPort, data: Path) -> dict[str, H
             message = "A group cannot go inside itself."
             raise BridgeError("INVALID_ARGUMENT", message, False, details)
         effects = port.effects(document, True)
-        _refuse_clone_source(before, effects, layer_id)
-        expected = moved_order(before, layer_id, parent_id, above_id)
+        _refuse_clone_source(effects, moving)
+        # One step for the remove and one for each node added back, all within one history
+        # call and Krita's undo stack, or no history call or rollback could take them whole.
+        reach = min(MAX_STEPS, port.undo_limit())
+        if 1 + len(moving) > reach:
+            details = {
+                "layer_id": layer_id,
+                "reason": "too_many_nodes",
+                "undo_steps": 1 + len(moving),
+                "max_steps": reach,
+            }
+            message = (
+                f"Moving these {len(moving)} nodes takes {1 + len(moving)} undo steps, more than "
+                f"the {reach} history can take back at once; move fewer at a time."
+            )
+            raise BridgeError("UNSUPPORTED_CAPABILITY", message, False, details)
+        below = nodes.children(before)
+        expected = moved_order(below, layer_id, parent_id, above_id)
         result = {
             "document_id": handle.document_id,
             "layer_id": layer_id,
@@ -209,7 +227,7 @@ def handlers(registry: Registry, port: DocumentsPort, data: Path) -> dict[str, H
             "above_id": above_id,
             "effective_order": expected,
         }
-        if node["parent_id"] == parent_id and nodes.children(before).get(parent_id) == expected:
+        if node["parent_id"] == parent_id and below.get(parent_id) == expected:
             # A successful guarded call dirties the document; Krita gets nothing.
             call.mark()
             handle.before_change()
@@ -232,11 +250,12 @@ def handlers(registry: Registry, port: DocumentsPort, data: Path) -> dict[str, H
         places = _places(before, moving, parent_id, above_id)
 
         def change(steps: mutation.Steps) -> dict[str, Any]:
+            # Each step's state from the tree's shape alone, a walk far cheaper than the tree.
             detached = port.remove_node(document, layer_id)
-            steps.push(steps.of(port.tree(document)))
+            steps.push(steps.of(port.structure(document)))
             for one in moving:
                 port.attach(document, detached[one], *places[one])
-                steps.push(steps.of(port.tree(document)))
+                steps.push(steps.of(port.structure(document)))
             port.refresh(document)
             return port.tree(document)
 
@@ -257,7 +276,7 @@ def handlers(registry: Registry, port: DocumentsPort, data: Path) -> dict[str, H
     def remove(handle: Handle, args: dict[str, Any], call: Call) -> dict[str, Any]:
         document, layer_id, mode = handle.document, args["layer_id"], args["verify"]
         before = port.tree(document)
-        node = _found(before, layer_id, "remove")
+        node = nodes.found(before, layer_id, "remove")
         if node["type"] == MASK:
             refuse_held_line(before, layer_id, handle.protected, "mask")
         elif node["type"].endswith("mask"):
@@ -267,8 +286,8 @@ def handlers(registry: Registry, port: DocumentsPort, data: Path) -> dict[str, H
         else:
             refuse_held(before, layer_id, handle.protected)
         effects = port.effects(document, True)
-        _refuse_clone_source(before, effects, layer_id)
         gone = nodes.subtree(before, layer_id)
+        _refuse_clone_source(effects, gone)
         left = [
             one
             for one in nodes.children(before).get(before["root_id"], [])
@@ -330,8 +349,7 @@ def handlers(registry: Registry, port: DocumentsPort, data: Path) -> dict[str, H
     def layer_duplicate(args: dict[str, Any], call: Call) -> dict[str, Any]:
         exact(args, DUPLICATE_FIELDS)
         _check_id(args["layer_id"], "layer_id")
-        if not isinstance(args["name"], str) or not args["name"]:
-            raise BridgeError("INVALID_ARGUMENT", "name is a non-empty string.")
+        _check_name(args["name"])
         return guarded_duplicate(args, call)
 
     def layer_reorder(args: dict[str, Any], call: Call) -> dict[str, Any]:
@@ -360,9 +378,9 @@ def handlers(registry: Registry, port: DocumentsPort, data: Path) -> dict[str, H
             raise BridgeError("INVALID_ARGUMENT", message, False, {"field": "coverage"})
         if args["coverage"] is not None and args["coverage"] not in COVERAGES:
             raise BridgeError("INVALID_ARGUMENT", "coverage is all, none or selection.")
-        for field in ("parent_id", "name"):
-            if not isinstance(args[field], str) or not args[field]:
-                raise BridgeError("INVALID_ARGUMENT", f"{field} is a non-empty string.")
+        if not isinstance(args["parent_id"], str) or not args["parent_id"]:
+            raise BridgeError("INVALID_ARGUMENT", "parent_id is a non-empty string.")
+        _check_name(args["name"])
         if args["above_id"] is not None and (
             not isinstance(args["above_id"], str) or not LAYER_ID.match(args["above_id"])
         ):
@@ -387,27 +405,20 @@ def reorder_rules(layer_id: str, parent_id: str, above_id: str | None) -> None:
         raise BridgeError("INVALID_ARGUMENT", message, False, {"field": "above_id"})
 
 
+def _check_name(value: Any) -> None:
+    if not isinstance(value, str) or not 1 <= len(value) <= MAX_NAME:
+        message = f"name is a string of 1 to {MAX_NAME} characters."
+        raise BridgeError("INVALID_ARGUMENT", message, False, {"field": "name"})
+
+
 def _check_id(value: Any, field: str) -> None:
     if not isinstance(value, str) or not LAYER_ID.match(value):
         raise BridgeError("INVALID_ARGUMENT", f"{field} is a layer id.", False, {"field": field})
 
 
-def _found(tree: dict[str, Any], layer_id: str, verb: str) -> dict[str, Any]:
-    if layer_id == tree["root_id"]:
-        details: dict[str, Any] = {"layer_id": layer_id}
-        message = f"The root is not a layer to {verb}."
-        raise BridgeError("INVALID_ARGUMENT", message, False, details)
-    node = next((node for node in tree["nodes"] if node["id"] == layer_id), None)
-    if node is None:
-        details = {"layer_id": layer_id}
-        raise BridgeError("LAYER_NOT_FOUND", "No layer has that id.", False, details)
-    found: dict[str, Any] = node
-    return found
-
-
 def _layer(tree: dict[str, Any], layer_id: str, verb: str) -> dict[str, Any]:
     # A layer or a group; a mask goes with its layer.
-    node = _found(tree, layer_id, verb)
+    node = nodes.found(tree, layer_id, verb)
     if node["type"].endswith("mask"):
         details = {"layer_id": layer_id, "layer_type": node["type"]}
         message = f"krita_layer_{verb} takes layers and groups; a mask goes with its layer."
@@ -420,17 +431,16 @@ def _kind(tree: dict[str, Any], node_id: str) -> str:
     return kind
 
 
-def _refuse_clone_source(tree: dict[str, Any], effects: dict[str, Any], layer_id: str) -> None:
+def _refuse_clone_source(effects: dict[str, Any], inside: list[str]) -> None:
     # Krita turns a removed layer's clones into paint layers (K52), and a move starts with a
-    # remove. A clone whose source Krita does not name may show this one.
-    inside = set(nodes.subtree(tree, layer_id))
+    # remove. A clone whose source Krita does not name may show one of these nodes.
     clones = sorted(
         clone_id
         for clone_id, source_id in effects["clones"].items()
         if source_id is None or source_id in inside
     )
     if clones:
-        details = {"layer_id": layer_id, "reason": "clone_source", "clone_ids": clones}
+        details = {"layer_id": inside[0], "reason": "clone_source", "clone_ids": clones}
         message = (
             "A clone layer shows this layer, and Krita turns such clones into paint layers when "
             "their source is removed or moved, so this is refused."
@@ -459,11 +469,11 @@ def _places(
 
 
 def moved_order(
-    tree: dict[str, Any], layer_id: str, parent_id: str, above_id: str | None
+    below: dict[str, list[str]], layer_id: str, parent_id: str, above_id: str | None
 ) -> list[str]:
     # The parent's children by rank once the node is there, bottom first: directly above
-    # above_id, or on top, as addChildNode places it.
-    kids = [one for one in nodes.children(tree).get(parent_id, []) if one != layer_id]
+    # above_id, or on top, as addChildNode places it. below is nodes.children of the tree.
+    kids = [one for one in below.get(parent_id, []) if one != layer_id]
     at = len(kids) if above_id is None else kids.index(above_id) + 1
     return [*kids[:at], layer_id, *kids[at:]]
 
@@ -473,10 +483,11 @@ def drift(
     after: dict[str, Any],
     placed: Collection[str] = (),
     loose: dict[str, set[str]] | None = None,
+    now: dict[str, list[str]] | None = None,
 ) -> list[str]:
     # Ids whose watched fields moved, beyond the fields loose allows, and parents whose children
     # changed their order; placed nodes' places are checked by the caller, and a node gone or
-    # new by the caller too.
+    # new by the caller too. now is nodes.children of after, when the caller has it.
     loose = loose or {}
     old, new = mutation.watched(before), mutation.watched(after)
     moved = {
@@ -489,7 +500,8 @@ def drift(
             if key != "order" and key not in loose.get(node_id, set())
         )
     }
-    was, now = nodes.children(before), nodes.children(after)
+    was = nodes.children(before)
+    now = nodes.children(after) if now is None else now
     for parent in set(was) | set(now):
         kept = [one for one in was.get(parent, []) if one not in placed and one in new]
         found = [one for one in now.get(parent, []) if one not in placed and one in old]
@@ -509,14 +521,15 @@ def copied(
     copy = nodes.subtree(after, copy_id) if copy_id in new_ids else []
     id_map = dict(zip(source, copy, strict=False))
     old, new = mutation.watched(before), mutation.watched(after)
+    now = nodes.children(after)
     problem = (
         len(copy) != len(source)
         or new_ids - old_ids != set(copy)
         or old_ids - new_ids
         or new[copy_id]["parent_id"] != old[source_id]["parent_id"]
         or (new[copy_id]["name"], new[copy_id]["visible"]) != (name, False)
-        or nodes.children(after).get(old[source_id]["parent_id"], []).index(copy_id)
-        != nodes.children(after)[old[source_id]["parent_id"]].index(source_id) + 1
+        or now[old[source_id]["parent_id"]].index(copy_id)
+        != now[old[source_id]["parent_id"]].index(source_id) + 1
     )
     if not problem:
         for source_node, copy_node in id_map.items():
@@ -526,7 +539,7 @@ def copied(
                 problem = True
             if copy_node != copy_id and mine["parent_id"] != id_map.get(theirs["parent_id"]):
                 problem = True
-    moved = drift(before, after)
+    moved = drift(before, after, now=now)
     if problem or moved:
         details = {"layer_id": copy_id, "derived_from": source_id, "layer_ids": moved}
         message = "Krita's copy is not the source's, or not where it was asked for."
@@ -544,11 +557,12 @@ def relocated(
     # The node is exactly where it was asked for, and nothing else moved.
     old_ids = {node["id"] for node in before["nodes"]}
     new_ids = {node["id"] for node in after["nodes"]}
-    moved = drift(before, after, {layer_id}, {layer_id: {"parent_id"}})
+    now = nodes.children(after)
+    moved = drift(before, after, {layer_id}, {layer_id: {"parent_id"}}, now)
     if (
         old_ids != new_ids
         or mutation.watched(after)[layer_id]["parent_id"] != parent_id
-        or nodes.children(after).get(parent_id) != expected
+        or now.get(parent_id) != expected
         or moved
     ):
         details = {

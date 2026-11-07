@@ -178,13 +178,17 @@ mask's `bounds_px` and a mask stroke's `layer_bounds_px` are its layer's, as Kri
 - **`krita_layer_duplicate`** copies a layer or group, with every layer and mask inside it, as a
   hidden layer directly above it, in one undo step. The source may be protected; the copies are
   yours. Nothing shows until you show the copy with `krita_layer_update` (`visible: true`), perhaps
-  hiding the original, to compare. `id_map` gives each copied node's new id. Name the copy apart
-  from its source: an ORA reopen refuses a name two layers share.
+  hiding the original, to compare. `id_map` gives each copied node's new id. An ORA reopen
+  refuses a name two layers share, so name the copy apart from its source, and rename the layers
+  inside a copied group with `krita_layer_update` (`name`), which keep their sources' names, or
+  reopen a KRA by `editable_layer_ids`.
 - **`krita_layer_reorder`** moves a layer or group, with what it holds, under the root or into a
   group, directly above `above_id`, or on top when it is null. Grouping is a reorder: create a
   group, then move layers into it. It takes one undo step for the remove and one for each node it
   adds back (Krita takes a moved group apart and the bridge puts it back), stated in `undo_steps`,
-  and the whole canvas is checked against protection.
+  and the whole canvas is checked against protection. A move of more steps than one undo call takes
+  (50, or fewer when Krita keeps fewer undo steps) is refused as `too_many_nodes`: move fewer
+  layers at a time.
 - **`krita_layer_remove`** removes a layer or group with all it holds, or a transparency mask, in
   one undo step; undone, the same layers come back with the same ids.
 - **What they refuse:** a protected layer, or one holding a protected layer (`LOCKED_TARGET`); a

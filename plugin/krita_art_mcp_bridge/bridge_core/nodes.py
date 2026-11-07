@@ -6,6 +6,20 @@ from .errors import BridgeError
 from .port import DocumentsPort
 
 
+def found(tree: dict[str, Any], node_id: str, verb: str) -> dict[str, Any]:
+    # The node of that id, never the root.
+    if node_id == tree["root_id"]:
+        details: dict[str, Any] = {"layer_id": node_id}
+        message = f"The root is not a layer to {verb}."
+        raise BridgeError("INVALID_ARGUMENT", message, False, details)
+    node = next((node for node in tree["nodes"] if node["id"] == node_id), None)
+    if node is None:
+        details = {"layer_id": node_id}
+        raise BridgeError("LAYER_NOT_FOUND", "No layer has that id.", False, details)
+    one: dict[str, Any] = node
+    return one
+
+
 def global_selection(tree: dict[str, Any], node: dict[str, Any]) -> bool:
     # Krita keeps the global selection in a selection mask under the root.
     return bool(node["type"] == "selectionmask" and node["parent_id"] == tree["root_id"])

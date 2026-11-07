@@ -1668,6 +1668,29 @@ has none (F26). L1 ships 0.25.0.
   MEASURED, 136.3 s with 0 documents open; the journal check read 753 dispatched lines. 23 tools,
   23 schema files, 30 error codes, 36 ops (+3), 13 capabilities, instructions 3,149 characters,
   `api_version` 0.4.0.
+- **Review (`/code-review high`), 8 findings: 8 fixed.**
+  - **A large group's move could never be undone.** Its 1 + n steps passed history's 50 a call,
+    which the split rule then refused at any count, and past Krita's undo stack its rollback could
+    not reach its first step. A reorder of more steps than `min(50, undoStackLimit)` is now
+    refused as `too_many_nodes`, before anything changes.
+  - **A split whose rest lay past history's reach** named a `steps_needed` the next call refused
+    too. The refusal now says the op can no longer be moved whole.
+  - **A copied group's layers keep their names,** so the guide's advice for an ORA reopen fell
+    short. The guide and the duplicate's description now say to rename them, or reopen by KRA ids.
+  - **The name's 256-character bound was the schema's alone.** The plugin holds it for the
+    duplicate and the create, with a parity pair each.
+  - **The reorder walked the whole tree after each add.** It now reads `port.structure`, the
+    tree's shape alone, between steps.
+  - **The root and not-found refusals were written twice;** `nodes.found` serves the layer ops and
+    the update.
+  - **Child maps were rebuilt several times per op;** each tree's is computed once and passed on.
+  - **A test helper's `or` let its exact clause go unchecked;** it compares the watched fields.
+  - **Falsified:** the cap, the unreachable split, the structure reads and the name bound, each
+    failing at its own test, the tree restored byte for byte. The rest are refactors under
+    existing tests.
+  - **Checked live:** `install-plugin`, a Krita restart at 0 unsaved, `doctor` 6 of 6.
+  - **Numbers after the review:** 1084 server tests (+2), 1039 plugin tests (+4), probe 195 PASS,
+    0 FAIL, 25 MEASURED, 137.3 s with 0 documents open; the journal check read 753 lines.
 
 ---
 

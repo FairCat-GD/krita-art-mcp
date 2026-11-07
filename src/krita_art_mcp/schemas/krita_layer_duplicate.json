@@ -1,6 +1,6 @@
 {
   "name": "krita_layer_duplicate",
-  "description": "Copy a layer or group, with every layer and mask inside it, as a hidden layer directly above it; one undo step. The source may be protected, and the copies are yours, unprotected. The composite does not change: show the copy with krita_layer_update to try a change on it. id_map gives each copied node's new id. Name the copy apart from its source: an ORA reopen refuses a name two layers share.",
+  "description": "Copy a layer or group, with every layer and mask inside it, as a hidden layer directly above it; one undo step. The source may be protected, and the copies are yours, unprotected. The composite does not change: show the copy with krita_layer_update to try a change on it. id_map gives each copied node's new id. An ORA reopen refuses a name two layers share: name the copy apart, and rename a copied group's layers, which keep their names.",
   "inputSchema": {
     "type": "object",
     "properties": {

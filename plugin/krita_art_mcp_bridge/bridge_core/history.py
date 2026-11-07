@@ -182,6 +182,15 @@ def handlers(registry: Registry, port: DocumentsPort, data: Path) -> dict[str, H
                 f"{count} {action} step(s) would split an operation, such as a reorder, whose "
                 f"steps move together; ask for {needed}."
             )
+            reach = min(available, MAX_STEPS)
+            if needed > reach:
+                # Its other steps lie past what history reaches, so no count takes it whole.
+                done = "undone" if action == UNDO else "redone"
+                message = (
+                    f"{count} {action} step(s) would split an operation, such as a reorder, "
+                    f"whose steps move together, and its {needed} steps run past the {reach} "
+                    f"history can reach, so it can no longer be {done} whole."
+                )
             raise BridgeError("INVALID_ARGUMENT", message, False, details)
         applied: list[Step] = []
         stopped = None

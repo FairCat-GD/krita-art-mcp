@@ -22,7 +22,8 @@ release needs `install-plugin`, a Krita restart and a restart of the MCP client.
 - **`krita_layer_reorder`** moves a layer or group, with what it holds, under the root or into a
   group, directly above a sibling or on top. Krita takes a moved group apart, so the bridge removes
   it and adds back each node in turn: one undo step for the remove and one per node, stated in
-  `undo_steps`. The whole canvas is checked against protection, and a leak is undone.
+  `undo_steps`. The whole canvas is checked against protection, and a leak is undone. A move of
+  more steps than one history call or Krita's undo stack takes is refused as `too_many_nodes`.
 - **`krita_layer_remove`** removes a layer or group with everything in it, or a transparency mask,
   in one undo step, checked against protection over its bounds or the whole canvas.
 - **What the three refuse:** a protected layer or one holding one (`LOCKED_TARGET`), a mask on its
@@ -33,7 +34,10 @@ release needs `install-plugin`, a Krita restart and a restart of the MCP client.
 ### Changed
 
 - **`krita_history_step` moves an operation's steps together.** A count that would undo or redo
-  part of a reorder is refused before anything moves, with `details.steps_needed`.
+  part of a reorder is refused before anything moves, with `details.steps_needed`, and says so
+  when the rest of it lies past what history can reach.
+- **A layer's name is bounded at 256 characters by the plugin too,** for `krita_layer_create` as
+  for `krita_layer_duplicate`; a refusal names `field: name`.
 - **The server instructions** say how to try a change on a copy and how to group layers; the rule
   on `krita_layer_update`'s check lives in its description. 3,149 characters.
 - **`undo.grouping`'s note** says a reorder's steps and how history treats them.

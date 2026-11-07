@@ -7,6 +7,7 @@ from . import log, mutation, verification
 from .errors import BridgeError, exact
 from .history import LABELS, in_front
 from .jobs import Call, Handler
+from .nodes import found
 from .opening import LAYER_ID
 from .port import DocumentsPort
 from .protection import MASK, refuse_held, refuse_held_line
@@ -165,14 +166,7 @@ def _in_krita_terms(properties: dict[str, Any]) -> dict[str, Any]:
 def _target(
     tree: dict[str, Any], layer_id: str, protected: set[str], properties: dict[str, Any]
 ) -> dict[str, Any]:
-    if layer_id == tree["root_id"]:
-        details: dict[str, Any] = {"layer_id": layer_id}
-        raise BridgeError("INVALID_ARGUMENT", "The root is not a layer to change.", False, details)
-    nodes: dict[str, dict[str, Any]] = {node["id"]: node for node in tree["nodes"]}
-    node = nodes.get(layer_id)
-    if node is None:
-        details = {"layer_id": layer_id}
-        raise BridgeError("LAYER_NOT_FOUND", "No layer has that id.", False, details)
+    node = found(tree, layer_id, "change")
     if node["type"] == MASK:
         refused = sorted(set(properties) - MASK_PROPERTIES)
         if refused:

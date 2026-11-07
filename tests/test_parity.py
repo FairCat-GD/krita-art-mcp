@@ -392,3 +392,24 @@ def test_both_sides_take_region_or_full_for_a_removal(
     }
     path = ("inputSchema", "properties", "verify", "enum")
     refused_alike(world, monkeypatch, "krita_layer_remove", arguments, schema=path)
+
+
+@pytest.mark.parametrize("tool", ["krita_layer_duplicate", "krita_layer_create"])
+def test_both_sides_bound_a_layers_name(
+    world: World, monkeypatch: pytest.MonkeyPatch, tool: str
+) -> None:
+    guard = {"document_id": _document(world), "request_id": "req-name"}
+    arguments: dict[str, Any] = (
+        {"guard": guard, "layer_id": A_LAYER, "name": "n" * 257}
+        if tool == "krita_layer_duplicate"
+        else {
+            "guard": guard,
+            "parent_id": "root-1",
+            "above_id": None,
+            "type": "paint",
+            "name": "n" * 257,
+        }
+    )
+    path = ("inputSchema", "properties", "name", "maxLength")
+    refused = refused_alike(world, monkeypatch, tool, arguments, schema=path)
+    assert refused["details"]["field"] == "name"

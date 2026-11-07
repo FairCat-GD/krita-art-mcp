@@ -30,6 +30,10 @@ class DocumentsPort(Protocol):
     # reports it (type as Node.type(), opacity 0-255, offset_px, bounds_px).
     def tree(self, document: Any) -> dict[str, Any]: ...
 
+    # The tree's shape alone, {root_id, nodes: [{id, parent_id, order, type, blend_mode}]}, as
+    # tree() reports those fields: what a node step's state reads, without the rest's cost.
+    def structure(self, document: Any) -> dict[str, Any]: ...
+
     # The projection over the whole canvas, B, G, R, A for integer RGBA (K12), as a bytes-like
     # buffer.
     def composite(self, document: Any) -> Any: ...

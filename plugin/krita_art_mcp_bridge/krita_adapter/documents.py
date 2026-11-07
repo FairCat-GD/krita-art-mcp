@@ -123,6 +123,26 @@ class KritaDocuments:
             "nodes": nodes,
         }
 
+    def structure(self, document: Any) -> dict[str, Any]:
+        root = document.rootNode()
+        nodes: list[dict[str, Any]] = []
+        pending = [(root, _layer_id(root))]
+        while pending:
+            parent, parent_id = pending.pop()
+            for order, node in enumerate(parent.childNodes()):
+                node_id = _layer_id(node)
+                nodes.append(
+                    {
+                        "id": node_id,
+                        "parent_id": parent_id,
+                        "order": order,
+                        "type": str(node.type()),
+                        "blend_mode": str(node.blendingMode()),
+                    }
+                )
+                pending.append((node, node_id))
+        return {"root_id": _layer_id(root), "nodes": nodes}
+
     def composite(self, document: Any) -> Any:
         document.waitForDone()
         return _buffer(document.pixelData(0, 0, int(document.width()), int(document.height())))
