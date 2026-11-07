@@ -209,13 +209,40 @@ class KritaDocuments:
     def create_layer(
         self, document: Any, parent_id: str, above_id: str | None, kind: str, name: str
     ) -> str:
-        root = document.rootNode()
-        parent = root if _layer_id(root) == parent_id else _node(document, parent_id)
-        above = None if above_id is None else _node(document, above_id)
         node = document.createNode(name, kind)
         if node is None:
             raise BridgeError("INTERNAL_ERROR", "Krita did not make the layer.")
-        # addChildNode is one undo step (K22).
+        return self.attach(document, node, parent_id, above_id)
+
+    def remove_node(self, document: Any, layer_id: str) -> dict[str, Any]:
+        # One "Remove Layer" step, which takes every node of the subtree off its parent (K52);
+        # each wrapper, taken first, keeps its detached node for attach.
+        node = _node(document, layer_id)
+        held, pending = {}, [node]
+        while pending:
+            current = pending.pop()
+            held[_layer_id(current)] = current
+            pending.extend(current.childNodes())
+        if not node.remove():
+            raise BridgeError("INTERNAL_ERROR", "Krita did not remove the layer.")
+        document.waitForDone()
+        return held
+
+    def duplicate_node(self, document: Any, layer_id: str, name: str) -> Any:
+        # A detached copy with new ids, named and hidden before any attach, so neither is an
+        # undo step or a change (K22, K52).
+        copy = _node(document, layer_id).duplicate()
+        if copy is None:
+            raise BridgeError("INTERNAL_ERROR", "Krita did not copy the layer.")
+        copy.setName(name)
+        copy.setVisible(False)
+        return copy
+
+    def attach(self, document: Any, node: Any, parent_id: str, above_id: str | None) -> str:
+        root = document.rootNode()
+        parent = root if _layer_id(root) == parent_id else _node(document, parent_id)
+        above = None if above_id is None else _node(document, above_id)
+        # addChildNode is one "Add Layer" step (K22).
         if not parent.addChildNode(node, above):
             raise BridgeError("INTERNAL_ERROR", "Krita did not add the layer.")
         document.waitForDone()

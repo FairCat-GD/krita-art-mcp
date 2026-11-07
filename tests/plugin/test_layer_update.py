@@ -195,7 +195,7 @@ def test_a_blend_change_is_one_undo_step_history_can_take_back(world: World) -> 
     done = world.update(document_id, blend_mode="multiply", opacity=0.5)
     assert (done["undoable"], done["undo_steps"]) == (["blend_mode"], 1)
     [step] = handle.ledger.steps
-    assert (step.op, step.label) == ("layer.update", history.LABELS["layer.update"])
+    assert (step.op, step.label) == ("layer.update", history.LABELS["layer.update"][0])
     assert step.region == _box(0, 0, 4, 4)
     assert step.before != step.after
     undone = world.run("history.step", {"document_id": document_id, "action": "undo", "steps": 1})
@@ -427,7 +427,7 @@ def test_a_leaking_blend_change_is_undone_natively_and_never_redone(world: World
     assert body["details"]["rollback_verified"] is True
     assert world.paint()["blend_mode"] == "normal" and handle.ledger.steps == []
     # Krita keeps the undone step as a redo (K43); history never offers it.
-    assert world.port.undo_labels(handle.document)[1] == history.LABELS["layer.update"]
+    assert world.port.undo_labels(handle.document)[1] == history.LABELS["layer.update"][0]
     redo = world.refused("history.step", {"document_id": document_id, "action": "redo", "steps": 1})
     assert redo["code"] == "INVALID_ARGUMENT"
 

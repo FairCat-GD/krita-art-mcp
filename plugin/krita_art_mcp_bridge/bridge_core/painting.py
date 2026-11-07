@@ -145,7 +145,7 @@ def handlers(
             message = f"The {noun}'s reach lies wholly outside the allowed mask."
             raise BridgeError("OUTSIDE_ALLOWED_MASK", message, False, details)
         frame = mutation.Mutation(
-            port, handle, call, op, (LABELS[op],), reads, data, {"layer_id": layer_id}, noun
+            port, handle, call, op, LABELS[op], reads, data, {"layer_id": layer_id}, noun
         )
         frame.read()
         held = {key: value for key, value in effective.items() if key != "preset_xml"}

@@ -9,7 +9,7 @@ from .history import LABELS, in_front
 from .jobs import Call, Handler
 from .opening import LAYER_ID
 from .port import DocumentsPort
-from .protection import MASK, line, refuse_held_line
+from .protection import MASK, refuse_held, refuse_held_line
 from .registry import Handle, Registry
 from .resources import BLEND_MODES
 
@@ -49,7 +49,7 @@ def handlers(registry: Registry, port: DocumentsPort, data: Path) -> dict[str, H
                     )
                 rect = verification.scope(mode, tree, layer_id, info["size_px"])
                 reads = mutation.verifiable(handle, info, effects, mode, rect)
-            labels = (LABELS["layer.update"],) if "blend_mode" in changes else ()
+            labels = LABELS["layer.update"] if "blend_mode" in changes else ()
             frame = mutation.Mutation(
                 port, handle, call, "layer.update", labels, reads, data, {"layer_id": layer_id}
             )
@@ -185,13 +185,7 @@ def _target(
         details = {"layer_id": layer_id, "layer_type": node["type"]}
         message = "krita_layer_update changes layers and transparency masks, not other masks."
         raise BridgeError("INVALID_ARGUMENT", message, False, details)
-    held = sorted(
-        node_id for node_id in protected if node_id in nodes and layer_id in line(nodes, node_id)
-    )
-    if held:
-        details = {"layer_id": layer_id, "protected_layer_ids": held}
-        message = "The layer is protected, or holds a protected layer."
-        raise BridgeError("LOCKED_TARGET", message, False, details)
+    refuse_held(tree, layer_id, protected)
     if "alpha_locked" in properties and node["type"] != "paintlayer":
         details = {"layer_id": layer_id, "layer_type": node["type"]}
         message = "alpha_locked applies to paint layers only."

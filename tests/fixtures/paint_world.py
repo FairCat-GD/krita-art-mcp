@@ -30,7 +30,7 @@ BASE, PAINT, FAR, GROUP = (layer_id(1, index) for index in range(4))
 BASE_PIXEL = bytes([9, 8, 7, 255])
 # Orange at full opacity, as the fake paints it: B, G, R, A.
 ORANGE = bytes([0, 128, 255, 255])
-LABEL = history.LABELS["paint.stroke"]
+LABEL = history.LABELS["paint.stroke"][0]
 # The fill tests' shape: a rect on the paint layer.
 RECT: dict[str, Any] = {"kind": "rect", "rect": {"x": 40, "y": 50, "width": 20, "height": 10}}
 

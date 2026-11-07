@@ -1606,6 +1606,69 @@ has none (F26). L1 ships 0.25.0.
 - **A copied group's masks** are protected at open in their source, and are the agent's own as
   copies.
 
+**Done (2026-11-07, 0.25.0).**
+- **Decided with the owner in plan mode:**
+  - **The copy is always hidden,** so `krita_layer_duplicate` is additive; no `visible` field.
+  - **`derived_from` is in the receipt only,** with the `id_map`; inspect's is on the backlog.
+  - **Krita restarts and live runs** were allowed at 0 unsaved, with the Codex agent paused.
+  - **A clone's source is refused** by the reorder and the remove, as `clone_source` (Krita's
+    source says its clones become paint layers; X1's §5 had assumed full scope would do).
+  - **History moves an operation's steps together;** a split is refused with `steps_needed`.
+  - **An adversarial review by Opus** found 9 problems, all folded in. The main one: the
+    fingerprint takes ranks that leave the global selection's mask out. Others: a hidden copy that
+    changed any pixel is refused; the no-op reorder marks and dirties; the clone scan always reads
+    clones; the fake's every add is a command acting by id; the reorder's argument twin runs before
+    `guarded`; judges compare watched fields, never bounds.
+- **Decided with the owner mid-session:** the reorder re-adds each node (below).
+- **The go/no-go,** through a temporary `harness.layer_measure` that never shipped, on a harness
+  ORA: go. `remove()` read "Remove Layer" and left a wrapper `addChildNode` took back, same id, as
+  "Add Layer"; two undos and two redos were exact. `duplicate()` gave new ids throughout, kept
+  names, collapsed and pass-through, pushed no step, and its hidden attach left the composite
+  unchanged. A clone's source removed turned the clone into a paint layer, undone together. Undoing
+  a clear put the selection's mask back at its old index, not on top, as the review had guessed.
+- **Shipped:**
+  - `krita_layer_duplicate`, `krita_layer_reorder`, `krita_layer_remove`; ops `layer.duplicate`,
+    `layer.reorder`, `layer.remove`, `BOUNDED`.
+  - Port `remove_node` (each detached node by id), `duplicate_node`, `attach` (the create uses it).
+  - `history.LABELS` per step (F12); `node_states` with parent and rank (F8); `nodes.ranks`,
+    `children`, `subtree`; `protection.refuse_held`; `history.whole`.
+  - `undo.grouping`'s note (F25); a scan holding `setChildNodes` to the create.
+  - The fake: command undo for every add and remove, Krita's dismantling remove, ids never reused,
+    `copy_visible`, masks shown only through shown layers (F22).
+  - `probe/layers.py`, 13 checks, run inside the paint stage under its brush write-back.
+- **Amendments:**
+  - **A reorder is 1 + its subtree's size steps, not two.** The first live probe found Krita's
+    remove takes each node off its own parent: a moved group came back empty, rolled back and
+    confirmed by the judge. The owner chose re-adding each node, all native, ids kept. The fake had
+    hidden it until it learned the same dismantling.
+  - **The duplicate places its copy directly above its source,** with a required `name`; the
+    block named no place.
+  - **The remove takes `verify`,** as the update does, and keeps the document's last layer.
+  - **The probe's checks run in the paint stage,** not a stage of their own, so the MEASURED count
+    stays 25.
+  - **`api_version` stays 0.4.0;** only tools, fields and a refusal were added.
+  - **CHANGELOG's `[0.23.0]` header,** dropped by E1's commit, is restored.
+- **Checked live:** Krita restarted at 0 unsaved five times (the instrument, 0.25.0, the dismantling
+  fix, the final build twice), `doctor` 6 of 6 each time.
+- **Probe runs:** 194 and 1 FAIL (the reorder, before the fix); then one run with an existing edge
+  check's top-left stroke painting nothing, 194 and 1 FAIL, untouched by L1 and passing on rerun
+  (on the backlog); then 195 PASS twice.
+- **Falsified,** each once, the tree restored byte for byte:
+  - **48 unit mutations,** 37 in product code (the fingerprint's rank, the global mask in ranks,
+    the split rule both ways, the copy's hide, change and leak checks, its placement and id map, the
+    held, self and clone refusals, the no-op's marker, the push between steps, the re-adds, the
+    judges and leaks of move and removal, the mask, last-layer and reach rules, the root, argument
+    and label rules, the fake's undo, a second `setChildNodes`, the server's twins, `STEP_TOOLS`,
+    `RECEIPTS`, update's moved phrase) and 11 by breaking the assertion of a test no product
+    mutation reached. Every new test failed at its own check at least once.
+  - **Two first passed:** the move's judge (no test placed a move elsewhere, so one now does) and
+    the reach refusal (its mutation did not parse); both then failed at their own tests.
+  - **The probe:** one run with the 13 new assertions broken failed those 13 and no others.
+- **Numbers:** 1082 server tests (+46), 1035 plugin tests (+61), probe 195 PASS (+13), 0 FAIL, 25
+  MEASURED, 136.3 s with 0 documents open; the journal check read 753 dispatched lines. 23 tools,
+  23 schema files, 30 error codes, 36 ops (+3), 13 capabilities, instructions 3,149 characters,
+  `api_version` 0.4.0.
+
 ---
 
 ## B1: Document duplicate

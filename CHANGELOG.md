@@ -6,6 +6,38 @@ All notable changes to krita-art-mcp are documented here. The format follows
 
 ## [Unreleased]
 
+## [0.25.0] — 2026-11-07
+
+Layers can be copied, moved and removed. A copy is hidden, so you can try a change on it and
+compare; moving layers into a group is how you group them. Every step is Krita's own and undoes.
+`api_version` stays 0.4.0: tools and fields were added, and nothing was renamed or removed. This
+release needs `install-plugin`, a Krita restart and a restart of the MCP client.
+
+### Added
+
+- **`krita_layer_duplicate`** copies a layer or group, every layer and mask inside it included, as
+  a hidden layer directly above it, in one undo step. A protected layer may be copied; the copies
+  are yours. The receipt gives `derived_from` and an `id_map` from each source node to its copy. It
+  is not destructive: the composite cannot change.
+- **`krita_layer_reorder`** moves a layer or group, with what it holds, under the root or into a
+  group, directly above a sibling or on top. Krita takes a moved group apart, so the bridge removes
+  it and adds back each node in turn: one undo step for the remove and one per node, stated in
+  `undo_steps`. The whole canvas is checked against protection, and a leak is undone.
+- **`krita_layer_remove`** removes a layer or group with everything in it, or a transparency mask,
+  in one undo step, checked against protection over its bounds or the whole canvas.
+- **What the three refuse:** a protected layer or one holding one (`LOCKED_TARGET`), a mask on its
+  own except a transparency mask's removal, a layer a clone layer shows (`UNSUPPORTED_CAPABILITY`,
+  `reason: clone_source`, since Krita would turn the clone into a paint layer), a group moved into
+  itself, and a document's last layer.
+
+### Changed
+
+- **`krita_history_step` moves an operation's steps together.** A count that would undo or redo
+  part of a reorder is refused before anything moves, with `details.steps_needed`.
+- **The server instructions** say how to try a change on a copy and how to group layers; the rule
+  on `krita_layer_update`'s check lives in its description. 3,149 characters.
+- **`undo.grouping`'s note** says a reorder's steps and how history treats them.
+
 ## [0.24.0] — 2026-11-06
 
 A stroke can taper. `dynamics` sets size and opacity along the stroke's length, through Krita's
@@ -42,6 +74,7 @@ a restart of the MCP client.
 
 - **The server instructions** name the taper, at 3,104 characters.
 
+## [0.23.0] — 2026-11-06
 
 A save's answer now says what happened to its file, and a second server can no longer break a save
 it polls. The frame's rollback reads the state before its first undo. The server's instructions

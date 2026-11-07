@@ -22,6 +22,9 @@ log = logging.getLogger(__name__)
 # Each op that pushes ledger steps, by the tool that sends it.
 STEP_TOOLS = {
     "layer.create": "krita_layer_create",
+    "layer.duplicate": "krita_layer_duplicate",
+    "layer.remove": "krita_layer_remove",
+    "layer.reorder": "krita_layer_reorder",
     "layer.update": "krita_layer_update",
     "paint.fill": "krita_paint_fill",
     "paint.stroke": "krita_paint_stroke",
@@ -51,12 +54,125 @@ def layer_create(call: ToolCall, arguments: dict[str, Any]) -> CallToolResult:
 def layer_receipt(outcome: Outcome) -> CallToolResult:
     def text(result: dict[str, Any]) -> str:
         line = f"Added {result['type']} layer {result['layer_id']} to {result['document_id']}"
-        checked = result.get("verification")
-        if checked is not None:
-            line += f"; {checked['changed_px']} px changed, verified over {checked['mode']}"
-        return line + "."
+        return line + _checked(result) + "."
 
-    receipt = from_outcome(outcome, without_document, text, document_of)
+    return _with_diff(from_outcome(outcome, without_document, text, document_of), outcome)
+
+
+def layer_duplicate(call: ToolCall, arguments: dict[str, Any]) -> CallToolResult:
+    guard = arguments["guard"]
+    op_args = {
+        "document_id": guard["document_id"],
+        "layer_id": arguments["layer_id"],
+        "name": arguments["name"],
+    }
+
+    def send(before_send: BeforeSend) -> Outcome:
+        outcome = call.bridge.call(
+            "layer.duplicate", op_args, request_id=guard["request_id"], before_send=before_send
+        )
+        return resolve_update(call.places, outcome)
+
+    return journaled(
+        call, "krita_layer_duplicate", arguments, guard["request_id"], send, duplicate_receipt
+    )
+
+
+def duplicate_receipt(outcome: Outcome) -> CallToolResult:
+    def text(result: dict[str, Any]) -> str:
+        line = (
+            f"Copied layer {result['derived_from']} as hidden layer {result['layer_id']} "
+            f"({len(result['id_map'])} node(s)) in {result['document_id']}"
+        )
+        return line + _checked(result) + "."
+
+    return _with_diff(from_outcome(outcome, without_document, text, document_of), outcome)
+
+
+def layer_reorder(call: ToolCall, arguments: dict[str, Any]) -> CallToolResult:
+    refused = reorder_rules(arguments)
+    if refused is not None:
+        return refused
+    guard = arguments["guard"]
+    op_args = {
+        "document_id": guard["document_id"],
+        **{field: arguments[field] for field in ("layer_id", "parent_id", "above_id")},
+    }
+
+    def send(before_send: BeforeSend) -> Outcome:
+        outcome = call.bridge.call(
+            "layer.reorder", op_args, request_id=guard["request_id"], before_send=before_send
+        )
+        return resolve_update(call.places, outcome)
+
+    return journaled(
+        call, "krita_layer_reorder", arguments, guard["request_id"], send, reorder_receipt
+    )
+
+
+def reorder_rules(arguments: dict[str, Any]) -> CallToolResult | None:
+    # The plugin checks these too.
+    layer_id = arguments["layer_id"]
+    if layer_id == arguments["parent_id"]:
+        message = "A layer cannot go inside itself."
+        return envelope.failure("INVALID_ARGUMENT", message, details={"field": "parent_id"})
+    if layer_id == arguments["above_id"]:
+        message = "A layer cannot go above itself."
+        return envelope.failure("INVALID_ARGUMENT", message, details={"field": "above_id"})
+    return None
+
+
+def reorder_receipt(outcome: Outcome) -> CallToolResult:
+    def text(result: dict[str, Any]) -> str:
+        if not result["undo_steps"]:
+            return f"Layer {result['layer_id']} was already there; nothing moved."
+        line = (
+            f"Moved layer {result['layer_id']} into {result['parent_id']} of "
+            f"{result['document_id']}, in {result['undo_steps']} undo steps taken together"
+        )
+        return line + _checked(result) + "."
+
+    return _with_diff(from_outcome(outcome, without_document, text, document_of), outcome)
+
+
+def layer_remove(call: ToolCall, arguments: dict[str, Any]) -> CallToolResult:
+    guard = arguments["guard"]
+    op_args = {
+        "document_id": guard["document_id"],
+        "layer_id": arguments["layer_id"],
+        "verify": arguments.get("verify", "region"),
+    }
+
+    def send(before_send: BeforeSend) -> Outcome:
+        outcome = call.bridge.call(
+            "layer.remove", op_args, request_id=guard["request_id"], before_send=before_send
+        )
+        return resolve_update(call.places, outcome)
+
+    return journaled(
+        call, "krita_layer_remove", arguments, guard["request_id"], send, remove_receipt
+    )
+
+
+def remove_receipt(outcome: Outcome) -> CallToolResult:
+    def text(result: dict[str, Any]) -> str:
+        line = (
+            f"Removed layer {result['layer_id']} ({len(result['removed'])} node(s)) from "
+            f"{result['document_id']}"
+        )
+        return line + _checked(result) + "."
+
+    return _with_diff(from_outcome(outcome, without_document, text, document_of), outcome)
+
+
+def _checked(result: dict[str, Any]) -> str:
+    checked = result.get("verification")
+    if checked is None:
+        return ""
+    return f"; {checked['changed_px']} px changed, verified over {checked['mode']}"
+
+
+def _with_diff(receipt: CallToolResult, outcome: Outcome) -> CallToolResult:
     if isinstance(outcome, Failed):
         image = diff_image(outcome.error["details"])
         if image is not None:
@@ -119,17 +235,9 @@ def update_receipt(outcome: Outcome) -> CallToolResult:
     def text(result: dict[str, Any]) -> str:
         names = ", ".join(sorted(result["effective_properties"]))
         line = f"Set {names} on layer {result['layer_id']} of {result['document_id']}"
-        checked = result["verification"]
-        if checked is not None:
-            line += f"; {checked['changed_px']} px changed, verified over {checked['mode']}"
-        return line + "."
+        return line + _checked(result) + "."
 
-    receipt = from_outcome(outcome, without_document, text, document_of)
-    if isinstance(outcome, Failed):
-        image = diff_image(outcome.error["details"])
-        if image is not None:
-            receipt.content.append(image)
-    return receipt
+    return _with_diff(from_outcome(outcome, without_document, text, document_of), outcome)
 
 
 def diff_image(details: dict[str, Any]) -> ImageContent | None:

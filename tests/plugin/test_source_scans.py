@@ -409,6 +409,28 @@ def test_any_other_selection_write_is_banned(module: str, source: str) -> None:
     assert _banned_uses(tree, _allowed_selection_writes(tree, module))
 
 
+def _uses(tree: ast.Module, name: str) -> list[str]:
+    # The innermost function around each use of the attribute name, or "" at module level.
+    found: list[str] = []
+
+    def visit(node: ast.AST, function: str) -> None:
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+            function = node.name
+        if isinstance(node, ast.Attribute) and node.attr == name:
+            found.append(function)
+        for child in ast.iter_child_nodes(node):
+            visit(child, function)
+
+    visit(tree, "")
+    return found
+
+
+def test_set_child_nodes_only_swaps_a_new_documents_first_layer() -> None:
+    # It pushes no undo step, so a move or a remove can never use it.
+    found = [(m, f) for m, _, tree in _sources() for f in _uses(tree, "setChildNodes")]
+    assert found == [(f"{ADAPTER}.documents", "create")]
+
+
 def test_set_selection_is_called_at_its_four_sites_only() -> None:
     allowed = [(m, len(_allowed_set_selections(tree, m))) for m, _, tree in _sources()]
     assert sorted((m, n) for m, n in allowed if n) == [

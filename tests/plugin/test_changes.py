@@ -158,7 +158,7 @@ def _ids(world: World, handle: Handle) -> list[str]:
 
 
 def _step(name: str) -> Step:
-    return Step(name, f"op-{name}", "Add Layer", ((), None), (((name, "normal"),), None))
+    return Step(name, f"op-{name}", "Add Layer", ((), None), (((name, "normal", "root", 0),), None))
 
 
 def test_a_push_deletes_the_redo_tail_and_the_redos_it_allowed() -> None:
@@ -285,7 +285,7 @@ def test_a_layer_is_created_where_asked_editable_and_dirty(world: World) -> None
     assert orders[layer_id(1, 0)] == 0 and orders[layer_id(1, 1)] == 2
     assert handle.dirty and top["layer_id"] not in handle.protected
     assert [step.op for step in handle.ledger.steps] == ["layer.create", "layer.create"]
-    assert handle.ledger.steps[0].label == history.LABELS["layer.create"]
+    assert handle.ledger.steps[0].label == history.LABELS["layer.create"][0]
 
 
 def test_a_layer_may_go_inside_a_protected_group(world: World) -> None:
@@ -325,14 +325,13 @@ def test_a_layer_is_refused_where_it_cannot_go(
     assert not handle.dirty and handle.ledger.steps == []
 
 
-def test_a_layer_whose_creation_moved_a_protected_layer_is_rolled_back(world: World) -> None:
+def test_a_create_that_faded_a_protected_layer_cannot_confirm_its_rollback(world: World) -> None:
     document_id, handle = world.created()
 
     def fade(tree: dict[str, Any], node: dict[str, Any]) -> None:
         next(n for n in tree["nodes"] if n["id"] == layer_id(1, 2))["opacity"] = 10
 
     world.port.on_layer.append(fade)
-    before = _ids(world, handle)
     body = world.refused(
         "layer.create",
         {
@@ -344,19 +343,26 @@ def test_a_layer_whose_creation_moved_a_protected_layer_is_rolled_back(world: Wo
             "name": "repair",
         },
     )
-    assert body["code"] == "LOCKED_TARGET" and body["details"]["rolled_back"] is True
+    # Undoing "Add Layer" takes the layer away but leaves the opacity (K22), so nothing confirms
+    # the document as it was.
+    assert body["code"] == "ROLLBACK_FAILED" and body["details"]["cause"] == "LOCKED_TARGET"
     assert body["details"]["layer_ids"] == [layer_id(1, 2)]
-    assert _ids(world, handle) == before
-    # The rollback is confirmed, so the document is as it was, and its redo is never offered.
-    assert not handle.dirty and not handle.unsafe
-    assert (handle.ledger.applied, handle.ledger.redo, handle.ledger.steps) == (0, 0, [])
-    assert world.port.front_key == 1
+    assert handle.unsafe and handle.ledger.undo_available() == 0
+    assert [node["id"] for node in world.port.tree(handle.document)["nodes"]] == [
+        layer_id(1, 0),
+        layer_id(1, 1),
+        layer_id(1, 2),
+    ]
 
 
 def test_a_layer_krita_misplaced_is_rolled_back(world: World) -> None:
     document_id, _ = world.created()
 
     def misplace(tree: dict[str, Any], node: dict[str, Any]) -> None:
+        # Krita put it at the bottom, under its siblings.
+        for other in tree["nodes"]:
+            if other["parent_id"] == node["parent_id"] and other is not node:
+                other["order"] += 1
         node["order"] = 0
 
     world.port.on_layer.append(misplace)
@@ -511,7 +517,7 @@ def test_a_rect_selection_lands_and_crosses_as_a_transfer_file(world: World) -> 
     assert selected["undo_steps"] == 1
     assert selected["selection"]["bounds_px"] == {"x": 2, "y": 1, "width": 3, "height": 2}
     assert Path(selected["selection"]["pixels"]["path"]).read_bytes() == b"\xff" * 6
-    assert handle.dirty and handle.ledger.steps[-1].label == history.LABELS["selection.set"]
+    assert handle.dirty and handle.ledger.steps[-1].label == history.LABELS["selection.set"][0]
     # The mask was taken; only the readback waits for the server.
     assert world.transfers() == [Path(selected["selection"]["pixels"]["path"]).name]
 
@@ -565,7 +571,7 @@ def test_none_clears_the_selection_in_one_undo_step(world: World) -> None:
     cleared = world.select(document_id, {"kind": "none"})
     assert cleared == {"document_id": document_id, "selection": None, "undo_steps": 1}
     assert world.port.selection_bounds(handle.document) is None
-    assert handle.ledger.steps[-1].label == history.LABELS["selection.clear"]
+    assert handle.ledger.steps[-1].label == history.LABELS["selection.clear"][0]
 
 
 def test_none_with_no_selection_pushes_nothing_but_counts_as_a_change(world: World) -> None:

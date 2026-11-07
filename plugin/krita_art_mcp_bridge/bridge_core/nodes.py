@@ -6,6 +6,46 @@ from .errors import BridgeError
 from .port import DocumentsPort
 
 
+def global_selection(tree: dict[str, Any], node: dict[str, Any]) -> bool:
+    # Krita keeps the global selection in a selection mask under the root.
+    return bool(node["type"] == "selectionmask" and node["parent_id"] == tree["root_id"])
+
+
+def ranks(tree: dict[str, Any]) -> dict[str, int]:
+    # Each node's place among its siblings, bottom first, leaving out the global selection's
+    # mask, which comes and goes with the selection.
+    ranked: dict[str, int] = {}
+    counted: dict[str, int] = {}
+    for node in sorted(tree["nodes"], key=lambda node: node["order"]):
+        if global_selection(tree, node):
+            continue
+        parent = node["parent_id"]
+        ranked[node["id"]] = counted.get(parent, 0)
+        counted[parent] = ranked[node["id"]] + 1
+    return ranked
+
+
+def children(tree: dict[str, Any]) -> dict[str, list[str]]:
+    # Each parent's children by rank, bottom first, the global selection's mask left out.
+    ranked = ranks(tree)
+    parents = {node["id"]: node["parent_id"] for node in tree["nodes"]}
+    found: dict[str, list[str]] = {}
+    for node_id in sorted(ranked, key=lambda one: ranked[one]):
+        found.setdefault(parents[node_id], []).append(node_id)
+    return found
+
+
+def subtree(tree: dict[str, Any], node_id: str) -> list[str]:
+    # The node and every descendant, depth first in child order.
+    below = children(tree)
+    found, pending = [], [node_id]
+    while pending:
+        current = pending.pop()
+        found.append(current)
+        pending.extend(reversed(below.get(current, [])))
+    return found
+
+
 def unmasked(tree: dict[str, Any]) -> str | None:
     # K46: the node to make active so no selection mask's overlay enters a read or a save; None
     # when no selection mask is active. A local mask gives way to its layer; the global

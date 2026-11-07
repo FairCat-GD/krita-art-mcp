@@ -99,6 +99,18 @@ contract", "Phase N" and "review N" mean.
   paint layers only. Masks on groups, and filter, transform or colorize masks, are refused or
   absent, and a mask takes only `name` and `visible` from `krita_layer_update`. Left out by the
   round 2 intake's scope for M1.
+- **Layer ops, beyond what 0.25.0 ships.** Each of these is refused or absent today:
+  - several layers per call, as the contract's drafts take them (`layer_ids` arrays, a duplicate's
+    destination parent);
+  - moving or copying a mask on its own, to another layer or among its layer's masks;
+  - moving or removing a layer a clone layer shows: Krita turns the clone into a paint layer, and
+    the judge would have to accept that, its new id included;
+  - `derived_from` on a copy in `krita_document_inspect`, not only in the duplicate's receipt;
+  - placing a copy elsewhere than directly above its source, in one call.
+- **An edge stroke that once painted nothing** (0.25.0). In one probe run of three, the
+  region-scope stroke past the top-left corner, with no selection, completed but painted no pixel,
+  so its check failed; the two runs around it passed. Nothing in 0.25.0 touches that path. A repeat
+  would say whether Krita sometimes drops a stroke that starts off the canvas.
 - **Colour maths for documents outside sRGB** (0.5.0). `krita_sample` gives L\*a\*b\* and
   L\*C\*h only for Krita's sRGB profiles, and greyscale captures need them. Converting through
   the document's ICC profile would lift that.

@@ -273,7 +273,7 @@ def test_every_op_is_classed(world: World) -> None:
     fixtures = {op for op in registered if op.startswith(HARNESS)}
     assert READS.isdisjoint(BOUNDED) and not (READS | BOUNDED) & fixtures
     assert registered == READS | BOUNDED | fixtures
-    assert len(registered) == 33
+    assert len(registered) == 36
     # The prefix hides no tool op: these are the fixture ops, by name.
     assert fixtures == set(harness.handlers(world.registry, world.port, world.data)) | {
         "harness.retention"
@@ -427,6 +427,19 @@ def test_a_layer_and_a_close_pass_their_markers(world: World) -> None:
     assert world.done("document.close", closing)["closed"] is True
 
 
+def test_the_layer_ops_pass_their_markers(world: World) -> None:
+    document_id = world.document()
+    duplicate = {"document_id": document_id, "layer_id": BASE, "name": "trial"}
+    copy = world.done("layer.duplicate", duplicate)["layer_id"]
+    group = world.done("layer.create", world.layer_args(document_id, type="group"))["layer_id"]
+    move = {"document_id": document_id, "layer_id": PAINT, "parent_id": group, "above_id": None}
+    assert world.done("layer.reorder", move)["undo_steps"] == 2
+    # Already there: nothing moves, and the call still passes its marker.
+    assert world.done("layer.reorder", move)["undo_steps"] == 0
+    removal = {"document_id": document_id, "layer_id": copy, "verify": "full"}
+    assert world.done("layer.remove", removal)["removed"] == [copy]
+
+
 def test_each_selection_passes_its_marker(world: World) -> None:
     document_id = world.document()
     assert world.done("selection.set", world.selection_args(document_id, "all"))["undo_steps"] == 1
@@ -507,6 +520,22 @@ def test_a_selection_refused_with_nothing_to_combine(world: World) -> None:
 def test_a_layer_refused_for_its_parent(world: World) -> None:
     args = world.layer_args(world.document(), parent_id=layer_id(1, 9))
     assert _outcome(world.failure("layer.create", args)) == NOT_APPLIED
+
+
+@pytest.mark.parametrize("op", ["layer.duplicate", "layer.reorder", "layer.remove"])
+def test_a_layer_op_refused_before_its_marker(world: World, op: str) -> None:
+    document_id = world.document()
+    args = {
+        "layer.duplicate": {"document_id": document_id, "layer_id": layer_id(1, 9), "name": "x"},
+        "layer.reorder": {
+            "document_id": document_id,
+            "layer_id": BASE,
+            "parent_id": world.port._tree(1)["root_id"],
+            "above_id": None,
+        },
+        "layer.remove": {"document_id": document_id, "layer_id": BASE, "verify": "full"},
+    }[op]
+    assert _outcome(world.failure(op, args)) == NOT_APPLIED
 
 
 def test_an_update_refused_on_a_protected_layer(world: World) -> None:
@@ -843,6 +872,26 @@ def test_a_layer_that_could_not_be_rolled_back_is_uncertain(world: World) -> Non
     world.port.on_layer.append(_misplaced)
     world.port.undo_works = False
     body = world.failure("layer.create", world.layer_args(document_id))
+    assert body["code"] == "ROLLBACK_FAILED" and body["details"]["rollback_verified"] is False
+    assert _outcome(body) == UNCERTAIN
+
+
+def test_a_reorder_krita_refused_between_its_steps_is_not_applied(world: World) -> None:
+    document_id = world.document()
+    group = world.done("layer.create", world.layer_args(document_id, type="group"))["layer_id"]
+    world.port.fail["attach"] = BridgeError("INTERNAL_ERROR", "Krita did not add the layer.")
+    move = {"document_id": document_id, "layer_id": PAINT, "parent_id": group, "above_id": None}
+    body = world.failure("layer.reorder", move)
+    assert body["details"]["rolled_back"] is True and body["details"]["rollback_verified"] is True
+    assert _outcome(body) == NOT_APPLIED
+
+
+def test_a_removal_that_could_not_be_undone_is_uncertain(world: World) -> None:
+    document_id = world.document()
+    world.port.fail["remove_node_after"] = RuntimeError("libkis failed")
+    world.port.undo_works = False
+    removal = {"document_id": document_id, "layer_id": PAINT, "verify": "full"}
+    body = world.failure("layer.remove", removal)
     assert body["code"] == "ROLLBACK_FAILED" and body["details"]["rollback_verified"] is False
     assert _outcome(body) == UNCERTAIN
 

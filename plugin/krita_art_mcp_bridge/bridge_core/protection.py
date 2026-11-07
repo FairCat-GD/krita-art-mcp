@@ -43,6 +43,16 @@ def refuse_held_line(tree: dict[str, Any], node_id: str, protected: set[str], no
         raise BridgeError("LOCKED_TARGET", message, False, details)
 
 
+def refuse_held(tree: dict[str, Any], node_id: str, protected: set[str]) -> None:
+    # A layer changes everything under it, so it and every descendant must be unprotected.
+    nodes = {node["id"]: node for node in tree["nodes"]}
+    held = sorted(one for one in protected if one in nodes and node_id in line(nodes, one))
+    if held:
+        details = {"layer_id": node_id, "protected_layer_ids": held}
+        message = "The layer is protected, or holds a protected layer."
+        raise BridgeError("LOCKED_TARGET", message, False, details)
+
+
 def loosened(current: bytes | None, new: bytes | None) -> int:
     # How many pixels the new allowed mask would allow that the current one does not; None
     # allows the whole canvas. Whole-buffer integer operations, never a loop per pixel.

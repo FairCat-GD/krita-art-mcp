@@ -18,15 +18,20 @@ MAX_STEPS = 50
 
 UNDO = "undo"
 REDO = "redo"
-# The names Krita's Undo and Redo actions give each step the bridge pushes (K7), as measured on
-# Krita 5.3.4 in English; any other name is a step the bridge did not make.
-LABELS = {
-    "layer.create": "Add Layer",
-    "layer.update": "Composition Mode Change",
-    "selection.set": "",
-    "selection.clear": "",
-    "paint.stroke": "Scripted Brush Stroke",
-    "paint.fill": "Scripted Brush Stroke",
+# The names Krita's Undo and Redo actions give each step an op pushes, in Krita's order (K7), as
+# measured on Krita 5.3.4 in English; any other name is a step the bridge did not make.
+ADD = "Add Layer"
+REMOVE = "Remove Layer"
+LABELS: dict[str, tuple[str, ...]] = {
+    "layer.create": (ADD,),
+    "layer.duplicate": (ADD,),
+    "layer.remove": (REMOVE,),
+    "layer.reorder": (REMOVE, ADD),
+    "layer.update": ("Composition Mode Change",),
+    "selection.set": ("",),
+    "selection.clear": ("",),
+    "paint.stroke": ("Scripted Brush Stroke",),
+    "paint.fill": ("Scripted Brush Stroke",),
 }
 
 
@@ -165,6 +170,19 @@ def handlers(registry: Registry, port: DocumentsPort, data: Path) -> dict[str, H
                 "protection change, and redo only re-applies what history undid."
             )
             raise BridgeError("INVALID_ARGUMENT", message, False, details)
+        needed = whole(ledger, action, count)
+        if needed != count:
+            details = {
+                "steps": count,
+                "steps_needed": needed,
+                "undo_available": ledger.undo_available(),
+                "redo_available": ledger.redo,
+            }
+            message = (
+                f"{count} {action} step(s) would split an operation, such as a reorder, whose "
+                f"steps move together; ask for {needed}."
+            )
+            raise BridgeError("INVALID_ARGUMENT", message, False, details)
         applied: list[Step] = []
         stopped = None
         current: Fingerprint | None = None
@@ -229,6 +247,27 @@ def handlers(registry: Registry, port: DocumentsPort, data: Path) -> dict[str, H
         return guarded(args, call)
 
     return {"history.step": history_step}
+
+
+def whole(ledger: Any, action: str, count: int) -> int:
+    # The fewest steps from count up that stop at an operation's edge, so no op is left half
+    # moved; a rollback undoes its own steps whole, so ops start and end there.
+    steps, needed = ledger.steps, count
+    if action == UNDO:
+        while (
+            ledger.applied - needed - 1 >= 0
+            and steps[ledger.applied - needed - 1].operation_id
+            == steps[ledger.applied - needed].operation_id
+        ):
+            needed += 1
+        return needed
+    while (
+        ledger.applied + needed < len(steps)
+        and steps[ledger.applied + needed].operation_id
+        == steps[ledger.applied + needed - 1].operation_id
+    ):
+        needed += 1
+    return needed
 
 
 def _refuse(handle: Handle, outcome: str, seen: dict[str, Any]) -> None:

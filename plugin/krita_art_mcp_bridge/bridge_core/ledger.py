@@ -2,12 +2,14 @@ import hashlib
 import json
 from typing import Any
 
+from .nodes import ranks
 from .port import DocumentsPort
 
-# Each node outside the root's selection masks as (id, blend mode), then the selection's hash or
-# None. The root's masks hold the global selection, which the hash already covers; the blend is
-# the one node property an undo step changes.
-Nodes = tuple[tuple[str, str], ...]
+# Each node outside the root's selection masks as (id, blend mode, parent, rank), then the
+# selection's hash or None. The root's masks hold the global selection, which the hash already
+# covers; the blend is the one property an undo step changes, and adds, removes and moves change
+# the rest.
+Nodes = tuple[tuple[str, str, str, int], ...]
 Fingerprint = tuple[Nodes, str | None]
 # A layer, a rect, and the SHA-256 of the layer's own BGRA bytes over it before and after.
 Witness = tuple[str, dict[str, int], str, str]
@@ -113,10 +115,11 @@ def fingerprint_of(tree: dict[str, Any], state: tuple[dict[str, int], Any] | Non
 
 
 def node_states(tree: dict[str, Any]) -> Nodes:
+    ranked = ranks(tree)
     return tuple(
         sorted(
-            (node["id"], node["blend_mode"])
+            (node["id"], node["blend_mode"], node["parent_id"], ranked[node["id"]])
             for node in tree["nodes"]
-            if not (node["type"] == "selectionmask" and node["parent_id"] == tree["root_id"])
+            if node["id"] in ranked
         )
     )

@@ -54,6 +54,11 @@ RECEIPTS: dict[str, Known] = {
     "sample.read": Known("krita_sample", pixels.sample_receipt, pixels.resolve_sample),
     "layer.create": Known("krita_layer_create", changes.layer_receipt, changes.resolve_update),
     "layer.update": Known("krita_layer_update", changes.update_receipt, changes.resolve_update),
+    "layer.duplicate": Known(
+        "krita_layer_duplicate", changes.duplicate_receipt, changes.resolve_update
+    ),
+    "layer.reorder": Known("krita_layer_reorder", changes.reorder_receipt, changes.resolve_update),
+    "layer.remove": Known("krita_layer_remove", changes.remove_receipt, changes.resolve_update),
     "selection.set": Known(
         "krita_selection_set", changes.selection_receipt, changes.resolve_selection
     ),

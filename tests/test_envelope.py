@@ -85,8 +85,8 @@ def test_the_server_and_plugin_constants_agree() -> None:
         bridge_verification.ALPHA,
     )
     # The undo labels the probe expects are the ones the plugin checks.
-    assert probe_painting.LABEL == bridge_history.LABELS["paint.stroke"]
-    assert probe_updates.BLEND_LABEL == bridge_history.LABELS["layer.update"]
+    assert probe_painting.LABEL == bridge_history.LABELS["paint.stroke"][0]
+    assert probe_updates.BLEND_LABEL == bridge_history.LABELS["layer.update"][0]
     assert set(bridge_saving.SRGB_PROFILES) == colour.SRGB_PROFILES
     assert tool_saving.FORMATS == bridge_saving.FORMATS
     # The probe compares inspect's entries, which carry the space fields it leaves out.
@@ -200,6 +200,7 @@ MOVED = [
     ("krita_capture", (), "Native: scale 1"),
     ("krita_paint_stroke", (), "as one undo step"),
     ("krita_paint_stroke", ("verify",), "a tip and scatter it can read"),
+    ("krita_layer_update", (), "and undone on a leak"),
     ("krita_layer_update", ("verify",), "filter, mask, style, clone or copy blend"),
     ("krita_layer_update", ("properties", "inherit_alpha"), "under preserve_composite_alpha"),
     ("krita_paint_fill", (), "one flat antialiased colour"),

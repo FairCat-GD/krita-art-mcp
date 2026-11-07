@@ -18,6 +18,7 @@ from krita_art_mcp.probe import (
     edges,
     filling,
     fixtures,
+    layers,
     modified,
     previews,
     saving,
@@ -152,6 +153,7 @@ async def run(report: Report, a: Client, b: Client, client: BridgeClient, harnes
             await filling.run(report, a, client, paint, harness, presets)
             await transparency.run(report, a, client, paint, harness, presets)
             await dynamics.run(report, a, client, folder, harness, hard)
+            await layers.run(report, a, client, folder, harness, hard)
         with report.timed("benchmark"):
             for spec in BENCHMARKS:
                 await _benchmark(report, a, client, harness, folder, spec, hard)

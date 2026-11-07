@@ -86,6 +86,21 @@ def update_stack() -> tuple[Layer, ...]:
     )
 
 
+def layer_stack() -> tuple[Layer, ...]:
+    # Top first: a group holding a protected strip, a group holding a layer the left one
+    # overlaps, two editable layers, and an opaque base.
+    return (
+        Layer("probe held", children=(Layer("probe locked", rect(WIDTH, 6, (60, 60, 160)), y=42),)),
+        Layer(
+            "probe group",
+            children=(Layer("probe inner", rect(16, 12, (40, 200, 90)), x=20, y=18),),
+        ),
+        Layer("probe right", rect(20, 20, (220, 40, 60)), x=40, y=4),
+        Layer("probe left", rect(24, 20, (30, 60, 220)), x=4, y=4),
+        Layer("probe base", rect(WIDTH, HEIGHT, (200, 180, 30))),
+    )
+
+
 def rim_stack() -> tuple[Layer, ...]:
     # A silhouette whose edge fades through two rings of partial alpha, and a hidden recolour
     # layer that covers it and spills past it, on a transparent canvas.

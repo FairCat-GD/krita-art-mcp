@@ -1,0 +1,784 @@
+{
+  "name": "krita_layer_duplicate",
+  "description": "Copy a layer or group, with every layer and mask inside it, as a hidden layer directly above it; one undo step. The source may be protected, and the copies are yours, unprotected. The composite does not change: show the copy with krita_layer_update to try a change on it. id_map gives each copied node's new id. Name the copy apart from its source: an ORA reopen refuses a name two layers share.",
+  "inputSchema": {
+    "type": "object",
+    "properties": {
+      "guard": {
+        "type": "object",
+        "properties": {
+          "document_id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "request_id": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "required": [
+          "document_id",
+          "request_id"
+        ],
+        "additionalProperties": false
+      },
+      "layer_id": {
+        "type": "string",
+        "minLength": 1
+      },
+      "name": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 256
+      }
+    },
+    "required": [
+      "guard",
+      "layer_id",
+      "name"
+    ],
+    "additionalProperties": false
+  },
+  "outputSchema": {
+    "type": "object",
+    "properties": {
+      "api_version": {
+        "const": "0.4.0"
+      },
+      "status": {
+        "type": "string",
+        "enum": [
+          "completed",
+          "queued",
+          "running",
+          "failed",
+          "cancelled"
+        ]
+      },
+      "document_id": {
+        "anyOf": [
+          {
+            "type": "string",
+            "minLength": 1
+          },
+          {
+            "type": "null"
+          }
+        ]
+      },
+      "revision": {
+        "type": "null"
+      },
+      "operation_id": {
+        "anyOf": [
+          {
+            "type": "string",
+            "minLength": 1
+          },
+          {
+            "type": "null"
+          }
+        ]
+      },
+      "data": {
+        "anyOf": [
+          {
+            "type": "object",
+            "properties": {
+              "layer_id": {
+                "type": "string",
+                "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+              },
+              "derived_from": {
+                "type": "string",
+                "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+              },
+              "parent_id": {
+                "type": "string",
+                "minLength": 1
+              },
+              "above_id": {
+                "type": "string",
+                "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+              },
+              "name": {
+                "type": "string",
+                "minLength": 1
+              },
+              "visible": {
+                "const": false
+              },
+              "id_map": {
+                "description": "Each copied node's id, by its source's id.",
+                "type": "object",
+                "additionalProperties": {
+                  "type": "string",
+                  "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+                }
+              },
+              "protected": {
+                "const": false
+              },
+              "undo_steps": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "verification": {
+                "anyOf": [
+                  {
+                    "type": "object",
+                    "properties": {
+                      "mode": {
+                        "type": "string",
+                        "enum": [
+                          "region",
+                          "full"
+                        ]
+                      },
+                      "rect": {
+                        "type": "object",
+                        "properties": {
+                          "x": {
+                            "type": "integer",
+                            "minimum": 0
+                          },
+                          "y": {
+                            "type": "integer",
+                            "minimum": 0
+                          },
+                          "width": {
+                            "type": "integer",
+                            "minimum": 0
+                          },
+                          "height": {
+                            "type": "integer",
+                            "minimum": 0
+                          }
+                        },
+                        "required": [
+                          "x",
+                          "y",
+                          "width",
+                          "height"
+                        ],
+                        "additionalProperties": false
+                      },
+                      "changed_px": {
+                        "type": "integer",
+                        "minimum": 0
+                      },
+                      "changed_bounds_px": {
+                        "anyOf": [
+                          {
+                            "type": "object",
+                            "properties": {
+                              "x": {
+                                "type": "integer",
+                                "minimum": 0
+                              },
+                              "y": {
+                                "type": "integer",
+                                "minimum": 0
+                              },
+                              "width": {
+                                "type": "integer",
+                                "minimum": 1
+                              },
+                              "height": {
+                                "type": "integer",
+                                "minimum": 1
+                              }
+                            },
+                            "required": [
+                              "x",
+                              "y",
+                              "width",
+                              "height"
+                            ],
+                            "additionalProperties": false
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      },
+                      "changed_outside_px": {
+                        "const": 0
+                      },
+                      "alpha_changed_px": {
+                        "type": "integer",
+                        "minimum": 0
+                      },
+                      "before": {
+                        "anyOf": [
+                          {
+                            "type": "object",
+                            "properties": {
+                              "uri": {
+                                "type": "string",
+                                "minLength": 2,
+                                "pattern": "^/"
+                              },
+                              "path": {
+                                "type": "string",
+                                "minLength": 2,
+                                "pattern": "^/"
+                              },
+                              "mime_type": {
+                                "const": "image/png"
+                              },
+                              "sha256": {
+                                "type": "string",
+                                "pattern": "^[0-9a-f]{64}$"
+                              },
+                              "size_bytes": {
+                                "type": "integer",
+                                "minimum": 1
+                              },
+                              "retention_days": {
+                                "type": "integer",
+                                "minimum": 1
+                              }
+                            },
+                            "required": [
+                              "uri",
+                              "path",
+                              "mime_type",
+                              "sha256",
+                              "size_bytes",
+                              "retention_days"
+                            ],
+                            "additionalProperties": false
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      },
+                      "after": {
+                        "anyOf": [
+                          {
+                            "type": "object",
+                            "properties": {
+                              "uri": {
+                                "type": "string",
+                                "minLength": 2,
+                                "pattern": "^/"
+                              },
+                              "path": {
+                                "type": "string",
+                                "minLength": 2,
+                                "pattern": "^/"
+                              },
+                              "mime_type": {
+                                "const": "image/png"
+                              },
+                              "sha256": {
+                                "type": "string",
+                                "pattern": "^[0-9a-f]{64}$"
+                              },
+                              "size_bytes": {
+                                "type": "integer",
+                                "minimum": 1
+                              },
+                              "retention_days": {
+                                "type": "integer",
+                                "minimum": 1
+                              }
+                            },
+                            "required": [
+                              "uri",
+                              "path",
+                              "mime_type",
+                              "sha256",
+                              "size_bytes",
+                              "retention_days"
+                            ],
+                            "additionalProperties": false
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      }
+                    },
+                    "required": [
+                      "mode",
+                      "rect",
+                      "changed_px",
+                      "changed_bounds_px",
+                      "changed_outside_px",
+                      "alpha_changed_px",
+                      "before",
+                      "after"
+                    ],
+                    "additionalProperties": false
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              }
+            },
+            "required": [
+              "layer_id",
+              "derived_from",
+              "parent_id",
+              "above_id",
+              "name",
+              "visible",
+              "id_map",
+              "protected",
+              "undo_steps",
+              "verification"
+            ],
+            "additionalProperties": false
+          },
+          {
+            "type": "null"
+          }
+        ]
+      },
+      "error": {
+        "anyOf": [
+          {
+            "type": "object",
+            "properties": {
+              "code": {
+                "type": "string",
+                "enum": [
+                  "INVALID_ARGUMENT",
+                  "UNSUPPORTED_CAPABILITY",
+                  "KRITA_NOT_RUNNING",
+                  "PROTOCOL_MISMATCH",
+                  "KRITA_MODAL_DIALOG",
+                  "MULTIPLE_WINDOWS",
+                  "BUSY",
+                  "TIMEOUT",
+                  "CANCELLED",
+                  "REQUEST_ID_CONFLICT",
+                  "DOCUMENT_NOT_FOUND",
+                  "LAYER_NOT_FOUND",
+                  "LOCKED_TARGET",
+                  "LAYER_NOT_PAINTABLE",
+                  "LAYER_HAS_LOCAL_SELECTION",
+                  "PROTECTED_REGION_CHANGED",
+                  "OUTSIDE_ALLOWED_MASK",
+                  "RESOURCE_HASH_MISMATCH",
+                  "SOURCE_HASH_MISMATCH",
+                  "COLOR_PROFILE_MISMATCH",
+                  "DOCUMENT_DIRTY",
+                  "DOCUMENT_UNSAFE",
+                  "DOCUMENT_READ_ONLY",
+                  "DOCUMENT_IN_USE",
+                  "SAVE_VERIFY_FAILED",
+                  "PATH_NOT_ALLOWED",
+                  "FILE_EXISTS",
+                  "IO_ERROR",
+                  "ROLLBACK_FAILED",
+                  "INTERNAL_ERROR"
+                ]
+              },
+              "message": {
+                "type": "string",
+                "minLength": 1
+              },
+              "retryable": {
+                "type": "boolean"
+              },
+              "details": {
+                "type": "object",
+                "properties": {
+                  "outcome": {
+                    "type": "string",
+                    "enum": [
+                      "applied",
+                      "not_applied",
+                      "uncertain",
+                      "unregistered"
+                    ]
+                  }
+                }
+              }
+            },
+            "required": [
+              "code",
+              "message",
+              "retryable",
+              "details"
+            ],
+            "additionalProperties": false
+          },
+          {
+            "type": "null"
+          }
+        ]
+      }
+    },
+    "required": [
+      "api_version",
+      "status",
+      "document_id",
+      "revision",
+      "operation_id",
+      "data",
+      "error"
+    ],
+    "additionalProperties": false,
+    "if": {
+      "properties": {
+        "status": {
+          "const": "completed"
+        }
+      }
+    },
+    "then": {
+      "properties": {
+        "data": {
+          "type": "object",
+          "properties": {
+            "layer_id": {
+              "type": "string",
+              "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+            },
+            "derived_from": {
+              "type": "string",
+              "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+            },
+            "parent_id": {
+              "type": "string",
+              "minLength": 1
+            },
+            "above_id": {
+              "type": "string",
+              "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+            },
+            "name": {
+              "type": "string",
+              "minLength": 1
+            },
+            "visible": {
+              "const": false
+            },
+            "id_map": {
+              "description": "Each copied node's id, by its source's id.",
+              "type": "object",
+              "additionalProperties": {
+                "type": "string",
+                "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+              }
+            },
+            "protected": {
+              "const": false
+            },
+            "undo_steps": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "verification": {
+              "anyOf": [
+                {
+                  "type": "object",
+                  "properties": {
+                    "mode": {
+                      "type": "string",
+                      "enum": [
+                        "region",
+                        "full"
+                      ]
+                    },
+                    "rect": {
+                      "type": "object",
+                      "properties": {
+                        "x": {
+                          "type": "integer",
+                          "minimum": 0
+                        },
+                        "y": {
+                          "type": "integer",
+                          "minimum": 0
+                        },
+                        "width": {
+                          "type": "integer",
+                          "minimum": 0
+                        },
+                        "height": {
+                          "type": "integer",
+                          "minimum": 0
+                        }
+                      },
+                      "required": [
+                        "x",
+                        "y",
+                        "width",
+                        "height"
+                      ],
+                      "additionalProperties": false
+                    },
+                    "changed_px": {
+                      "type": "integer",
+                      "minimum": 0
+                    },
+                    "changed_bounds_px": {
+                      "anyOf": [
+                        {
+                          "type": "object",
+                          "properties": {
+                            "x": {
+                              "type": "integer",
+                              "minimum": 0
+                            },
+                            "y": {
+                              "type": "integer",
+                              "minimum": 0
+                            },
+                            "width": {
+                              "type": "integer",
+                              "minimum": 1
+                            },
+                            "height": {
+                              "type": "integer",
+                              "minimum": 1
+                            }
+                          },
+                          "required": [
+                            "x",
+                            "y",
+                            "width",
+                            "height"
+                          ],
+                          "additionalProperties": false
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "changed_outside_px": {
+                      "const": 0
+                    },
+                    "alpha_changed_px": {
+                      "type": "integer",
+                      "minimum": 0
+                    },
+                    "before": {
+                      "anyOf": [
+                        {
+                          "type": "object",
+                          "properties": {
+                            "uri": {
+                              "type": "string",
+                              "minLength": 2,
+                              "pattern": "^/"
+                            },
+                            "path": {
+                              "type": "string",
+                              "minLength": 2,
+                              "pattern": "^/"
+                            },
+                            "mime_type": {
+                              "const": "image/png"
+                            },
+                            "sha256": {
+                              "type": "string",
+                              "pattern": "^[0-9a-f]{64}$"
+                            },
+                            "size_bytes": {
+                              "type": "integer",
+                              "minimum": 1
+                            },
+                            "retention_days": {
+                              "type": "integer",
+                              "minimum": 1
+                            }
+                          },
+                          "required": [
+                            "uri",
+                            "path",
+                            "mime_type",
+                            "sha256",
+                            "size_bytes",
+                            "retention_days"
+                          ],
+                          "additionalProperties": false
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "after": {
+                      "anyOf": [
+                        {
+                          "type": "object",
+                          "properties": {
+                            "uri": {
+                              "type": "string",
+                              "minLength": 2,
+                              "pattern": "^/"
+                            },
+                            "path": {
+                              "type": "string",
+                              "minLength": 2,
+                              "pattern": "^/"
+                            },
+                            "mime_type": {
+                              "const": "image/png"
+                            },
+                            "sha256": {
+                              "type": "string",
+                              "pattern": "^[0-9a-f]{64}$"
+                            },
+                            "size_bytes": {
+                              "type": "integer",
+                              "minimum": 1
+                            },
+                            "retention_days": {
+                              "type": "integer",
+                              "minimum": 1
+                            }
+                          },
+                          "required": [
+                            "uri",
+                            "path",
+                            "mime_type",
+                            "sha256",
+                            "size_bytes",
+                            "retention_days"
+                          ],
+                          "additionalProperties": false
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "mode",
+                    "rect",
+                    "changed_px",
+                    "changed_bounds_px",
+                    "changed_outside_px",
+                    "alpha_changed_px",
+                    "before",
+                    "after"
+                  ],
+                  "additionalProperties": false
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            }
+          },
+          "required": [
+            "layer_id",
+            "derived_from",
+            "parent_id",
+            "above_id",
+            "name",
+            "visible",
+            "id_map",
+            "protected",
+            "undo_steps",
+            "verification"
+          ],
+          "additionalProperties": false
+        },
+        "error": {
+          "type": "null"
+        }
+      }
+    },
+    "else": {
+      "if": {
+        "properties": {
+          "status": {
+            "enum": [
+              "failed",
+              "cancelled"
+            ]
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "data": {
+            "type": "null"
+          },
+          "error": {
+            "type": "object"
+          }
+        },
+        "required": [
+          "error"
+        ]
+      },
+      "else": {
+        "if": {
+          "properties": {
+            "status": {
+              "enum": [
+                "queued",
+                "running"
+              ]
+            }
+          }
+        },
+        "then": {
+          "properties": {
+            "operation_id": {
+              "type": "string",
+              "minLength": 1
+            },
+            "data": {
+              "type": "null"
+            },
+            "error": {
+              "type": "null"
+            }
+          }
+        }
+      }
+    }
+  },
+  "annotations": {
+    "readOnlyHint": false,
+    "destructiveHint": false,
+    "idempotentHint": true,
+    "openWorldHint": false
+  },
+  "example": {
+    "input": {
+      "guard": {
+        "document_id": "doc-1",
+        "request_id": "req-001"
+      },
+      "layer_id": "6f1c2d3e-4a5b-4c6d-8e9f-0a1b2c3d4e5f",
+      "name": "Accessory trial"
+    },
+    "structuredContent": {
+      "api_version": "0.4.0",
+      "status": "completed",
+      "document_id": "doc-1",
+      "revision": null,
+      "operation_id": null,
+      "data": {
+        "layer_id": "7a2b3c4d-5e6f-4a7b-8c9d-0e1f2a3b4c5d",
+        "derived_from": "6f1c2d3e-4a5b-4c6d-8e9f-0a1b2c3d4e5f",
+        "parent_id": "00000000-0000-4000-8000-000000000001",
+        "above_id": "6f1c2d3e-4a5b-4c6d-8e9f-0a1b2c3d4e5f",
+        "name": "Accessory trial",
+        "visible": false,
+        "id_map": {
+          "6f1c2d3e-4a5b-4c6d-8e9f-0a1b2c3d4e5f": "7a2b3c4d-5e6f-4a7b-8c9d-0e1f2a3b4c5d"
+        },
+        "protected": false,
+        "undo_steps": 1,
+        "verification": null
+      },
+      "error": null
+    }
+  }
+}

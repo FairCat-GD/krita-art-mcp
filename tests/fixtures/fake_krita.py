@@ -142,6 +142,10 @@ class FakePort:
         self.shapes: list[dict[str, Any]] = []
         # The call whose marker every mutating call here answers to, once a test sets it.
         self.marker: Any = None
+        # Every node id issued, and whether a duplicate's copy comes out shown, as if Krita
+        # ignored the hide.
+        self.issued: set[str] = set()
+        self.copy_visible = False
 
     def _marked(self) -> None:
         if self.marker is not None and not self.marker.changing:
@@ -290,10 +294,11 @@ class FakePort:
 
     def _masked(self, key: int, composite: bytes) -> bytes:
         # Each shown transparency mask scales the composite's alpha where its layer has paint.
+        tree = self._tree(key)
         masks = [
             node
-            for node in self._tree(key)["nodes"]
-            if node["type"] == MASK and node["visible"] and node["id"] in self.buffers
+            for node in tree["nodes"]
+            if node["type"] == MASK and self._shown(tree, node["id"]) and node["id"] in self.buffers
         ]
         if not masks:
             return composite
@@ -307,6 +312,14 @@ class FakePort:
                 if value != 255 and layer[index * 4 + 3]:
                     out[index * 4 + 3] = out[index * 4 + 3] * value // 255
         return bytes(out)
+
+    def _shown(self, tree: dict[str, Any], node_id: str) -> bool:
+        found = {node["id"]: node for node in tree["nodes"]}
+        while node_id in found:
+            if not found[node_id]["visible"]:
+                return False
+            node_id = found[node_id]["parent_id"]
+        return True
 
     def selection_bounds(self, document: Any) -> dict[str, int] | None:
         found = self.live[document.key].get("selection")
@@ -390,20 +403,14 @@ class FakePort:
         self._marked()
         self._maybe_fail("create_layer")
         key = document.key
-        before = self._state(key)
         tree = self._tree(key)
-        siblings = [node for node in tree["nodes"] if node["parent_id"] == parent_id]
-        above = next((node for node in siblings if node["id"] == above_id), None)
-        # Krita puts a layer added above nothing on top.
-        order = len(siblings) if above is None else above["order"] + 1
-        for node in siblings:
-            if node["order"] >= order:
-                node["order"] += 1
-        node = fake_node(key, len(tree["nodes"]) + 100, name, parent_id, order, type=kind)
+        order = self._place(key, parent_id, above_id)
+        node = fake_node(key, 0, name, parent_id, order, type=kind)
+        node["id"] = self._fresh_id(key, len(tree["nodes"]) + 100)
         tree["nodes"].append(node)
         for hook in self.on_layer:
             hook(tree, node)
-        self._push(key, history.LABELS["layer.create"], before)
+        self._added(key, node)
         return str(node["id"])
 
     def create_mask(
@@ -413,7 +420,6 @@ class FakePort:
         self._maybe_fail("create_mask")
         key = document.key
         self.paintable(key, None)
-        before = self._state(key)
         tree = self._tree(key)
         width, height = self.live[key]["size_px"]
         if coverage == "selection":
@@ -423,15 +429,10 @@ class FakePort:
             cover = bytearray(found)
         else:
             cover = bytearray((b"\xff" if coverage == "all" else b"\x00") * (width * height))
-        siblings = [node for node in tree["nodes"] if node["parent_id"] == parent_id]
-        above = next((node for node in siblings if node["id"] == above_id), None)
-        order = len(siblings) if above is None else above["order"] + 1
-        for node in siblings:
-            if node["order"] >= order:
-                node["order"] += 1
+        order = self._place(key, parent_id, above_id)
         node = fake_node(
             key,
-            len(tree["nodes"]) + 100,
+            0,
             name,
             parent_id,
             order,
@@ -440,12 +441,123 @@ class FakePort:
             depth="U8",
             profile_id="default",
         )
+        node["id"] = self._fresh_id(key, len(tree["nodes"]) + 100)
         tree["nodes"].append(node)
         self.buffers[node["id"]] = cover
         for hook in self.on_layer:
             hook(tree, node)
-        self._push(key, history.LABELS["layer.create"], before)
+        self._added(key, node)
         return str(node["id"])
+
+    def remove_node(self, document: Any, layer_id: str) -> dict[str, Any]:
+        # Node.remove(): one "Remove Layer" command that takes each node off its own parent, so
+        # each handle holds one node, and attaching the top brings back no child.
+        self._marked()
+        self._maybe_fail("remove_node")
+        key = document.key
+        node = self._layer(key, layer_id)
+        parent, order = node["parent_id"], node["order"]
+        taken = self._take(key, layer_id)
+        entry = {"kind": "remove", "id": layer_id, "parent": parent, "order": order}
+        self._command(key, history.REMOVE, {**entry, "nodes": taken})
+        self._redraw(key)
+        self._maybe_fail("remove_node_after")
+        return {one["id"]: [one] for one in taken}
+
+    def duplicate_node(self, document: Any, layer_id: str, name: str) -> Any:
+        # Node.duplicate(): a detached copy with new ids, named and hidden; no step.
+        self._maybe_fail("duplicate_node")
+        key = document.key
+        tree = self._tree(key)
+        source = [self._layer(key, one) for one in nodes.subtree(tree, layer_id)]
+        renamed: dict[str, str] = {}
+        copies = []
+        for node in source:
+            made = copy.deepcopy(node)
+            made["id"] = renamed[node["id"]] = self._fresh_id(key, 500 + len(tree["nodes"]))
+            made["parent_id"] = renamed.get(node["parent_id"], node["parent_id"])
+            if node["id"] in self.buffers:
+                self.buffers[made["id"]] = bytearray(self.buffers[node["id"]])
+            if node["id"] in self.layer_pixels:
+                self.layer_pixels[made["id"]] = self.layer_pixels[node["id"]]
+            copies.append(made)
+        copies[0].update(name=name, visible=self.copy_visible)
+        return copies
+
+    def attach(self, document: Any, node: Any, parent_id: str, above_id: str | None) -> str:
+        # addChildNode: one "Add Layer" command; the node becomes active.
+        self._marked()
+        self._maybe_fail("attach")
+        key = document.key
+        tree = self._tree(key)
+        if parent_id != tree["root_id"]:
+            self._layer(key, parent_id)
+        if above_id is not None:
+            self._layer(key, above_id)
+        top = node[0]
+        self._put(key, node, parent_id, self._place(key, parent_id, above_id, opened=False))
+        for hook in self.on_layer:
+            hook(tree, top)
+        self._added(key, top)
+        self._maybe_fail("attach_after")
+        return str(top["id"])
+
+    def _place(self, key: int, parent_id: str, above_id: str | None, opened: bool = True) -> int:
+        # The order addChildNode gives a node: directly above above_id, or on top. With opened,
+        # the siblings at and above it move up to make room.
+        siblings = [node for node in self._tree(key)["nodes"] if node["parent_id"] == parent_id]
+        above = next((node for node in siblings if node["id"] == above_id), None)
+        order = len(siblings) if above is None else above["order"] + 1
+        if opened:
+            for node in siblings:
+                if node["order"] >= order:
+                    node["order"] += 1
+        return order
+
+    def _fresh_id(self, key: int, index: int) -> str:
+        # Krita never gives a uuid twice, so a removed node's comes back with it alone.
+        used = {node["id"] for node in self._tree(key)["nodes"]} | self.issued
+        while layer_id(key, index) in used:
+            index += 1
+        self.issued.add(layer_id(key, index))
+        return layer_id(key, index)
+
+    def _take(self, key: int, node_id: str) -> list[dict[str, Any]]:
+        # Takes a node and its subtree out, top first, holding the values they hold now; the
+        # siblings above it close up, and the node below it becomes active (measured).
+        tree = self._tree(key)
+        ids = nodes.subtree(tree, node_id)
+        found = {node["id"]: node for node in tree["nodes"]}
+        taken = [found[one] for one in ids]
+        top = taken[0]
+        tree["nodes"] = [node for node in tree["nodes"] if node["id"] not in ids]
+        below = None
+        for node in tree["nodes"]:
+            if node["parent_id"] == top["parent_id"]:
+                if node["order"] > top["order"]:
+                    node["order"] -= 1
+                elif node["order"] == top["order"] - 1:
+                    below = node["id"]
+        if tree["active_id"] in ids:
+            tree["active_id"] = below or (
+                top["parent_id"] if top["parent_id"] != tree["root_id"] else None
+            )
+        return taken
+
+    def _put(self, key: int, taken: list[dict[str, Any]], parent_id: str, order: int) -> None:
+        tree = self._tree(key)
+        for node in tree["nodes"]:
+            if node["parent_id"] == parent_id and node["order"] >= order:
+                node["order"] += 1
+        top = taken[0]
+        top["parent_id"], top["order"] = parent_id, order
+        tree["nodes"].extend(taken)
+        tree["active_id"] = top["id"]
+        self._redraw(key)
+
+    def _added(self, key: int, node: dict[str, Any]) -> None:
+        entry = {"kind": "add", "id": node["id"], "parent": node["parent_id"]}
+        self._command(key, history.ADD, {**entry, "order": node["order"], "nodes": None})
 
     def set_selection(self, document: Any, recipe: list[tuple[Any, ...]]) -> None:
         self._marked()
@@ -460,7 +572,7 @@ class FakePort:
         for step in recipe:
             if step[0] == "clear":
                 self._select(key, None)
-                self._push(key, history.LABELS["selection.clear"], before)
+                self._push(key, history.LABELS["selection.clear"][0], before)
                 return
             if step[0] == "mask":
                 shape = bytearray(width * height)
@@ -480,7 +592,7 @@ class FakePort:
             elif step[0] == "combine" and shape is not None:
                 shape = _combine(step[1], current, shape)
         self._select(key, bytes(shape or b""))
-        self._push(key, history.LABELS["selection.set"], before)
+        self._push(key, history.LABELS["selection.set"][0], before)
 
     def set_blend(self, document: Any, layer_id: str, mode: str) -> None:
         self._marked()
@@ -490,7 +602,7 @@ class FakePort:
         # Krita's command undoes the blend alone; property writes around it stay (K22).
         blend = (layer_id, node["blend_mode"], mode)
         node["blend_mode"] = mode
-        self._push(document.key, history.LABELS["layer.update"], None, blend)
+        self._push(document.key, history.LABELS["layer.update"][0], None, blend)
         self._redraw(document.key)
 
     def set_properties(self, document: Any, layer_id: str, values: dict[str, Any]) -> None:
@@ -515,7 +627,6 @@ class FakePort:
     def add_fixture_node(self, document: Any, kind: str, layer_id: str) -> tuple[str, bool]:
         key = document.key
         layer = self._layer(key, layer_id)
-        before = self._state(key)
         tree = self._tree(key)
         index = len(tree["nodes"]) + 700
         if kind == "filter_layer":
@@ -534,7 +645,7 @@ class FakePort:
         if made == "clonelayer":
             facts = self.reach.setdefault(key, {"styled": [], "clones": {}, "animated": False})
             facts["clones"][node["id"]] = layer_id
-        self._push(key, "Add Layer", before)
+        self._added(key, node)
         return str(node["id"]), True
 
     def _layer(self, key: int, layer_id: str) -> dict[str, Any]:
@@ -555,6 +666,10 @@ class FakePort:
         if canvas is None:
             self.live[key]["selection"] = None
             tree["nodes"] = [node for node in tree["nodes"] if node not in global_masks]
+            for mask in global_masks:
+                for node in tree["nodes"]:
+                    if node["parent_id"] == tree["root_id"] and node["order"] > mask["order"]:
+                        node["order"] -= 1
             return
         if not global_masks:
             order = sum(1 for node in tree["nodes"] if node["parent_id"] == tree["root_id"])
@@ -590,11 +705,18 @@ class FakePort:
             self.canvas[key] = bytearray(canvas)
 
     def _push(self, key: int, label: str, before: Any, blend: Any = None) -> None:
+        after = None if blend is not None else self._state(key)
+        self._entry(key, {"label": label, "before": before, "after": after, "blend": blend})
+
+    def _command(self, key: int, label: str, command: dict[str, Any]) -> None:
+        # A node command: its undo and redo move nodes only, so values written since stay (K22).
+        self._entry(key, {"label": label, "command": command, "blend": None})
+
+    def _entry(self, key: int, entry: dict[str, Any]) -> None:
         info = self.live[key]
         stack = info.setdefault("stack", [])
         del stack[info.get("index", 0) :]
-        after = None if blend is not None else self._state(key)
-        stack.append({"label": label, "before": before, "after": after, "blend": blend})
+        stack.append(entry)
         if len(stack) > self.limit:
             del stack[0]
         info["index"] = len(stack)
@@ -616,6 +738,16 @@ class FakePort:
             info["index"] += 1
 
     def _step(self, key: int, entry: dict[str, Any], side: str) -> None:
+        command = entry.get("command")
+        if command is not None:
+            # An add's undo takes the node out; a remove's puts it back where it was.
+            out = (command["kind"] == "add") == (side == "before")
+            if out:
+                command["nodes"] = self._take(key, command["id"])
+            else:
+                self._put(key, command["nodes"], command["parent"], command["order"])
+            self._redraw(key)
+            return
         if entry["blend"] is not None:
             node_id, old, new = entry["blend"]
             self._layer(key, node_id)["blend_mode"] = old if side == "before" else new
@@ -854,7 +986,7 @@ class FakePort:
             node["bounds_px"] = _span([node["bounds_px"], *boxes])
         for hook in self.on_paint:
             hook(key)
-        self._push(key, history.LABELS["paint.fill"], before)
+        self._push(key, history.LABELS["paint.fill"][0], before)
         self._maybe_fail("fill_path_after")
 
     def paint_path(self, document: Any, layer_id: str, path: dict[str, Any]) -> None:
@@ -875,7 +1007,7 @@ class FakePort:
             self._cover(layer_id, self.live[key]["size_px"], boxes)
             for hook in self.on_paint:
                 hook(key)
-            self._push(key, history.LABELS["paint.stroke"], before)
+            self._push(key, history.LABELS["paint.stroke"][0], before)
             self._maybe_fail("paint_path_after")
             return
         if brush["eraser"]:
@@ -895,7 +1027,7 @@ class FakePort:
             node["bounds_px"] = _span([node["bounds_px"], *boxes])
         for hook in self.on_paint:
             hook(key)
-        self._push(key, history.LABELS["paint.stroke"], before)
+        self._push(key, history.LABELS["paint.stroke"][0], before)
         self._maybe_fail("paint_path_after")
 
     def _cover(self, mask_id: str, size: list[int], boxes: list[dict[str, int]]) -> None:

@@ -349,6 +349,79 @@ def test_history_undoes_and_redoes_the_bridges_steps(world: World) -> None:
     assert deeper["error"]["code"] == "INVALID_ARGUMENT"
 
 
+def test_a_layer_is_copied_moved_and_removed_through_the_tools(world: World) -> None:
+    server = world.server()
+    document_id = _document(server)
+    layer = layer_id(1, 0)
+    group = server.content(
+        "krita_layer_create",
+        {
+            "guard": _guard(document_id, "req-group"),
+            "parent_id": "root-1",
+            "above_id": None,
+            "type": "group",
+            "name": "trials",
+        },
+    )["data"]["layer_id"]
+    copied = server.content(
+        "krita_layer_duplicate",
+        {"guard": _guard(document_id, "req-copy"), "layer_id": layer, "name": "trial"},
+    )
+    assert copied["status"] == "completed", copied
+    copy = copied["data"]["layer_id"]
+    assert copied["data"]["id_map"] == {layer: copy} and copied["data"]["visible"] is False
+    assert copied["data"]["verification"]["mode"] == "region"
+    move = {
+        "guard": _guard(document_id, "req-move"),
+        "layer_id": copy,
+        "parent_id": group,
+        "above_id": None,
+    }
+    moved = server.content("krita_layer_reorder", move)
+    assert moved["status"] == "completed", moved
+    assert (moved["data"]["effective_order"], moved["data"]["undo_steps"]) == ([copy], 2)
+    split = server.content(
+        "krita_history_step", {"guard": _guard(document_id, "req-u1"), "action": "undo", "steps": 1}
+    )
+    assert split["error"]["code"] == "INVALID_ARGUMENT"
+    assert split["error"]["details"]["steps_needed"] == 2
+    undone = server.content(
+        "krita_history_step", {"guard": _guard(document_id, "req-u2"), "action": "undo", "steps": 2}
+    )
+    assert [step["tool"] for step in undone["data"]["steps"]] == ["krita_layer_reorder"] * 2
+    server.content(
+        "krita_history_step", {"guard": _guard(document_id, "req-r2"), "action": "redo", "steps": 2}
+    )
+    again = server.content("krita_layer_reorder", {**move, "guard": _guard(document_id, "req-a")})
+    assert again["data"]["undo_steps"] == 0 and again["data"]["verification"] is None
+    removed = server.content(
+        "krita_layer_remove", {"guard": _guard(document_id, "req-remove"), "layer_id": copy}
+    )
+    assert removed["status"] == "completed", removed
+    assert removed["data"]["removed"] == [copy] and removed["data"]["undo_steps"] == 1
+    for made in (copied, moved, removed):
+        got = server.content("krita_operation_get", {"operation_id": made["operation_id"]})
+        assert got["data"]["receipt_valid"] is True
+        assert got["data"]["receipt"]["data"]["layer_id"] == made["data"]["layer_id"]
+
+
+def test_a_layer_moved_inside_itself_is_refused_before_dispatch(world: World) -> None:
+    server = world.server()
+    document_id = _document(server)
+    layer = layer_id(1, 0)
+    refused = server.content(
+        "krita_layer_reorder",
+        {
+            "guard": _guard(document_id, "req-move"),
+            "layer_id": layer,
+            "parent_id": layer,
+            "above_id": None,
+        },
+    )
+    assert refused["error"]["code"] == "INVALID_ARGUMENT" and refused["operation_id"] is None
+    assert refused["error"]["details"]["field"] == "parent_id"
+
+
 def test_a_history_step_lost_mid_batch_says_the_document_is_unsafe(world: World) -> None:
     server = world.server()
     document_id = _document(server)

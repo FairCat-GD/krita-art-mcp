@@ -348,3 +348,47 @@ def _fill(document_id: str, **paint: Any) -> dict[str, Any]:
         "opacity": 1,
         **paint,
     }
+
+
+@pytest.mark.parametrize(
+    ("place", "field"),
+    [({"parent_id": A_LAYER, "above_id": None}, "parent_id"), ({"above_id": A_LAYER}, "above_id")],
+    ids=["inside_itself", "above_itself"],
+)
+def test_both_sides_refuse_a_layer_moved_inside_or_above_itself(
+    world: World, monkeypatch: pytest.MonkeyPatch, place: dict[str, Any], field: str
+) -> None:
+    arguments = {
+        "guard": {"document_id": _document(world), "request_id": "req-move"},
+        "layer_id": A_LAYER,
+        "parent_id": "root-1",
+        "above_id": None,
+        **place,
+    }
+    rule = (changes, "reorder_rules")
+    refused = refused_alike(world, monkeypatch, "krita_layer_reorder", arguments, rule)
+    assert refused["details"]["field"] == field
+
+
+def test_both_sides_refuse_a_copy_with_no_name(
+    world: World, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    arguments = {
+        "guard": {"document_id": _document(world), "request_id": "req-copy"},
+        "layer_id": A_LAYER,
+        "name": "",
+    }
+    path = ("inputSchema", "properties", "name", "minLength")
+    refused_alike(world, monkeypatch, "krita_layer_duplicate", arguments, schema=path)
+
+
+def test_both_sides_take_region_or_full_for_a_removal(
+    world: World, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    arguments = {
+        "guard": {"document_id": _document(world), "request_id": "req-remove"},
+        "layer_id": A_LAYER,
+        "verify": "everywhere",
+    }
+    path = ("inputSchema", "properties", "verify", "enum")
+    refused_alike(world, monkeypatch, "krita_layer_remove", arguments, schema=path)

@@ -6,9 +6,10 @@ A tool's session edits its schema's input, the `data` under its output's propert
 example. This script then writes the envelope, `guard` and `source` into every schema, copies
 each `data` into the completed rule, open's `layers` into inspect's, layer_update's
 `verification` object into paint_stroke's and paint_fill's and its whole `verification` into
-layer_create's, the stroke's colour into sample's `color` and the fill's, the stroke's mask paint
-into the fill's `mask`, selection_set's rect, ellipse and polygon shapes into the fill's, and the
-outcome values into operation_get's `outcome`, and formats the files.
+layer_create's, layer_duplicate's, layer_reorder's and layer_remove's, the stroke's colour into
+sample's `color` and the fill's, the stroke's mask paint into the fill's `mask`, selection_set's
+rect, ellipse and polygon shapes into the fill's, and the outcome values into operation_get's
+`outcome`, and formats the files.
 With --check it changes nothing and exits 1 if any file would change.
 """
 
@@ -104,10 +105,17 @@ def amended(tools: dict[str, dict[str, Any]]) -> dict[str, dict[str, Any]]:
     checked = _data(tools["krita_layer_update"])["properties"]["verification"]["anyOf"][0]
     _data(tools["krita_paint_stroke"])["properties"]["verification"] = copy.deepcopy(checked)
     _data(tools["krita_paint_fill"])["properties"]["verification"] = copy.deepcopy(checked)
-    # A mask's create reports its verification; a paint or group layer's is null.
-    _data(tools["krita_layer_create"])["properties"]["verification"] = copy.deepcopy(
-        _data(tools["krita_layer_update"])["properties"]["verification"]
-    )
+    # A mask's create reports its verification, a paint or group layer's is null, and the layer
+    # ops' is null on a reorder that moves nothing.
+    for name in (
+        "krita_layer_create",
+        "krita_layer_duplicate",
+        "krita_layer_reorder",
+        "krita_layer_remove",
+    ):
+        _data(tools[name])["properties"]["verification"] = copy.deepcopy(
+            _data(tools["krita_layer_update"])["properties"]["verification"]
+        )
     # A sample's color is exactly what a stroke's brush.color and a fill's color take.
     taken = tools["krita_paint_stroke"]["inputSchema"]["properties"]["brush"]["properties"]["color"]
     sampled = _data(tools["krita_sample"])["properties"]["samples"]["items"]["properties"]["color"]

@@ -82,6 +82,19 @@ class DocumentsPort(Protocol):
         self, document: Any, parent_id: str, above_id: str | None, name: str, coverage: str
     ) -> str: ...
 
+    # Removes a node and its subtree in one "Remove Layer" step and waits. Krita takes each node
+    # off its own parent, so attach takes back one node at a time; returns each detached node by
+    # id. LAYER_NOT_FOUND for an unknown id.
+    def remove_node(self, document: Any, layer_id: str) -> dict[str, Any]: ...
+
+    # A detached copy of a node and its subtree, every node with a new id, named and hidden
+    # before it is attached; no undo step.
+    def duplicate_node(self, document: Any, layer_id: str, name: str) -> Any: ...
+
+    # Adds a detached node under parent_id, directly above above_id or on top, in one "Add
+    # Layer" step; waits, and returns its id.
+    def attach(self, document: Any, node: Any, parent_id: str, above_id: str | None) -> str: ...
+
     # Builds a selection by the recipe's steps, in order, and commits it with setSelection (one
     # undo step); a recipe of ("clear",) commits None. Waits.
     def set_selection(self, document: Any, recipe: list[tuple[Any, ...]]) -> None: ...

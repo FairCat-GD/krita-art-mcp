@@ -80,8 +80,8 @@ do. Undoable is not the same as additive, so a stroke stays destructive.
 | Hints | Tools | Worst it can do |
 |---|---|---|
 | Read-only | `krita_server_info`, `krita_document_list`, `krita_document_inspect`, `krita_resource_list`, `krita_capture`, `krita_sample`, `krita_preview_render`, `krita_operation_get` | Change no document. Captures and previews write their PNGs to the data folder. One exception, chosen on purpose: `krita_operation_get` polled for a save that came back running finishes it, putting its file in place, but only in the server process that made the call |
-| Not destructive | `krita_protection_set`, `krita_document_open`, `krita_document_create`, `krita_document_save` | Add: tighter protection, a working copy, a document, a new file |
-| Destructive | `krita_layer_create`, `krita_paint_stroke`, `krita_paint_fill`, `krita_selection_set`, `krita_layer_update`, `krita_history_step`, `krita_operation_cancel`, `krita_document_close` | Change what is there: what a layer shows (a new mask can hide it), pixels, the selection, a layer, history, a queued call, or unsaved changes a close discards |
+| Not destructive | `krita_protection_set`, `krita_document_open`, `krita_document_create`, `krita_document_save`, `krita_layer_duplicate` | Add: tighter protection, a working copy, a document, a new file, a hidden copy of a layer |
+| Destructive | `krita_layer_create`, `krita_paint_stroke`, `krita_paint_fill`, `krita_selection_set`, `krita_layer_update`, `krita_layer_reorder`, `krita_layer_remove`, `krita_history_step`, `krita_operation_cancel`, `krita_document_close` | Change what is there: what a layer shows (a new mask can hide it, a move can cover it), pixels, the selection, a layer, the layer stack, history, a queued call, or unsaved changes a close discards |
 
 **Codex's approval setting.** By default Codex reviews every call a tool's hints call destructive.
 Measured in two long sessions, each such call carried 2 to 3 s beyond the tool's own time, and each
@@ -173,6 +173,23 @@ A soft brush softens the edge, and a selection confines it as it confines colour
 it must be unprotected, and a mask in a file you open is protected like a layer. A mask is checked
 against protection like a stroke: one that would hide paint outside the allowed mask is undone. A
 mask's `bounds_px` and a mask stroke's `layer_bounds_px` are its layer's, as Krita reports them.
+
+**Try a change on a copy, group layers, remove what you do not keep.**
+- **`krita_layer_duplicate`** copies a layer or group, with every layer and mask inside it, as a
+  hidden layer directly above it, in one undo step. The source may be protected; the copies are
+  yours. Nothing shows until you show the copy with `krita_layer_update` (`visible: true`), perhaps
+  hiding the original, to compare. `id_map` gives each copied node's new id. Name the copy apart
+  from its source: an ORA reopen refuses a name two layers share.
+- **`krita_layer_reorder`** moves a layer or group, with what it holds, under the root or into a
+  group, directly above `above_id`, or on top when it is null. Grouping is a reorder: create a
+  group, then move layers into it. It takes one undo step for the remove and one for each node it
+  adds back (Krita takes a moved group apart and the bridge puts it back), stated in `undo_steps`,
+  and the whole canvas is checked against protection.
+- **`krita_layer_remove`** removes a layer or group with all it holds, or a transparency mask, in
+  one undo step; undone, the same layers come back with the same ids.
+- **What they refuse:** a protected layer, or one holding a protected layer (`LOCKED_TARGET`); a
+  layer a clone layer shows, which Krita would turn into a paint layer
+  (`UNSUPPORTED_CAPABILITY`, `reason: clone_source`); and removing a document's last layer.
 
 **5. Say where you may work.** `krita_protection_set` only ever tightens, and it stops undo at that
 point, so do it once, with the union of everything you will repair, then confine each repair with a
@@ -273,8 +290,10 @@ explicit recipes. A source's `baseline_id` shows the document as opened beside i
 ```
 
 **8. Undo or keep.** `krita_history_step` undoes or redoes the bridge's own steps, up to 50 a call,
-never below the last protection change. Layer and mask creation, selection commits, blend changes,
-strokes and fills, on layers and masks, undo; other property changes cannot.
+never below the last protection change. Layer and mask creation, duplicates, reorders and
+removals, selection commits, blend changes, strokes and fills, on layers and masks, undo; other
+property changes cannot. A reorder's steps move together: a count that would split one is refused
+with the count to ask for, in `details.steps_needed`.
 
 **9. Save to a new path.** The file is written beside the path, reopened in Krita, compared, and only
 then moved into place. It never overwrites.
@@ -358,7 +377,7 @@ Every failure returns `error: {code, message, retryable, details}`. The table gi
 | `REQUEST_ID_CONFLICT` | no | That `request_id` was used with other arguments | Use a fresh UUID |
 | `DOCUMENT_NOT_FOUND` | no | The document was closed, or Krita restarted | List the documents, and reopen if you need it |
 | `LAYER_NOT_FOUND` | no | No layer has that id here | Inspect. A reopened ORA or PNG has new ids; match by name |
-| `LOCKED_TARGET` | no | The layer is protected, or holds or is a protected layer; or a mask's layer, or a group above it, is protected | Add a layer of your own |
+| `LOCKED_TARGET` | no | The layer is protected, or holds or is a protected layer; or a mask's layer, or a group above it, is protected | Add a layer of your own, or duplicate a protected one and work on the copy |
 | `LAYER_NOT_PAINTABLE` | no | The target is not a paint layer, or Krita refuses paint on it | Paint on a paint layer of your own |
 | `LAYER_HAS_LOCAL_SELECTION` | no | The layer has a local selection mask, which would confine the stroke or fill | Paint on another layer |
 | `PROTECTED_REGION_CHANGED` | no | The change reached protected pixels, and was undone and confirmed | Read `details.verification` and the diff image, then confine the stroke with a selection |
@@ -406,8 +425,8 @@ Every failure returns `error: {code, message, retryable, details}`. The table gi
 - **Region verification needs the pixel brush engine.** Color Smudge, the Quick Brush, MyPaint, spray,
   deform and others need `verify: "full"`.
 - Stochastic presets do not repeat exactly.
-- No filters, transforms, flood fills from a seed, or layer or mask deleting, reordering or
-  duplicating.
+- No filters, transforms or flood fills from a seed. A mask moves and is copied only with its
+  layer, and a clone layer's source is neither moved nor removed.
 - **A fill is one flat colour.** No gradients or patterns, and no fill of a shape past the canvas.
 - **Masks are transparency masks on paint layers.** No masks on groups, no filter, transform or
   selection masks made by a tool, and a mask takes only `name` and `visible` from

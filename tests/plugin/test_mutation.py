@@ -19,7 +19,7 @@ CREATE = {
     "profile_id": documents.SRGB_PROFILE,
     "background": "transparent",
 }
-ADD = LABELS["layer.create"]
+ADD = LABELS["layer.create"][0]
 
 
 class World:

@@ -44,7 +44,9 @@ _MATRIX: dict[str, tuple[bool, str | None, str]] = {
     "undo.grouping": (
         False,
         None,
-        "Krita's scripting API cannot group undo steps; each change is its own step.",
+        "Krita's scripting API cannot group undo steps: each is its own, and a reorder takes "
+        "one for the remove and one for each node it adds back, which its receipt states and "
+        "history moves together.",
     ),
     "stroke.deterministic": (
         False,
