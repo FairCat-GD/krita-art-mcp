@@ -1747,6 +1747,74 @@ README's tool list" is struck (F26). B1 ships 0.26.0.
 - **Layer ids persist through KRA only (K39).** Confirm it for every node type protection names.
 - **The source stays dirty as it was.** A branch must not clear its source's dirt.
 
+**Done (2026-11-09, 0.26.0).**
+- **Decided with the owner in plan mode:**
+  - **The hint is additive** (`destructiveHint: false`).
+  - **A branch takes its source's mode:** `working_copy` stays `working_copy`, `new` stays `new`.
+  - **The maker's poll opens the branch too.** F6's written exception widens from "finishes a
+    save" to "finishes a save or a duplicate, placing its file and opening the branch".
+  - **Krita restarts and live runs** were allowed at 0 unsaved, with the Codex agent paused.
+  - **An adversarial review by Opus** found 3 design faults, 5 gaps and 4 nits, all folded in. The
+    main ones: reading protection at the reopen alone could loosen it, since protection drops a
+    protected node that has gone; the fake kept layer pixels by id alone, so a branch would share
+    its source's; a poll that opens a document needed the owner's word. Others: the open's own
+    `not_applied` must never stand; the source's composite may be recomposed by the save's refresh;
+    the instructions must not promise both baselines in one render; four docs became false.
+- **Shipped:**
+  - `krita_document_duplicate`; ops `document.duplicate` (the save's handler with `branch`, F9's
+    distinct first op) and `document.duplicate_open`, both `BOUNDED`; the finish reused.
+  - `Pending.branch`: what the branch inherits, read in the job that writes the file. The finish
+    for a branch clears nothing and records the placed file in `Handle.branches`.
+  - `document.duplicate_open {document_id, save_id}` takes no path, so no client can open an
+    arbitrary `.kra` directly through it. It inherits the tighter of the snapshot and the source
+    now: the union of protected ids within the branch's nodes, the AND of the masks, each flag's
+    OR.
+  - `Handle.opened_sha256`; the lazy baseline reads against it and no longer needs a source.
+  - `opening.opened`, shared by the open and the branch; `opening.Made` made public.
+  - The server's `tools/branching.py`: the chain, its own mapper for the open's failure (always
+    `uncertain`, with the file's path and hash), the poll; `saving.py`'s finisher takes the tool's
+    name and noun, and `derived_operation_id` serves both derived ids.
+  - The fake: a reopened KRA keeps its pixels apart from its source's; a placed file reopens as the
+    export that wrote its bytes.
+  - `probe/branching.py`, 11 checks in the save stage; the read-only refusal check covers the
+    duplicate.
+- **Amendments:**
+  - **The reopen takes a `save_id`, not a path,** and opens only a file the bridge's own finish
+    placed. The block named no inputs; a path would have let any client open a `.kra` directly.
+    The session's design, approved at plan time.
+  - **Inheritance is snapshotted at the save and tightened at the reopen,** not read at the reopen
+    alone. Found by the plan review.
+  - **The envelope's `document_id` is the source's,** as the contract's draft has it; the branch is
+    `data.new_document_id`. The receipt also says the source's `dirty` and `krita_modified`.
+  - **The review's large-baseline test was not added.** The preview's pixel budget is existing
+    behaviour, held by `test_previews`' two budget tests; only the guide's and the instructions'
+    wording follow it.
+  - **The bridge contract's op table** was stale at 33 ops and missed L1's three; it now lists 38.
+    The marker table gains L1's ops too.
+  - **`api_version` stays 0.4.0;** a tool and fields were added.
+- **Checked live:** `install-plugin`, Krita restarted at 0 unsaved once, `doctor` 6 of 6.
+- **Probe runs:** 206 PASS, 0 FAIL, 25 MEASURED in 147.2 s with 0 documents open. Every node type
+  kept its id through the branch: paint, group, transparency mask, filter layer and mask,
+  transform mask, clone, local and global selection masks. The journal check read 775 dispatched
+  lines.
+- **Falsified,** each once, the tree restored byte for byte:
+  - **37 unit mutations,** 34 in product code or the fake (the format rule both sides and its
+    twin, the guard, the snapshot, the source's dirt from plugin and server, the placed record, the
+    flags, the tighter union, the single open, the placed hash, the mask size, the failed open's
+    close and its kept file, the fake's apart pixels, the baseline's own hash and its no-source
+    rule, the open's hash, the source fields, a save replacing a duplicate, both markers, the
+    retry's dedup, own baselines, the created mode, the maker's poll, another's read, the retry
+    hint, the open's mapper, the finish's naming, the read's mapping, the unopened receipt) and 3
+    by breaking the assertion of a test no product mutation reached (the rerun under its id, the
+    kept branch, never overwriting). Every new test failed at its own check.
+  - **One first passed:** the retry's dedup, whose random open id the bridge still deduped by the
+    open's `request_id`; randomising both, it failed at its own test.
+  - **The probe:** one run with the 12 new assertions broken failed those 12 and no others.
+- **Numbers:** 1117 server tests (+33), 1063 plugin tests (+24), probe 206 PASS (+11), 0 FAIL, 25
+  MEASURED, 147.2 s with 0 documents open; the journal check read 775 dispatched lines. 24 tools,
+  24 schema files, 30 error codes, 38 ops (+2), 13 capabilities, instructions 3,322 characters,
+  `api_version` 0.4.0.
+
 ---
 
 ## T1: Translate

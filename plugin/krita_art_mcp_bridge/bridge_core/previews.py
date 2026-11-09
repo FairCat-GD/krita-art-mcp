@@ -112,9 +112,9 @@ def handlers(registry: Registry, port: DocumentsPort, data: Path) -> dict[str, H
 
     def _as_opened(handle: Handle, info: dict[str, Any], call: Call) -> Any:
         # The file Krita opened holds the document as it was opened: no save overwrites it.
-        if handle.path is None or handle.source_sha256 is None:
+        if handle.path is None or handle.opened_sha256 is None:
             raise BridgeError("INTERNAL_ERROR", "The document has no file to read its baseline.")
-        if not files.unchanged(handle.path, handle.source_sha256):
+        if not files.unchanged(handle.path, handle.opened_sha256):
             details = {"document_id": handle.document_id, "path": handle.path}
             message = "The file this document was opened from has changed; its baseline is gone."
             raise BridgeError("SOURCE_HASH_MISMATCH", message, False, details)

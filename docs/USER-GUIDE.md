@@ -79,8 +79,8 @@ do. Undoable is not the same as additive, so a stroke stays destructive.
 
 | Hints | Tools | Worst it can do |
 |---|---|---|
-| Read-only | `krita_server_info`, `krita_document_list`, `krita_document_inspect`, `krita_resource_list`, `krita_capture`, `krita_sample`, `krita_preview_render`, `krita_operation_get` | Change no document. Captures and previews write their PNGs to the data folder. One exception, chosen on purpose: `krita_operation_get` polled for a save that came back running finishes it, putting its file in place, but only in the server process that made the call |
-| Not destructive | `krita_protection_set`, `krita_document_open`, `krita_document_create`, `krita_document_save`, `krita_layer_duplicate` | Add: tighter protection, a working copy, a document, a new file, a hidden copy of a layer |
+| Read-only | `krita_server_info`, `krita_document_list`, `krita_document_inspect`, `krita_resource_list`, `krita_capture`, `krita_sample`, `krita_preview_render`, `krita_operation_get` | Change no document. Captures and previews write their PNGs to the data folder. One exception, chosen on purpose: `krita_operation_get` polled for a save or a duplicate that came back running finishes it, putting its file in place and opening a duplicate's branch, but only in the server process that made the call |
+| Not destructive | `krita_protection_set`, `krita_document_open`, `krita_document_create`, `krita_document_save`, `krita_layer_duplicate`, `krita_document_duplicate` | Add: tighter protection, a working copy, a document, a new file, a hidden copy of a layer, a branch of a document |
 | Destructive | `krita_layer_create`, `krita_paint_stroke`, `krita_paint_fill`, `krita_selection_set`, `krita_layer_update`, `krita_layer_reorder`, `krita_layer_remove`, `krita_history_step`, `krita_operation_cancel`, `krita_document_close` | Change what is there: what a layer shows (a new mask can hide it, a move can cover it), pixels, the selection, a layer, the layer stack, history, a queued call, or unsaved changes a close discards |
 
 **Codex's approval setting.** By default Codex reviews every call a tool's hints call destructive.
@@ -194,6 +194,23 @@ mask's `bounds_px` and a mask stroke's `layer_bounds_px` are its layer's, as Kri
 - **What they refuse:** a protected layer, or one holding a protected layer (`LOCKED_TARGET`); a
   layer a clone layer shows, which Krita would turn into a paint layer
   (`UNSUPPORTED_CAPABILITY`, `reason: clone_source`); and removing a document's last layer.
+
+**Try a whole alternative on a branch.** `krita_document_duplicate` saves the document to a new
+`.kra` path inside a root, verifies the file by reopening it, as a save does, and opens that file
+as a document of its own. Its receipt names it `new_document_id`.
+- **The branch keeps** every layer id, the protection, the allowed mask and both flags, and the
+  source's mode. Its history starts empty, and it has its own `baseline_id`: the document as it was
+  when you duplicated it.
+- **The source stays as it was,** dirty or not; the receipt says which (`source_dirty`,
+  `source_krita_modified`). Save it on its own when you want it kept.
+- **Compare the two** with `krita_preview_render`, one source each, each with its own
+  `baseline_id`. Reading a baseline costs its whole canvas once, so on large canvases render each
+  document with its baseline on its own first; after that, both fit in one render.
+- **Close what you do not keep.** A close removes that document's baseline alone.
+- **`.ora` is refused** (`UNSUPPORTED_CAPABILITY`): only KRA keeps the layer ids protection names.
+- **If the branch was saved but did not open,** the answer is `uncertain` and gives the file's
+  `path`. When Krita refused the open at its start, retry with the same `request_id` and it opens;
+  otherwise `krita_document_open` opens the file, with every layer protected.
 
 **5. Say where you may work.** `krita_protection_set` only ever tightens, and it stops undo at that
 point, so do it once, with the union of everything you will repair, then confine each repair with a
@@ -321,7 +338,8 @@ the last verified save, and `krita_modified`, Krita's own flag, which list and i
 save writes a copy, so Krita keeps the document marked modified and still asks to save it on a close.
 Krita's own Save writes the working copy, never the saved file. On a PNG working copy it opens the
 PNG export dialog, and its warning that the image will lose information means the layers are
-flattened.
+flattened. A branch is opened from its own file, so Krita's Save on a branch writes that file, and
+its baseline is then gone.
 
 **10. Close.** `dirty_policy: "refuse"` fails with `DOCUMENT_DIRTY` while the bridge or Krita holds a
 change since the last verified save. A change made by hand counts when it changes the layers, any
@@ -387,7 +405,7 @@ Every failure returns `error: {code, message, retryable, details}`. The table gi
 | `PROTECTED_REGION_CHANGED` | no | The change reached protected pixels, and was undone and confirmed | Read `details.verification` and the diff image, then confine the stroke with a selection |
 | `OUTSIDE_ALLOWED_MASK` | no | The stroke or fill lies entirely outside the allowed mask; nothing was painted | Move it |
 | `RESOURCE_HASH_MISMATCH` | no | A preset or mask differs from the hash given | List it again, and do not edit presets during a session |
-| `SOURCE_HASH_MISMATCH` | no | The source or working copy differs from the hash given | Hash the file again, or find what changed it |
+| `SOURCE_HASH_MISMATCH` | no | The source, the working copy or a branch's file differs from the hash given or kept | Hash the file again, or find what changed it |
 | `COLOR_PROFILE_MISMATCH` | no | The document is not 8-bit RGBA, or this needs sRGB | Work on another document; Phase 1 does not convert |
 | `DOCUMENT_DIRTY` | no | A close with `refuse` while the bridge or Krita holds a change no verified save holds; `details` names `dirty` and `krita_modified` | Save, or close with `discard` |
 | `DOCUMENT_UNSAFE` | no | A rollback could not be confirmed | Close it, and reopen from your last verified save |
@@ -485,7 +503,7 @@ its own model: captures and previews reach that client as images.
 | … `baselines/` | Documents as opened, for previews | Until the document closes |
 | … `journal/` and `journal/args/` | Every journaled call with its arguments | Permanent; nothing sweeps it. About 44 MB of lines in a heavy week |
 | … `harness/` | The probe's own files | A run |
-| Your roots | Working copies, named `<UTC stamp>-<name>`, and your saves | Yours |
+| Your roots | Working copies, named `<UTC stamp>-<name>`, your saves, and your branches, each opened from its own file | Yours |
 | Beside a save | A hidden `.<name>.<token>.saving.kra`, for the length of the save | A new save or a close removes one left unfinished; a Krita crash can leave one |
 | `~/Library/Application Support/Krita/pykrita/` | The plugin | Until the next install |
 | `~/Library/Preferences/kritarc` | The enable flag you set. Krita itself records the last preset and preset history | Krita's |

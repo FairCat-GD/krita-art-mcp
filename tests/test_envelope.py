@@ -37,6 +37,7 @@ from krita_art_mcp.instructions import INSTRUCTIONS
 from krita_art_mcp.probe import painting as probe_painting
 from krita_art_mcp.probe import saving as probe_saving
 from krita_art_mcp.probe import updates as probe_updates
+from krita_art_mcp.tools import branching as tool_branching
 from krita_art_mcp.tools import documents as tool_documents
 from krita_art_mcp.tools import observe
 from krita_art_mcp.tools import preview as tool_preview
@@ -89,6 +90,8 @@ def test_the_server_and_plugin_constants_agree() -> None:
     assert probe_updates.BLEND_LABEL == bridge_history.LABELS["layer.update"][0]
     assert set(bridge_saving.SRGB_PROFILES) == colour.SRGB_PROFILES
     assert tool_saving.FORMATS == bridge_saving.FORMATS
+    assert tool_branching.FORMATS == bridge_saving.DUPLICATE_FORMATS
+    assert tool_branching.FORMATS_MESSAGE == bridge_saving.DUPLICATE_FORMATS_MESSAGE
     # The probe compares inspect's entries, which carry the space fields it leaves out.
     spaces = ("color_model", "depth", "profile_id")
     assert probe_saving.KRA_FIELDS == tuple(

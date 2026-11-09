@@ -1,6 +1,6 @@
 # krita-art-mcp — architecture, as built
 
-This is the system as it stands at 0.25.0, in round 2, on the Phase 1 round 1 built. Every session
+This is the system as it stands at 0.26.0, in round 2, on the Phase 1 round 1 built. Every session
 keeps it true, in the same commit as the change. Each section stands on its own: a session reads
 the overview, the invariants and the baseline, then only the sections its work touches.
 `docs/USER-GUIDE.md` is the same system from the user's side.
@@ -12,8 +12,9 @@ It is for painted (non-pixel) 2D game art, run by one developer on macOS with Kr
 loop: open a working copy with every existing layer protected; inspect, capture and sample; add a
 layer, select, tighten protection; paint native strokes and fills, each verified and rolled back on
 a leak; soften or revise with transparency masks painted the same way; try a change on a hidden
-copy of a layer, group layers by moving them, remove what is not kept; preview at game size; undo
-or keep; save to a new KRA or ORA, verified by reopening; close.
+copy of a layer, group layers by moving them, remove what is not kept; branch the whole document
+to try an alternative beside it; preview at game size; undo or keep; save to a new KRA or ORA,
+verified by reopening; close.
 
 ```
 MCP client (Codex, Claude Code) ──stdio──▶ server: src/krita_art_mcp/   (Python 3.12)
@@ -155,11 +156,11 @@ while stopping, then the body: 411 with no length or when chunked, 413 over 64 M
 Every operation reply carries `session_id`, `operation_id`, `request_id` and `op`; health and
 refusals leave out `op`. One error body serves every refusal. `wait_s` is capped at 10 s. `ephemeral` is required on every call.
 
-**The ops: 33.**
+**The ops: 38.**
 
 | Group | Ops |
 |---|---|
-| Sent by tools (19) | `server_info`, `document.list`, `document.open`, `document.create`, `document.inspect`, `document.close`, `document.save`, `document.save_finish`, `resource.list`, `capture.read`, `sample.read`, `preview.read`, `layer.create`, `layer.update`, `selection.set`, `protection.set`, `history.step`, `paint.stroke`, `paint.fill` |
+| Sent by tools (24) | `server_info`, `document.list`, `document.open`, `document.create`, `document.inspect`, `document.close`, `document.save`, `document.duplicate`, `document.save_finish`, `document.duplicate_open`, `resource.list`, `capture.read`, `sample.read`, `preview.read`, `layer.create`, `layer.update`, `layer.duplicate`, `layer.reorder`, `layer.remove`, `selection.set`, `protection.set`, `history.step`, `paint.stroke`, `paint.fill` |
 | Server and `doctor` (2) | `bridge.unsaved_documents`, `document.baselines` |
 | Fixtures, the probe only (11) | `harness.export_kra`, `.select_mask`, `.front_document`, `.activate`, `.undo_labels`, `.label_timing`, `.add_node`, `.view`, `.brush_state`, `.preset_dirty`, `.undo` |
 | A measurement, the probe only (1) | `harness.retention` |
@@ -215,12 +216,13 @@ two-op tool should know its reach.
 
 ## The tool contract
 
-**23 tools.** Observe: `krita_server_info`, `krita_document_list`, `krita_document_open`,
+**24 tools.** Observe: `krita_server_info`, `krita_document_list`, `krita_document_open`,
 `krita_document_create`, `krita_document_inspect`, `krita_resource_list`, `krita_capture`,
 `krita_sample`. Paint safely: `krita_layer_create`, `krita_layer_update`, `krita_layer_duplicate`,
-`krita_layer_reorder`, `krita_layer_remove`, `krita_selection_set`, `krita_protection_set`,
-`krita_paint_stroke`, `krita_paint_fill`. Deliver: `krita_history_step`, `krita_operation_get`,
-`krita_operation_cancel`, `krita_preview_render`, `krita_document_save`, `krita_document_close`.
+`krita_layer_reorder`, `krita_layer_remove`, `krita_document_duplicate`, `krita_selection_set`,
+`krita_protection_set`, `krita_paint_stroke`, `krita_paint_fill`. Deliver: `krita_history_step`,
+`krita_operation_get`, `krita_operation_cancel`, `krita_preview_render`, `krita_document_save`,
+`krita_document_close`.
 
 **The envelope.** Every tool returns `structuredContent` matching its output schema:
 `{api_version, status, document_id, revision, operation_id, data, error}`, plus one short text line.
@@ -248,14 +250,16 @@ nothing changed for a paint layer, so `api_version` stayed 0.4.0. At 0.23.0 a sa
 failed after the save reads `uncertain`, a rollback's failure adds `history_sealed`, and a save's
 poll from another process finishes nothing: values and fields, no rename, so it stays. At 0.25.0
 three layer tools were added and `krita_history_step` refuses to split an operation's steps, a
-refusal it did not make before but no field or value changed, so it stays.
+refusal it did not make before but no field or value changed, so it stays. At 0.26.0 a tool and a
+handle field were added, so it stays.
 
-**Schemas are data.** Each of the 23 `schemas/krita_<tool>.json` holds `name`, `description`,
+**Schemas are data.** Each of the 24 `schemas/krita_<tool>.json` holds `name`, `description`,
 `inputSchema`, `outputSchema`, `annotations` and `example`. `MCPServer` tools are built by hand with
 `FuncMetadata`, so the contract's exact JSON Schema is published and no pydantic model filters
 arguments; `ExactArguments` passes them through and the runner validates with Draft 2020-12.
 `scripts/amend_schemas.py` writes the shapes the files share (the envelope with its typed error,
-`guard`, `source`, the completed rule's copy of `data`, inspect's `layers`, the stroke's colour as
+`guard`, `source`, the completed rule's copy of `data`, open's `layers` as inspect's and the
+duplicate's, inspect's `protection` as the duplicate's, the stroke's colour as
 the sample's `color` and the fill's, the stroke's mask paint as the fill's `mask`, the selection's
 rect, ellipse and polygon as the fill's, layer_update's `verification` as the stroke's, the fill's
 and each layer op's, and the outcome values as operation_get's `outcome`) and formats them; a test
@@ -271,11 +275,13 @@ sample's `color` sent as a stroke's colour.
 
 **Hints follow each tool's worst permitted behaviour.**
 - The eight reads are `readOnlyHint: true`. One exception is written down, the owner's choice at
-  X1: `krita_operation_get` finishes a save it is polled for, putting its file in place, but only
-  in the server process that made the call (*The server*). Any other poll only reads.
-- Five mutating tools only add, and are `destructiveHint: false`: `krita_protection_set`,
-  `krita_document_open`, `krita_document_create`, `krita_document_save` and
-  `krita_layer_duplicate`, whose copy is always hidden, so the composite cannot change.
+  X1, widened at B1: `krita_operation_get` finishes a save or a duplicate it is polled for,
+  putting its file in place and opening a duplicate's branch, but only in the server process that
+  made the call (*The server*). Any other poll only reads.
+- Six mutating tools only add, and are `destructiveHint: false`: `krita_protection_set`,
+  `krita_document_open`, `krita_document_create`, `krita_document_save`,
+  `krita_layer_duplicate`, whose copy is always hidden, so the composite cannot change, and
+  `krita_document_duplicate`, which writes a new file, opens it, and leaves its source as it was.
 - The other ten are destructive, because undoable is not additive. A fill overwrites what is
   there, a reorder or a remove changes what shows, and `krita_layer_create` can make a mask that
   hides its whole layer, as `visible: false` would; it was additive until masks went live at
@@ -283,7 +289,7 @@ sample's `color` sent as a stroke's colour.
 - `idempotentHint` is true and `openWorldHint` false on every tool.
 - `readOnlyHint` is load-bearing. `tools.build` reads it to decide what mutates, and the
   `BOUNDED` test holds the ops to it.
-- A table test in `tests/test_tools.py` holds all 23, so a new tool's hints are chosen, never
+- A table test in `tests/test_tools.py` holds all 24, so a new tool's hints are chosen, never
   copied.
 
 Codex reviews every destructive call unless the owner sets the server's
@@ -432,7 +438,7 @@ presets have no seed), `operation.cancel_running`, `color_spaces`, `filters` (Ph
 (Phase 5). True since 0.9.0: `stroke.native_brush`, `stroke.smoothing`, `selection.enforced`; since
 0.21.0, `paint.fill`; since 0.22.0, `mask.transparency`; since 0.24.0, `stroke.dynamics`.
 
-**The instructions.** `instructions.py` is 3,149 of Claude Code's 4,096 characters (C4). A test
+**The instructions.** `instructions.py` is 3,322 of Claude Code's 4,096 characters (C4). A test
 holds at least 700 spare, room for the round's later sessions. It states the rules an agent would
 otherwise learn from a refusal, and leaves to the tools what belongs to one: a field's range, unit
 and form to its description, and a tool's own rule to the tool's, each moved rule held there by a
@@ -556,16 +562,18 @@ state are not changes here, because an op sets them before its marker:
 | `document.open` | the working folder, or `port.open` for a read-only open |
 | `document.create` | `port.create` |
 | `document.close` | dropping a pending save |
-| `document.save` | making the folder |
+| `document.save`, `document.duplicate` | making the folder |
 | `document.save_finish` | clearing the pending save |
+| `document.duplicate_open` | `port.open` |
 | `protection.set` | writing the handle's state |
 | `selection.set` | `before_change` |
-| `layer.create`, `paint.stroke`, `paint.fill` | the frame, beside `before_change` |
+| `layer.create`, `layer.duplicate`, `layer.reorder`, `layer.remove`, `paint.stroke`, `paint.fill` | the frame, beside `before_change` |
 | `layer.update` | the frame, or `port.activate` for `active` alone |
 | `history.step` | inside `move()`, past its `FOREIGN` return |
 
-**Every op has a class.** `READS` (9) change nothing. `BOUNDED` (12) carry a marker, and a test holds
-them equal to the mutating tools' ops and `document.save_finish`. `harness.*` has no marker, so a
+**Every op has a class.** `READS` (9) change nothing. `BOUNDED` (17) carry a marker, and a test holds
+them equal to the mutating tools' ops, `document.save_finish` and `document.duplicate_open`, the
+two sent under ids derived from another call's. `harness.*` has no marker, so a
 raise from one proves nothing, and the test pins each by name so no tool op hides under the prefix.
 An op in no class is `uncertain` too, so a new op that forgets its class fails safe.
 
@@ -598,7 +606,9 @@ logged at debug, so polls that time out during a long call do not flood the log.
 `bridge_core/registry.py` holds one `Handle` per open document: a random `doc-` id, a strong
 reference to the wrapper (K6), `owned`, `mode` (`new`, `working_copy`, `read_only`), `dirty`,
 `unsafe`, `lease`, paths and hashes, `protected`, `allowed_mask`, the flags, the ledger, any
-pending save and the last verified save's `saved_state`. `sync()` matches wrappers by `==` (libkis compares by document), prunes documents that
+pending save, the last verified save's `saved_state`, and the duplicates placed but not yet opened
+(`branches`). Its hashes are kept apart: `source_sha256` is the accepted source's, and
+`opened_sha256` the file Krita opened, which the lazy baseline reads against. `sync()` matches wrappers by `==` (libkis compares by document), prunes documents that
 are gone, and gives the owner's documents `read_only` handles.
 
 **`guarded()` runs in one order:** the job-start refusal (a modal dialog or several windows), the
@@ -639,6 +649,30 @@ open. Only RGBA / U8 opens; any RGB profile is accepted.
 **Create.** `Krita.createDocument` makes an opaque white "Background" layer, so the plugin replaces it
 with a new paint layer through `Node.setChildNodes`, which pushes no undo step, and checks the layer's
 opacity, its alpha and that it is active.
+
+**Duplicate.** A branch is a verified save to a new `.kra`, then that file opened as a document of
+its own (decision 12). `Document.clone()` is never used: it is not added to `KisPart`, which
+`Krita.documents()` reads, so `sync` would drop it. Three ops, each its own job:
+- `document.duplicate` is the save's handler with `branch` set: `.kra` only (only KRA keeps the
+  layer ids protection names, K39), the same guard, hidden file and compare. Its `Pending` holds
+  what the branch inherits, read in that job: the protected ids, the allowed mask (the handle's
+  own bytes, never changed in place), both flags and the canvas size.
+- `document.save_finish` places the file as for a save, but never touches the source's `dirty` or
+  `saved_state`, so the source stays as it was; it records the placed file in the source's
+  `branches`, by save id.
+- `document.duplicate_open {document_id, save_id}` takes no path: it opens only a file the
+  bridge's own finish placed, so no client can open an arbitrary `.kra` directly through it. Before
+  its marker it checks the path against the roots, the file's hash and the mask's size. It then
+  opens, shows and checks the file as the open does (`opening.opened`), and registers the branch
+  last: the source's mode, the file as `path` and its hash as `opened_sha256`, the source's
+  `source_*` fields (null for a created document's branch, so `baseline_untouched` keeps meaning),
+  a new `baseline_id`, an empty ledger, the caller's lease.
+- **What it inherits is the tighter of the save's snapshot and the source now:** the union of the
+  protected ids, kept to the branch's own nodes; the AND of the masks; each flag's OR. Protection
+  drops a protected node that has gone from the source, so the snapshot keeps a rerun from
+  loosening, and a tightening since applies too.
+- A failure after its marker closes the branch and keeps the file and its `branches` entry, so a
+  retried open can run. An entry whose open failed for good stays until the source closes.
 
 **The close.** `refuse` answers `DOCUMENT_DIRTY` while `dirty` is set, and while Krita holds the
 document modified unless it still matches its last verified save: `saving.matches_saved` reads the
@@ -1068,8 +1102,10 @@ as "Redo " with nothing to redo, so they are confirmed by state alone.
 
 **The lazy baseline.** The open mints `baseline_id` and writes nothing: a baseline written at open
 cost 4.7–5.2 s and 268 MB on the 8k master. The server sends `read_baseline: true` only when it holds
-no `baselines/<id>.npy`. The plugin then checks the working copy's file still hashes to
-`source_sha256`, opens it again without a view, reads its composite and closes it in the same job.
+no `baselines/<id>.npy`. The plugin then checks the file Krita opened still hashes to
+`opened_sha256` (a working copy's equals its source's; a branch's is its own file's), opens it again
+without a view, reads its composite and closes it in the same job. A created document has no file
+and no baseline; its branch has both.
 The server adopts the transfer file as the `.npy` and crops it for every later render. A baseline
 file that cannot serve is removed, so the retry reads it again. Baselines are `.npy` because a PNG
 encode of an 8k master could push a reply past the client's timeout.
@@ -1125,7 +1161,9 @@ retryable for that, so a server that is not the holder never locks the holder's 
 compares the written file's inode, size and modification time with what the save took, and the server's
 `mergedimage.png` hash with the live composite's. It then `os.link`s the file into place and unlinks it,
 or, where links fail, checks `lexists` and renames. It clears dirt only if `Handle.changes` is
-unchanged, and then keeps what the save compared as the handle's `saved_state`. Its receipt adds
+unchanged, and then keeps what the save compared as the handle's `saved_state`. A duplicate's
+finish clears nothing and keeps no state: it records the placed file for `document.duplicate_open`
+(*Documents*). Its receipt adds
 `dirty`, `krita_modified` and `document_path`, the file the live document still points at, since
 the export moves neither (K39, K45). A new verified save, a close or a document gone from `sync` drops a save never finished,
 and folders the save made go with it, deepest first and only while empty.
@@ -1178,7 +1216,8 @@ step's capture) is `applied_failure`: ids kept, never retryable.
 
 **Resolvers.** Transfer files become data before a receipt, so a receipt stays a pure function of
 the outcome, and `krita_operation_get` can rebuild one. `RECEIPTS` maps each op to
-`Known(tool, receipt, resolve, finish)`, and a test holds it complete. Images are found by operation
+`Known(tool, receipt, resolve, finish)`, and a test holds it complete. The duplicate's first op is
+`document.duplicate`, not the save's, so its receipt and finish are its own (F9). Images are found by operation
 id before they are made. A second server that took part in a retry gets a null image rather than a
 failure, because the first server took the pixels.
 
@@ -1187,17 +1226,28 @@ call is queued or running. It returns a raw receipt as data, survives one that r
 journal on every path. When the bridge cannot answer, because Krita restarted or has gone, a finished
 line answers with its own outcome; with no line it stays `uncertain`.
 
-**A poll finishes a save only in the process that made the call.**
+**A poll finishes a save or a duplicate only in the process that made the call.**
 - **The record.** `BridgeClient._made` holds the id of every call this process sent with a
   `request_id`, and the id the bridge answered it under. Reads, whose ids the process mints, are
   never polled for a finish, so they stay out of it. `_sent`, which pins a running call's session, also takes ids a
   poll followed, so it cannot say who made a call.
-- **The maker's poll** runs the finish.
+- **The maker's poll** runs the finish, and a duplicate's open after it.
 - **Any other poll only reads.** It GETs the finish's own record and reports it with the save's
   identity. If the bridge holds no finish, it reports the save `uncertain`, with a message saying
   that retrying the save under its `request_id` finishes it.
 - **Why not the journal.** It cannot decide this: two servers on one data folder read the same
   lines.
+
+**The duplicate's chain** (`tools/branching.py`). The save's finisher, given the tool's name, places
+the file; then `document.duplicate_open` runs under an id derived from the duplicate's
+(`open_operation_id`), and the answer keeps the duplicate's identity. Step one fails as a save
+does, and step two by the finish's rule. Step three's failure is always `uncertain` and never
+retryable, whatever the open states, because the file is in place; it carries `details.path` and
+`sha256`. Refused retryably in the duplicate's Krita session, it says a retry under the same
+`request_id` opens the branch, which reruns the open under its id; otherwise it says
+`krita_document_open` opens the file. A poll follows the save's rule: the maker of any of the three
+ids places and opens; any other process reads the finish's record and the open's, and answers
+`uncertain`, saying how to finish, when either was never sent.
 
 **Serve.** Orphaned baselines are swept on a daemon thread under `CALLS`, with a 2 s budget, so a busy
 Krita never delays the client's handshake.
@@ -1247,7 +1297,8 @@ check that already exists is not falsified again.
 facts, then its document checks, which run only when no Krita document has unsaved changes. It works
 in `harness/`, sweeps at start and end, and closes only what it opened. It reads the brush state from
 a document in the harness folder and writes it back: a created document has no path, so that read
-fails, and a driver must stop if it does. A dialog open in Krita refuses calls that read or change a
+fails, and a driver must stop if it does. A created document's branch has one, its file, so the
+gate takes it like any harness document. A dialog open in Krita refuses calls that read or change a
 document, and fails the checks it overlaps. The stock presets `b) Basic-2 Opacity`,
 `b) Airbrush Soft`, `y) Texture Spray` and `y) Texture Wood Fiber` must be listed.
 
@@ -1362,6 +1413,8 @@ Each has its detail in `docs/BACKLOG.md`, or in `docs/spec/SESSIONS.md` where ro
   verdict.
 - The journal is permanent and unbounded.
 - A Krita crash mid-save, or a finish that never ran, leaves a hidden file nothing sweeps.
+- A duplicate placed but never opened stays at its path, a file of the agent's; a retry or
+  `krita_document_open` opens it.
 - Labels are English; region scope is the pixel engine only; filters are classed by type.
 - Selection steps are confirmed by state alone.
 - Erasing, a single dab and antialiasing off are refused.
@@ -1487,29 +1540,35 @@ the code is shaped as it is.
     brought the clone back.
   - The global selection's mask goes on top of the root's children when a selection is set, a
     root layer added after it goes above it, and undoing a clear puts it back at its old index.
+- A branch, on 0.26.0's probe, on a harness ORA working copy: every node kept its id and type
+  through the duplicate's KRA (paint layers, a group, a transparency mask, a filter layer and mask,
+  a transform mask, a clone layer, a local selection mask and the global selection's), and its
+  protection. Krita opened the file the finish linked into place, and its as-opened composite
+  equalled the source's composite read just after the duplicate. The source's `dirty` and
+  `krita_modified` stayed as they were, and every layer's own pixels.
 - Krita's memory grows across large opens and saves, to 2 GB or more in a probe run; a restart resets
   it. A Krita holding 87 documents ran document ops about three times slower, and left the paint
   benchmarks, the preview benchmark and H4 idle alone.
 
-## Baseline (v0.25.0)
+## Baseline (v0.26.0)
 
-Taken on 2026-11-07 on Krita 5.3.4.1, macOS, Apple Silicon, on a Krita restarted that session, with
+Taken on 2026-11-09 on Krita 5.3.4.1, macOS, Apple Silicon, on a Krita restarted that session, with
 **0 documents open**. The probe prints the open-document count beside its time, because document ops
 depend on it: 87 open documents cost about 50 s more.
 
 | Check | Expected |
 |---|---|
 | `uv run scripts/verify.py` | 6 stages, all PASS |
-| Server tests (3.12) | 1084 passed, 0 skipped |
-| Plugin-core tests (3.10) | 1039 passed, 0 skipped |
-| `uv run krita-art-mcp probe` | 195 PASS, 0 FAIL, 25 MEASURED; about 136 s |
+| Server tests (3.12) | 1117 passed, 0 skipped |
+| Plugin-core tests (3.10) | 1063 passed, 0 skipped |
+| `uv run krita-art-mcp probe` | 206 PASS, 0 FAIL, 25 MEASURED; about 147 s |
 | `uv run krita-art-mcp doctor` | 6 steps, all PASS, with a root allowed |
-| Registered tools | 23 |
-| Schema files | 23 |
+| Registered tools | 24 |
+| Schema files | 24 |
 | Error codes | 30 |
-| Bridge ops | 36 |
+| Bridge ops | 38 |
 | Bridge protocol; `api_version` | 1; 0.4.0 |
-| Server instructions | 3,149 of 4,096 characters, at least 700 spare |
+| Server instructions | 3,322 of 4,096 characters, at least 700 spare |
 | CLI commands | 5 |
 
 A documentation or refactoring change should not move any of these. If one moves, that is the

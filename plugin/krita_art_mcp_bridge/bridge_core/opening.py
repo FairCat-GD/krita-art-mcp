@@ -38,7 +38,7 @@ def utc_now() -> datetime.datetime:
     return datetime.datetime.now(datetime.timezone.utc)
 
 
-class _Made:
+class Made:
     # What a failing open has made so far, undone in the same job.
     def __init__(self) -> None:
         self.folders: list[str] = []
@@ -86,7 +86,7 @@ def handlers(
         # Nothing has changed up to here, so only these refusals may be retryable.
         if working is None:
             files.check_source(source, args["source_sha256"])
-        made = _Made()
+        made = Made()
         try:
             path = source
             if working is not None:
@@ -99,25 +99,14 @@ def handlers(
             raise
 
     def _open(
-        made: _Made,
+        made: Made,
         path: str,
         source: str,
         stat: files.Stat | None,
         args: dict[str, Any],
         call: Call,
     ) -> dict[str, Any]:
-        call.mark()
-        document = made.document = port.open(path)
-        port.show(document)
-        info = port.describe(document)
-        if (info["color_model"], info["depth"]) != OPEN_SPACE:
-            details = {key: info[key] for key in ("color_model", "depth", "profile_id")}
-            message = "Phase 1 opens RGBA / U8 documents only."
-            raise BridgeError("COLOR_PROFILE_MISMATCH", message, False, details)
-        # Every read is of frame 0, the baseline read later from this file included.
-        check_shown_frame(info)
-        nodes.unmask(port, document)
-        tree = port.tree(document)
+        document, info, tree = opened(port, made, path, call)
         editable = _editable(
             tree["nodes"], args["editable_layer_ids"], args["editable_layer_names"]
         )
@@ -133,6 +122,8 @@ def handlers(
         handle.source_path = source
         handle.source_sha256 = args["source_sha256"]
         handle.source_stat = stat
+        # A working copy hashes as its source; a read-only open is of the source itself.
+        handle.opened_sha256 = args["source_sha256"]
         handle.baseline_id = baseline_id
         handle.protected = protected
         return {
@@ -153,6 +144,24 @@ def handlers(
         }
 
     return {"document.open": open_document}
+
+
+def opened(
+    port: DocumentsPort, made: Made, path: str, call: Call
+) -> tuple[Any, dict[str, Any], dict[str, Any]]:
+    # A file opened and shown as a document of its own, checked, its tree read.
+    call.mark()
+    document = made.document = port.open(path)
+    port.show(document)
+    info = port.describe(document)
+    if (info["color_model"], info["depth"]) != OPEN_SPACE:
+        details = {key: info[key] for key in ("color_model", "depth", "profile_id")}
+        message = "Phase 1 opens RGBA / U8 documents only."
+        raise BridgeError("COLOR_PROFILE_MISMATCH", message, False, details)
+    # Every read is of frame 0, the baseline read later from this file included.
+    check_shown_frame(info)
+    nodes.unmask(port, document)
+    return document, info, port.tree(document)
 
 
 def _check_args(args: dict[str, Any]) -> str:

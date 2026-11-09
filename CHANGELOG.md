@@ -6,6 +6,34 @@ All notable changes to krita-art-mcp are documented here. The format follows
 
 ## [Unreleased]
 
+## [0.26.0] — 2026-11-09
+
+A whole document can be branched: saved to a new `.kra`, verified, and opened as a document of its
+own, to try an alternative beside the original and compare the two. `api_version` stays 0.4.0: a
+tool and fields were added, and nothing was renamed or removed. This release needs
+`install-plugin`, a Krita restart and a restart of the MCP client.
+
+### Added
+
+- **`krita_document_duplicate`** saves a document to a new `.kra` path inside a root, verifies the
+  file by reopening it as a save does, and opens it as a branch, named by `new_document_id`. The
+  branch keeps every layer id, the protection, the allowed mask, both flags and the source's mode;
+  its history starts empty and it has its own `baseline_id`. The source stays as it was, its dirty
+  flag included, and the receipt says how it stands (`source_dirty`, `source_krita_modified`). It
+  is not destructive: it writes a new file, never over one, and opens it. `.ora` is refused, since
+  only KRA keeps the layer ids protection names.
+- **A branch that was saved but did not open** answers `uncertain` with the file's `path`: a retry
+  under the same `request_id` opens it when Krita refused the open at its start, and
+  `krita_document_open` opens it otherwise.
+
+### Changed
+
+- **`krita_operation_get`** polled from the process that made a duplicate that came back running
+  places its file and opens the branch, as it finishes a save; any other process only reads.
+- **A document's as-opened baseline is read against the file it was opened from,** its own hash
+  kept apart from the accepted source's, so a branch reads its own.
+- **The server instructions** say how to try a whole alternative. 3,322 characters.
+
 ## [0.25.0] — 2026-11-07
 
 Layers can be copied, moved and removed. A copy is hidden, so you can try a change on it and

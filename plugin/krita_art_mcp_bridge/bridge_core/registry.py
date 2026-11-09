@@ -45,6 +45,8 @@ class Handle:
         self.source_path: str | None = None
         self.source_sha256: str | None = None
         self.source_stat: Stat | None = None
+        # The opened file's own hash, which its as-opened baseline is read against.
+        self.opened_sha256: str | None = None
         self.baseline_id: str | None = None
         # Ids of the layers agents may not change; an owner's document is protected whole.
         self.protected: set[str] = set()
@@ -63,6 +65,9 @@ class Handle:
         # What the last verified save compared: Krita's own flag stays set after it (K45), so a
         # close compares this to tell a hand change from what the save holds.
         self.saved_state: Any = None
+        # Duplicates whose files are in place, by save_id, waiting to open as documents. One
+        # whose open failed for good stays until this document closes.
+        self.branches: dict[str, Any] = {}
 
     def before_change(self) -> bool:
         # Called before a handler's first libkis mutation, so an exception after it leaves the

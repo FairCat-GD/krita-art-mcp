@@ -1,54 +1,51 @@
-Read `FEATURE-recovery-and-construction.md` decisions 1, 3, 12; `ARCHITECTURE.md` *The
-invariants* (2, 3, 4), *Documents*, *Registry, lease and document state*, *Previews and the lazy
-baseline*, *The save*, *The server*; `REVIEW-2026-11-06.md` §5 B1, F1, F4, F5, F6, F9, F26; then
+Read `FEATURE-recovery-and-construction.md` *The Codex agent's report* (its answers), decisions 3,
+15; `ARCHITECTURE.md` *The verification core* (Reach), *The undo ledger and history*; from git
+history, `git show 04e9f6c:docs/spec/PDD.md` Q13; `REVIEW-2026-11-06.md` §5 T1, F7, F8, F12; then
 CLAUDE.md, docs/ARCHITECTURE.md's overview, invariants and baseline, your block in
-docs/spec/SESSIONS.md and L1's done-note, then this file, and do Session B1: document duplicate.
-Release 0.26.0.
+docs/spec/SESSIONS.md and B1's done-note, then this file, and do Session T1: translate, on a native
+route or not at all. Release 0.27.0 if it ships.
 
 ## State you need that is not in the specs
 
 - **Round 2 is recovery and construction.**
-  - Done: R1, R2, R3, D1, F1, C1, M1, X1, X1a, E1 and L1.
-  - Remaining, in order: B1, T1, S1, X2 and V1.
-- **L1 shipped 0.25.0.** The versions stand as the table says: B1 0.26.0, T1 0.27.0, S1 0.28.0
-  and V1 0.29.0.
-- **L1 and its review fixes are pushed** (8 findings, all fixed). `origin/main` holds everything
-  through "review: a large group's move could never be undone, and 7 smaller". List
-  `origin/main..HEAD` before any push, and push only on the owner's approval.
-- **What L1 left that later sessions meet:**
-  - **A reorder is 1 + its subtree's size undo steps.** Krita's "Remove Layer" takes each node of
-    a subtree off its own parent, so `addChildNode` brings back the top alone (measured). The
-    reorder re-adds each node, pushing each step as Krita takes it, reading `port.structure`
-    between steps. A move of more steps than `min(50, undoStackLimit)` is refused as
-    `too_many_nodes`.
-  - **History moves an operation's steps together** (`history.whole`): a count that would split
-    one is refused with `steps_needed`. T1's and S1's multi-step ops get this for free.
-  - **The fingerprint is `(id, blend, parent, rank)`;** ranks leave the global selection's mask
-    out (`nodes.ranks`). T1's transform mask still needs its own digest (F8).
-  - **`history.LABELS` is one tuple per op,** a label per step (F12).
-  - **The fake's adds and removes are commands acting by id;** selections and strokes are still
-    snapshots. Its remove dismantles a subtree as Krita's does.
-  - **36 bridge ops;** `tests/plugin/test_outcomes.py` holds the count.
-  - **The instructions are 3,149 characters,** 947 spare; `SPARE_FLOOR` holds 700, leaving 247.
-  - **13 capabilities;** L1 added none.
+  - Done: R1, R2, R3, D1, F1, C1, M1, X1, X1a, E1, L1 and B1.
+  - Remaining, in order: T1, S1, X2 and V1.
+- **B1 shipped 0.26.0.** The versions stand as the table says: T1 0.27.0, S1 0.28.0 and V1 0.29.0.
+  T1 without a native route ships no version, and S1 and V1 move down by one.
+- **B1 is committed locally, not pushed.** `origin/main` holds everything through "review: a large
+  group's move could never be undone, and 7 smaller". List `origin/main..HEAD` before any push,
+  and push only on the owner's approval.
+- **What B1 left that later sessions meet:**
+  - **38 bridge ops;** `tests/plugin/test_outcomes.py` holds the count. `BOUNDED` is 17: the
+    mutating tools' ops plus `document.save_finish` and `document.duplicate_open`, the two sent
+    under derived ids.
+  - **The instructions are 3,322 characters,** 774 spare; `SPARE_FLOOR` holds 700, leaving 74. A
+    T1 line must fit in that, or move a rule into a description first.
+  - **The fake keeps a reopened KRA's pixels apart** (`FakePort.own`, `_buffers`, `_pixels`):
+    route any new pixel access through those two helpers, never `self.buffers` directly.
+  - **A placed file reopens in the fake** as the export that wrote its bytes (`exported`, by
+    SHA-256; each zip carries a serial).
+  - **`opening.opened`** is the open's shared show-and-check; **`Handle.opened_sha256`** is what
+    the lazy baseline reads against.
+  - **13 capabilities;** B1 added none.
 - **What turned out wrong or harder:**
-  - **The fake hid the dismantling.** Unit tests passed a group move that real Krita broke; the
-    probe caught it. Teach the fake what Krita does before trusting a green suite.
-  - **An existing edge check's top-left stroke once painted nothing,** in one probe run of three.
-    Untouched by L1; on the backlog.
+  - **Protection drops a protected node that has gone,** so "protection only tightens" does not
+    make a later read of it at least as tight as an earlier one. B1 snapshots and unions.
+  - **A random operation id alone does not defeat the bridge's dedup:** a derived step's
+    `request_id` dedups it too. A falsification of a derived id must change both.
+  - **The architecture's op and marker tables had drifted** since L1; B1 fixed them. Check them
+    when adding ops.
 - **Decisions written down nowhere else:**
-  - **Plan reviews are the owner's call:** Opus at X1a, E1 and L1. Propose one when a plan reworks
-    a heavily tested path, and ask which model.
-  - **B1's hint is proposed additive;** confirm at plan time, as the block says.
-- **Baseline** (ARCHITECTURE's table, v0.25.0):
-  - `verify`: 6 stages, all PASS; 1084 server tests and 1039 plugin-core tests, 0 skipped;
-  - `probe`: 195 PASS, 0 FAIL, 25 MEASURED, 136 s with 0 documents open, the journal check reading
-    753 dispatched lines;
-  - 23 tools, 23 schema files, 30 error codes, 36 bridge ops, 13 capabilities, instructions 3,149
+  - **Plan reviews are the owner's call:** Opus at X1a, E1, L1 and B1. Propose one when a plan
+    reworks a heavily tested path, and ask which model.
+  - **Live runs** were allowed at 0 unsaved with the Codex agent paused, for B1; ask again.
+- **Baseline** (ARCHITECTURE's table, v0.26.0):
+  - `verify`: 6 stages, all PASS; 1117 server tests and 1063 plugin-core tests, 0 skipped;
+  - `probe`: 206 PASS, 0 FAIL, 25 MEASURED, 147 s with 0 documents open, the journal check reading
+    775 dispatched lines;
+  - 24 tools, 24 schema files, 30 error codes, 38 bridge ops, 13 capabilities, instructions 3,322
     characters.
-- **Not done:** nothing from L1's block. What is left of layers is on `BACKLOG.md`: several ids per
-  call, masks moved on their own, clone sources, `derived_from` in inspect, a copy placed elsewhere,
-  a move of more than 49 nodes.
+- **Not done:** nothing from B1's block.
 
 ## Watch for
 
@@ -76,6 +73,7 @@ Release 0.26.0.
 - **Another agent works in Krita.** The Codex agent paints the owner's art through this server. Ask
   the owner before any probe or measurement run.
 - **A client's `serve` runs this checkout as it stands.** Keep the tree working between edits.
+  A test that spawns `serve` reads the files as they are mid-run: do not edit while `verify` runs.
 - **Every plugin change needs `install-plugin` and a Krita restart** before `probe` or `doctor` step
   5 passes. Bump the version first: the plugin's hash and `serve`'s gate both read it.
 - **A measurement instrument:**
@@ -94,12 +92,12 @@ Release 0.26.0.
   - Clear a selection only after any undo the check makes.
   - A check that compares a composite needs a layer unlike what lies under it.
   - A refusal check must name the rule's own detail.
-  - Mind the stack earlier checks leave: L1's leak check first moved a layer whose change an
-    earlier move had already covered.
+  - Mind the stack earlier checks leave.
+  - A stroke under `preserve_composite_alpha` must land where the composite is already opaque.
 - **Falsifying by test name:** a pytest `-k` with spaces selects nothing. A mutation that leaves
   a file unparsable fails collection, not the test: check each mutation's run named its test.
-- **A test that polls a save must poll from the server instance that made it.**
-- **B1's own traps:** the block's *Watch for*. The save's finisher, `RECEIPTS` keyed by op, and the
-  derived ids all widen; the source's dirt must stay as it was.
+- **A test that polls a save or a duplicate must poll from the server instance that made it.**
+- **T1's own traps:** the block's *Watch for*. The fingerprint must see the transform mask (F8),
+  and `fromXML` plus attach sits in the two-unpushed window (F7).
 - **Comments state the present.** No session ids, no "used to", no review stories.
 - **Every push needs its own approval.** List `origin/main..HEAD` first.

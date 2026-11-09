@@ -182,7 +182,8 @@ def test_the_bounded_ops_are_the_mutating_tools_ops() -> None:
         for op, known in operations.RECEIPTS.items()
         if not schemas.load(known.tool)["annotations"]["readOnlyHint"]
     }
-    assert plugin_jobs.BOUNDED == mutating | {"document.save_finish"}
+    # The steps sent under ids derived from a save's or a duplicate's, never handed to an agent.
+    assert plugin_jobs.BOUNDED == mutating | {"document.save_finish", "document.duplicate_open"}
     reads = set(operations.RECEIPTS) - mutating
     assert plugin_jobs.READS == reads | {"bridge.unsaved_documents", "document.baselines"}
 
@@ -734,7 +735,7 @@ def test_a_finish_another_process_reads_promises_no_retry() -> None:
     # Its retry would run the finish under that process's client, which may not hold the lease.
     error = error_body("KRITA_MODAL_DIALOG", retryable=True, details={"outcome": "not_applied"})
     refused = Failed(error, "op-f", submitted=True, op="document.save_finish", session_id="krita-1")
-    read = saving._as_save(_saved(), refused, hint=False)
+    read = saving.as_save(_saved(), refused, hint=False)
     assert isinstance(read, Failed) and read.error["details"]["outcome"] == "uncertain"
     assert "Retrying" not in read.error["message"]
 

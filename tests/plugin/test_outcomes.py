@@ -273,7 +273,7 @@ def test_every_op_is_classed(world: World) -> None:
     fixtures = {op for op in registered if op.startswith(HARNESS)}
     assert READS.isdisjoint(BOUNDED) and not (READS | BOUNDED) & fixtures
     assert registered == READS | BOUNDED | fixtures
-    assert len(registered) == 36
+    assert len(registered) == 38
     # The prefix hides no tool op: these are the fixture ops, by name.
     assert fixtures == set(harness.handlers(world.registry, world.port, world.data)) | {
         "harness.retention"
@@ -458,6 +458,14 @@ def test_a_save_passes_both_markers(world: World) -> None:
     assert finished["dirty_cleared"] is True
 
 
+def test_a_duplicate_passes_its_three_markers(world: World) -> None:
+    saved = world.done("document.duplicate", world.save_args(world.document(), "hero-b.kra"))
+    world.done("document.save_finish", world.finish_args(saved))
+    args = {"document_id": saved["document_id"], "save_id": saved["save_id"]}
+    opened = world.done("document.duplicate_open", args)
+    assert opened["path"] == saved["path"] and opened["new_document_id"] != saved["document_id"]
+
+
 def test_a_protection_change_passes_its_marker(world: World) -> None:
     document_id = world.document()
     assert world.done("protection.set", world.protection_args(document_id))["undo_steps"] == 0
@@ -596,7 +604,57 @@ def test_a_finish_refused_for_its_lease_changed_nothing_and_runs_again(world: Wo
     assert (world.saves / "hero-r02.kra").exists()
 
 
+def test_a_duplicate_refused_for_its_format_changed_nothing(world: World) -> None:
+    body = world.failure("document.duplicate", world.save_args(world.document(), "hero-b.ora"))
+    assert body["code"] == "UNSUPPORTED_CAPABILITY" and _outcome(body) == NOT_APPLIED
+    assert not world.saves.exists()
+
+
+def test_a_duplicate_open_refused_at_job_start_runs_again_under_its_id(world: World) -> None:
+    # Sent under an id derived from the duplicate's, it must run once the dialog is closed.
+    saved = world.done("document.duplicate", world.save_args(world.document(), "hero-b.kra"))
+    world.done("document.save_finish", world.finish_args(saved))
+    args = {"document_id": saved["document_id"], "save_id": saved["save_id"]}
+    world.port.refuse = BridgeError("KRITA_MODAL_DIALOG", "A dialog is open.", True)
+    world.jobs.submit("op-open", "req-open", "document.duplicate_open", args, A)
+    world.jobs.drain()
+    refused = world.jobs.wait("op-open", 0)
+    assert refused is not None and refused["status"] == "error"
+    assert refused["error"]["retryable"] is True and _outcome(refused["error"]) == NOT_APPLIED
+    world.port.refuse = None
+    world.jobs.submit("op-open", "req-open", "document.duplicate_open", args, A)
+    world.jobs.drain()
+    again = world.jobs.wait("op-open", 0)
+    assert again is not None and again["status"] == "done"
+
+
 # Each op, past its marker: only a verified cleanup or rollback proves it changed nothing.
+
+
+def test_a_duplicate_open_that_closed_its_branch_states_it_and_keeps_the_file(
+    world: World,
+) -> None:
+    # Its own statement; the server never lets it stand for the duplicate as a whole.
+    saved = world.done("document.duplicate", world.save_args(world.document(), "hero-b.kra"))
+    world.done("document.save_finish", world.finish_args(saved))
+    args = {"document_id": saved["document_id"], "save_id": saved["save_id"]}
+    world.port.fail["tree"] = BridgeError("IO_ERROR", "tree failed")
+    body = world.failure("document.duplicate_open", args)
+    del world.port.fail["tree"]
+    assert _outcome(body) == NOT_APPLIED and body["details"]["rollback_verified"] is True
+    assert (world.saves / "hero-b.kra").exists()
+
+
+def test_a_duplicate_open_that_keeps_its_branch_is_uncertain(world: World) -> None:
+    saved = world.done("document.duplicate", world.save_args(world.document(), "hero-b.kra"))
+    world.done("document.save_finish", world.finish_args(saved))
+    args = {"document_id": saved["document_id"], "save_id": saved["save_id"]}
+    world.port.close_works = False
+    world.port.fail["tree"] = BridgeError("IO_ERROR", "tree failed")
+    body = world.failure("document.duplicate_open", args)
+    del world.port.fail["tree"]
+    kept = world.registry.find(body["details"]["document_id"])
+    assert _outcome(body) == UNCERTAIN and kept.unsafe and kept.owned
 
 
 def test_an_open_that_keeps_its_document_is_uncertain(world: World) -> None:

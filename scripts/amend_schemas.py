@@ -4,7 +4,8 @@ Usage: uv run scripts/amend_schemas.py [--check]
 
 A tool's session edits its schema's input, the `data` under its output's properties, and its
 example. This script then writes the envelope, `guard` and `source` into every schema, copies
-each `data` into the completed rule, open's `layers` into inspect's, layer_update's
+each `data` into the completed rule, open's `layers` into inspect's and document_duplicate's,
+inspect's `protection` into document_duplicate's, layer_update's
 `verification` object into paint_stroke's and paint_fill's and its whole `verification` into
 layer_create's, layer_duplicate's, layer_reorder's and layer_remove's, the stroke's colour into
 sample's `color` and the fill's, the stroke's mask paint into the fill's `mask`, selection_set's
@@ -101,6 +102,12 @@ def amended(tools: dict[str, dict[str, Any]]) -> dict[str, dict[str, Any]]:
     tools = copy.deepcopy(tools)
     layers = _data(tools["krita_document_open"])["properties"]["layers"]
     _data(tools["krita_document_inspect"])["properties"]["layers"] = copy.deepcopy(layers)
+    # A duplicate's branch reports its layers as an open does, and its protection as inspect.
+    duplicated = _data(tools["krita_document_duplicate"])["properties"]
+    duplicated["layers"] = copy.deepcopy(layers)
+    duplicated["protection"] = copy.deepcopy(
+        _data(tools["krita_document_inspect"])["properties"]["protection"]
+    )
     # A stroke always reports its verification, so it takes only the object branch.
     checked = _data(tools["krita_layer_update"])["properties"]["verification"]["anyOf"][0]
     _data(tools["krita_paint_stroke"])["properties"]["verification"] = copy.deepcopy(checked)

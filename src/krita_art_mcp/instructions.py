@@ -29,6 +29,8 @@ tightens), then confine each repair with krita_selection_set. An ellipse or poly
 is antialiased: keep it a pixel inside the allowed mask.
 - To try a change, duplicate the layer (a hidden copy) and work on the copy. To group layers, \
 create a group and reorder them into it.
+- To try a whole alternative, krita_document_duplicate branches the document to a new .kra and \
+opens it with the same protection; compare the two with krita_preview_render.
 - Changes to an animated document are refused.
 - Use krita_paint_fill for broad colour planes, and strokes for edges and texture. Keep an \
 antialiased shape a pixel inside the allowed mask.

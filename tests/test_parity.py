@@ -9,7 +9,7 @@ from parity import refused_alike
 from worlds import World, running_world
 
 from krita_art_mcp import roots
-from krita_art_mcp.tools import changes, painting, pixels, saving
+from krita_art_mcp.tools import branching, changes, painting, pixels, saving
 from krita_art_mcp.tools import documents as documents_tools
 from krita_art_mcp.tools.observe import LIMITS
 
@@ -139,6 +139,22 @@ def test_both_sides_save_only_kra_and_ora(world: World, monkeypatch: pytest.Monk
     rule = (saving, "_save_rules")
     refused_alike(world, monkeypatch, "krita_document_save", arguments, rule)
     assert not target.parent.exists()
+
+
+@pytest.mark.parametrize("name", ["hero.ora", "hero.png"])
+def test_both_sides_duplicate_only_kra(
+    world: World, monkeypatch: pytest.MonkeyPatch, name: str
+) -> None:
+    document_id = _document(world)
+    target = _art(world) / "branches" / name
+    arguments = {
+        "guard": {"document_id": document_id, "request_id": "req-dup"},
+        "path": str(target),
+    }
+    plugin = refused_alike(
+        world, monkeypatch, "krita_document_duplicate", arguments, (branching, "_duplicate_rules")
+    )
+    assert plugin["details"]["formats"] == [".kra"] and not target.parent.exists()
 
 
 def test_both_sides_bound_a_capture_s_area(world: World, monkeypatch: pytest.MonkeyPatch) -> None:

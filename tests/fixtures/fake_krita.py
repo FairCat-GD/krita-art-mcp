@@ -1,5 +1,6 @@
 import binascii
 import copy
+import hashlib
 import math
 import os
 import struct
@@ -91,6 +92,9 @@ class FakePort:
         # What each export wrote, by path: an open of that path reads it back. Hooks change what
         # is written, as a format or a fault would; merged_change alters only mergedimage.png.
         self.saved: dict[str, dict[str, Any]] = {}
+        # Each export's path by its file's SHA-256, so a file linked or renamed into place opens
+        # as what that export wrote; a serial inside each zip keeps two exports' bytes apart.
+        self.exported: dict[str, str] = {}
         self.on_export: list[Any] = []
         self.merged_change: Any = None
         # A reopened document's node pixels, canvas-sized, by (key, node id).
@@ -117,6 +121,9 @@ class FakePort:
         # A layer's own pixels, canvas-sized BGRA, by layer id; a layer without one reads as its
         # layer_pixels everywhere. A stroke writes them and the composite in canvas.
         self.buffers: dict[str, bytearray] = {}
+        # A reopened KRA keeps its file's ids, so its pixels live apart from those of the
+        # document it came from: buffers and layer_pixels of its own, by key.
+        self.own: dict[int, tuple[dict[str, bytearray], dict[str, bytes]]] = {}
         # The window's brush (K3), each preset's XML by name, and each preset's values by file id.
         self.brush_now: dict[str, Any] = dict(BRUSH)
         self.preset_xml: dict[str, str] = {name: xml for _, name, xml in [*PRESETS, FILL_PRESET]}
@@ -146,6 +153,14 @@ class FakePort:
         # ignored the hide.
         self.issued: set[str] = set()
         self.copy_visible = False
+
+    def _buffers(self, key: int) -> dict[str, bytearray]:
+        own = self.own.get(key)
+        return self.buffers if own is None else own[0]
+
+    def _pixels(self, key: int) -> dict[str, bytes]:
+        own = self.own.get(key)
+        return self.layer_pixels if own is None else own[1]
 
     def _marked(self) -> None:
         if self.marker is not None and not self.marker.changing:
@@ -181,7 +196,10 @@ class FakePort:
             hook()
         self._maybe_fail("open")
         if path in self.saved:
-            return self._reopen(path)
+            return self._reopen(path, self.saved[path])
+        written = self.exported.get(_file_sha256(path))
+        if written is not None:
+            return self._reopen(path, self.saved[written])
         spec = self.files.get(path, {})
         width, height = spec.get("size_px", [8, 4])
         # openDocument adds no view (K6), so the document in front stays until show().
@@ -210,7 +228,7 @@ class FakePort:
         before = self._state(key)
         node = self._layer(key, layer_id)
         size = self.live[key]["size_px"]
-        _fill(self.buffers[layer_id], size, box, pixel)
+        _fill(self._buffers(key)[layer_id], size, box, pixel)
         if node["visible"]:
             composite = self.canvas[key]
             assert isinstance(composite, bytearray)
@@ -302,19 +320,20 @@ class FakePort:
     def _masked(self, key: int, composite: bytes) -> bytes:
         # Each shown transparency mask scales the composite's alpha where its layer has paint.
         tree = self._tree(key)
+        buffers = self._buffers(key)
         masks = [
             node
             for node in tree["nodes"]
-            if node["type"] == MASK and self._shown(tree, node["id"]) and node["id"] in self.buffers
+            if node["type"] == MASK and self._shown(tree, node["id"]) and node["id"] in buffers
         ]
         if not masks:
             return composite
         out = bytearray(composite)
         for mask in masks:
-            layer = self.buffers.get(mask["parent_id"])
+            layer = buffers.get(mask["parent_id"])
             if layer is None:
                 continue
-            cover = self.buffers[mask["id"]]
+            cover = buffers[mask["id"]]
             for index, value in enumerate(cover):
                 if value != 255 and layer[index * 4 + 3]:
                     out[index * 4 + 3] = out[index * 4 + 3] * value // 255
@@ -349,11 +368,17 @@ class FakePort:
         self.calls.append("read")
         if layer_id not in {node["id"] for node in self.tree(document)["nodes"]}:
             raise BridgeError("LAYER_NOT_FOUND", "No layer has that id.")
-        if layer_id in self.buffers:
-            width = self.live[document.key]["size_px"][0]
-            depth = 1 if self._layer(document.key, layer_id)["type"] == MASK else 4
-            return [crop(bytes(self.buffers[layer_id]), width, rect, depth) for rect in rects]
-        pixel = self.layer_pixels.get(layer_id, UNREAD)
+        key = document.key
+        width = self.live[key]["size_px"][0]
+        depth = 1 if self._layer(key, layer_id)["type"] == MASK else 4
+        buffers = self._buffers(key)
+        if layer_id in buffers:
+            return [crop(bytes(buffers[layer_id]), width, rect, depth) for rect in rects]
+        # A reopened file's layer reads as the file holds it.
+        found = self.node_canvas.get((key, layer_id))
+        if found is not None:
+            return [crop(found, width, rect, depth) for rect in rects]
+        pixel = self._pixels(key).get(layer_id, UNREAD)
         return [pixel * (rect["width"] * rect["height"]) for rect in rects]
 
     def selection_rect(self, document: Any, rect: dict[str, int]) -> bytes | None:
@@ -450,7 +475,7 @@ class FakePort:
         )
         node["id"] = self._fresh_id(key, len(tree["nodes"]) + 100)
         tree["nodes"].append(node)
-        self.buffers[node["id"]] = cover
+        self._buffers(key)[node["id"]] = cover
         for hook in self.on_layer:
             hook(tree, node)
         self._added(key, node)
@@ -483,10 +508,11 @@ class FakePort:
             made = copy.deepcopy(node)
             made["id"] = renamed[node["id"]] = self._fresh_id(key, 500 + len(tree["nodes"]))
             made["parent_id"] = renamed.get(node["parent_id"], node["parent_id"])
-            if node["id"] in self.buffers:
-                self.buffers[made["id"]] = bytearray(self.buffers[node["id"]])
-            if node["id"] in self.layer_pixels:
-                self.layer_pixels[made["id"]] = self.layer_pixels[node["id"]]
+            buffers, pixels = self._buffers(key), self._pixels(key)
+            if node["id"] in buffers:
+                buffers[made["id"]] = bytearray(buffers[node["id"]])
+            if node["id"] in pixels:
+                pixels[made["id"]] = pixels[node["id"]]
             copies.append(made)
         copies[0].update(name=name, visible=self.copy_visible)
         return copies
@@ -592,7 +618,7 @@ class FakePort:
             elif step[0] == "all":
                 shape = bytearray(b"\xff" * (width * height))
             elif step[0] == "layer_alpha":
-                alpha = self.layer_pixels.get(step[1], bytes([30, 20, 10, 255]))[3]
+                alpha = self._pixels(key).get(step[1], bytes([30, 20, 10, 255]))[3]
                 shape = bytearray(bytes([alpha]) * (width * height))
             elif step[0] == "invert" and shape is not None:
                 shape = bytearray(255 - value for value in shape)
@@ -697,7 +723,8 @@ class FakePort:
     def _state(self, key: int) -> Any:
         tree = self._tree(key)
         ids = {node["id"] for node in tree["nodes"]}
-        buffers = {node_id: bytes(data) for node_id, data in self.buffers.items() if node_id in ids}
+        own = self._buffers(key)
+        buffers = {node_id: bytes(data) for node_id, data in own.items() if node_id in ids}
         canvas = self.canvas.get(key)
         held = copy.deepcopy((tree, self.live[key].get("selection")))
         return (*held, buffers, None if canvas is None else bytes(canvas))
@@ -706,8 +733,9 @@ class FakePort:
         tree, selection, buffers, canvas = state
         self.live[key]["tree"] = copy.deepcopy(tree)
         self.live[key]["selection"] = copy.deepcopy(selection)
+        own = self._buffers(key)
         for node_id, data in buffers.items():
-            self.buffers[node_id] = bytearray(data)
+            own[node_id] = bytearray(data)
         if canvas is not None:
             self.canvas[key] = bytearray(canvas)
 
@@ -812,18 +840,21 @@ class FakePort:
         with zipfile.ZipFile(target, "x") as archive:
             archive.writestr("mimetype", "application/x-krita")
             archive.writestr("mergedimage.png", png(width, height, merged))
+            archive.writestr("serial", str(len(self.exported)))
         self.saved[target] = saved
+        self.exported[_file_sha256(target)] = target
         return True
 
-    def _reopen(self, path: str) -> Any:
+    def _reopen(self, path: str, saved: dict[str, Any]) -> Any:
         # The file as an open reads it: an ORA keeps no ids, masks or adjustment layers, and
         # brings every layer but a group back as a paint layer without alpha lock, its opacity
         # rounded as Krita's ORA writer and loader round it.
-        saved = self.saved[path]
         width, height = saved["size_px"]
         front = self.front_key
         key = self._add(os.path.basename(path), width, height)
         self.front_key = front
+        if saved["kind"] == ".kra":
+            self.own[key] = ({}, {})
         tree = copy.deepcopy(saved["tree"])
         root = f"root-{key}"
         nodes = []
@@ -885,22 +916,29 @@ class FakePort:
         area = rect["width"] * rect["height"]
         if node["type"] == "grouplayer":
             return b""
+        buffers = self._buffers(key)
         if node["type"].endswith("mask"):
-            if node["id"] in self.buffers:
-                return crop(bytes(self.buffers[node["id"]]), width, rect, 1)
+            if node["id"] in buffers:
+                return crop(bytes(buffers[node["id"]]), width, rect, 1)
             return b"\xff" * area
-        if node["id"] in self.buffers:
-            return crop(bytes(self.buffers[node["id"]]), width, rect, 4)
-        return self.layer_pixels.get(node["id"], UNREAD) * area
+        if node["id"] in buffers:
+            return crop(bytes(buffers[node["id"]]), width, rect, 4)
+        return self._pixels(key).get(node["id"], UNREAD) * area
 
     def paintable(self, key: int, pixel: bytes | None = bytes(4)) -> None:
         # Gives every paint layer of a document its own pixels, and the composite a buffer; with
         # pixel None, each layer starts as layer_rects read it before it had any.
         width, height = self.live[key]["size_px"]
+        buffers = self._buffers(key)
         for node in self._tree(key)["nodes"]:
-            if node["type"] == "paintlayer" and node["id"] not in self.buffers:
-                fill = self.layer_pixels.get(node["id"], UNREAD) if pixel is None else pixel
-                self.buffers[node["id"]] = bytearray(fill * (width * height))
+            if node["type"] == "paintlayer" and node["id"] not in buffers:
+                # A reopened file's layer starts as the file holds it.
+                held = self.node_canvas.pop((key, node["id"]), None)
+                if held is not None and pixel is None:
+                    buffers[node["id"]] = bytearray(held)
+                    continue
+                fill = self._pixels(key).get(node["id"], UNREAD) if pixel is None else pixel
+                buffers[node["id"]] = bytearray(fill * (width * height))
         found = self.canvas.get(key)
         if not isinstance(found, bytearray):
             self.canvas[key] = bytearray(found or bgra(width, height))
@@ -981,14 +1019,14 @@ class FakePort:
         boxes = [shapes.aligned(shapes.box(shape))] + [dict(rect) for rect in self.stray]
         size = self.live[key]["size_px"]
         if node["type"] == MASK:
-            self._cover(layer_id, size, boxes)
+            self._cover(key, layer_id, size, boxes)
         else:
             red, green, blue = (round(value * 255) for value in self.brush_now["color"][:3])
             pixel = bytes([blue, green, red, 255])
             composite = self.canvas[key]
             assert isinstance(composite, bytearray)
             for box in boxes:
-                _fill(self.buffers[layer_id], size, box, pixel)
+                _fill(self._buffers(key)[layer_id], size, box, pixel)
                 _fill(composite, size, box, pixel)
             node["bounds_px"] = _span([node["bounds_px"], *boxes])
         for hook in self.on_paint:
@@ -1011,7 +1049,7 @@ class FakePort:
         points = [path["start"]] + [segment[-2:] for segment in path["segments"]]
         boxes = [_around(x, y, radius) for x, y in points] + [dict(rect) for rect in self.stray]
         if node["type"] == MASK:
-            self._cover(layer_id, self.live[key]["size_px"], boxes)
+            self._cover(key, layer_id, self.live[key]["size_px"], boxes)
             for hook in self.on_paint:
                 hook(key)
             self._push(key, history.LABELS["paint.stroke"][0], before)
@@ -1026,7 +1064,7 @@ class FakePort:
         composite = self.canvas[key]
         assert isinstance(composite, bytearray)
         for box in boxes:
-            _fill(self.buffers[layer_id], size, box, pixel)
+            _fill(self._buffers(key)[layer_id], size, box, pixel)
             # An eraser here leaves the composite alone, as it does over an empty layer.
             if not brush["eraser"]:
                 _fill(composite, size, box, pixel)
@@ -1037,11 +1075,11 @@ class FakePort:
         self._push(key, history.LABELS["paint.stroke"][0], before)
         self._maybe_fail("paint_path_after")
 
-    def _cover(self, mask_id: str, size: list[int], boxes: list[dict[str, int]]) -> None:
+    def _cover(self, key: int, mask_id: str, size: list[int], boxes: list[dict[str, int]]) -> None:
         # White reveals and black hides on a mask, each by the opacity (measured on 5.3.4.1).
         target = round(self.brush_now["color"][0] * 255)
         opacity = self.brush_now["opacity"]
-        cover = self.buffers[mask_id]
+        cover = self._buffers(key)[mask_id]
         for box in boxes:
             left, top = max(0, box["x"]), max(0, box["y"])
             right = min(size[0], box["x"] + box["width"])
@@ -1332,3 +1370,12 @@ class MainThread:
             if self.woken.wait(0.05) and self.bridge is not None:
                 self.woken.clear()
                 self.bridge.drain()
+
+
+def _file_sha256(path: str) -> str:
+    # A file no export wrote, or none at all, matches nothing.
+    try:
+        with open(path, "rb") as stream:
+            return hashlib.sha256(stream.read()).hexdigest()
+    except OSError:
+        return ""

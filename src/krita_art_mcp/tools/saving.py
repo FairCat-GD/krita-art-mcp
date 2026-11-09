@@ -64,7 +64,9 @@ def _save_rules(arguments: dict[str, Any]) -> CallToolResult | None:
     return None
 
 
-def finish_save(call: ToolCall, outcome: Outcome, left_s: float) -> Outcome:
+def finish_save(
+    call: ToolCall, outcome: Outcome, left_s: float, tool: str = TOOL, noun: str = "save"
+) -> Outcome:
     # A save's second half: its mergedimage.png is checked here, then the plugin puts the file
     # in place, or removes it. Retries and polls send the same finish, which the bridge dedups.
     if not isinstance(outcome, Done) or outcome.request_id is None or outcome.operation_id is None:
@@ -83,10 +85,10 @@ def finish_save(call: ToolCall, outcome: Outcome, left_s: float) -> Outcome:
         "document.save_finish",
         args,
         request_id=f"{outcome.request_id}:finish",
-        budget_s=_finish_budget(call, left_s),
+        budget_s=finish_budget(call, left_s),
         operation_id=finish_operation_id(outcome.operation_id),
     )
-    return _as_save(outcome, finished)
+    return as_save(outcome, finished, tool, noun)
 
 
 def poll_finish(call: ToolCall, outcome: Outcome, left_s: float) -> Outcome:
@@ -97,18 +99,35 @@ def poll_finish(call: ToolCall, outcome: Outcome, left_s: float) -> Outcome:
     finish_id = finish_operation_id(outcome.operation_id)
     if call.bridge.made(outcome.operation_id) or call.bridge.made(finish_id):
         return finish_save(call, outcome, left_s)
-    found = call.bridge.operation(finish_id, budget_s=_finish_budget(call, left_s))
-    if isinstance(found, Failed) and found.op is None and found.error["code"] == "INVALID_ARGUMENT":
-        return _unfinished(outcome)
+    found = read_finish(call, outcome, left_s, TOOL, "save")
+    return unfinished(outcome, TOOL, "save", "its file is not in place") if found is None else found
+
+
+def read_finish(call: ToolCall, save: Done, left_s: float, tool: str, noun: str) -> Outcome | None:
+    # What the bridge holds of a finish another process sent; None when none was sent.
+    found = call.bridge.operation(
+        finish_operation_id(str(save.operation_id)), budget_s=finish_budget(call, left_s)
+    )
+    if unknown(found):
+        return None
     # Another process's retry may not run the finish, so its answer promises none.
-    return _as_save(outcome, found, hint=False)
+    return as_save(save, found, tool, noun, hint=False)
 
 
-def _finish_budget(call: ToolCall, left_s: float) -> float:
+def unknown(found: Outcome) -> bool:
+    # The bridge has no operation under that id: it was never sent.
+    return (
+        isinstance(found, Failed) and found.op is None and found.error["code"] == "INVALID_ARGUMENT"
+    )
+
+
+def finish_budget(call: ToolCall, left_s: float) -> float:
     return max(left_s, min(MIN_FINISH_S, call.bridge.budget_s))
 
 
-def _as_save(save: Done, finished: Outcome, hint: bool = True) -> Outcome:
+def as_save(
+    save: Done, finished: Outcome, tool: str = TOOL, noun: str = "save", hint: bool = True
+) -> Outcome:
     if isinstance(finished, Pending):
         # Followed by the save's own operation id, which finishes the same way.
         return Pending(finished.status, save.operation_id or finished.operation_id, save.op)
@@ -120,7 +139,7 @@ def _as_save(save: Done, finished: Outcome, hint: bool = True) -> Outcome:
         )
     return replace(
         finished,
-        error=_finish_error(save, finished, hint),
+        error=_finish_error(save, finished, tool, noun, hint),
         submitted=True,
         operation_id=operation_id,
         request_id=request_id,
@@ -128,7 +147,7 @@ def _as_save(save: Done, finished: Outcome, hint: bool = True) -> Outcome:
     )
 
 
-def _finish_error(save: Done, finished: Failed, hint: bool) -> dict[str, Any]:
+def _finish_error(save: Done, finished: Failed, tool: str, noun: str, hint: bool) -> dict[str, Any]:
     error = finished.error
     details = error["details"]
     same_session = finished.session_id == save.session_id
@@ -145,27 +164,27 @@ def _finish_error(save: Done, finished: Failed, hint: bool) -> dict[str, Any]:
     # A finish cancelled at Krita's quit never runs again: a retry meets a new Krita session.
     rerun = finished.submitted and error["retryable"] and error["code"] != "CANCELLED"
     if hint and rerun and same_session:
-        message = f"{message} {_retry_hint(details)}"
+        message = f"{message} {retry_hint(details, tool, f'finishes the {noun}')}"
     details = {**details, "outcome": UNCERTAIN}
     return {**error, "message": message, "retryable": False, "details": details}
 
 
-def _retry_hint(details: dict[str, Any]) -> str:
-    # A finish refused retryably changed nothing, so the bridge runs it again on a retry.
+def retry_hint(details: dict[str, Any], tool: str, does: str) -> str:
+    # A step refused retryably changed nothing, so the bridge runs it again on a retry.
     holder = details.get("holder_pid")
     if holder is not None:
         return (
-            "Retrying krita_document_save with the same request_id finishes the save from the "
-            f"server process {holder} that holds the document, or once that process has ended."
+            f"Retrying {tool} with the same request_id {does} from the server process {holder} "
+            "that holds the document, or once that process has ended."
         )
-    return "Retrying krita_document_save with the same request_id finishes the save."
+    return f"Retrying {tool} with the same request_id {does}."
 
 
-def _unfinished(save: Done) -> Failed:
+def unfinished(save: Done, tool: str, noun: str, left: str) -> Failed:
     message = (
-        "Krita wrote and verified this save, but its file is not in place: a poll finishes a "
-        "save only in the server process that made the call. Retrying krita_document_save with "
-        "the same request_id finishes it."
+        f"Krita wrote and verified this {noun}, but {left}: a poll finishes a {noun} only in "
+        f"the server process that made the call. Retrying {tool} with the same request_id "
+        "finishes it."
     )
     details = {
         "outcome": UNCERTAIN,
@@ -183,8 +202,12 @@ def _unfinished(save: Done) -> Failed:
 
 
 def finish_operation_id(save_id: str) -> str:
-    # Derived from the save's, so any poll or retry can ask the bridge for the finish.
-    return "op-" + hashlib.sha256(f"{save_id}:finish".encode()).hexdigest()[:32]
+    return derived_operation_id(save_id, "finish")
+
+
+def derived_operation_id(save_id: str, step: str) -> str:
+    # Derived from the save's, so any poll or retry can ask the bridge for the step.
+    return "op-" + hashlib.sha256(f"{save_id}:{step}".encode()).hexdigest()[:32]
 
 
 def _merged(places: Places, result: dict[str, Any]) -> tuple[str | None, str | None]:

@@ -18,6 +18,12 @@ from .registry import Handle, Registry
 SAVE_FIELDS = {"document_id", "path"}
 FINISH_FIELDS = {"document_id", "save_id", "merged_sha256", "merged_problem"}
 FORMATS = (".kra", ".ora")
+FORMATS_MESSAGE = "Phase 1 saves .kra and .ora files; PNG export arrives in Phase 4."
+# The server holds equal copies.
+DUPLICATE_FORMATS = (".kra",)
+DUPLICATE_FORMATS_MESSAGE = (
+    "A duplicate is a .kra file: only KRA keeps the layer ids protection names."
+)
 # Phase 1 saves only the documents it paints; the server holds an equal copy of the profiles.
 SAVE_SPACE = ("RGBA", "U8")
 SRGB_PROFILES = ("sRGB-elle-V2-srgbtrc.icc", "sRGB built-in")
@@ -52,6 +58,25 @@ NAME_MAX = 255
 NO_LINKS = {errno.EPERM, errno.ENOTSUP, errno.EOPNOTSUPP, errno.EMLINK, errno.EXDEV}
 
 
+class Inherited:
+    # What a duplicate's branch takes from its source, read in the job that wrote its file.
+    def __init__(self, handle: Handle, size_px: list[int]) -> None:
+        self.protected = set(handle.protected)
+        # The handle's own bytes, never changed in place, so no copy is needed.
+        self.allowed_mask = handle.allowed_mask
+        self.preserve_composite_alpha = handle.preserve_composite_alpha
+        self.preserve_canvas = handle.preserve_canvas
+        self.size_px = list(size_px)
+
+
+class Placed:
+    # A duplicate's file in place, waiting for document.duplicate_open.
+    def __init__(self, path: str, sha256: str, inherited: Inherited) -> None:
+        self.path = path
+        self.sha256 = sha256
+        self.inherited = inherited
+
+
 class Pending:
     # A save written beside its target and verified in Krita, waiting for the server's check of
     # its mergedimage.png.
@@ -63,6 +88,7 @@ class Pending:
         changes: int,
         receipt: dict[str, Any],
         state: dict[str, Any],
+        branch: Inherited | None = None,
     ) -> None:
         self.save_id = save_id
         self.written = written
@@ -76,6 +102,8 @@ class Pending:
         # What this save compared, its composite's hash included, which becomes the handle's saved
         # state once it lands.
         self.state = state
+        # A duplicate's, which leaves its source's dirt alone and opens as a document of its own.
+        self.branch = branch
 
     def discard(self) -> bool:
         # Whatever the file holds now: its hidden name carries this save's own token. Whether
@@ -87,7 +115,16 @@ class Pending:
 
 def handlers(registry: Registry, port: DocumentsPort, data: Path) -> dict[str, Handler]:
     def save(handle: Handle, args: dict[str, Any], call: Call) -> dict[str, Any]:
-        target, kind = _target(data, args["path"])
+        return write(handle, args, call, False)
+
+    def duplicate(handle: Handle, args: dict[str, Any], call: Call) -> dict[str, Any]:
+        return write(handle, args, call, True)
+
+    def write(handle: Handle, args: dict[str, Any], call: Call, branch: bool) -> dict[str, Any]:
+        formats = (
+            (DUPLICATE_FORMATS, DUPLICATE_FORMATS_MESSAGE) if branch else (FORMATS, FORMATS_MESSAGE)
+        )
+        target, kind = _target(data, args["path"], *formats)
         info = port.describe(handle.document)
         _check_space(info)
         _check_size(info)
@@ -166,8 +203,9 @@ def handlers(registry: Registry, port: DocumentsPort, data: Path) -> dict[str, H
         if isinstance(earlier, Pending):
             made = made + earlier.made
         state = {"nodes": live["nodes"], "composite_sha256": composite, "pixels": owned}
+        inherited = Inherited(handle, info["size_px"]) if branch else None
         handle.pending_save = Pending(
-            call.operation_id, written, made, handle.changes, receipt, state
+            call.operation_id, written, made, handle.changes, receipt, state, inherited
         )
         return {
             **receipt,
@@ -213,9 +251,14 @@ def handlers(registry: Registry, port: DocumentsPort, data: Path) -> dict[str, H
         except BaseException as raised:
             cleaned(raised, pending.discard())
             raise
-        # A change since the save read the document keeps its dirt.
-        cleared = handle.changes == pending.changes
-        if cleared:
+        cleared = False
+        if pending.branch is not None:
+            # A duplicate leaves its source as it was; its file waits to open as its own document.
+            target, sha = pending.target, pending.receipt["sha256"]
+            handle.branches[pending.save_id] = Placed(target, sha, pending.branch)
+        elif handle.changes == pending.changes:
+            # A change since the save read the document keeps its dirt.
+            cleared = True
             handle.dirty = False
             handle.saved_state = pending.state
         # Krita's flag stays set and the document keeps its own file (K39, K45).
@@ -228,11 +271,16 @@ def handlers(registry: Registry, port: DocumentsPort, data: Path) -> dict[str, H
         }
 
     guarded_save = registry.guarded(save)
+    guarded_duplicate = registry.guarded(duplicate)
     guarded_finish = registry.guarded(finish, allow_unsafe=True, lease_retryable=True)
 
     def save_document(args: dict[str, Any], call: Call) -> dict[str, Any]:
         exact(args, SAVE_FIELDS)
         return guarded_save(args, call)
+
+    def duplicate_document(args: dict[str, Any], call: Call) -> dict[str, Any]:
+        exact(args, SAVE_FIELDS)
+        return guarded_duplicate(args, call)
 
     def finish_save(args: dict[str, Any], call: Call) -> dict[str, Any]:
         exact(args, FINISH_FIELDS)
@@ -244,7 +292,11 @@ def handlers(registry: Registry, port: DocumentsPort, data: Path) -> dict[str, H
             raise BridgeError("INVALID_ARGUMENT", message)
         return guarded_finish(args, call)
 
-    return {"document.save": save_document, "document.save_finish": finish_save}
+    return {
+        "document.save": save_document,
+        "document.duplicate": duplicate_document,
+        "document.save_finish": finish_save,
+    }
 
 
 def matches_saved(port: DocumentsPort, handle: Handle) -> bool:
@@ -285,13 +337,11 @@ def _own_pixels(
     ]
 
 
-def _target(data: Path, path: Any) -> tuple[str, str]:
+def _target(data: Path, path: Any, formats: tuple[str, ...], message: str) -> tuple[str, str]:
     roots.resolve(path, "path")
     kind = os.path.splitext(path)[1].lower()
-    if kind not in FORMATS:
-        formats = {"formats": list(FORMATS)}
-        message = "Phase 1 saves .kra and .ora files; PNG export arrives in Phase 4."
-        raise BridgeError("UNSUPPORTED_CAPABILITY", message, False, formats)
+    if kind not in formats:
+        raise BridgeError("UNSUPPORTED_CAPABILITY", message, False, {"formats": list(formats)})
     target = roots.check(data, path, "path")
     if os.path.lexists(path) or os.path.lexists(target):
         message = "path exists; nothing is overwritten."

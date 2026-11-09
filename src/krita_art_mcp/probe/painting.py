@@ -14,6 +14,7 @@ from krita_art_mcp.bridge_client import BridgeClient, Done
 from krita_art_mcp.journal import Journal
 from krita_art_mcp.probe import (
     acceptance,
+    branching,
     dynamics,
     edges,
     filling,
@@ -160,6 +161,7 @@ async def run(report: Report, a: Client, b: Client, client: BridgeClient, harnes
         # Inside the window whose brush state this function writes back.
         with report.timed("save"):
             await saving.run(report, a, client, harness, hard)
+            await branching.run(report, a, client, harness, hard)
             await modified.run(report, a, client, harness, hard)
         with report.timed("acceptance"):
             await acceptance.run(report, a, client, harness, presets)

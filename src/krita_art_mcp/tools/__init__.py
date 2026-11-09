@@ -19,6 +19,7 @@ from krita_art_mcp.errors import APPLIED, NOT_APPLIED, UNCERTAIN
 from krita_art_mcp.journal import Journal
 from krita_art_mcp.paths import Places
 from krita_art_mcp.tools import (
+    branching,
     changes,
     documents,
     observe,
@@ -48,6 +49,7 @@ TOOLS: dict[str, ToolFunction] = {
     "krita_document_inspect": documents.document_inspect,
     "krita_document_close": documents.document_close,
     "krita_document_save": saving.document_save,
+    "krita_document_duplicate": branching.document_duplicate,
     "krita_resource_list": observe.resource_list,
     "krita_capture": pixels.capture,
     "krita_sample": pixels.sample,

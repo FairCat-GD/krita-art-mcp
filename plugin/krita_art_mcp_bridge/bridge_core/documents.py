@@ -2,6 +2,7 @@ from pathlib import Path
 from typing import Any
 
 from . import (
+    branching,
     files,
     history,
     inspection,
@@ -109,6 +110,7 @@ def handlers(registry: Registry, port: DocumentsPort, data: Path) -> dict[str, H
         **protection.handlers(registry, port, data),
         **history.handlers(registry, port, data),
         **saving.handlers(registry, port, data),
+        **branching.handlers(registry, port, data),
     }
 
 

@@ -11,7 +11,16 @@ from krita_art_mcp.bridge_client import BeforeSend, Done, Failed, Outcome
 from krita_art_mcp.errors import APPLIED, NOT_APPLIED, OUTCOMES, UNCERTAIN
 from krita_art_mcp.journal import Finished, JournalError
 from krita_art_mcp.paths import Places
-from krita_art_mcp.tools import changes, documents, observe, painting, pixels, preview, saving
+from krita_art_mcp.tools import (
+    branching,
+    changes,
+    documents,
+    observe,
+    painting,
+    pixels,
+    preview,
+    saving,
+)
 from krita_art_mcp.tools.dispatch import (
     Receipt,
     ToolCall,
@@ -68,6 +77,9 @@ RECEIPTS: dict[str, Known] = {
     "paint.fill": Known("krita_paint_fill", painting.fill_receipt, changes.resolve_update),
     "preview.read": Known("krita_preview_render", preview.preview_receipt, preview.resolve_preview),
     "document.save": Known("krita_document_save", saving.save_receipt, finish=saving.poll_finish),
+    "document.duplicate": Known(
+        "krita_document_duplicate", branching.duplicate_receipt, finish=branching.poll_duplicate
+    ),
 }
 
 

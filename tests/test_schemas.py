@@ -37,6 +37,7 @@ PHASE_1_TOOLS = sorted(
         "operation_cancel",
         "preview_render",
         "document_save",
+        "document_duplicate",
         "document_close",
     ]
 )
@@ -237,7 +238,7 @@ def test_every_copy_of_guard_is_the_phase_1_guard() -> None:
         for name in PHASE_1_TOOLS
         for guard in _shapes(schemas.load(name)["inputSchema"].get("properties", {}), "guard")
     ]
-    assert len(guards) == 12
+    assert len(guards) == 13
     assert all(guard == GUARD for guard in guards)
 
 
@@ -246,13 +247,13 @@ def test_no_schema_or_example_carries_expected_revision() -> None:
         assert _shapes(schemas.load(name), "expected_revision") == [], name
 
 
-def test_open_and_inspect_describe_a_layer_with_one_shape() -> None:
+def test_open_inspect_and_duplicate_describe_a_layer_with_one_shape() -> None:
     layers = [
         shape
-        for name in ("krita_document_open", "krita_document_inspect")
+        for name in ("krita_document_open", "krita_document_inspect", "krita_document_duplicate")
         for shape in _shapes(schemas.load(name)["outputSchema"], "layers")
     ]
-    assert len(layers) == 4
+    assert len(layers) == 6
     assert all(layer == layers[0] for layer in layers)
     entry = layers[0]["items"]
     assert entry["additionalProperties"] is False
