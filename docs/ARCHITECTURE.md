@@ -662,7 +662,8 @@ its own (decision 12). `Document.clone()` is never used: it is not added to `Kis
   `branches`, by save id.
 - `document.duplicate_open {document_id, save_id}` takes no path: it opens only a file the
   bridge's own finish placed, so no client can open an arbitrary `.kra` directly through it. Before
-  its marker it checks the path against the roots, the file's hash and the mask's size. It then
+  its marker it checks the path against the roots, the file's hash (only when its stat has moved
+  since the finish placed it) and the mask's size. It then
   opens, shows and checks the file as the open does (`opening.opened`), and registers the branch
   last: the source's mode, the file as `path` and its hash as `opened_sha256`, the source's
   `source_*` fields (null for a created document's branch, so `baseline_untouched` keeps meaning),
@@ -671,8 +672,10 @@ its own (decision 12). `Document.clone()` is never used: it is not added to `Kis
   protected ids, kept to the branch's own nodes; the AND of the masks; each flag's OR. Protection
   drops a protected node that has gone from the source, so the snapshot keeps a rerun from
   loosening, and a tightening since applies too.
-- A failure after its marker closes the branch and keeps the file and its `branches` entry, so a
-  retried open can run. An entry whose open failed for good stays until the source closes.
+- A failure after its marker closes the branch and keeps the file. Its `branches` entry serves a
+  rerun only after a retryable refusal, which changes nothing: `Jobs` reruns a derived id after no
+  other failure. An entry whose open failed for good stays unused until the source closes, and
+  `krita_document_open` opens the file.
 
 **The close.** `refuse` answers `DOCUMENT_DIRTY` while `dirty` is set, and while Krita holds the
 document modified unless it still matches its last verified save: `saving.matches_saved` reads the
@@ -1243,9 +1246,13 @@ the file; then `document.duplicate_open` runs under an id derived from the dupli
 (`open_operation_id`), and the answer keeps the duplicate's identity. Step one fails as a save
 does, and step two by the finish's rule. Step three's failure is always `uncertain` and never
 retryable, whatever the open states, because the file is in place; it carries `details.path` and
-`sha256`. Refused retryably in the duplicate's Krita session, it says a retry under the same
-`request_id` opens the branch, which reruns the open under its id; otherwise it says
-`krita_document_open` opens the file. A poll follows the save's rule: the maker of any of the three
+`sha256`, and `rollback_verified: false`, since nothing of the call was rolled back. Refused
+retryably in the duplicate's Krita session, it says a retry under the same `request_id` opens the
+branch, which reruns the open under its id. An open that never reached the bridge (unsent, or
+`unregistered`) says the same retry opens it in this Krita session, and `krita_document_open` after
+a restart. Otherwise it says `krita_document_open` opens the file. The shared rule that keeps a
+chained step's answer under the call's own ids is `saving.chained`; `saving.Caller` names the tool
+a finish answers for. A poll follows the save's rule: the maker of any of the three
 ids places and opens; any other process reads the finish's record and the open's, and answers
 `uncertain`, saying how to finish, when either was never sent.
 
@@ -1559,9 +1566,9 @@ depend on it: 87 open documents cost about 50 s more.
 | Check | Expected |
 |---|---|
 | `uv run scripts/verify.py` | 6 stages, all PASS |
-| Server tests (3.12) | 1117 passed, 0 skipped |
-| Plugin-core tests (3.10) | 1063 passed, 0 skipped |
-| `uv run krita-art-mcp probe` | 206 PASS, 0 FAIL, 25 MEASURED; about 147 s |
+| Server tests (3.12) | 1119 passed, 0 skipped |
+| Plugin-core tests (3.10) | 1065 passed, 0 skipped |
+| `uv run krita-art-mcp probe` | 206 PASS, 0 FAIL, 25 MEASURED; about 145 s |
 | `uv run krita-art-mcp doctor` | 6 steps, all PASS, with a root allowed |
 | Registered tools | 24 |
 | Schema files | 24 |

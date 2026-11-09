@@ -1,19 +1,18 @@
 import os
 import time
-from dataclasses import replace
 from typing import Any
 
 from mcp.types import CallToolResult
 
 from krita_art_mcp import envelope
-from krita_art_mcp.bridge_client import BeforeSend, Done, Failed, Outcome, Pending
-from krita_art_mcp.errors import UNCERTAIN
+from krita_art_mcp.bridge_client import BeforeSend, Done, Failed, Outcome
+from krita_art_mcp.errors import UNCERTAIN, UNREGISTERED
 from krita_art_mcp.tools import saving
 from krita_art_mcp.tools.dispatch import ToolCall, from_outcome, journaled
 from krita_art_mcp.tools.documents import inside_roots
 
 TOOL = "krita_document_duplicate"
-NOUN = "duplicate"
+DUPLICATE = saving.Caller(TOOL, "duplicate")
 # The plugin holds equal copies.
 FORMATS = (".kra",)
 FORMATS_MESSAGE = "A duplicate is a .kra file: only KRA keeps the layer ids protection names."
@@ -75,7 +74,7 @@ def finish_duplicate(call: ToolCall, outcome: Outcome, left_s: float) -> Outcome
     if not isinstance(outcome, Done) or outcome.request_id is None or outcome.operation_id is None:
         return outcome
     started = time.monotonic()
-    finished = saving.finish_save(call, outcome, left_s, TOOL, NOUN)
+    finished = saving.finish_save(call, outcome, left_s, DUPLICATE)
     if not isinstance(finished, Done):
         return finished
     left = left_s - (time.monotonic() - started)
@@ -100,9 +99,9 @@ def poll_duplicate(call: ToolCall, outcome: Outcome, left_s: float) -> Outcome:
     if any(call.bridge.made(one) for one in steps):
         return finish_duplicate(call, outcome, left_s)
     started = time.monotonic()
-    finished = saving.read_finish(call, outcome, left_s, TOOL, NOUN)
+    finished = saving.read_finish(call, outcome, left_s, DUPLICATE)
     if finished is None:
-        return saving.unfinished(outcome, TOOL, NOUN, LEFT)
+        return saving.unfinished(outcome, DUPLICATE, LEFT)
     if not isinstance(finished, Done):
         return finished
     left = left_s - (time.monotonic() - started)
@@ -110,46 +109,49 @@ def poll_duplicate(call: ToolCall, outcome: Outcome, left_s: float) -> Outcome:
         open_operation_id(save_id), budget_s=saving.finish_budget(call, left)
     )
     if saving.unknown(found):
-        return saving.unfinished(outcome, TOOL, NOUN, LEFT)
+        return saving.unfinished(outcome, DUPLICATE, LEFT)
     return _as_duplicate(outcome, finished, found, hint=False)
 
 
 def _as_duplicate(save: Done, finished: Done, opened: Outcome, hint: bool = True) -> Outcome:
-    if isinstance(opened, Pending):
-        # Followed by the duplicate's own operation id, which finishes the same way.
-        return Pending(opened.status, save.operation_id or opened.operation_id, save.op)
-    # The receipt and the journal name the duplicate's own operation and request.
-    operation_id, request_id, session_id = save.operation_id, save.request_id, save.session_id
-    if isinstance(opened, Done):
-        return replace(
-            opened, operation_id=operation_id, request_id=request_id, session_id=session_id
-        )
-    return replace(
-        opened,
-        error=_open_error(save, finished, opened, hint),
-        submitted=True,
-        operation_id=operation_id,
-        request_id=request_id,
-        session_id=session_id,
-    )
+    return saving.chained(save, opened, lambda failed: _open_error(save, finished, failed, hint))
 
 
 def _open_error(save: Done, finished: Done, opened: Failed, hint: bool) -> dict[str, Any]:
-    # The file is in place whatever the open did, so its failure is never not_applied.
+    # The file is in place whatever the open did: never not_applied, and nothing rolled back.
     error = opened.error
     path, sha256 = finished.result["path"], finished.result["sha256"]
     message = error["message"]
+    saved_at = (
+        f"The duplicate is saved at {path}; krita_document_open opens it, with every layer "
+        "protected."
+    )
     # An open cancelled at Krita's quit never runs again: a retry meets a new Krita session.
-    rerun = opened.submitted and error["retryable"] and error["code"] != "CANCELLED"
-    if rerun and opened.session_id == save.session_id:
+    rerun = (
+        opened.submitted
+        and error["retryable"]
+        and error["code"] != "CANCELLED"
+        and opened.session_id == save.session_id
+    )
+    # An open that never reached the bridge runs on a retry, unless Krita has restarted since.
+    unsent = not opened.submitted or error["details"].get("outcome") == UNREGISTERED
+    if rerun:
         if hint:
             message = f"{message} {saving.retry_hint(error['details'], TOOL, 'opens it')}"
-    else:
+    elif unsent and hint:
         message = (
-            f"{message} The duplicate is saved at {path}; krita_document_open opens it, with "
-            "every layer protected."
+            f"{message} The open may not have reached Krita. Retrying {TOOL} with the same "
+            f"request_id opens it in this Krita session. After a restart: {saved_at}"
         )
-    details = {**error["details"], "outcome": UNCERTAIN, "path": path, "sha256": sha256}
+    else:
+        message = f"{message} {saved_at}"
+    details = {
+        **error["details"],
+        "outcome": UNCERTAIN,
+        "rollback_verified": False,
+        "path": path,
+        "sha256": sha256,
+    }
     return {**error, "message": message, "retryable": False, "details": details}
 
 

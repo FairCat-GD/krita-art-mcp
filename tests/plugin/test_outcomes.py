@@ -645,6 +645,23 @@ def test_a_duplicate_open_that_closed_its_branch_states_it_and_keeps_the_file(
     assert (world.saves / "hero-b.kra").exists()
 
 
+def test_a_duplicate_open_that_failed_past_its_marker_never_runs_again(world: World) -> None:
+    # Only a retryable refusal reruns a derived id; this failure is the answer for good.
+    saved = world.done("document.duplicate", world.save_args(world.document(), "hero-b.kra"))
+    world.done("document.save_finish", world.finish_args(saved))
+    args = {"document_id": saved["document_id"], "save_id": saved["save_id"]}
+    world.port.fail["tree"] = BridgeError("IO_ERROR", "tree failed")
+    world.jobs.submit("op-open", "req-open", "document.duplicate_open", args, A)
+    world.jobs.drain()
+    del world.port.fail["tree"]
+    opened = len(world.port.opened)
+    world.jobs.submit("op-open", "req-open", "document.duplicate_open", args, A)
+    world.jobs.drain()
+    again = world.jobs.wait("op-open", 0)
+    assert again is not None and again["status"] == "error"
+    assert len(world.port.opened) == opened
+
+
 def test_a_duplicate_open_that_keeps_its_branch_is_uncertain(world: World) -> None:
     saved = world.done("document.duplicate", world.save_args(world.document(), "hero-b.kra"))
     world.done("document.save_finish", world.finish_args(saved))

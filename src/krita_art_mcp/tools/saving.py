@@ -1,7 +1,8 @@
 import hashlib
 import os
 import time
-from dataclasses import replace
+from collections.abc import Callable
+from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Any
 
@@ -15,6 +16,16 @@ from krita_art_mcp.tools.dispatch import ToolCall, from_outcome, journaled
 from krita_art_mcp.tools.documents import inside_roots
 
 TOOL = "krita_document_save"
+
+
+@dataclass(frozen=True)
+class Caller:
+    # The tool a finish answers for, as its messages name it.
+    tool: str
+    noun: str
+
+
+SAVE = Caller(TOOL, "save")
 FORMATS = (".kra", ".ora")
 SAVE_DATA = (
     "path",
@@ -64,9 +75,7 @@ def _save_rules(arguments: dict[str, Any]) -> CallToolResult | None:
     return None
 
 
-def finish_save(
-    call: ToolCall, outcome: Outcome, left_s: float, tool: str = TOOL, noun: str = "save"
-) -> Outcome:
+def finish_save(call: ToolCall, outcome: Outcome, left_s: float, caller: Caller = SAVE) -> Outcome:
     # A save's second half: its mergedimage.png is checked here, then the plugin puts the file
     # in place, or removes it. Retries and polls send the same finish, which the bridge dedups.
     if not isinstance(outcome, Done) or outcome.request_id is None or outcome.operation_id is None:
@@ -88,7 +97,7 @@ def finish_save(
         budget_s=finish_budget(call, left_s),
         operation_id=finish_operation_id(outcome.operation_id),
     )
-    return as_save(outcome, finished, tool, noun)
+    return as_save(outcome, finished, caller)
 
 
 def poll_finish(call: ToolCall, outcome: Outcome, left_s: float) -> Outcome:
@@ -99,11 +108,11 @@ def poll_finish(call: ToolCall, outcome: Outcome, left_s: float) -> Outcome:
     finish_id = finish_operation_id(outcome.operation_id)
     if call.bridge.made(outcome.operation_id) or call.bridge.made(finish_id):
         return finish_save(call, outcome, left_s)
-    found = read_finish(call, outcome, left_s, TOOL, "save")
-    return unfinished(outcome, TOOL, "save", "its file is not in place") if found is None else found
+    found = read_finish(call, outcome, left_s, SAVE)
+    return unfinished(outcome, SAVE, "its file is not in place") if found is None else found
 
 
-def read_finish(call: ToolCall, save: Done, left_s: float, tool: str, noun: str) -> Outcome | None:
+def read_finish(call: ToolCall, save: Done, left_s: float, caller: Caller) -> Outcome | None:
     # What the bridge holds of a finish another process sent; None when none was sent.
     found = call.bridge.operation(
         finish_operation_id(str(save.operation_id)), budget_s=finish_budget(call, left_s)
@@ -111,7 +120,7 @@ def read_finish(call: ToolCall, save: Done, left_s: float, tool: str, noun: str)
     if unknown(found):
         return None
     # Another process's retry may not run the finish, so its answer promises none.
-    return as_save(save, found, tool, noun, hint=False)
+    return as_save(save, found, caller, hint=False)
 
 
 def unknown(found: Outcome) -> bool:
@@ -125,21 +134,23 @@ def finish_budget(call: ToolCall, left_s: float) -> float:
     return max(left_s, min(MIN_FINISH_S, call.bridge.budget_s))
 
 
-def as_save(
-    save: Done, finished: Outcome, tool: str = TOOL, noun: str = "save", hint: bool = True
-) -> Outcome:
-    if isinstance(finished, Pending):
-        # Followed by the save's own operation id, which finishes the same way.
-        return Pending(finished.status, save.operation_id or finished.operation_id, save.op)
-    # The receipt and the journal name the save's own operation and request.
+def as_save(save: Done, finished: Outcome, caller: Caller = SAVE, hint: bool = True) -> Outcome:
+    return chained(save, finished, lambda failed: _finish_error(save, failed, caller, hint))
+
+
+def chained(save: Done, step: Outcome, error: Callable[[Failed], dict[str, Any]]) -> Outcome:
+    # A step sent after the save answers as the save: the receipt and the journal name the
+    # save's own operation and request, and a step still running is followed by the save's id.
+    if isinstance(step, Pending):
+        return Pending(step.status, save.operation_id or step.operation_id, save.op)
     operation_id, request_id, session_id = save.operation_id, save.request_id, save.session_id
-    if isinstance(finished, Done):
+    if isinstance(step, Done):
         return replace(
-            finished, operation_id=operation_id, request_id=request_id, session_id=session_id
+            step, operation_id=operation_id, request_id=request_id, session_id=session_id
         )
     return replace(
-        finished,
-        error=_finish_error(save, finished, tool, noun, hint),
+        step,
+        error=error(step),
         submitted=True,
         operation_id=operation_id,
         request_id=request_id,
@@ -147,7 +158,7 @@ def as_save(
     )
 
 
-def _finish_error(save: Done, finished: Failed, tool: str, noun: str, hint: bool) -> dict[str, Any]:
+def _finish_error(save: Done, finished: Failed, caller: Caller, hint: bool) -> dict[str, Any]:
     error = finished.error
     details = error["details"]
     same_session = finished.session_id == save.session_id
@@ -164,7 +175,7 @@ def _finish_error(save: Done, finished: Failed, tool: str, noun: str, hint: bool
     # A finish cancelled at Krita's quit never runs again: a retry meets a new Krita session.
     rerun = finished.submitted and error["retryable"] and error["code"] != "CANCELLED"
     if hint and rerun and same_session:
-        message = f"{message} {retry_hint(details, tool, f'finishes the {noun}')}"
+        message = f"{message} {retry_hint(details, caller.tool, f'finishes the {caller.noun}')}"
     details = {**details, "outcome": UNCERTAIN}
     return {**error, "message": message, "retryable": False, "details": details}
 
@@ -180,10 +191,11 @@ def retry_hint(details: dict[str, Any], tool: str, does: str) -> str:
     return f"Retrying {tool} with the same request_id {does}."
 
 
-def unfinished(save: Done, tool: str, noun: str, left: str) -> Failed:
+def unfinished(save: Done, caller: Caller, left: str) -> Failed:
+    noun = caller.noun
     message = (
         f"Krita wrote and verified this {noun}, but {left}: a poll finishes a {noun} only in "
-        f"the server process that made the call. Retrying {tool} with the same request_id "
+        f"the server process that made the call. Retrying {caller.tool} with the same request_id "
         "finishes it."
     )
     details = {

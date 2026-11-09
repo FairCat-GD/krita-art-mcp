@@ -112,10 +112,11 @@
               },
               "source_dirty": {
                 "type": "boolean",
-                "description": "The source's dirty flag, as it was before the call."
+                "description": "The source's dirty flag, read as the branch opened; a duplicate never changes it."
               },
               "source_krita_modified": {
-                "type": "boolean"
+                "type": "boolean",
+                "description": "Krita's own flag on the source, read as the branch opened."
               },
               "mode": {
                 "type": "string",
@@ -509,10 +510,11 @@
             },
             "source_dirty": {
               "type": "boolean",
-              "description": "The source's dirty flag, as it was before the call."
+              "description": "The source's dirty flag, read as the branch opened; a duplicate never changes it."
             },
             "source_krita_modified": {
-              "type": "boolean"
+              "type": "boolean",
+              "description": "Krita's own flag on the source, read as the branch opened."
             },
             "mode": {
               "type": "string",

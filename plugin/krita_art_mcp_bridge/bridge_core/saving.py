@@ -75,6 +75,8 @@ class Placed:
         self.path = path
         self.sha256 = sha256
         self.inherited = inherited
+        # Taken once it is in place, so the open hashes it again only if it moved.
+        self.stat = files.source_stat(path)
 
 
 class Pending:

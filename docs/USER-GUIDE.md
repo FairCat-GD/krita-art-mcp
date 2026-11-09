@@ -209,8 +209,9 @@ as a document of its own. Its receipt names it `new_document_id`.
 - **Close what you do not keep.** A close removes that document's baseline alone.
 - **`.ora` is refused** (`UNSUPPORTED_CAPABILITY`): only KRA keeps the layer ids protection names.
 - **If the branch was saved but did not open,** the answer is `uncertain` and gives the file's
-  `path`. When Krita refused the open at its start, retry with the same `request_id` and it opens;
-  otherwise `krita_document_open` opens the file, with every layer protected.
+  `path`. When Krita refused the open at its start, or the open never reached Krita, retry with
+  the same `request_id` and it opens; otherwise, or after a Krita restart, `krita_document_open`
+  opens the file, with every layer protected.
 
 **5. Say where you may work.** `krita_protection_set` only ever tightens, and it stops undo at that
 point, so do it once, with the union of everything you will repair, then confine each repair with a

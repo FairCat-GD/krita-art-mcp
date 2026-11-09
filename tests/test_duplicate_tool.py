@@ -10,7 +10,7 @@ import pytest
 from bridge_core.errors import BridgeError
 from worlds import B, World, running_world
 
-from krita_art_mcp import baselines, roots
+from krita_art_mcp import baselines, bridge_client, roots
 from krita_art_mcp.bridge_client import Done, Failed
 from krita_art_mcp.errors import error_body
 from krita_art_mcp.tools import branching, saving
@@ -377,6 +377,25 @@ def test_an_open_that_failed_is_never_not_applied(
         error["details"]["path"] == "/nowhere/hero-b.kra" and error["details"]["sha256"] == "0" * 64
     )
     assert said in error["message"]
+    # Nothing of the call was rolled back, whatever the open's own cleanup did.
+    assert error["details"]["rollback_verified"] is False
+
+
+@pytest.mark.parametrize(
+    "opened",
+    [
+        Failed(error_body("KRITA_NOT_RUNNING", "Gone.", retryable=True, details={})),
+        bridge_client._unregistered("op-o"),
+    ],
+    ids=["unsent", "unregistered"],
+)
+@pytest.mark.usefixtures("merged")
+def test_an_open_that_never_reached_the_bridge_says_a_retry_opens_it(opened: Failed) -> None:
+    steps = {"document.save_finish": _placed(), "document.duplicate_open": opened}
+    failed = branching.finish_duplicate(_bridge(steps), _written(), 5.0)
+    assert isinstance(failed, Failed) and failed.error["details"]["outcome"] == "uncertain"
+    message = failed.error["message"]
+    assert f"{RETRY} in this Krita session" in message and "After a restart" in message
 
 
 @pytest.mark.usefixtures("merged")

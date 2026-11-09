@@ -12,9 +12,9 @@ route or not at all. Release 0.27.0 if it ships.
   - Remaining, in order: T1, S1, X2 and V1.
 - **B1 shipped 0.26.0.** The versions stand as the table says: T1 0.27.0, S1 0.28.0 and V1 0.29.0.
   T1 without a native route ships no version, and S1 and V1 move down by one.
-- **B1 is committed locally, not pushed.** `origin/main` holds everything through "review: a large
-  group's move could never be undone, and 7 smaller". List `origin/main..HEAD` before any push,
-  and push only on the owner's approval.
+- **B1 and its review fixes are pushed** (9 findings, all fixed). `origin/main` holds everything
+  through "review: an unsent branch open was told to reopen the file, and 8 smaller". List
+  `origin/main..HEAD` before any push, and push only on the owner's approval.
 - **What B1 left that later sessions meet:**
   - **38 bridge ops;** `tests/plugin/test_outcomes.py` holds the count. `BOUNDED` is 17: the
     mutating tools' ops plus `document.save_finish` and `document.duplicate_open`, the two sent
@@ -27,6 +27,10 @@ route or not at all. Release 0.27.0 if it ships.
     SHA-256; each zip carries a serial).
   - **`opening.opened`** is the open's shared show-and-check; **`Handle.opened_sha256`** is what
     the lazy baseline reads against.
+  - **`saving.chained`** keeps a chained step's answer under the call's own ids, and
+    **`saving.Caller`** names the tool a finish answers for: a new chained step uses both.
+  - **A derived id reruns only after a retryable refusal;** any other failure is its answer for
+    good, so a step's message must not promise a retry it cannot give.
   - **13 capabilities;** B1 added none.
 - **What turned out wrong or harder:**
   - **Protection drops a protected node that has gone,** so "protection only tightens" does not
@@ -40,9 +44,9 @@ route or not at all. Release 0.27.0 if it ships.
     reworks a heavily tested path, and ask which model.
   - **Live runs** were allowed at 0 unsaved with the Codex agent paused, for B1; ask again.
 - **Baseline** (ARCHITECTURE's table, v0.26.0):
-  - `verify`: 6 stages, all PASS; 1117 server tests and 1063 plugin-core tests, 0 skipped;
-  - `probe`: 206 PASS, 0 FAIL, 25 MEASURED, 147 s with 0 documents open, the journal check reading
-    775 dispatched lines;
+  - `verify`: 6 stages, all PASS; 1119 server tests and 1065 plugin-core tests, 0 skipped;
+  - `probe`: 206 PASS, 0 FAIL, 25 MEASURED, 145 s with 0 documents open, the journal check reading
+    773 dispatched lines;
   - 24 tools, 24 schema files, 30 error codes, 38 bridge ops, 13 capabilities, instructions 3,322
     characters.
 - **Not done:** nothing from B1's block.

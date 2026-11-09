@@ -5,7 +5,7 @@ from pathlib import Path
 from typing import Any
 
 import pytest
-from bridge_core import documents, protection, saving
+from bridge_core import documents, files, protection, saving
 from bridge_core.errors import BridgeError
 from bridge_core.jobs import Call
 from bridge_core.registry import Handle, Registry
@@ -308,19 +308,30 @@ def test_a_mask_of_another_canvas_is_refused_before_anything_opens(world: World)
     assert body["code"] == "INVALID_ARGUMENT" and len(world.port.opened) == opened
 
 
-def test_a_failed_open_closes_the_branch_and_keeps_its_file_to_open_again(world: World) -> None:
+def test_a_failed_open_closes_the_branch_and_keeps_its_file(world: World) -> None:
     document_id = world.open()
     saved = world.duplicate(document_id)
     world.finish(saved)
     world.port.fail["tree"] = BridgeError("IO_ERROR", "tree failed")
     body = world.refused(lambda: world.open_branch(saved))
     del world.port.fail["tree"]
-    assert body["details"]["rollback_verified"] is True
+    assert body["details"]["rollback_verified"] is True and body["retryable"] is False
     assert [h.document_id for h in world.registry.sync()] == [document_id]
-    assert (
-        world.files() == ["hero-b.kra"] and saved["save_id"] in world.handle(document_id).branches
-    )
-    assert world.open_branch(saved)["path"] == saved["path"]
+    assert world.files() == ["hero-b.kra"]
+
+
+def test_an_unmoved_placed_file_opens_without_hashing_it_again(
+    world: World, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    document_id = world.open()
+    saved = world.duplicate(document_id)
+    world.finish(saved)
+
+    def hashed(path: str) -> str:
+        raise AssertionError(f"{path} was hashed again")
+
+    monkeypatch.setattr(files, "sha256_of", hashed)
+    assert world.open_branch(saved)["sha256"] == saved["sha256"]
 
 
 def test_a_branch_paints_apart_from_its_source(world: World) -> None:

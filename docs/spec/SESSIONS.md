@@ -1814,6 +1814,32 @@ README's tool list" is struck (F26). B1 ships 0.26.0.
   MEASURED, 147.2 s with 0 documents open; the journal check read 775 dispatched lines. 24 tools,
   24 schema files, 30 error codes, 38 ops (+2), 13 capabilities, instructions 3,322 characters,
   `api_version` 0.4.0.
+- **Review (`/code-review high`), 9 findings: 9 fixed.**
+  - **An open that never reached the bridge was told to use `krita_document_open`,** though a
+    retry under the same `request_id` would open the branch with its protection. An unsent or
+    `unregistered` open now says that retry opens it in this Krita session, and
+    `krita_document_open` after a restart.
+  - **The docs promised a rerun after a failed open that `Jobs` never allows:** a derived id runs
+    again only after a retryable refusal. The docs now say so, and a test holds that a failure past
+    the marker is the answer for good.
+  - **The failed-open test reopened outside `Jobs`,** asserting what the real path cannot do; it
+    now checks the close and the kept file alone.
+  - **The open's mapped failure kept `rollback_verified: true`** beside a file that stays; it is
+    now false.
+  - **`source_dirty` was described as "before the call";** both source flags now say they are
+    read as the branch opens.
+  - **The open hashed the placed file again in full;** `Placed` takes its stat once in place, and
+    the open hashes only if it moved.
+  - **The identity rule was written twice;** `saving.chained` serves the finish and the open.
+  - **The tool and its noun travelled as two loose strings;** `saving.Caller` holds them.
+  - **The probe closed two documents twice;** each closes once.
+  - **Falsified:** the unsent retry, `rollback_verified` false, the stat skip and the no-rerun
+    rule, each failing at its own test, the tree restored byte for byte. The rest are refactors
+    and wording under existing tests.
+  - **Checked live:** `install-plugin`, a Krita restart at 0 unsaved, `doctor` 6 of 6.
+  - **Numbers after the review:** 1119 server tests (+2), 1065 plugin tests (+2), probe 206 PASS,
+    0 FAIL, 25 MEASURED, 144.9 s with 0 documents open; the journal check read 773 lines, the two
+    double closes gone.
 
 ---
 

@@ -79,6 +79,16 @@ def _source(document_id: str, baseline_id: str) -> dict[str, Any]:
     }
 
 
+async def _closed(a: Client, open_ids: set[str], document_id: str) -> dict[str, Any]:
+    # Closes a document the checks still hold open, and only once.
+    if document_id not in open_ids:
+        return {}
+    closed = await close(a, document_id)
+    if closed.get("status") == "completed":
+        open_ids.discard(document_id)
+    return closed
+
+
 def _held(folder: Path, baseline_id: str) -> bool:
     found = baselines.path_of(folder, baseline_id)
     return found is not None and found.exists()
@@ -101,14 +111,15 @@ async def run(
         report.check("the branch checks' working copy opens", False, str(opened.get("error")))
         return
     held = harness / "server-a" / "baselines"
+    open_ids = {document_id}
     try:
         own, problem = await _prepare(a, client, document_id, opened["data"], hard)
         if own is None:
             report.check("the branch checks' document is prepared", False, problem)
             return
-        await _branches(report, a, document_id, opened["data"], own, folder, held, hard)
+        await _branches(report, a, document_id, opened["data"], own, folder, held, hard, open_ids)
     finally:
-        await close(a, document_id)
+        await _closed(a, open_ids, document_id)
     working = Path(opened["data"]["path"])
     report.check(
         "the branch checks leave the fixture and the working copy's file as they were",
@@ -183,6 +194,7 @@ async def _branches(
     folder: Path,
     held: Path,
     hard: dict[str, Any],
+    open_ids: set[str],
 ) -> None:
     source = await inspect_data(a, document_id)
     painted = [layer["id"] for layer in source["layers"] if layer["type"] == "paint"]
@@ -210,6 +222,7 @@ async def _branches(
     )
     if not isinstance(branch_id, str):
         return
+    open_ids.add(branch_id)
     try:
         await _inherited(report, a, source, branch_id, result)
         await _unloosened(report, a, branch_id, source, hard)
@@ -230,7 +243,7 @@ async def _branches(
         await _apart(report, a, document_id, branch_id, own, hard)
         await _compared(report, a, document_id, data["baseline_id"], result, at_duplicate, held)
         await _refusals(report, a, document_id, folder, target)
-        closed = await close(a, branch_id)
+        closed = await _closed(a, open_ids, branch_id)
         report.check(
             "closing the branch removes its baseline alone, and its file stays the receipt's",
             closed.get("status") == "completed"
@@ -239,9 +252,9 @@ async def _branches(
             and file_sha256(target) == result["sha256"],
             str(code(closed)),
         )
-        await _source_closed(report, a, document_id, folder, held)
+        await _source_closed(report, a, document_id, folder, held, open_ids)
     finally:
-        await close(a, branch_id)
+        await _closed(a, open_ids, branch_id)
 
 
 async def _inherited(
@@ -349,7 +362,7 @@ async def _refusals(report: Report, a: Client, document_id: str, folder: Path, t
 
 
 async def _source_closed(
-    report: Report, a: Client, document_id: str, folder: Path, held: Path
+    report: Report, a: Client, document_id: str, folder: Path, held: Path, open_ids: set[str]
 ) -> None:
     got = await duplicate(a, document_id, folder / "second.kra")
     result = got.get("data") or {}
@@ -357,11 +370,12 @@ async def _source_closed(
     if not second:
         report.check("closing the source leaves a branch's baseline", False, str(code(got)))
         return
+    open_ids.add(second)
     try:
         first = await tool(
             a, "krita_preview_render", _render(_source(second, result["baseline_id"]))
         )
-        closed = await close(a, document_id)
+        closed = await _closed(a, open_ids, document_id)
         again = await tool(
             a, "krita_preview_render", _render(_source(second, result["baseline_id"]))
         )
@@ -372,7 +386,7 @@ async def _source_closed(
             f"{code(first)}, {code(closed)}, {code(again)}",
         )
     finally:
-        await close(a, second)
+        await _closed(a, open_ids, second)
 
 
 async def _created(report: Report, a: Client, folder: Path, held: Path) -> None:

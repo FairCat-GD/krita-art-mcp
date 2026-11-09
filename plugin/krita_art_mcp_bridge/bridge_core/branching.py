@@ -30,7 +30,7 @@ def handlers(
             message = "No duplicate of this document waits to open under that save_id."
             raise BridgeError("INVALID_ARGUMENT", message, False, details)
         path = roots.check(data, placed.path, "path")
-        if not files.unchanged(path, placed.sha256):
+        if not files.unchanged(path, placed.sha256, placed.stat):
             details = {"document_id": source.document_id, "path": path}
             message = "The duplicate's file changed after it was put in place."
             raise BridgeError("SOURCE_HASH_MISMATCH", message, False, details)

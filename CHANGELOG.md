@@ -23,8 +23,8 @@ tool and fields were added, and nothing was renamed or removed. This release nee
   is not destructive: it writes a new file, never over one, and opens it. `.ora` is refused, since
   only KRA keeps the layer ids protection names.
 - **A branch that was saved but did not open** answers `uncertain` with the file's `path`: a retry
-  under the same `request_id` opens it when Krita refused the open at its start, and
-  `krita_document_open` opens it otherwise.
+  under the same `request_id` opens it when Krita refused the open at its start or the open never
+  reached Krita, and `krita_document_open` opens it otherwise.
 
 ### Changed
 
