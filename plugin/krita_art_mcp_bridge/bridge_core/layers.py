@@ -10,6 +10,7 @@ from .opening import LAYER_ID
 from .port import DocumentsPort
 from .protection import MASK, refuse_held, refuse_held_line
 from .registry import Handle, Registry
+from .translations import TRANSFORM_MASK
 
 CREATE_FIELDS = {"document_id", "parent_id", "above_id", "type", "name", "coverage"}
 DUPLICATE_FIELDS = {"document_id", "layer_id", "name"}
@@ -452,7 +453,8 @@ def _refuse_clone_source(effects: dict[str, Any], inside: list[str]) -> None:
 def _refuse_transform_mask(tree: dict[str, Any], layer_id: str) -> None:
     # Undoing the attach of a copied transform mask crashes Krita in its cache rebuild (K53), and
     # a rollback undoes that attach.
-    copied = [one for one in nodes.subtree(tree, layer_id) if _kind(tree, one) == "transformmask"]
+    kinds = {node["id"]: node["type"] for node in tree["nodes"]}
+    copied = [one for one in nodes.subtree(tree, layer_id) if kinds[one] == TRANSFORM_MASK]
     if copied:
         details = {"layer_id": layer_id, "reason": "transform_mask", "transform_mask_ids": copied}
         message = (

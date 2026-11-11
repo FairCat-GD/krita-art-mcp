@@ -823,8 +823,8 @@ masks, named "Translate"; the layer's own pixels never change (K53, measured).
 - **The params** are Krita's own: the transform tool's free transform at identity, as a fresh mask's
   `toXML` writes it, with `transformedCenter` moved. Krita writes the attributes in a hash order that
   changes between sessions, so the plugin writes its own order and parses back by value: the mask is
-  a translate's only when every other value equals the identity's and the centre is a whole pixel.
-  Its translation is the centre.
+  a translate's only when every other value equals the identity's and the centre is a finite whole
+  pixel. Its translation is the centre, which the tree carries as `translation_px`.
 - **The first translate** creates the mask (no step), attaches it on top ("Add Layer") and pushes
   that step, then sets the params (`TransformMask.fromXML`, one unnamed step, waited for). A later
   one sets the same mask's params, one step. The receipt states `undo_steps`, and history moves them
@@ -843,7 +843,7 @@ masks, named "Translate"; the layer's own pixels never change (K53, measured).
   The tree the judge and `back` compare against is read after the before-read has waited; one that
   differs from the refusals' read is refused retryable, before the marker.
 - **The judge** holds the mask to its place and the rest of the tree to `drift`, the mask's own
-  params alone allowed to move. `back` compares the watched tree, the params' hash with it.
+  move alone allowed to change. `back` compares the watched tree, the move with it.
 - **Paint lands where it is aimed, in the layer's own pixels,** and shows moved; a stroke's or a
   fill's `changed_bounds_px` and `layer_bounds_px` stay in the layer's own pixels, and `reach`
   makes region scope refuse on the layer and on anything inside a translated group. A mask added
@@ -1116,15 +1116,16 @@ region, witness}` and `Ledger{steps, applied, floor, redo, bottom}`.
   what Krita keeps.
 - `undo_available = applied − max(floor, bottom)`.
 
-**A step's identity.** A step's fingerprint is `(id, blend mode, parent, rank, transform)` for each
-node, without the root's selection masks, where `transform` is the SHA-256 of a transform mask's
-`toXML` (null on any other node), read in the tree's walk and in `structure` at the cost of one
-serialisation per transform mask (a rotated one's is about 930 characters), and the SHA-256 of the selection's canvas-clipped bounds and
-bytes. The rank leaves the global selection's mask out (`nodes.ranks`), since it comes and goes with
+**A step's identity.** A step's fingerprint is `(id, blend mode, parent, rank, translation)` for
+each node, without the root's selection masks, and the SHA-256 of the selection's canvas-clipped
+bounds and bytes. `translation` is the tree's `translation_px`: a translate mask's move, parsed from
+its `toXML` in the tree's walk and in `structure`, one serialisation per transform mask; null on any
+other node. A transform mask whose params no translate made reads null too, so a warp, a liquify or
+another kind nobody measured is never compared. The rank leaves the global selection's mask out (`nodes.ranks`), since it comes and goes with
 the selection: undoing a clear puts it back where it was (measured), and a layer added above it then
-keeps its rank. Adds, removes and moves change the nodes' part; the blend and a transform mask's
-params are what an undo step changes in place. The params' hash is in `mutation.WATCHED` too, so
-every node op's drift check and `back` see it, and in the save's `KRA_FIELDS`. Labels do not
+keeps its rank. Adds, removes and moves change the nodes' part; the blend and a translate's move
+are what an undo step changes in place. `translation_px` is in `mutation.WATCHED` too, so every
+node op's drift check and `back` see it, and in the save's `KRA_FIELDS`. Labels do not
 identify a step, and a stroke's fingerprint does not either, so a stroke carries a **witness**: the
 target's own bytes over its diff, hashed before and after, checked before and after every move.
 
@@ -1195,7 +1196,7 @@ nothing of the save stays. An export that moved the document reads `uncertain`, 
 file.
 
 **What is compared.** Both formats: size, colour space, the composite. KRA: nodes by id, every `tree`
-field (the root's own id changes; a transform mask's params by their hash), and each node's own pixels over the union of both bounds. ORA: nodes
+field (the root's own id changes; a translate mask's move among them), and each node's own pixels over the union of both bounds. ORA: nodes
 by rank among stored siblings; then name, visibility, blend, edit lock, inherit-alpha, and each
 layer's pixels against the live projection. Masks and adjustment layers (`node`), clone, file, vector
 and fill types (`type`), `alpha_locked` and rounded opacity are listed in `expected_losses`. A lost
@@ -1635,7 +1636,7 @@ depend on it: 87 open documents cost about 50 s more.
 |---|---|
 | `uv run scripts/verify.py` | 6 stages, all PASS |
 | Server tests (3.12) | 1135 passed, 0 skipped |
-| Plugin-core tests (3.10) | 1125 passed, 0 skipped |
+| Plugin-core tests (3.10) | 1127 passed, 0 skipped |
 | `uv run krita-art-mcp probe` | 216 PASS, 0 FAIL, 25 MEASURED; about 145 s |
 | `uv run krita-art-mcp doctor` | 6 steps, all PASS, with a root allowed |
 | Registered tools | 25 |

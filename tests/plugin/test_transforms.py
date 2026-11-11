@@ -251,10 +251,28 @@ def test_the_parse_reads_krita_order_doctype_and_negative_zero() -> None:
         FRESH_TRANSFORM.replace("<filterId", "<extra /><filterId"),
         FRESH_TRANSFORM.replace('<scaleX value="1"', '<scaleX value="2"'),
         translations.translate_xml(16385, 0),
+        translations.translate_xml(0, 0).replace(
+            'x="0" y="0" type="pointf" /><origin', 'x="inf" y="0" type="pointf" /><origin'
+        ),
+        translations.translate_xml(0, 0).replace(
+            'x="0" y="0" type="pointf" /><origin', 'x="nan" y="0" type="pointf" /><origin'
+        ),
         "<!DOCTYPE a [<!ENTITY e 'x'>]><a>&e;</a>",
         "not xml",
     ],
-    ids=["rotated", "mode", "params", "half", "extra", "scaled", "far", "entity", "broken"],
+    ids=[
+        "rotated",
+        "mode",
+        "params",
+        "half",
+        "extra",
+        "scaled",
+        "far",
+        "infinite",
+        "nan",
+        "entity",
+        "broken",
+    ],
 )
 def test_the_parse_reads_no_other_params(xml: str) -> None:
     assert translations.translation(xml) is None
@@ -307,12 +325,10 @@ def test_only_paint_layers_and_groups_are_translated(world: World, kind: str) ->
     _untouched(world, handle)
 
 
-@pytest.mark.parametrize("hidden", [False, True], ids=["foreign", "two"])
-def test_a_layer_whose_transform_mask_no_translate_made_is_refused(
-    world: World, hidden: bool
-) -> None:
+@pytest.mark.parametrize("two", [False, True], ids=["foreign", "two"])
+def test_a_layer_whose_transform_mask_no_translate_made_is_refused(world: World, two: bool) -> None:
     document_id, handle = world.document()
-    if hidden:
+    if two:
         world.add_mask(PAINT)
         world.add_mask(PAINT)
     else:
@@ -601,13 +617,13 @@ def test_the_fingerprint_and_drift_see_a_transform_masks_params(world: World) ->
     moved = {
         **tree,
         "nodes": [
-            {**node, "transform_sha256": "0" * 64} if node["id"] == mask["id"] else node
+            {**node, "translation_px": [2, 0]} if node["id"] == mask["id"] else node
             for node in tree["nodes"]
         ],
     }
     assert ledger.node_states(moved) != ledger.node_states(tree)
     assert drift(tree, moved) == [mask["id"]]
-    assert drift(tree, moved, loose={mask["id"]: {"transform_sha256"}}) == []
+    assert drift(tree, moved, loose={mask["id"]: {"translation_px"}}) == []
 
 
 def test_inspect_reports_each_translate_masks_translation(world: World) -> None:

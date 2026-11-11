@@ -34,8 +34,9 @@ stays 0.4.0: a tool and a field were added, and nothing was renamed or removed. 
 - **`krita_layer_duplicate` refuses a layer holding a transform mask** (`UNSUPPORTED_CAPABILITY`,
   `reason: transform_mask`). Undoing such a copy crashes Krita, on 0.26.0 too: copy a layer before
   translating it.
-- **The undo ledger sees a transform mask's params,** so history and every rollback tell a
-  translate's unnamed steps from a selection's, and a KRA save compares them.
+- **The undo ledger sees a translate's move,** so history and every rollback tell a translate's
+  unnamed steps from a selection's, and a KRA save compares it. A transform mask no translate made
+  is left uncompared.
 - **The server instructions** say to copy a layer before moving it. 3,375 characters.
 
 ## [0.26.0] — 2026-11-09

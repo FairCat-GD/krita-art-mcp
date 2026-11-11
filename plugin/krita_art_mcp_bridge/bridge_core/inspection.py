@@ -5,7 +5,6 @@ from .jobs import Call, Handler
 from .ledger import selection_state
 from .port import DocumentsPort
 from .registry import Handle, Registry
-from .translations import translations
 
 INSPECT_FIELDS = {"document_id", "frame"}
 # Krita's node types in the contract's words; any other type passes through as Krita names it.
@@ -43,11 +42,7 @@ def check_shown_frame(info: dict[str, Any]) -> None:
         raise BridgeError("UNSUPPORTED_CAPABILITY", message, False, details)
 
 
-def layer_entries(
-    tree: dict[str, Any], protected: set[str], moved: dict[str, Any]
-) -> list[dict[str, Any]]:
-    # moved is translations.translations of the tree: a transform mask's whole-pixel translation
-    # when a translate made it.
+def layer_entries(tree: dict[str, Any], protected: set[str]) -> list[dict[str, Any]]:
     return [
         {
             "id": node["id"],
@@ -67,7 +62,7 @@ def layer_entries(
             "depth": node["depth"],
             "profile_id": node["profile_id"],
             "protected": node["id"] in protected,
-            "translation_px": moved.get(node["id"]),
+            "translation_px": node["translation_px"],
         }
         for node in tree["nodes"]
     ]
@@ -105,9 +100,7 @@ def handlers(registry: Registry, port: DocumentsPort) -> dict[str, Handler]:
             "unsafe": handle.unsafe,
             "root_layer_id": tree["root_id"],
             "active_layer_id": tree["active_id"],
-            "layers": layer_entries(
-                tree, protected_ids(handle, tree), translations(port, handle.document, tree)
-            ),
+            "layers": layer_entries(tree, protected_ids(handle, tree)),
             "selection": _selection(port, handle, info["size_px"]),
             "protection": {
                 "allowed_change_mask": handle.allowed_summary,

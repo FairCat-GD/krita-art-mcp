@@ -27,12 +27,13 @@ class DocumentsPort(Protocol):
     def layers(self, document: Any) -> tuple[str, list[dict[str, Any]]]: ...
 
     # {root_id, active_id, nodes}: every node depth-first in Krita's child order, as Krita
-    # reports it (type as Node.type(), opacity 0-255, offset_px, bounds_px, and transform_sha256,
-    # the SHA-256 of a transform mask's toXML, null on any other node).
+    # reports it (type as Node.type(), opacity 0-255, offset_px, bounds_px, and translation_px,
+    # a translate mask's [x, y] as translations.translation parses its toXML, null on any other
+    # node).
     def tree(self, document: Any) -> dict[str, Any]: ...
 
     # The tree's shape alone, {root_id, nodes: [{id, parent_id, order, type, blend_mode,
-    # transform_sha256}]}, as tree() reports those fields: what a node step's state reads,
+    # translation_px}]}, as tree() reports those fields: what a node step's state reads,
     # without the rest's cost.
     def structure(self, document: Any) -> dict[str, Any]: ...
 
@@ -107,9 +108,6 @@ class DocumentsPort(Protocol):
     # TransformMask.fromXML on an attached mask, one command stroke, then waits, raise or not;
     # INTERNAL_ERROR when Krita does not take the XML.
     def set_transform(self, document: Any, mask_id: str, xml: str) -> None: ...
-
-    # A transform mask's params as TransformMask.toXML writes them.
-    def transform_xml(self, document: Any, mask_id: str) -> str: ...
 
     # Builds a selection by the recipe's steps, in order, and commits it with setSelection (one
     # undo step); a recipe of ("clear",) commits None. Waits.

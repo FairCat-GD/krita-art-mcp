@@ -14,7 +14,6 @@ from .inspection import check_shown_frame, layer_entries
 from .jobs import Call, Handler
 from .port import DocumentsPort
 from .registry import READ_ONLY, WORKING_COPY, Registry
-from .translations import translations
 
 OPEN_FIELDS = {
     "source_path",
@@ -113,7 +112,7 @@ def handlers(
         )
         # Every layer that exists now is protected, except those the agent resumes.
         protected = {node["id"] for node in tree["nodes"]} - editable
-        layers = layer_entries(tree, protected, translations(port, document, tree))
+        layers = layer_entries(tree, protected)
         width, height = info["size_px"]
         # Its pixels are the file's, read by the first preview that needs them.
         baseline_id = new_id()

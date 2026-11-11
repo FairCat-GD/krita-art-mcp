@@ -51,6 +51,7 @@ KRA_FIELDS = (
     "inherit_alpha",
     "offset_px",
     "bounds_px",
+    "translation_px",
 )
 SAVED_NAME = "krita-art-mcp probe saved"
 CLIP_NAME = "krita-art-mcp probe clip"

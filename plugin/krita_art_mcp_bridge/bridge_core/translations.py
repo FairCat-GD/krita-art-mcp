@@ -1,7 +1,6 @@
+import math
 import xml.etree.ElementTree as ElementTree
 from typing import Any
-
-from .port import DocumentsPort
 
 # Per axis, for one call's move and for a mask's whole translation.
 MAX_TRANSLATE = 16384
@@ -94,16 +93,6 @@ def translation(xml: str) -> tuple[int, int] | None:
     return moved[0], moved[1]
 
 
-def translations(port: DocumentsPort, document: Any, tree: dict[str, Any]) -> dict[str, Any]:
-    # Each transform mask's translation as [x, y], or None for params a translate did not make.
-    found: dict[str, Any] = {}
-    for node in tree["nodes"]:
-        if node["type"] == TRANSFORM_MASK:
-            moved = translation(port.transform_xml(document, node["id"]))
-            found[node["id"]] = None if moved is None else list(moved)
-    return found
-
-
 def _same(found: dict[str, str], expected: dict[str, str]) -> bool:
     # Numbers by value, so Krita's "-0" reads as "0".
     if set(found) != set(expected):
@@ -124,7 +113,9 @@ def _number(text: str) -> float | None:
 
 def _whole(text: str) -> int | None:
     value = _number(text)
-    if value is None or value != int(value) or abs(value) > MAX_TRANSLATE:
+    if value is None or not math.isfinite(value) or value != int(value):
+        return None
+    if abs(value) > MAX_TRANSLATE:
         return None
     return int(value)
 

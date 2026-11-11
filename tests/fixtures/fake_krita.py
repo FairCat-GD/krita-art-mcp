@@ -57,7 +57,7 @@ def fake_node(key: int, index: int, name: str, parent_id: str, order: int, **cha
         "color_model": "RGBA",
         "depth": "U8",
         "profile_id": documents.SRGB_PROFILE,
-        "transform_sha256": None,
+        "translation_px": None,
         **changes,
     }
 
@@ -287,18 +287,22 @@ class FakePort:
             # A transparency mask's bounds are its layer's (measured on Krita 5.3.4.1).
             if node["type"] == MASK and node["parent_id"] in bounds:
                 node["bounds_px"] = dict(bounds[node["parent_id"]])
-            node["transform_sha256"] = None
+            node["translation_px"] = None
             if node["type"] == TRANSFORM_MASK:
-                node["transform_sha256"] = _digest(self._params(document.key, node["id"]))
+                node["translation_px"] = self._moved(document.key, node["id"])
         return tree
 
     def _params(self, key: int, mask_id: str) -> str:
         return self.transforms.get((key, mask_id), FRESH_TRANSFORM)
 
+    def _moved(self, key: int, mask_id: str) -> list[int] | None:
+        moved = translations.translation(self._params(key, mask_id))
+        return None if moved is None else list(moved)
+
     def structure(self, document: Any) -> dict[str, Any]:
         self.calls.append("structure")
         tree = self.tree(document)
-        keys = ("id", "parent_id", "order", "type", "blend_mode", "transform_sha256")
+        keys = ("id", "parent_id", "order", "type", "blend_mode", "translation_px")
         shape = [{key: node[key] for key in keys} for node in tree["nodes"]]
         return {"root_id": tree["root_id"], "nodes": shape}
 
@@ -633,14 +637,8 @@ class FakePort:
 
     def _set_params(self, key: int, mask_id: str, xml: str) -> None:
         self.transforms[(key, mask_id)] = xml
-        self._layer(key, mask_id)["transform_sha256"] = _digest(xml)
+        self._layer(key, mask_id)["translation_px"] = self._moved(key, mask_id)
         self._redraw(key)
-
-    def transform_xml(self, document: Any, mask_id: str) -> str:
-        self.calls.append("transform_xml")
-        self._maybe_fail("transform_xml")
-        self._layer(document.key, mask_id)
-        return self._params(document.key, mask_id)
 
     def translation_of(self, key: int, mask_id: str) -> tuple[int, int] | None:
         # For a test's render: what a translate holds on the mask, as its parse reads it.
@@ -1443,7 +1441,3 @@ def _file_sha256(path: str) -> str:
             return hashlib.sha256(stream.read()).hexdigest()
     except OSError:
         return ""
-
-
-def _digest(xml: str) -> str:
-    return hashlib.sha256(xml.encode("utf-8")).hexdigest()

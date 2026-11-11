@@ -1,4 +1,3 @@
-import hashlib
 import logging
 import time
 from typing import Any
@@ -7,6 +6,7 @@ from krita import InfoObject, Krita, Selection
 
 from ..bridge_core import log
 from ..bridge_core.errors import BridgeError
+from ..bridge_core.translations import TRANSFORM_MASK, translation
 from . import painting, selections
 from .qt import EXCLUDE_USER_INPUT, QApplication, QCoreApplication, QIcon
 
@@ -139,7 +139,7 @@ class KritaDocuments:
                         "order": order,
                         "type": str(node.type()),
                         "blend_mode": str(node.blendingMode()),
-                        "transform_sha256": _transform_sha256(node),
+                        "translation_px": _translation(node),
                     }
                 )
                 pending.append((node, node_id))
@@ -310,9 +310,6 @@ class KritaDocuments:
             document.waitForDone()
         if not taken:
             raise BridgeError("INTERNAL_ERROR", "Krita did not take the transform.")
-
-    def transform_xml(self, document: Any, mask_id: str) -> str:
-        return str(_node(document, mask_id).toXML())
 
     def set_selection(self, document: Any, recipe: list[tuple[Any, ...]]) -> None:
         selections.commit(document, recipe, _node)
@@ -523,7 +520,7 @@ def _walk(parent: Any, parent_id: str, nodes: list[dict[str, Any]]) -> None:
                     "width": int(bounds.width()),
                     "height": int(bounds.height()),
                 },
-                "transform_sha256": _transform_sha256(node),
+                "translation_px": _translation(node),
                 "color_model": str(node.colorModel()),
                 "depth": str(node.colorDepth()),
                 "profile_id": str(node.colorProfile()),
@@ -532,12 +529,13 @@ def _walk(parent: Any, parent_id: str, nodes: list[dict[str, Any]]) -> None:
         _walk(node, node_id, nodes)
 
 
-def _transform_sha256(node: Any) -> str | None:
-    # A transform mask's params, which its undo steps change in place (K53); toXML is stable
-    # within one Krita session.
-    if str(node.type()) != "transformmask":
+def _translation(node: Any) -> list[int] | None:
+    # A translate mask's whole-pixel move, which its undo steps change in place (K53); None for
+    # any other node, a transform mask whose params no translate made included.
+    if str(node.type()) != TRANSFORM_MASK:
         return None
-    return hashlib.sha256(str(node.toXML()).encode("utf-8")).hexdigest()
+    moved = translation(str(node.toXML()))
+    return None if moved is None else list(moved)
 
 
 def _animated(parent: Any) -> bool:

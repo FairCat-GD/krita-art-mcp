@@ -27,7 +27,7 @@ WATCHED = (
     "alpha_locked",
     "inherit_alpha",
     "offset_px",
-    "transform_sha256",
+    "translation_px",
 )
 
 # What the rollback found of a step the change never pushed.

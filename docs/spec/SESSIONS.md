@@ -1988,6 +1988,28 @@ per step (F12), measured. T1 ships 0.27.0 on a native route.
   - probe 216 PASS (+10), 0 FAIL, 25 MEASURED, 142.4 s with 0 documents open;
   - 25 tools, 25 schema files, 30 error codes, 39 ops (+1), 14 capabilities (+1);
   - instructions 3,375 characters; `api_version` 0.4.0.
+- **Review (`/code-review high`), 6 findings: 6 fixed.**
+  - **The params hash compared kinds nobody measured.** `transform_sha256` sat in the fingerprint,
+    `WATCHED` and `KRA_FIELDS`, so a warp or liquify mask whose `toXML` round trip differs could
+    have failed an owner's save, the close guard or any node op's drift check.
+    - The tree now carries `translation_px`: a translate mask's move, parsed by value, and null on
+      any other node, a transform mask no translate made included.
+    - The fingerprint, `WATCHED`, `KRA_FIELDS` and the probe's KRA list hold it. The port's
+      `transform_xml` is gone, and so is the second read of the params.
+  - **The parse raised on an `inf` or `nan` centre;** it now refuses one as not a translate's.
+  - **The duplicate guard scanned the tree once per node of the subtree;** it builds one map.
+  - **The guard spelled the mask's type;** it uses `TRANSFORM_MASK`.
+  - **Inspect, open and the branch serialised each mask twice;** they read the tree's
+    `translation_px`.
+  - **A test's flag was named `hidden`** for the foreign and two-mask cases; it is `two`.
+  - **Falsified:** the finiteness check, the move in the fingerprint, `WATCHED`, `KRA_FIELDS` and
+    inspect, the guard's map, the tree-read move check and the tree-read own mask. Each failed at
+    its own test, the tree restored byte for byte.
+  - **Checked live:** `install-plugin`, a Krita restart at 0 unsaved, `doctor` 6 of 6.
+  - **Numbers after the review:**
+    - 1135 server tests, 1127 plugin tests (+2);
+    - probe 216 PASS, 0 FAIL, 25 MEASURED, 144.7 s with 0 documents open;
+    - the journal check read 795 lines.
 
 ---
 

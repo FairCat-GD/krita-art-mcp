@@ -11,8 +11,9 @@ T1's done-note, then this file, and do Session S1: scale, rotate, shear. Release
   - Remaining, in order: S1, X2 and V1.
 - **T1 shipped 0.27.0.** The versions stand as the table says: S1 0.28.0 and V1 0.29.0. S1 may be
   cut first if the round runs long; the owner decides.
-- **T1 is committed locally, not pushed.** `origin/main` holds everything through B1's review
-  commit. List `origin/main..HEAD` before any push, and push only on the owner's approval.
+- **T1 and its review fixes are committed locally, not pushed.** `origin/main` holds everything
+  through B1's review commit. List `origin/main..HEAD` before any push, and push only on the
+  owner's approval.
 - **What T1 left that S1 meets:**
   - **`krita_layer_transform` exists,** with `operation` a `oneOf` of one branch,
     `{type: "translate", by_px}`. S1 adds its branches to that `oneOf` and the plugin's
@@ -25,8 +26,10 @@ T1's done-note, then this file, and do Session S1: scale, rotate, shear. Release
   - **The labels are per op:** `history.LABELS["layer.transform"]` is `(ADD, "")`, and the
     translate slices it by path. S1's operations push other labels under the same op, so
     `LABELS` needs a label per operation type, each measured in English.
-  - **The fingerprint and `WATCHED` hold `transform_sha256`,** the SHA-256 of a transform mask's
-    `toXML`. Bounds and `offset_px` are still outside the fingerprint (F8 for S1).
+  - **The fingerprint, `WATCHED` and `KRA_FIELDS` hold `translation_px`:** a translate mask's move,
+    parsed from its `toXML`; null for any other node, a transform mask no translate made
+    included. A scale or rotation S1 adds needs its own state there. Bounds and `offset_px` are
+    still outside the fingerprint (F8 for S1).
   - **A params step is pushed only once its state is seen to move.** Any unnamed step S1 makes
     needs the same rule.
   - **`krita_layer_duplicate` refuses a layer holding a transform mask.** Undoing the attach of a
@@ -49,8 +52,8 @@ T1's done-note, then this file, and do Session S1: scale, rotate, shear. Release
     reworks a heavily tested path, and ask which model.
   - **Live runs** were allowed at 0 unsaved with the Codex agent paused, for T1; ask again.
 - **Baseline** (ARCHITECTURE's table, v0.27.0):
-  - `verify`: 6 stages, all PASS; 1135 server tests and 1125 plugin-core tests, 0 skipped;
-  - `probe`: 216 PASS, 0 FAIL, 25 MEASURED, 142 s with 0 documents open, the journal check reading
+  - `verify`: 6 stages, all PASS; 1135 server tests and 1127 plugin-core tests, 0 skipped;
+  - `probe`: 216 PASS, 0 FAIL, 25 MEASURED, 145 s with 0 documents open, the journal check reading
     795 dispatched lines;
   - 25 tools, 25 schema files, 30 error codes, 39 bridge ops, 14 capabilities, instructions 3,375
     characters.

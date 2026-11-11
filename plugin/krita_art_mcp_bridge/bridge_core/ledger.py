@@ -5,11 +5,11 @@ from typing import Any
 from .nodes import ranks
 from .port import DocumentsPort
 
-# Each node outside the root's selection masks as (id, blend mode, parent, rank, transform mask
-# params' hash or None), then the selection's hash or None. The root's masks hold the global
-# selection, which the hash already covers; the blend and a transform mask's params are what an
-# undo step changes in place, and adds, removes and moves change the rest.
-Nodes = tuple[tuple[str, str, str, int, str | None], ...]
+# Each node outside the root's selection masks as (id, blend mode, parent, rank, a translate
+# mask's move or None), then the selection's hash or None. The root's masks hold the global
+# selection, which the hash already covers; the blend and a translate's move are what an undo step
+# changes in place, and adds, removes and moves change the rest.
+Nodes = tuple[tuple[str, str, str, int, tuple[int, ...] | None], ...]
 Fingerprint = tuple[Nodes, str | None]
 # A layer, a rect, and the SHA-256 of the layer's own BGRA bytes over it before and after.
 Witness = tuple[str, dict[str, int], str, str]
@@ -123,7 +123,7 @@ def node_states(tree: dict[str, Any]) -> Nodes:
                 node["blend_mode"],
                 node["parent_id"],
                 ranked[node["id"]],
-                node["transform_sha256"],
+                None if node["translation_px"] is None else tuple(node["translation_px"]),
             )
             for node in tree["nodes"]
             if node["id"] in ranked

@@ -587,7 +587,7 @@ def test_a_kra_compares_a_transform_masks_params(world: World) -> None:
     world.port.on_export.append(moved)
     body = world.refused("save", document_id, "hero-r03.kra")
     assert [(m["name"], m["field"]) for m in body["details"]["mismatches"]] == [
-        ("translate", "transform_sha256")
+        ("translate", "translation_px")
     ]
 
 

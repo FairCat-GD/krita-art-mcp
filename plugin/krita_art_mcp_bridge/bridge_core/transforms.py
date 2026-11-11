@@ -10,7 +10,7 @@ from .opening import LAYER_ID
 from .port import DocumentsPort
 from .protection import line
 from .registry import Handle, Registry
-from .translations import MAX_TRANSLATE, TRANSFORM_MASK, translate_xml, translation
+from .translations import MAX_TRANSLATE, TRANSFORM_MASK, translate_xml
 
 TRANSFORM_FIELDS = {"document_id", "layer_id", "operation"}
 OPERATION_FIELDS = {"type", "by_px"}
@@ -53,7 +53,7 @@ def handlers(registry: Registry, port: DocumentsPort, data: Path) -> dict[str, H
             message = "krita_layer_transform takes paint layers and groups."
             raise BridgeError("INVALID_ARGUMENT", message, False, details)
         _refuse_held(first, layer_id, handle.protected)
-        mask_id, was = _own_mask(port, document, first, layer_id)
+        mask_id, was = _own_mask(first, layer_id)
         total = [was[0] + by[0], was[1] + by[1]]
         if not all(abs(value) <= MAX_TRANSLATE for value in total):
             details = {"layer_id": layer_id, "translation_px": list(was), "by_px": by}
@@ -100,8 +100,8 @@ def handlers(registry: Registry, port: DocumentsPort, data: Path) -> dict[str, H
             state = steps.of(after)
             # A step is pushed only once its state is seen to move, so a rollback never undoes
             # another unnamed step (a selection's, or an earlier translate's) in its place.
-            held = translation(port.transform_xml(document, target))
-            if state == steps.state or held != (total[0], total[1]):
+            held = next(node for node in after["nodes"] if node["id"] == target)["translation_px"]
+            if state == steps.state or held != total:
                 details = {"layer_id": layer_id, "transform_mask_id": target}
                 message = "Krita did not take the translation as sent."
                 raise BridgeError("INTERNAL_ERROR", message, False, details)
@@ -160,7 +160,7 @@ def translated(
     added = sorted(set(new) - old_ids)
     mask = new.get(mask_id)
     siblings = [node["order"] for node in after["nodes"] if node["parent_id"] == layer_id]
-    moved = drift(before, after, {mask_id} if made else (), {mask_id: {"transform_sha256"}})
+    moved = drift(before, after, {mask_id} if made else (), {mask_id: {"translation_px"}})
     if (
         added != ([mask_id] if made else [])
         or old_ids - set(new)
@@ -174,9 +174,7 @@ def translated(
     return None
 
 
-def _own_mask(
-    port: DocumentsPort, document: Any, tree: dict[str, Any], layer_id: str
-) -> tuple[str | None, tuple[int, int]]:
+def _own_mask(tree: dict[str, Any], layer_id: str) -> tuple[str | None, list[int]]:
     # The layer's one transform mask and its translation, when a translate made it and it shows.
     found = [
         node
@@ -184,7 +182,7 @@ def _own_mask(
         if node["parent_id"] == layer_id and node["type"] == TRANSFORM_MASK
     ]
     if not found:
-        return None, (0, 0)
+        return None, [0, 0]
     details: dict[str, Any] = {"layer_id": layer_id, "reason": "transform_mask"}
     if len(found) > 1:
         details["transform_mask_ids"] = [node["id"] for node in found]
@@ -192,7 +190,7 @@ def _own_mask(
         raise BridgeError("UNSUPPORTED_CAPABILITY", message, False, details)
     mask = found[0]
     details["transform_mask_ids"] = [mask["id"]]
-    moved = translation(port.transform_xml(document, mask["id"]))
+    moved: list[int] | None = mask["translation_px"]
     if moved is None:
         message = (
             "The layer's transform mask holds a transform no translate made, so it is left "
