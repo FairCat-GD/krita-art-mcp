@@ -11,9 +11,9 @@ T1's done-note, then this file, and do Session S1: scale, rotate, shear. Release
   - Remaining, in order: S1, X2 and V1.
 - **T1 shipped 0.27.0.** The versions stand as the table says: S1 0.28.0 and V1 0.29.0. S1 may be
   cut first if the round runs long; the owner decides.
-- **T1 and its review fixes are committed locally, not pushed.** `origin/main` holds everything
-  through B1's review commit. List `origin/main..HEAD` before any push, and push only on the
-  owner's approval.
+- **T1 and its review fixes are pushed.** `origin/main` holds everything through "review: a
+  params hash compared transforms nobody measured, and 5 smaller". List `origin/main..HEAD` before
+  any push, and push only on the owner's approval.
 - **What T1 left that S1 meets:**
   - **`krita_layer_transform` exists,** with `operation` a `oneOf` of one branch,
     `{type: "translate", by_px}`. S1 adds its branches to that `oneOf` and the plugin's
