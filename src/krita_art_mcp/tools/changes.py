@@ -25,6 +25,7 @@ STEP_TOOLS = {
     "layer.duplicate": "krita_layer_duplicate",
     "layer.remove": "krita_layer_remove",
     "layer.reorder": "krita_layer_reorder",
+    "layer.transform": "krita_layer_transform",
     "layer.update": "krita_layer_update",
     "paint.fill": "krita_paint_fill",
     "paint.stroke": "krita_paint_stroke",
@@ -159,6 +160,49 @@ def remove_receipt(outcome: Outcome) -> CallToolResult:
         line = (
             f"Removed layer {result['layer_id']} ({len(result['removed'])} node(s)) from "
             f"{result['document_id']}"
+        )
+        return line + _checked(result) + "."
+
+    return _with_diff(from_outcome(outcome, without_document, text, document_of), outcome)
+
+
+def layer_transform(call: ToolCall, arguments: dict[str, Any]) -> CallToolResult:
+    refused = transform_rules(arguments)
+    if refused is not None:
+        return refused
+    guard = arguments["guard"]
+    op_args = {
+        "document_id": guard["document_id"],
+        "layer_id": arguments["layer_id"],
+        "operation": arguments["operation"],
+    }
+
+    def send(before_send: BeforeSend) -> Outcome:
+        outcome = call.bridge.call(
+            "layer.transform", op_args, request_id=guard["request_id"], before_send=before_send
+        )
+        return resolve_update(call.places, outcome)
+
+    return journaled(
+        call, "krita_layer_transform", arguments, guard["request_id"], send, transform_receipt
+    )
+
+
+def transform_rules(arguments: dict[str, Any]) -> CallToolResult | None:
+    # The plugin checks this too; the schema holds the rest.
+    if arguments["operation"]["by_px"] == [0, 0]:
+        message = "by_px [0, 0] moves nothing."
+        return envelope.failure("INVALID_ARGUMENT", message, details={"field": "by_px"})
+    return None
+
+
+def transform_receipt(outcome: Outcome) -> CallToolResult:
+    def text(result: dict[str, Any]) -> str:
+        made = "added its transform mask and moved" if result["created_mask"] else "moved"
+        line = (
+            f"Translated layer {result['layer_id']} in {result['document_id']}: {made} it by "
+            f"{result['by_px']} to {result['translation_px']}, in {result['undo_steps']} undo "
+            "step(s) taken together"
         )
         return line + _checked(result) + "."
 

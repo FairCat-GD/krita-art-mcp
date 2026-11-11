@@ -10,6 +10,7 @@ from bridge_core.source_hash import source_hash
 CAPABILITIES = {
     "paint.fill",
     "mask.transparency",
+    "layer.translate",
     "stroke.native_brush",
     "stroke.dynamics",
     "stroke.per_point_input",
@@ -47,6 +48,7 @@ def test_only_what_is_built_is_supported() -> None:
     assert supported == {
         "paint.fill",
         "mask.transparency",
+        "layer.translate",
         "stroke.native_brush",
         "stroke.smoothing",
         "stroke.dynamics",

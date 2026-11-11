@@ -93,7 +93,8 @@
                     "color_spaces",
                     "filters",
                     "animation",
-                    "mask.transparency"
+                    "mask.transparency",
+                    "layer.translate"
                   ]
                 },
                 "additionalProperties": {
@@ -138,7 +139,8 @@
                   "color_spaces",
                   "filters",
                   "animation",
-                  "mask.transparency"
+                  "mask.transparency",
+                  "layer.translate"
                 ]
               },
               "limits": {
@@ -365,7 +367,8 @@
                   "color_spaces",
                   "filters",
                   "animation",
-                  "mask.transparency"
+                  "mask.transparency",
+                  "layer.translate"
                 ]
               },
               "additionalProperties": {
@@ -410,7 +413,8 @@
                 "color_spaces",
                 "filters",
                 "animation",
-                "mask.transparency"
+                "mask.transparency",
+                "layer.translate"
               ]
             },
             "limits": {
@@ -637,6 +641,11 @@
             "supported": false,
             "since": null,
             "notes": "Animation arrives in Phase 5."
+          },
+          "layer.translate": {
+            "supported": false,
+            "since": null,
+            "notes": "Translate is not built in this release."
           }
         },
         "limits": {

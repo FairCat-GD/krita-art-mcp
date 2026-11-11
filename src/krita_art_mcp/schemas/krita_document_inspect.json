@@ -240,6 +240,22 @@
                     },
                     "protected": {
                       "type": "boolean"
+                    },
+                    "translation_px": {
+                      "description": "A transform mask's whole-pixel translation when a translate made it; else null.",
+                      "anyOf": [
+                        {
+                          "type": "array",
+                          "items": {
+                            "type": "integer"
+                          },
+                          "minItems": 2,
+                          "maxItems": 2
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
                     }
                   },
                   "required": [
@@ -259,7 +275,8 @@
                     "color_model",
                     "depth",
                     "profile_id",
-                    "protected"
+                    "protected",
+                    "translation_px"
                   ],
                   "additionalProperties": false
                 }
@@ -704,6 +721,22 @@
                   },
                   "protected": {
                     "type": "boolean"
+                  },
+                  "translation_px": {
+                    "description": "A transform mask's whole-pixel translation when a translate made it; else null.",
+                    "anyOf": [
+                      {
+                        "type": "array",
+                        "items": {
+                          "type": "integer"
+                        },
+                        "minItems": 2,
+                        "maxItems": 2
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
                   }
                 },
                 "required": [
@@ -723,7 +756,8 @@
                   "color_model",
                   "depth",
                   "profile_id",
-                  "protected"
+                  "protected",
+                  "translation_px"
                 ],
                 "additionalProperties": false
               }
@@ -1008,7 +1042,8 @@
             "color_model": "RGBA",
             "depth": "U8",
             "profile_id": "sRGB-elle-V2-srgbtrc.icc",
-            "protected": true
+            "protected": true,
+            "translation_px": null
           }
         ],
         "selection": null,

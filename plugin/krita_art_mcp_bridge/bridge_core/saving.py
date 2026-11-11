@@ -41,6 +41,7 @@ KRA_FIELDS = (
     "inherit_alpha",
     "offset_px",
     "bounds_px",
+    "transform_sha256",
     "color_model",
     "depth",
     "profile_id",

@@ -11,6 +11,7 @@ from .port import DocumentsPort
 from .protection import summary
 from .registry import Handle, Registry
 from .saving import Placed
+from .translations import translations
 
 OPEN_FIELDS = {"document_id", "save_id"}
 
@@ -59,6 +60,7 @@ def handlers(
             alpha = inherited.preserve_composite_alpha or source.preserve_composite_alpha
             canvas = inherited.preserve_canvas or source.preserve_canvas
             allowed = None if mask is None else summary(mask, size[0])
+            moved = translations(port, document, tree)
             baseline_id = new_id()
             # Registered last, so nothing can fail once the registry holds the document.
             handle = registry.add(document, source.mode, call.client)
@@ -93,7 +95,7 @@ def handlers(
             "canvas_px": list(size),
             "root_layer_id": tree["root_id"],
             "active_layer_id": tree["active_id"],
-            "layers": layer_entries(tree, protected),
+            "layers": layer_entries(tree, protected, moved),
             "protection": {
                 "allowed_change_mask": allowed,
                 "preserve_composite_alpha": alpha,

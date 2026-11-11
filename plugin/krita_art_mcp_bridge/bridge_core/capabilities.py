@@ -30,6 +30,14 @@ _MATRIX: dict[str, tuple[bool, str | None, str]] = {
         "brush engine only: the preset is edited in memory for that one stroke and put back, "
         "checked by its digest and dirty flag.",
     ),
+    "layer.translate": (
+        True,
+        "0.27.0",
+        "Paint layers and groups moved by whole pixels through a transform mask on top of their "
+        "masks: the layer's own pixels never change, Krita's undo takes back the mask's attach "
+        "and each move, verified against protection and undone on a leak. A KRA keeps it; an "
+        "ORA drops it, so its save is refused.",
+    ),
     "stroke.per_point_input": (
         False,
         None,
@@ -44,9 +52,9 @@ _MATRIX: dict[str, tuple[bool, str | None, str]] = {
     "undo.grouping": (
         False,
         None,
-        "Krita's scripting API cannot group undo steps: each is its own, and a reorder takes "
-        "one for the remove and one for each node it adds back, which its receipt states and "
-        "history moves together.",
+        "Krita's scripting API cannot group undo steps: each is its own. A reorder takes one "
+        "for the remove and one for each node it adds back, and a first translate one for its "
+        "mask and one for the move; each receipt states them and history moves them together.",
     ),
     "stroke.deterministic": (
         False,

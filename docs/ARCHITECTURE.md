@@ -1,6 +1,6 @@
 # krita-art-mcp — architecture, as built
 
-This is the system as it stands at 0.26.0, in round 2, on the Phase 1 round 1 built. Every session
+This is the system as it stands at 0.27.0, in round 2, on the Phase 1 round 1 built. Every session
 keeps it true, in the same commit as the change. Each section stands on its own: a session reads
 the overview, the invariants and the baseline, then only the sections its work touches.
 `docs/USER-GUIDE.md` is the same system from the user's side.
@@ -12,7 +12,8 @@ It is for painted (non-pixel) 2D game art, run by one developer on macOS with Kr
 loop: open a working copy with every existing layer protected; inspect, capture and sample; add a
 layer, select, tighten protection; paint native strokes and fills, each verified and rolled back on
 a leak; soften or revise with transparency masks painted the same way; try a change on a hidden
-copy of a layer, group layers by moving them, remove what is not kept; branch the whole document
+copy of a layer, group layers by moving them, remove what is not kept; move a layer by whole
+pixels through a transform mask; branch the whole document
 to try an alternative beside it; preview at game size; undo or keep; save to a new KRA or ORA,
 verified by reopening; close.
 
@@ -156,11 +157,11 @@ while stopping, then the body: 411 with no length or when chunked, 413 over 64 M
 Every operation reply carries `session_id`, `operation_id`, `request_id` and `op`; health and
 refusals leave out `op`. One error body serves every refusal. `wait_s` is capped at 10 s. `ephemeral` is required on every call.
 
-**The ops: 38.**
+**The ops: 39.**
 
 | Group | Ops |
 |---|---|
-| Sent by tools (24) | `server_info`, `document.list`, `document.open`, `document.create`, `document.inspect`, `document.close`, `document.save`, `document.duplicate`, `document.save_finish`, `document.duplicate_open`, `resource.list`, `capture.read`, `sample.read`, `preview.read`, `layer.create`, `layer.update`, `layer.duplicate`, `layer.reorder`, `layer.remove`, `selection.set`, `protection.set`, `history.step`, `paint.stroke`, `paint.fill` |
+| Sent by tools (25) | `server_info`, `document.list`, `document.open`, `document.create`, `document.inspect`, `document.close`, `document.save`, `document.duplicate`, `document.save_finish`, `document.duplicate_open`, `resource.list`, `capture.read`, `sample.read`, `preview.read`, `layer.create`, `layer.update`, `layer.duplicate`, `layer.reorder`, `layer.remove`, `layer.transform`, `selection.set`, `protection.set`, `history.step`, `paint.stroke`, `paint.fill` |
 | Server and `doctor` (2) | `bridge.unsaved_documents`, `document.baselines` |
 | Fixtures, the probe only (11) | `harness.export_kra`, `.select_mask`, `.front_document`, `.activate`, `.undo_labels`, `.label_timing`, `.add_node`, `.view`, `.brush_state`, `.preset_dirty`, `.undo` |
 | A measurement, the probe only (1) | `harness.retention` |
@@ -216,10 +217,11 @@ two-op tool should know its reach.
 
 ## The tool contract
 
-**24 tools.** Observe: `krita_server_info`, `krita_document_list`, `krita_document_open`,
+**25 tools.** Observe: `krita_server_info`, `krita_document_list`, `krita_document_open`,
 `krita_document_create`, `krita_document_inspect`, `krita_resource_list`, `krita_capture`,
 `krita_sample`. Paint safely: `krita_layer_create`, `krita_layer_update`, `krita_layer_duplicate`,
-`krita_layer_reorder`, `krita_layer_remove`, `krita_document_duplicate`, `krita_selection_set`,
+`krita_layer_reorder`, `krita_layer_remove`, `krita_layer_transform`, `krita_document_duplicate`,
+`krita_selection_set`,
 `krita_protection_set`, `krita_paint_stroke`, `krita_paint_fill`. Deliver: `krita_history_step`,
 `krita_operation_get`, `krita_operation_cancel`, `krita_preview_render`, `krita_document_save`,
 `krita_document_close`.
@@ -251,9 +253,10 @@ failed after the save reads `uncertain`, a rollback's failure adds `history_seal
 poll from another process finishes nothing: values and fields, no rename, so it stays. At 0.25.0
 three layer tools were added and `krita_history_step` refuses to split an operation's steps, a
 refusal it did not make before but no field or value changed, so it stays. At 0.26.0 a tool and a
-handle field were added, so it stays.
+handle field were added, so it stays. At 0.27.0 a tool and the layers' `translation_px` were added,
+and a duplicate refuses a layer holding a transform mask, a new refusal, so it stays.
 
-**Schemas are data.** Each of the 24 `schemas/krita_<tool>.json` holds `name`, `description`,
+**Schemas are data.** Each of the 25 `schemas/krita_<tool>.json` holds `name`, `description`,
 `inputSchema`, `outputSchema`, `annotations` and `example`. `MCPServer` tools are built by hand with
 `FuncMetadata`, so the contract's exact JSON Schema is published and no pydantic model filters
 arguments; `ExactArguments` passes them through and the runner validates with Draft 2020-12.
@@ -282,14 +285,14 @@ sample's `color` sent as a stroke's colour.
   `krita_document_open`, `krita_document_create`, `krita_document_save`,
   `krita_layer_duplicate`, whose copy is always hidden, so the composite cannot change, and
   `krita_document_duplicate`, which writes a new file, opens it, and leaves its source as it was.
-- The other ten are destructive, because undoable is not additive. A fill overwrites what is
-  there, a reorder or a remove changes what shows, and `krita_layer_create` can make a mask that
+- The other eleven are destructive, because undoable is not additive. A fill overwrites what is
+  there, a reorder, a remove or a translate changes what shows, and `krita_layer_create` can make a mask that
   hides its whole layer, as `visible: false` would; it was additive until masks went live at
   0.22.0.
 - `idempotentHint` is true and `openWorldHint` false on every tool.
 - `readOnlyHint` is load-bearing. `tools.build` reads it to decide what mutates, and the
   `BOUNDED` test holds the ops to it.
-- A table test in `tests/test_tools.py` holds all 24, so a new tool's hints are chosen, never
+- A table test in `tests/test_tools.py` holds all 25, so a new tool's hints are chosen, never
   copied.
 
 Codex reviews every destructive call unless the owner sets the server's
@@ -343,10 +346,11 @@ schema, where a job ends at its first raise and each check reads what the one be
 document before the layer before the pixels.
 
 **Argument rules are written twice on purpose.** Each side trusts no caller, and a refusal the server
-makes carries no `operation_id`. Each pair is held by a parity test in `tests/test_parity.py`: 19
+makes carries no `operation_id`. Each pair is held by a parity test in `tests/test_parity.py`: 21
 today, from open's format, editable lists and mode to a capture's area, a layer's coverage, a
 fill's colour and area, a stroke's or fill's colour and mask paint, a taper's rules, a layer moved
-inside or above itself, a copy's name, a layer's name length and a removal's `verify`. `tests/support/parity.py`'s
+inside or above itself, a copy's name, a layer's name length, a removal's `verify`, and a
+translate that moves nothing or past its range. `tests/support/parity.py`'s
 `refused_alike` calls the tool, turns the server's half off, and calls again, so the server's own
 translation carries the same arguments to the plugin. Both must refuse with one code and one
 `retryable`, the plugin before its marker.
@@ -436,9 +440,10 @@ the overhang bounds on-curve points only, so a brush's reach can pass it.
 `stroke.per_point_input` (Phase 6), `undo.grouping` (K29), `stroke.deterministic` (stochastic
 presets have no seed), `operation.cancel_running`, `color_spaces`, `filters` (Phase 2), `animation`
 (Phase 5). True since 0.9.0: `stroke.native_brush`, `stroke.smoothing`, `selection.enforced`; since
-0.21.0, `paint.fill`; since 0.22.0, `mask.transparency`; since 0.24.0, `stroke.dynamics`.
+0.21.0, `paint.fill`; since 0.22.0, `mask.transparency`; since 0.24.0, `stroke.dynamics`; since
+0.27.0, `layer.translate`.
 
-**The instructions.** `instructions.py` is 3,322 of Claude Code's 4,096 characters (C4). A test
+**The instructions.** `instructions.py` is 3,375 of Claude Code's 4,096 characters (C4). A test
 holds at least 700 spare, room for the round's later sessions. It states the rules an agent would
 otherwise learn from a refusal, and leaves to the tools what belongs to one: a field's range, unit
 and form to its description, and a tool's own rule to the tool's, each moved rule held there by a
@@ -567,11 +572,11 @@ state are not changes here, because an op sets them before its marker:
 | `document.duplicate_open` | `port.open` |
 | `protection.set` | writing the handle's state |
 | `selection.set` | `before_change` |
-| `layer.create`, `layer.duplicate`, `layer.reorder`, `layer.remove`, `paint.stroke`, `paint.fill` | the frame, beside `before_change` |
+| `layer.create`, `layer.duplicate`, `layer.reorder`, `layer.remove`, `layer.transform`, `paint.stroke`, `paint.fill` | the frame, beside `before_change` |
 | `layer.update` | the frame, or `port.activate` for `active` alone |
 | `history.step` | inside `move()`, past its `FOREIGN` return |
 
-**Every op has a class.** `READS` (9) change nothing. `BOUNDED` (17) carry a marker, and a test holds
+**Every op has a class.** `READS` (9) change nothing. `BOUNDED` (18) carry a marker, and a test holds
 them equal to the mutating tools' ops, `document.save_finish` and `document.duplicate_open`, the
 two sent under ids derived from another call's. `harness.*` has no marker, so a
 raise from one proves nothing, and the test pins each by name so no tool op hides under the prefix.
@@ -784,7 +789,9 @@ step) and `attach` (`addChildNode`, "Add Layer"), which the create also uses (K5
   or removed (`protection.refuse_held`, the update's rule); a transparency mask's removal is held to
   its line (decision 14). A node inside a protected group may still move or go, as it may be painted:
   the composite against the allowed mask is what judges it. A duplicate's source may be protected
-  (decision 13), and its copies are the agent's own.
+  (decision 13), and its copies are the agent's own. A layer holding a transform mask is not
+  copied (`reason: transform_mask`): undoing the attach of a copied transform mask crashes Krita
+  (K53), and a rollback undoes that attach.
 - **A clone's source is refused,** with `reason: clone_source` and the clones' ids, by the reorder and
   the remove: Krita's remove turns a removed layer's clones into paint layers (K52), and a move
   starts with a remove. A clone whose source Krita does not name counts as showing the node.
@@ -809,6 +816,40 @@ step) and `attach` (`addChildNode`, "Add Layer"), which the create also uses (K5
   `nodes.found` is the one lookup that refuses the root and an unknown id, the update's too.
 - **Ranks, not raw order.** Krita's child index counts the global selection's mask under the root,
   so `nodes.ranks` leaves it out, for the judges, the placements and the ledger's fingerprint.
+
+**Translate** (`bridge_core/transforms.py`, the params in `bridge_core/translations.py`). A paint
+layer or a group, pass-through or not, moves by whole pixels through a transform mask on top of its
+masks, named "Translate"; the layer's own pixels never change (K53, measured).
+- **The params** are Krita's own: the transform tool's free transform at identity, as a fresh mask's
+  `toXML` writes it, with `transformedCenter` moved. Krita writes the attributes in a hash order that
+  changes between sessions, so the plugin writes its own order and parses back by value: the mask is
+  a translate's only when every other value equals the identity's and the centre is a whole pixel.
+  Its translation is the centre.
+- **The first translate** creates the mask (no step), attaches it on top ("Add Layer") and pushes
+  that step, then sets the params (`TransformMask.fromXML`, one unnamed step, waited for). A later
+  one sets the same mask's params, one step. The receipt states `undo_steps`, and history moves them
+  together.
+- **A params step is pushed only once its state is seen to move** and the mask parses at the new
+  total; otherwise the call raises with nothing pushed. Its label is empty, like a selection's, so
+  only the state can tell it; an unmoved one pushed would let a rollback undo another unnamed step
+  in its place.
+- **Refused:** the root and an unknown id; any type but a paint layer or a group; a protected layer,
+  one holding one, or one in a protected group (decision 14's line, with the layer's own rule); more
+  than one transform mask on the layer, one whose params are not a translate's, or a hidden one
+  (`reason: transform_mask` or `hidden_transform_mask`); a whole translation past ±16384 px;
+  cumulative undo, which would merge two moves into one step; a canvas past one read.
+- **Full scope always.** The composite over the canvas against the allowed mask and
+  `preserve_composite_alpha`, no target and no hashed layer, so the frame's pixel step never arms.
+  The tree the judge and `back` compare against is read after the before-read has waited; one that
+  differs from the refusals' read is refused retryable, before the marker.
+- **The judge** holds the mask to its place and the rest of the tree to `drift`, the mask's own
+  params alone allowed to move. `back` compares the watched tree, the params' hash with it.
+- **Paint lands where it is aimed, in the layer's own pixels,** and shows moved; a stroke's or a
+  fill's `changed_bounds_px` and `layer_bounds_px` stay in the layer's own pixels, and `reach`
+  makes region scope refuse on the layer and on anything inside a translated group. A mask added
+  later sits above the transform mask and stays where it is painted.
+- **Inspect, open and the branch** report each transform mask's `translation_px`, or null for params
+  no translate made.
 
 **The inset.** A polygon or ellipse selection is antialiased and the allowed mask is binary, so a
 selection on the mask's own edge paints pixels the mask forbids: 58 px with a soft brush and 67 with a
@@ -847,7 +888,8 @@ the flags. The diff draws offending pixels red over the scope as it was, faded t
 1024 px long, block-reduced so none vanishes, and goes inline only under the size bound.
 
 **The frame.** `bridge_core/mutation.py` holds invariant 5's sequence once, and the stroke, the
-fill, `krita_layer_update` and the four layer ops (create, duplicate, reorder, remove) run on it;
+fill, `krita_layer_update` and the five layer ops (create, duplicate, reorder, remove, translate)
+run on it;
 the save keeps its own ladder, and a selection, which has no verdict, pushes its step by hand.
 - **Before the change.** `verifiable` refuses a scope or target rect the reads cannot see and takes
   the allowed mask over the scope, as a `Reads`. That names the composite's scope, and optionally
@@ -858,7 +900,8 @@ the save keeps its own ladder, and a selection, which has no verdict, pushes its
   rollback runs inside `unconfirmed` too: the op's own `BridgeError` passes through, and any other
   raise marks the document lost. The write-nothing update does not arm it.
 - **Steps.** An op names its undo labels up front, one or more, and the frame refuses a change
-  that took any other number; a reorder names one remove and an add per node it moves. An op that
+  that took any other number; a reorder names one remove and an add per node it moves, a first
+translate an add and its params change. An op that
   names none reads no start state, so no selection. A node change pushes each step the moment
   Krita holds it, with its state after, so at most one step is ever unpushed (F7). A pixel change's
   step is pushed by the frame after the reads, with the witness over the target's diff, or sealed
@@ -1066,19 +1109,22 @@ region, witness}` and `Ledger{steps, applied, floor, redo, bottom}`.
 - An op may push several steps, each its own `Step` under one `operation_id`; a rollback undoes
   them newest first. `krita_history_step` moves an op's steps together: a count that would stop
   between two of them is refused before anything moves, naming `steps_needed` (`history.whole`). A
-  reorder's steps are the one case today. When the steps it would need lie past what history
+  reorder's steps and a first translate's are the cases today. When the steps it would need lie past what history
   reaches (a floor or Krita's dropped bottom), the refusal says the op can no longer be moved
   whole.
 - `bottom` follows Krita's `undoStackLimit`, default 200 (`UNDO_LIMIT_DEFAULT`), measured to be exactly
   what Krita keeps.
 - `undo_available = applied − max(floor, bottom)`.
 
-**A step's identity.** A step's fingerprint is `(id, blend mode, parent, rank)` for each node,
-without the root's selection masks, and the SHA-256 of the selection's canvas-clipped bounds and
+**A step's identity.** A step's fingerprint is `(id, blend mode, parent, rank, transform)` for each
+node, without the root's selection masks, where `transform` is the SHA-256 of a transform mask's
+`toXML` (null on any other node), read in the tree's walk and in `structure` at the cost of one
+serialisation per transform mask (a rotated one's is about 930 characters), and the SHA-256 of the selection's canvas-clipped bounds and
 bytes. The rank leaves the global selection's mask out (`nodes.ranks`), since it comes and goes with
 the selection: undoing a clear puts it back where it was (measured), and a layer added above it then
-keeps its rank. Adds, removes and moves change the nodes' part; the blend is the one property an
-undo step changes. Labels do not
+keeps its rank. Adds, removes and moves change the nodes' part; the blend and a transform mask's
+params are what an undo step changes in place. The params' hash is in `mutation.WATCHED` too, so
+every node op's drift check and `back` see it, and in the save's `KRA_FIELDS`. Labels do not
 identify a step, and a stroke's fingerprint does not either, so a stroke carries a **witness**: the
 target's own bytes over its diff, hashed before and after, checked before and after every move.
 
@@ -1090,15 +1136,17 @@ each stop to its receipt value: `not_the_bridges_step`, `unconfirmed`, `document
 
 **Labels are English.** `history.LABELS` holds, per op, the label of each step it pushes, in order,
 as Krita's actions read them on 5.3.4 in English: "Add Layer" (a transparency mask's create, a
-duplicate's attach and a reorder's adds too, measured), "Remove Layer" (a remove, and a reorder's
-first step), "Composition Mode Change", "Scripted Brush Stroke", and an unnamed step for a
-selection. They
+duplicate's attach, a reorder's adds and a translate's mask too, measured), "Remove Layer" (a
+remove, and a reorder's first step), "Composition Mode Change", "Scripted Brush Stroke", and an
+unnamed step for a selection and for a transform mask's params (`fromXML` names its stroke after a
+bare command, measured). They
 are read only by `move`, so on a localised Krita ordinary calls complete, `krita_history_step`
 refuses every step as not the bridge's, and any change that needs a rollback ends in
 `ROLLBACK_FAILED` and an unsafe document. English is a requirement until the backlog's item lands.
 
 **Labels are read after a flush,** because straight after a push they can be stale (1 or 2 of 7 reads,
-measured), with the view in front. Selection steps have an empty label and Krita keeps Redo enabled
+measured), with the view in front. Selection steps and a translate's params steps have an empty
+label, so state alone tells them apart, and Krita keeps Redo enabled
 as "Redo " with nothing to redo, so they are confirmed by state alone.
 
 ## Previews and the lazy baseline
@@ -1147,12 +1195,12 @@ nothing of the save stays. An export that moved the document reads `uncertain`, 
 file.
 
 **What is compared.** Both formats: size, colour space, the composite. KRA: nodes by id, every `tree`
-field (the root's own id changes), and each node's own pixels over the union of both bounds. ORA: nodes
+field (the root's own id changes; a transform mask's params by their hash), and each node's own pixels over the union of both bounds. ORA: nodes
 by rank among stored siblings; then name, visibility, blend, edit lock, inherit-alpha, and each
 layer's pixels against the live projection. Masks and adjustment layers (`node`), clone, file, vector
 and fill types (`type`), `alpha_locked` and rounded opacity are listed in `expected_losses`. A lost
 node never excuses a composite difference: a blur filter mask, cropped to the layer's bounds by ORA,
-fails the save.
+fails the save, and so does a translate, whose transform mask ORA drops with its move (measured).
 
 **ORA's opacity.** Krita writes it to six significant digits and truncates on load, so 127 of the 256
 values come back one lower. A visible one changes the composite, so that save fails.
@@ -1423,7 +1471,9 @@ Each has its detail in `docs/BACKLOG.md`, or in `docs/spec/SESSIONS.md` where ro
 - A duplicate placed but never opened stays at its path, a file of the agent's; a retry or
   `krita_document_open` opens it.
 - Labels are English; region scope is the pixel engine only; filters are classed by type.
-- Selection steps are confirmed by state alone.
+- Selection steps and a translate's params steps are confirmed by state alone.
+- Undoing the attach of a copied transform mask crashes Krita (K53), so a layer holding one is not
+  duplicated. An ORA drops a translate, so such a save is refused.
 - Erasing, a single dab and antialiasing off are refused.
 - The global-mask branch of K46, layer styles and the mirror restore are held by unit tests or by
   nothing live.
@@ -1472,6 +1522,7 @@ cite stay in the PDD, in git history.
 | K50 | `TransparencyMask` starts from an empty selection; `KisMask::setSelection` adopts its pointer and pushes no undo; a transparency mask's bounds are its parent's; its device is Alpha8, whose composite ops are over, erase, copy, alpha-darken and multiply | `libs/libkis/TransparencyMask.cpp`; `libs/image/kis_mask.cc`; `libs/image/kis_transparency_mask.cc`; `libs/pigment/colorspaces/KoAlphaColorSpace.cpp` |
 | K51 | `Preset.fromXML` edits the preset in place and sets it dirty; the view's current preset and `Preset(resource)` are one object; `reload_preset_action` reloads the current preset from storage and clears the flag; the resource model's `Dirty` column says whether a preset holds unsaved changes. The Distance sensor reads `length` as an integer, and in a scripted stroke counts the first dab's distance from the canvas origin; a curve's `is_corner` points run straight | `libs/libkis/Preset.cpp`; `libs/ui/kis_paintop_box.cc` (`slotReloadPreset`); `libs/resources/KisResourceModel.h`; `plugins/paintops/libpaintop/KisSensorData.cpp`; `libs/image/kis_painter.cc` (`paintPainterPath`); `libs/image/kis_cubic_curve.cpp`; measured |
 | K52 | `Node.remove()` runs one `KisImageLayerRemoveCommand` ("Remove Layer"), which takes each node of the subtree off its own parent and turns the removed layers' clones into paint layers, undone together; `addChildNode` runs one `KisImageLayerAddCommand` ("Add Layer"), above `above` or on top; `Node.duplicate()` clones the subtree with a new uuid for every node and pushes no step; `setName` and `setVisible` on a detached node push none | `libs/libkis/Node.cpp`; `libs/image/commands/kis_image_layer_remove_command.cpp`, `kis_image_layer_remove_command_impl.cpp`, `kis_image_layer_add_command.cpp`; `libs/image/kis_base_node.cpp`, `kis_node.cpp`; measured |
+| K53 | `TransformMask.fromXML` runs a `KisSimpleModifyTransformMaskCommand` under a bare `KUndo2Command` through `runSingleCommandStroke`, named after its empty text, and does not wait; a fresh mask holds the transform tool's free transform at identity; `toXML` writes attributes in a per-session hash order; an affine mask renders through its worker until a static cache rebuilt 3000 ms later; `KisRecalculateTransformMaskJob::run` uses its layer's image unchecked, and undoing the attach of a copied transform mask crashes Krita there | `libs/libkis/TransformMask.cpp`; `libs/image/kis_processing_applicator.cpp`; `libs/image/commands_new/KisSimpleModifyTransformMaskCommand.cpp`; `libs/image/kis_transform_mask.cpp`; `libs/image/kis_recalculate_transform_mask_job.cpp`; measured |
 | C1 | `mcp` 2.3.0: `FastMCP` is `MCPServer`; `Image` takes no `_meta`; a raised exception yields only "Error executing tool X" | Probed 2026-10-22 |
 | C2 | Codex passes MCP images to image-capable models and honours `codex/imageDetail` | openai/codex `codex-rs/core/src/mcp_tool_call.rs` |
 | C4 | Claude Code: output limit 25,000 tokens; instructions and descriptions truncated at 4,096 characters | code.claude.com/docs/en/mcp |
@@ -1553,29 +1604,46 @@ the code is shaped as it is.
   protection. Krita opened the file the finish linked into place, and its as-opened composite
   equalled the source's composite read just after the duplicate. The source's `dirty` and
   `krita_modified` stayed as they were, and every layer's own pixels.
+- Translate, on 0.27.0's go/no-go, on harness ORAs: a paint layer, a group and a pass-through group.
+  - The attach is one "Add Layer" step that changes no composite byte; each `fromXML` is one step
+    with an empty label, and two back to back stay two.
+  - An integer move shifts the layer's or group's projection by exactly its pixels (0 bytes differ);
+    the layers' own pixels never change; `finalAffineTransform` reads (1, 0, 0, 1, dx, dy).
+  - Each undo and redo gives back the params' text, the composite read without a refresh, the tree
+    and every node's pixels. Nothing changes 4 s later, inside a job or between jobs, when the
+    3 s cache rebuild runs.
+  - `toXML` is stable within a session and unchanged by a fill, a refresh, a reorder and a remove
+    each undone; a duplicate's mask has its source's.
+  - KRA saves within 3 s of a move, an undo or a redo verify; reopened, each mask keeps its id and
+    params, a rotated one too. An ORA drops the mask, so its reopened composite is the unmoved one.
+  - Undoing the attach of a copy of a layer holding a transform mask, translated or at identity,
+    crashed Krita in `KisRecalculateTransformMaskJob::run` four times of four, 4.5 s after the copy
+    too. Removing that copy, removing or reordering a hidden translated layer, and undoing a translate
+    on a hidden layer did not.
+  - A mask added after a translate sits above the transform mask and stays where it is painted.
 - Krita's memory grows across large opens and saves, to 2 GB or more in a probe run; a restart resets
   it. A Krita holding 87 documents ran document ops about three times slower, and left the paint
   benchmarks, the preview benchmark and H4 idle alone.
 
-## Baseline (v0.26.0)
+## Baseline (v0.27.0)
 
-Taken on 2026-11-09 on Krita 5.3.4.1, macOS, Apple Silicon, on a Krita restarted that session, with
+Taken on 2026-11-11 on Krita 5.3.4.1, macOS, Apple Silicon, on a Krita restarted that session, with
 **0 documents open**. The probe prints the open-document count beside its time, because document ops
 depend on it: 87 open documents cost about 50 s more.
 
 | Check | Expected |
 |---|---|
 | `uv run scripts/verify.py` | 6 stages, all PASS |
-| Server tests (3.12) | 1119 passed, 0 skipped |
-| Plugin-core tests (3.10) | 1065 passed, 0 skipped |
-| `uv run krita-art-mcp probe` | 206 PASS, 0 FAIL, 25 MEASURED; about 145 s |
+| Server tests (3.12) | 1135 passed, 0 skipped |
+| Plugin-core tests (3.10) | 1125 passed, 0 skipped |
+| `uv run krita-art-mcp probe` | 216 PASS, 0 FAIL, 25 MEASURED; about 145 s |
 | `uv run krita-art-mcp doctor` | 6 steps, all PASS, with a root allowed |
-| Registered tools | 24 |
-| Schema files | 24 |
+| Registered tools | 25 |
+| Schema files | 25 |
 | Error codes | 30 |
-| Bridge ops | 38 |
+| Bridge ops | 39 |
 | Bridge protocol; `api_version` | 1; 0.4.0 |
-| Server instructions | 3,322 of 4,096 characters, at least 700 spare |
+| Server instructions | 3,375 of 4,096 characters, at least 700 spare |
 | CLI commands | 5 |
 
 A documentation or refactoring change should not move any of these. If one moves, that is the

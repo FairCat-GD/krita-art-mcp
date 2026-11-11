@@ -1,3 +1,4 @@
+import hashlib
 import logging
 import time
 from typing import Any
@@ -138,6 +139,7 @@ class KritaDocuments:
                         "order": order,
                         "type": str(node.type()),
                         "blend_mode": str(node.blendingMode()),
+                        "transform_sha256": _transform_sha256(node),
                     }
                 )
                 pending.append((node, node_id))
@@ -291,6 +293,26 @@ class KritaDocuments:
             raise BridgeError("INTERNAL_ERROR", "Krita did not add the mask.")
         document.waitForDone()
         return _layer_id(mask)
+
+    def create_transform(self, document: Any, name: str) -> Any:
+        # A detached transform mask; making it pushes no step.
+        mask = document.createTransformMask(name)
+        if mask is None:
+            raise BridgeError("INTERNAL_ERROR", "Krita did not make the transform mask.")
+        return mask
+
+    def set_transform(self, document: Any, mask_id: str, xml: str) -> None:
+        # fromXML runs its own command stroke and does not wait.
+        mask = _node(document, mask_id)
+        try:
+            taken = bool(mask.fromXML(xml))
+        finally:
+            document.waitForDone()
+        if not taken:
+            raise BridgeError("INTERNAL_ERROR", "Krita did not take the transform.")
+
+    def transform_xml(self, document: Any, mask_id: str) -> str:
+        return str(_node(document, mask_id).toXML())
 
     def set_selection(self, document: Any, recipe: list[tuple[Any, ...]]) -> None:
         selections.commit(document, recipe, _node)
@@ -501,12 +523,21 @@ def _walk(parent: Any, parent_id: str, nodes: list[dict[str, Any]]) -> None:
                     "width": int(bounds.width()),
                     "height": int(bounds.height()),
                 },
+                "transform_sha256": _transform_sha256(node),
                 "color_model": str(node.colorModel()),
                 "depth": str(node.colorDepth()),
                 "profile_id": str(node.colorProfile()),
             }
         )
         _walk(node, node_id, nodes)
+
+
+def _transform_sha256(node: Any) -> str | None:
+    # A transform mask's params, which its undo steps change in place (K53); toXML is stable
+    # within one Krita session.
+    if str(node.type()) != "transformmask":
+        return None
+    return hashlib.sha256(str(node.toXML()).encode("utf-8")).hexdigest()
 
 
 def _animated(parent: Any) -> bool:

@@ -6,6 +6,38 @@ All notable changes to krita-art-mcp are documented here. The format follows
 
 ## [Unreleased]
 
+## [0.27.0] — 2026-11-11
+
+A layer or group can be moved by whole pixels. A transform mask on top of its masks holds the move,
+so the layer's own pixels never change, and every step is Krita's own and undoes. `api_version`
+stays 0.4.0: a tool and a field were added, and nothing was renamed or removed. This release needs
+`install-plugin`, a Krita restart and a restart of the MCP client.
+
+### Added
+
+- **`krita_layer_transform`** with `operation: {type: "translate", by_px: [x, y]}` moves a paint
+  layer or a group, pass-through or not, with all it holds. The first translate adds a transform
+  mask and moves it, in two undo steps; a later one moves the same mask, in one; `undo_steps` says
+  which and `krita_history_step` takes them back together. The whole canvas is checked against
+  protection and a leak is undone. `translation_px` is the layer's whole move. Paint on a
+  translated layer lands where it is aimed in the layer's own pixels and shows moved. A KRA keeps
+  the move; an ORA drops it, so an ORA save of a translated layer is refused. It is refused for a
+  protected layer, one holding one or one inside a protected group, a layer whose transform mask a
+  translate did not make, and under Krita's cumulative undo.
+- **`translation_px`** on every layer entry of `krita_document_inspect`, `krita_document_open` and
+  `krita_document_duplicate`: a transform mask's whole-pixel move when a translate made it, else
+  null.
+- **The capability `layer.translate`**, true.
+
+### Changed
+
+- **`krita_layer_duplicate` refuses a layer holding a transform mask** (`UNSUPPORTED_CAPABILITY`,
+  `reason: transform_mask`). Undoing such a copy crashes Krita, on 0.26.0 too: copy a layer before
+  translating it.
+- **The undo ledger sees a transform mask's params,** so history and every rollback tell a
+  translate's unnamed steps from a selection's, and a KRA save compares them.
+- **The server instructions** say to copy a layer before moving it. 3,375 characters.
+
 ## [0.26.0] — 2026-11-09
 
 A whole document can be branched: saved to a new `.kra`, verified, and opened as a document of its

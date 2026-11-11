@@ -19,7 +19,8 @@ MAX_STEPS = 50
 UNDO = "undo"
 REDO = "redo"
 # The names Krita's Undo and Redo actions give each step an op pushes, in Krita's order (K7), as
-# measured on Krita 5.3.4 in English; any other name is a step the bridge did not make.
+# measured on Krita 5.3.4 in English; any other name is a step the bridge did not make. A
+# selection's step and a transform mask's params change are unnamed (K53).
 ADD = "Add Layer"
 REMOVE = "Remove Layer"
 LABELS: dict[str, tuple[str, ...]] = {
@@ -27,6 +28,7 @@ LABELS: dict[str, tuple[str, ...]] = {
     "layer.duplicate": (ADD,),
     "layer.remove": (REMOVE,),
     "layer.reorder": (REMOVE, ADD),
+    "layer.transform": (ADD, ""),
     "layer.update": ("Composition Mode Change",),
     "selection.set": ("",),
     "selection.clear": ("",),
@@ -153,6 +155,16 @@ def _holds(
     layer_id, rect, digest = pixels
     [buffer] = port.layer_rects(document, layer_id, [rect])
     return hashlib.sha256(memoryview(buffer).cast("B")).hexdigest() == digest
+
+
+def refuse_cumulative(port: DocumentsPort, noun: str = "stroke") -> None:
+    if port.cumulative_undo():
+        details: dict[str, Any] = {"reason": "cumulative_undo"}
+        message = (
+            f"Krita's cumulative undo merges {noun}s into one undo step, so a {noun} could "
+            "not be undone alone; turn it off in Krita's settings."
+        )
+        raise BridgeError("UNSUPPORTED_CAPABILITY", message, False, details)
 
 
 def handlers(registry: Registry, port: DocumentsPort, data: Path) -> dict[str, Handler]:

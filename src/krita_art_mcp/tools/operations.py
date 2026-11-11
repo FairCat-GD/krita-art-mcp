@@ -68,6 +68,9 @@ RECEIPTS: dict[str, Known] = {
     ),
     "layer.reorder": Known("krita_layer_reorder", changes.reorder_receipt, changes.resolve_update),
     "layer.remove": Known("krita_layer_remove", changes.remove_receipt, changes.resolve_update),
+    "layer.transform": Known(
+        "krita_layer_transform", changes.transform_receipt, changes.resolve_update
+    ),
     "selection.set": Known(
         "krita_selection_set", changes.selection_receipt, changes.resolve_selection
     ),

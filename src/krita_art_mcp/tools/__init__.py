@@ -58,6 +58,7 @@ TOOLS: dict[str, ToolFunction] = {
     "krita_layer_duplicate": changes.layer_duplicate,
     "krita_layer_reorder": changes.layer_reorder,
     "krita_layer_remove": changes.layer_remove,
+    "krita_layer_transform": changes.layer_transform,
     "krita_selection_set": changes.selection_set,
     "krita_protection_set": changes.protection_set,
     "krita_history_step": changes.history_step,

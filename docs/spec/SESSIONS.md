@@ -1886,6 +1886,109 @@ per step (F12), measured. T1 ships 0.27.0 on a native route.
 - **ORA bakes or drops mask nodes.** It must fail or be listed, never pass silently.
 - **`Node.move` has no undo,** and masks may not move with it. It is not the fallback.
 
+**Done (2026-11-11). Go, 0.27.0.**
+- **Decided with the owner in plan mode:**
+  - **Live runs and Krita restarts** were allowed at 0 unsaved, with the Codex agent paused.
+  - **Paint layers and groups,** groups shipping only if they passed every condition. They did,
+    pass-through groups too.
+  - **X1's top-label record is replaced.** `fromXML`'s step is unnamed, as a selection's is, so its
+    label cannot tell the two apart. A params step is instead pushed only once its state is seen to
+    move, and cumulative undo is refused.
+  - **Inspect reports `translation_px`.**
+  - **An adversarial plan review by Opus** found 4 design faults, 9 gaps and 8 nits, all folded in.
+    The main ones:
+    - a params step pushed without its state moving could undo a selection's step in its place;
+    - cumulative undo would merge two translates into one step;
+    - `KRA_FIELDS` and `WATCHED` would drift from the params;
+    - tree reads before the wait;
+    - the go conditions missed the paths the new watched field touches;
+    - protection must follow decision 14's line;
+    - the instrument needed a redo;
+    - a no-go must reinstall the plugin.
+- **Decided with the owner at the go/no-go:** go, with `krita_layer_duplicate` refusing a layer
+  that holds a transform mask.
+- **The go/no-go** ran through a temporary `harness.transform` (make, set, undo, redo, settle,
+  read) that never shipped, on harness ORAs through a stdio `serve`.
+  - **G1 to G6 held** on a paint layer, a group and a pass-through group: 53 conditions, none failed.
+  - **The steps.** The attach is one "Add Layer" step that changes no composite byte. Each
+    `fromXML` is one step labelled `""`, and two back to back stay two.
+  - **Exact pixels.** A move shifts the projection exactly, with 0 bytes differing. The matrix reads
+    (1, 0, 0, 1, dx, dy), and the layers' own pixels never change.
+  - **Undo and redo** give back the params' text, the composite (read without a refresh), the tree
+    and every node's pixels.
+  - **No late change.** Nothing moved 4 s later, inside a job or between jobs.
+  - **`toXML` is stable** and unchanged by a fill, a refresh, the cache rebuild, a reorder and a
+    remove. A duplicate's mask equals its source's, ours and a rotated one alike.
+  - **KRA.** Saves within the 3 s window verify, and the close guard reads the document as saved
+    4.5 s later. Reopened, every mask keeps its id and params, and a further move works.
+  - **Two surprises.**
+    - **Attribute order.** Qt writes `toXML`'s attributes in a hash order that changes per Krita
+      session, so the params are parsed by value.
+    - **A Krita crash.** Undoing the attach of a copy of a layer holding a transform mask crashes
+      Krita in `KisRecalculateTransformMaskJob::run`: 4 times of 4, translated or at identity, and
+      after a 4.5 s wait too. 0.26.0 could reach it.
+    - Measured safe: removing that copy; removing, or reordering and undoing, a hidden translated
+      layer; undoing a translate on a hidden layer.
+  - **Recorded:**
+    - an ORA drops the mask, so its reopened composite is the unmoved one;
+    - a fill lands displaced, with `changed_bounds_px` in the layer's own pixels;
+    - a mask added later stays where it is painted;
+    - a rotated mask's `toXML` is 932 characters.
+  - **Krita crashed 4 times** while the crash was traced. No document of the owner's was open, and
+    Krita came back by itself each time.
+- **Shipped:**
+  - `krita_layer_transform` with `translate`, op `layer.transform` (`BOUNDED`).
+  - `bridge_core/transforms.py` (the handler and its judge) and `bridge_core/translations.py` (the
+    measured params, written in a fixed order and parsed by value).
+  - Ports `create_transform`, `set_transform` and `transform_xml`.
+  - `transform_sha256` on every tree node, in the fingerprint, `WATCHED` and `KRA_FIELDS`.
+  - `translation_px` on the layer entries of open, inspect and the branch.
+  - `layer.translate`, true; the duplicate's `reason: transform_mask`.
+  - The fake taught transform masks, their unnamed step, an inert step and a refused one.
+  - `probe/transforms.py`, 10 checks; the read-only refusal check covers the translate.
+- **Amendments:**
+  - **The top-label record is replaced,** on the owner's word (above).
+  - **`idempotentHint` is true,** as on every tool, since a retried `request_id` never repeats
+    work. The plan said false.
+  - **The cumulative-undo refusal moved into `history.py`** and takes a noun. `transforms` importing
+    `painting` made an import cycle through `documents`.
+  - **The probe's KRA field list leaves the params' hash out.** Inspect, which it compares, reports
+    `translation_px` instead.
+  - **The block's ORA gate** asserts a refused save, not `expected_losses`. ORA drops the move, so
+    the composite check refuses the save (measured).
+  - **The duplicate refuses a layer holding a transform mask.** The owner's choice at the
+    go/no-go, from the crash.
+- **Checked live:**
+  - `install-plugin`, then Krita restarted at 0 unsaved: once for the instrument, once for 0.27.0;
+  - Krita came back by itself after each crash;
+  - `doctor` 6 of 6.
+- **Probe runs:**
+  - 216 PASS, 0 FAIL, 25 MEASURED in 142.4 s with 0 documents open; the journal check read 795
+    dispatched lines.
+  - The first run failed 3 checks on the probe's own bug: two fills shared one `request_id`.
+- **Falsified,** each once, the tree restored byte for byte:
+  - **31 unit mutations in product code:**
+    - the moved-state push;
+    - the parse's values and numbers;
+    - the protected line both ways;
+    - two masks, a hidden mask, the total bound, cumulative undo, the types and groups taken;
+    - zero and range on the plugin, zero on the server;
+    - the judge's drift;
+    - the digest in `WATCHED`, the fingerprint and `KRA_FIELDS`;
+    - inspect's translation;
+    - the duplicate guard, and the guard too wide;
+    - the document changed as it began;
+    - the own mask found, animated, the labels, the XML's centre;
+    - the bounded op, the receipt known, the marker, the confirmed rollback, read-only.
+  - **One by breaking an assertion:** the scan's pinned sites.
+  - Every one failed at its own test.
+  - **The probe:** one run with its 10 new assertions inverted failed those 10 and no others.
+- **Numbers:**
+  - 1135 server tests (+16), 1125 plugin tests (+60);
+  - probe 216 PASS (+10), 0 FAIL, 25 MEASURED, 142.4 s with 0 documents open;
+  - 25 tools, 25 schema files, 30 error codes, 39 ops (+1), 14 capabilities (+1);
+  - instructions 3,375 characters; `api_version` 0.4.0.
+
 ---
 
 ## S1: Scale, rotate, shear

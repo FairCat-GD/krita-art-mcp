@@ -14,6 +14,7 @@ from . import (
     protection,
     saving,
     selections,
+    transforms,
 )
 from .closing import settle_s, settled_close
 from .errors import UNCERTAIN, BridgeError, cleaned, exact, integer, no_arguments
@@ -106,6 +107,7 @@ def handlers(registry: Registry, port: DocumentsPort, data: Path) -> dict[str, H
         **previews.handlers(registry, port, data),
         **layers.handlers(registry, port, data),
         **layer_update.handlers(registry, port, data),
+        **transforms.handlers(registry, port, data),
         **selections.handlers(registry, port, data),
         **protection.handlers(registry, port, data),
         **history.handlers(registry, port, data),

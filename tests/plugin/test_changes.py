@@ -158,7 +158,9 @@ def _ids(world: World, handle: Handle) -> list[str]:
 
 
 def _step(name: str) -> Step:
-    return Step(name, f"op-{name}", "Add Layer", ((), None), (((name, "normal", "root", 0),), None))
+    return Step(
+        name, f"op-{name}", "Add Layer", ((), None), (((name, "normal", "root", 0, None),), None)
+    )
 
 
 def test_a_push_deletes_the_redo_tail_and_the_redos_it_allowed() -> None:
@@ -479,6 +481,14 @@ def test_a_read_only_document_refuses_every_new_mutation(world: World, whose: st
                 "layer_id": layer_id(key, 0),
                 "properties": {"opacity": 0.5},
                 "verify": "region",
+            },
+        ),
+        (
+            "layer.transform",
+            {
+                "document_id": document_id,
+                "layer_id": layer_id(key, 0),
+                "operation": {"type": "translate", "by_px": [1, 0]},
             },
         ),
     ]

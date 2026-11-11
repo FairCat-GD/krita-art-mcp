@@ -44,6 +44,7 @@ BOUNDED = frozenset(
         "layer.duplicate",
         "layer.reorder",
         "layer.remove",
+        "layer.transform",
         "layer.update",
         "selection.set",
         "protection.set",

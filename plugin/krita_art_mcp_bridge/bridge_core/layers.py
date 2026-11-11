@@ -124,6 +124,7 @@ def handlers(registry: Registry, port: DocumentsPort, data: Path) -> dict[str, H
         document, layer_id, name = handle.document, args["layer_id"], args["name"]
         before = port.tree(document)
         source = _layer(before, layer_id, "duplicate")
+        _refuse_transform_mask(before, layer_id)
         info = port.describe(document)
         effects = port.effects(document, True)
         # No verify to ask for: a spreading node widens the read to the canvas instead.
@@ -444,6 +445,19 @@ def _refuse_clone_source(effects: dict[str, Any], inside: list[str]) -> None:
         message = (
             "A clone layer shows this layer, and Krita turns such clones into paint layers when "
             "their source is removed or moved, so this is refused."
+        )
+        raise BridgeError("UNSUPPORTED_CAPABILITY", message, False, details)
+
+
+def _refuse_transform_mask(tree: dict[str, Any], layer_id: str) -> None:
+    # Undoing the attach of a copied transform mask crashes Krita in its cache rebuild (K53), and
+    # a rollback undoes that attach.
+    copied = [one for one in nodes.subtree(tree, layer_id) if _kind(tree, one) == "transformmask"]
+    if copied:
+        details = {"layer_id": layer_id, "reason": "transform_mask", "transform_mask_ids": copied}
+        message = (
+            "The layer holds a transform mask, and undoing a copy of one crashes Krita, so it is "
+            "not copied; copy a layer before translating it."
         )
         raise BridgeError("UNSUPPORTED_CAPABILITY", message, False, details)
 

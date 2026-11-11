@@ -101,6 +101,19 @@ def layer_stack() -> tuple[Layer, ...]:
     )
 
 
+def transform_stack() -> tuple[Layer, ...]:
+    # Top first: a group holding a layer, an opaque layer to move, and an opaque base, all flat,
+    # so a whole-pixel move is exact in the composite.
+    return (
+        Layer(
+            "probe group",
+            children=(Layer("probe inner", rect(8, 6, (40, 200, 90)), x=40, y=30),),
+        ),
+        Layer("probe paint", rect(12, 8, (220, 40, 60)), x=8, y=8),
+        Layer("probe base", rect(WIDTH, HEIGHT, (200, 180, 30))),
+    )
+
+
 def rim_stack() -> tuple[Layer, ...]:
     # A silhouette whose edge fades through two rings of partial alpha, and a hidden recolour
     # layer that covers it and spills past it, on a transparent canvas.

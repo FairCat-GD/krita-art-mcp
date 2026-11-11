@@ -92,8 +92,9 @@ def test_the_server_and_plugin_constants_agree() -> None:
     assert tool_saving.FORMATS == bridge_saving.FORMATS
     assert tool_branching.FORMATS == bridge_saving.DUPLICATE_FORMATS
     assert tool_branching.FORMATS_MESSAGE == bridge_saving.DUPLICATE_FORMATS_MESSAGE
-    # The probe compares inspect's entries, which carry the space fields it leaves out.
-    spaces = ("color_model", "depth", "profile_id")
+    # The probe compares inspect's entries, which carry the space fields it leaves out, and a
+    # transform mask's translation, not its params' hash.
+    spaces = ("color_model", "depth", "profile_id", "transform_sha256")
     assert probe_saving.KRA_FIELDS == tuple(
         field for field in bridge_saving.KRA_FIELDS if field not in spaces
     )

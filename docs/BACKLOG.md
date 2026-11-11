@@ -48,8 +48,9 @@ contract", "Phase N" and "review N" mean.
   continuity is claimed without an edge and corner probe.
   - **Proposed again after 0.18.0 by the Codex agent,** not yet decided: a protected, verified
     integer wrap translation (a half-roll) and a tiled preview. In one session, every wrapped asset
-    needed a lossless half-roll made outside the tools, and a reopen. A wrap translation shares T1's
-    question of a native route.
+    needed a lossless half-roll made outside the tools, and a reopen. Translate (0.27.0) moves a
+    layer through a transform mask, which does not wrap; a half-roll would need a wrapped move, and
+    that question stays open.
 - **Target identity in receipts and guidance** (0.18.0). The Codex agent sent three strokes to the
   wrong document through its own helper's default target; the server did what it was asked. Making
   the document, layer and selection a mutation acted on prominent in each receipt, and in the
@@ -96,8 +97,8 @@ contract", "Phase N" and "review N" mean.
   only; `krita_capture` reads a transparency mask with `target: "mask"` since 0.22.0. A group has no
   pixels of its own, and could be read through `Node.projectionPixelData`.
 - **Masks beyond transparency masks on paint layers** (0.22.0). An agent makes transparency masks on
-  paint layers only. Masks on groups, and filter, transform or colorize masks, are refused or
-  absent, and a mask takes only `name` and `visible` from `krita_layer_update`. Left out by the
+  paint layers only, and a transform mask only as a translate's. Masks on groups, and filter or
+  colorize masks, are refused or absent, and a mask takes only `name` and `visible` from `krita_layer_update`. Left out by the
   round 2 intake's scope for M1.
 - **Layer ops, beyond what 0.25.0 ships.** Each of these is refused or absent today:
   - several layers per call, as the contract's drafts take them (`layer_ids` arrays, a duplicate's
@@ -109,6 +110,19 @@ contract", "Phase N" and "review N" mean.
   - moving a subtree of more nodes than one history call takes back (49), which would need history
     to move more than 50 steps at once;
   - placing a copy elsewhere than directly above its source, in one call.
+- **Translate, beyond what 0.27.0 ships.** Each of these is refused or absent today:
+  - copying a layer that holds a transform mask. Undoing the attach of such a copy crashed Krita in
+    `KisRecalculateTransformMaskJob::run` (K53) four times of four, a translated and an identity
+    mask alike, so `krita_layer_duplicate` refuses the layer. Report it to Krita with the steps;
+    whether Krita's own Duplicate Layer and undo crash alike was not tried. The refusal can go once
+    a fixed Krita is the floor;
+  - an ORA save of a translated layer, which ORA drops; baking the move into pixels would need
+    Krita's own apply-mask action, measured first;
+  - sub-pixel moves, and a move past 16384 px in all;
+  - adopting a transform mask a translate did not make, or showing a hidden translate mask (the
+    update takes only a transparency mask's `name` and `visible`);
+  - a transparency mask placed below the transform mask, so it moves with the layer: a mask's
+    create takes only another transparency mask as `above_id`.
 - **An edge stroke that once painted nothing** (0.25.0). In one probe run of three, the
   region-scope stroke past the top-left corner, with no selection, completed but painted no pixel,
   so its check failed; the two runs around it passed. Nothing in 0.25.0 touches that path. A repeat
@@ -308,4 +322,4 @@ these are the parts only a person can see.
   so the registry would drop its handle. A verified save and a reopen give a real path and a
   baseline.
 - Translate by a compensated `Node.move`: it has no undo, and putting it back inside one call is not
-  recovery. A native route ships, or translate waits for Phase 3's checkpoints.
+  recovery. Translate shipped on a transform mask at 0.27.0.

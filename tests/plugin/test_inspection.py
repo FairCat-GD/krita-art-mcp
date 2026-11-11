@@ -111,7 +111,7 @@ def test_krita_types_are_reported_in_the_contracts_words() -> None:
         fake_node(1, 2, "refs", "root", 2, type="referenceimageslayer"),
     ]
     tree = {"root_id": "root", "active_id": None, "nodes": nodes}
-    entries = inspection.layer_entries(tree, {nodes[0]["id"]})
+    entries = inspection.layer_entries(tree, {nodes[0]["id"]}, {})
     assert [entry["type"] for entry in entries] == [
         "group",
         "selection_mask",

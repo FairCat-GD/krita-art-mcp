@@ -27,6 +27,7 @@ PHASE_1_TOOLS = sorted(
         "layer_duplicate",
         "layer_reorder",
         "layer_remove",
+        "layer_transform",
         "layer_update",
         "selection_set",
         "protection_set",
@@ -238,7 +239,7 @@ def test_every_copy_of_guard_is_the_phase_1_guard() -> None:
         for name in PHASE_1_TOOLS
         for guard in _shapes(schemas.load(name)["inputSchema"].get("properties", {}), "guard")
     ]
-    assert len(guards) == 13
+    assert len(guards) == 14
     assert all(guard == GUARD for guard in guards)
 
 

@@ -1,0 +1,832 @@
+{
+  "name": "krita_layer_transform",
+  "description": "Move a paint layer or group by whole pixels: a transform mask on top of its masks holds the move, and the layer's own pixels never change. The first translate adds the mask, then moves it (two undo steps); a later one moves the same mask (one); undo_steps says which, and krita_history_step moves them together. The whole canvas is checked against protection and a leak is undone. Refused for a protected layer, one holding one or one in a protected group, a transform mask no translate made, and under Krita's cumulative undo. A KRA keeps the move; an ORA drops it, so an ORA save is refused. Duplicate a layer before translating it: a translated layer is not copied.",
+  "inputSchema": {
+    "type": "object",
+    "properties": {
+      "guard": {
+        "type": "object",
+        "properties": {
+          "document_id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "request_id": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "required": [
+          "document_id",
+          "request_id"
+        ],
+        "additionalProperties": false
+      },
+      "layer_id": {
+        "type": "string",
+        "minLength": 1
+      },
+      "operation": {
+        "description": "One transform per call.",
+        "oneOf": [
+          {
+            "type": "object",
+            "properties": {
+              "type": {
+                "const": "translate"
+              },
+              "by_px": {
+                "description": "[x, y] in whole canvas px, each -16384 to 16384 and not both 0, added to the layer's translation.",
+                "type": "array",
+                "items": {
+                  "type": "integer",
+                  "minimum": -16384,
+                  "maximum": 16384
+                },
+                "minItems": 2,
+                "maxItems": 2
+              }
+            },
+            "required": [
+              "type",
+              "by_px"
+            ],
+            "additionalProperties": false
+          }
+        ]
+      }
+    },
+    "required": [
+      "guard",
+      "layer_id",
+      "operation"
+    ],
+    "additionalProperties": false
+  },
+  "outputSchema": {
+    "type": "object",
+    "properties": {
+      "api_version": {
+        "const": "0.4.0"
+      },
+      "status": {
+        "type": "string",
+        "enum": [
+          "completed",
+          "queued",
+          "running",
+          "failed",
+          "cancelled"
+        ]
+      },
+      "document_id": {
+        "anyOf": [
+          {
+            "type": "string",
+            "minLength": 1
+          },
+          {
+            "type": "null"
+          }
+        ]
+      },
+      "revision": {
+        "type": "null"
+      },
+      "operation_id": {
+        "anyOf": [
+          {
+            "type": "string",
+            "minLength": 1
+          },
+          {
+            "type": "null"
+          }
+        ]
+      },
+      "data": {
+        "anyOf": [
+          {
+            "type": "object",
+            "properties": {
+              "layer_id": {
+                "type": "string",
+                "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+              },
+              "transform_mask_id": {
+                "type": "string",
+                "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+              },
+              "created_mask": {
+                "description": "Whether this call added the transform mask.",
+                "type": "boolean"
+              },
+              "by_px": {
+                "type": "array",
+                "items": {
+                  "type": "integer"
+                },
+                "minItems": 2,
+                "maxItems": 2
+              },
+              "translation_px": {
+                "type": "array",
+                "items": {
+                  "type": "integer"
+                },
+                "minItems": 2,
+                "maxItems": 2,
+                "description": "The layer's whole translation after the call. Paint on the layer lands where it is aimed, in the layer's own pixels, and shows moved by this; so do a paint receipt's changed_bounds_px and layer_bounds_px, which stay in the layer's own."
+              },
+              "undo_steps": {
+                "type": "integer",
+                "minimum": 1
+              },
+              "verification": {
+                "anyOf": [
+                  {
+                    "type": "object",
+                    "properties": {
+                      "mode": {
+                        "type": "string",
+                        "enum": [
+                          "region",
+                          "full"
+                        ]
+                      },
+                      "rect": {
+                        "type": "object",
+                        "properties": {
+                          "x": {
+                            "type": "integer",
+                            "minimum": 0
+                          },
+                          "y": {
+                            "type": "integer",
+                            "minimum": 0
+                          },
+                          "width": {
+                            "type": "integer",
+                            "minimum": 0
+                          },
+                          "height": {
+                            "type": "integer",
+                            "minimum": 0
+                          }
+                        },
+                        "required": [
+                          "x",
+                          "y",
+                          "width",
+                          "height"
+                        ],
+                        "additionalProperties": false
+                      },
+                      "changed_px": {
+                        "type": "integer",
+                        "minimum": 0
+                      },
+                      "changed_bounds_px": {
+                        "anyOf": [
+                          {
+                            "type": "object",
+                            "properties": {
+                              "x": {
+                                "type": "integer",
+                                "minimum": 0
+                              },
+                              "y": {
+                                "type": "integer",
+                                "minimum": 0
+                              },
+                              "width": {
+                                "type": "integer",
+                                "minimum": 1
+                              },
+                              "height": {
+                                "type": "integer",
+                                "minimum": 1
+                              }
+                            },
+                            "required": [
+                              "x",
+                              "y",
+                              "width",
+                              "height"
+                            ],
+                            "additionalProperties": false
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      },
+                      "changed_outside_px": {
+                        "const": 0
+                      },
+                      "alpha_changed_px": {
+                        "type": "integer",
+                        "minimum": 0
+                      },
+                      "before": {
+                        "anyOf": [
+                          {
+                            "type": "object",
+                            "properties": {
+                              "uri": {
+                                "type": "string",
+                                "minLength": 2,
+                                "pattern": "^/"
+                              },
+                              "path": {
+                                "type": "string",
+                                "minLength": 2,
+                                "pattern": "^/"
+                              },
+                              "mime_type": {
+                                "const": "image/png"
+                              },
+                              "sha256": {
+                                "type": "string",
+                                "pattern": "^[0-9a-f]{64}$"
+                              },
+                              "size_bytes": {
+                                "type": "integer",
+                                "minimum": 1
+                              },
+                              "retention_days": {
+                                "type": "integer",
+                                "minimum": 1
+                              }
+                            },
+                            "required": [
+                              "uri",
+                              "path",
+                              "mime_type",
+                              "sha256",
+                              "size_bytes",
+                              "retention_days"
+                            ],
+                            "additionalProperties": false
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      },
+                      "after": {
+                        "anyOf": [
+                          {
+                            "type": "object",
+                            "properties": {
+                              "uri": {
+                                "type": "string",
+                                "minLength": 2,
+                                "pattern": "^/"
+                              },
+                              "path": {
+                                "type": "string",
+                                "minLength": 2,
+                                "pattern": "^/"
+                              },
+                              "mime_type": {
+                                "const": "image/png"
+                              },
+                              "sha256": {
+                                "type": "string",
+                                "pattern": "^[0-9a-f]{64}$"
+                              },
+                              "size_bytes": {
+                                "type": "integer",
+                                "minimum": 1
+                              },
+                              "retention_days": {
+                                "type": "integer",
+                                "minimum": 1
+                              }
+                            },
+                            "required": [
+                              "uri",
+                              "path",
+                              "mime_type",
+                              "sha256",
+                              "size_bytes",
+                              "retention_days"
+                            ],
+                            "additionalProperties": false
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      }
+                    },
+                    "required": [
+                      "mode",
+                      "rect",
+                      "changed_px",
+                      "changed_bounds_px",
+                      "changed_outside_px",
+                      "alpha_changed_px",
+                      "before",
+                      "after"
+                    ],
+                    "additionalProperties": false
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              }
+            },
+            "required": [
+              "layer_id",
+              "transform_mask_id",
+              "created_mask",
+              "by_px",
+              "translation_px",
+              "undo_steps",
+              "verification"
+            ],
+            "additionalProperties": false
+          },
+          {
+            "type": "null"
+          }
+        ]
+      },
+      "error": {
+        "anyOf": [
+          {
+            "type": "object",
+            "properties": {
+              "code": {
+                "type": "string",
+                "enum": [
+                  "INVALID_ARGUMENT",
+                  "UNSUPPORTED_CAPABILITY",
+                  "KRITA_NOT_RUNNING",
+                  "PROTOCOL_MISMATCH",
+                  "KRITA_MODAL_DIALOG",
+                  "MULTIPLE_WINDOWS",
+                  "BUSY",
+                  "TIMEOUT",
+                  "CANCELLED",
+                  "REQUEST_ID_CONFLICT",
+                  "DOCUMENT_NOT_FOUND",
+                  "LAYER_NOT_FOUND",
+                  "LOCKED_TARGET",
+                  "LAYER_NOT_PAINTABLE",
+                  "LAYER_HAS_LOCAL_SELECTION",
+                  "PROTECTED_REGION_CHANGED",
+                  "OUTSIDE_ALLOWED_MASK",
+                  "RESOURCE_HASH_MISMATCH",
+                  "SOURCE_HASH_MISMATCH",
+                  "COLOR_PROFILE_MISMATCH",
+                  "DOCUMENT_DIRTY",
+                  "DOCUMENT_UNSAFE",
+                  "DOCUMENT_READ_ONLY",
+                  "DOCUMENT_IN_USE",
+                  "SAVE_VERIFY_FAILED",
+                  "PATH_NOT_ALLOWED",
+                  "FILE_EXISTS",
+                  "IO_ERROR",
+                  "ROLLBACK_FAILED",
+                  "INTERNAL_ERROR"
+                ]
+              },
+              "message": {
+                "type": "string",
+                "minLength": 1
+              },
+              "retryable": {
+                "type": "boolean"
+              },
+              "details": {
+                "type": "object",
+                "properties": {
+                  "outcome": {
+                    "type": "string",
+                    "enum": [
+                      "applied",
+                      "not_applied",
+                      "uncertain",
+                      "unregistered"
+                    ]
+                  }
+                }
+              }
+            },
+            "required": [
+              "code",
+              "message",
+              "retryable",
+              "details"
+            ],
+            "additionalProperties": false
+          },
+          {
+            "type": "null"
+          }
+        ]
+      }
+    },
+    "required": [
+      "api_version",
+      "status",
+      "document_id",
+      "revision",
+      "operation_id",
+      "data",
+      "error"
+    ],
+    "additionalProperties": false,
+    "if": {
+      "properties": {
+        "status": {
+          "const": "completed"
+        }
+      }
+    },
+    "then": {
+      "properties": {
+        "data": {
+          "type": "object",
+          "properties": {
+            "layer_id": {
+              "type": "string",
+              "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+            },
+            "transform_mask_id": {
+              "type": "string",
+              "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+            },
+            "created_mask": {
+              "description": "Whether this call added the transform mask.",
+              "type": "boolean"
+            },
+            "by_px": {
+              "type": "array",
+              "items": {
+                "type": "integer"
+              },
+              "minItems": 2,
+              "maxItems": 2
+            },
+            "translation_px": {
+              "type": "array",
+              "items": {
+                "type": "integer"
+              },
+              "minItems": 2,
+              "maxItems": 2,
+              "description": "The layer's whole translation after the call. Paint on the layer lands where it is aimed, in the layer's own pixels, and shows moved by this; so do a paint receipt's changed_bounds_px and layer_bounds_px, which stay in the layer's own."
+            },
+            "undo_steps": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "verification": {
+              "anyOf": [
+                {
+                  "type": "object",
+                  "properties": {
+                    "mode": {
+                      "type": "string",
+                      "enum": [
+                        "region",
+                        "full"
+                      ]
+                    },
+                    "rect": {
+                      "type": "object",
+                      "properties": {
+                        "x": {
+                          "type": "integer",
+                          "minimum": 0
+                        },
+                        "y": {
+                          "type": "integer",
+                          "minimum": 0
+                        },
+                        "width": {
+                          "type": "integer",
+                          "minimum": 0
+                        },
+                        "height": {
+                          "type": "integer",
+                          "minimum": 0
+                        }
+                      },
+                      "required": [
+                        "x",
+                        "y",
+                        "width",
+                        "height"
+                      ],
+                      "additionalProperties": false
+                    },
+                    "changed_px": {
+                      "type": "integer",
+                      "minimum": 0
+                    },
+                    "changed_bounds_px": {
+                      "anyOf": [
+                        {
+                          "type": "object",
+                          "properties": {
+                            "x": {
+                              "type": "integer",
+                              "minimum": 0
+                            },
+                            "y": {
+                              "type": "integer",
+                              "minimum": 0
+                            },
+                            "width": {
+                              "type": "integer",
+                              "minimum": 1
+                            },
+                            "height": {
+                              "type": "integer",
+                              "minimum": 1
+                            }
+                          },
+                          "required": [
+                            "x",
+                            "y",
+                            "width",
+                            "height"
+                          ],
+                          "additionalProperties": false
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "changed_outside_px": {
+                      "const": 0
+                    },
+                    "alpha_changed_px": {
+                      "type": "integer",
+                      "minimum": 0
+                    },
+                    "before": {
+                      "anyOf": [
+                        {
+                          "type": "object",
+                          "properties": {
+                            "uri": {
+                              "type": "string",
+                              "minLength": 2,
+                              "pattern": "^/"
+                            },
+                            "path": {
+                              "type": "string",
+                              "minLength": 2,
+                              "pattern": "^/"
+                            },
+                            "mime_type": {
+                              "const": "image/png"
+                            },
+                            "sha256": {
+                              "type": "string",
+                              "pattern": "^[0-9a-f]{64}$"
+                            },
+                            "size_bytes": {
+                              "type": "integer",
+                              "minimum": 1
+                            },
+                            "retention_days": {
+                              "type": "integer",
+                              "minimum": 1
+                            }
+                          },
+                          "required": [
+                            "uri",
+                            "path",
+                            "mime_type",
+                            "sha256",
+                            "size_bytes",
+                            "retention_days"
+                          ],
+                          "additionalProperties": false
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "after": {
+                      "anyOf": [
+                        {
+                          "type": "object",
+                          "properties": {
+                            "uri": {
+                              "type": "string",
+                              "minLength": 2,
+                              "pattern": "^/"
+                            },
+                            "path": {
+                              "type": "string",
+                              "minLength": 2,
+                              "pattern": "^/"
+                            },
+                            "mime_type": {
+                              "const": "image/png"
+                            },
+                            "sha256": {
+                              "type": "string",
+                              "pattern": "^[0-9a-f]{64}$"
+                            },
+                            "size_bytes": {
+                              "type": "integer",
+                              "minimum": 1
+                            },
+                            "retention_days": {
+                              "type": "integer",
+                              "minimum": 1
+                            }
+                          },
+                          "required": [
+                            "uri",
+                            "path",
+                            "mime_type",
+                            "sha256",
+                            "size_bytes",
+                            "retention_days"
+                          ],
+                          "additionalProperties": false
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "mode",
+                    "rect",
+                    "changed_px",
+                    "changed_bounds_px",
+                    "changed_outside_px",
+                    "alpha_changed_px",
+                    "before",
+                    "after"
+                  ],
+                  "additionalProperties": false
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            }
+          },
+          "required": [
+            "layer_id",
+            "transform_mask_id",
+            "created_mask",
+            "by_px",
+            "translation_px",
+            "undo_steps",
+            "verification"
+          ],
+          "additionalProperties": false
+        },
+        "error": {
+          "type": "null"
+        }
+      }
+    },
+    "else": {
+      "if": {
+        "properties": {
+          "status": {
+            "enum": [
+              "failed",
+              "cancelled"
+            ]
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "data": {
+            "type": "null"
+          },
+          "error": {
+            "type": "object"
+          }
+        },
+        "required": [
+          "error"
+        ]
+      },
+      "else": {
+        "if": {
+          "properties": {
+            "status": {
+              "enum": [
+                "queued",
+                "running"
+              ]
+            }
+          }
+        },
+        "then": {
+          "properties": {
+            "operation_id": {
+              "type": "string",
+              "minLength": 1
+            },
+            "data": {
+              "type": "null"
+            },
+            "error": {
+              "type": "null"
+            }
+          }
+        }
+      }
+    }
+  },
+  "annotations": {
+    "readOnlyHint": false,
+    "destructiveHint": true,
+    "idempotentHint": true,
+    "openWorldHint": false
+  },
+  "example": {
+    "input": {
+      "guard": {
+        "document_id": "doc-1",
+        "request_id": "req-001"
+      },
+      "layer_id": "6f1c2d3e-4a5b-4c6d-8e9f-0a1b2c3d4e5f",
+      "operation": {
+        "type": "translate",
+        "by_px": [
+          12,
+          -4
+        ]
+      }
+    },
+    "structuredContent": {
+      "api_version": "0.4.0",
+      "status": "completed",
+      "document_id": "doc-1",
+      "revision": null,
+      "operation_id": null,
+      "data": {
+        "layer_id": "6f1c2d3e-4a5b-4c6d-8e9f-0a1b2c3d4e5f",
+        "transform_mask_id": "9c4d5e6f-7a8b-4c9d-8e0f-2a3b4c5d6e7f",
+        "created_mask": true,
+        "by_px": [
+          12,
+          -4
+        ],
+        "translation_px": [
+          12,
+          -4
+        ],
+        "undo_steps": 2,
+        "verification": {
+          "mode": "full",
+          "rect": {
+            "x": 0,
+            "y": 0,
+            "width": 64,
+            "height": 48
+          },
+          "changed_px": 512,
+          "changed_bounds_px": {
+            "x": 8,
+            "y": 8,
+            "width": 32,
+            "height": 20
+          },
+          "changed_outside_px": 0,
+          "alpha_changed_px": 0,
+          "before": {
+            "uri": "/data/krita-art-mcp/captures/2026-10-25/op-0123456789abcdef0123456789abcdef.before.png",
+            "path": "/data/krita-art-mcp/captures/2026-10-25/op-0123456789abcdef0123456789abcdef.before.png",
+            "mime_type": "image/png",
+            "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "size_bytes": 812,
+            "retention_days": 7
+          },
+          "after": {
+            "uri": "/data/krita-art-mcp/captures/2026-10-25/op-0123456789abcdef0123456789abcdef.after.png",
+            "path": "/data/krita-art-mcp/captures/2026-10-25/op-0123456789abcdef0123456789abcdef.after.png",
+            "mime_type": "image/png",
+            "sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+            "size_bytes": 798,
+            "retention_days": 7
+          }
+        }
+      },
+      "error": null
+    }
+  }
+}

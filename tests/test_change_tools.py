@@ -405,6 +405,42 @@ def test_a_layer_is_copied_moved_and_removed_through_the_tools(world: World) -> 
         assert got["data"]["receipt"]["data"]["layer_id"] == made["data"]["layer_id"]
 
 
+def test_a_layer_is_translated_undone_and_read_through_the_tools(world: World) -> None:
+    server = world.server()
+    document_id = _document(server)
+    layer = layer_id(1, 0)
+
+    def translate(request_id: str, by: list[int]) -> dict[str, Any]:
+        arguments = {
+            "guard": _guard(document_id, request_id),
+            "layer_id": layer,
+            "operation": {"type": "translate", "by_px": by},
+        }
+        found: dict[str, Any] = server.content("krita_layer_transform", arguments)
+        return found
+
+    made = translate("req-t1", [3, -2])
+    assert made["status"] == "completed", made
+    data = made["data"]
+    assert (data["created_mask"], data["undo_steps"], data["translation_px"]) == (True, 2, [3, -2])
+    assert data["verification"]["mode"] == "full"
+    moved = translate("req-t2", [1, 1])
+    assert (moved["data"]["undo_steps"], moved["data"]["translation_px"]) == (1, [4, -1])
+    inspected = server.content("krita_document_inspect", {"document_id": document_id, "frame": 0})
+    shown = {entry["id"]: entry["translation_px"] for entry in inspected["data"]["layers"]}
+    assert shown[data["transform_mask_id"]] == [4, -1] and shown[layer] is None
+    undone = server.content(
+        "krita_history_step", {"guard": _guard(document_id, "req-u1"), "action": "undo", "steps": 1}
+    )
+    assert [step["tool"] for step in undone["data"]["steps"]] == ["krita_layer_transform"]
+    for sent in (made, moved):
+        got = server.content("krita_operation_get", {"operation_id": sent["operation_id"]})
+        assert got["data"]["receipt_valid"] is True
+        assert got["data"]["receipt"]["data"]["transform_mask_id"] == data["transform_mask_id"]
+    still = translate("req-t3", [0, 0])
+    assert still["error"]["code"] == "INVALID_ARGUMENT" and still["operation_id"] is None
+
+
 def test_a_layer_moved_inside_itself_is_refused_before_dispatch(world: World) -> None:
     server = world.server()
     document_id = _document(server)

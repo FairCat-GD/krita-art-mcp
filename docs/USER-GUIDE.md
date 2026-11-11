@@ -81,7 +81,7 @@ do. Undoable is not the same as additive, so a stroke stays destructive.
 |---|---|---|
 | Read-only | `krita_server_info`, `krita_document_list`, `krita_document_inspect`, `krita_resource_list`, `krita_capture`, `krita_sample`, `krita_preview_render`, `krita_operation_get` | Change no document. Captures and previews write their PNGs to the data folder. One exception, chosen on purpose: `krita_operation_get` polled for a save or a duplicate that came back running finishes it, putting its file in place and opening a duplicate's branch, but only in the server process that made the call |
 | Not destructive | `krita_protection_set`, `krita_document_open`, `krita_document_create`, `krita_document_save`, `krita_layer_duplicate`, `krita_document_duplicate` | Add: tighter protection, a working copy, a document, a new file, a hidden copy of a layer, a branch of a document |
-| Destructive | `krita_layer_create`, `krita_paint_stroke`, `krita_paint_fill`, `krita_selection_set`, `krita_layer_update`, `krita_layer_reorder`, `krita_layer_remove`, `krita_history_step`, `krita_operation_cancel`, `krita_document_close` | Change what is there: what a layer shows (a new mask can hide it, a move can cover it), pixels, the selection, a layer, the layer stack, history, a queued call, or unsaved changes a close discards |
+| Destructive | `krita_layer_create`, `krita_paint_stroke`, `krita_paint_fill`, `krita_selection_set`, `krita_layer_update`, `krita_layer_reorder`, `krita_layer_remove`, `krita_layer_transform`, `krita_history_step`, `krita_operation_cancel`, `krita_document_close` | Change what is there: what a layer shows (a new mask can hide it, a move can cover it, a translate shifts it), pixels, the selection, a layer, the layer stack, history, a queued call, or unsaved changes a close discards |
 
 **Codex's approval setting.** By default Codex reviews every call a tool's hints call destructive.
 Measured in two long sessions, each such call carried 2 to 3 s beyond the tool's own time, and each
@@ -176,7 +176,9 @@ mask's `bounds_px` and a mask stroke's `layer_bounds_px` are its layer's, as Kri
 
 **Try a change on a copy, group layers, remove what you do not keep.**
 - **`krita_layer_duplicate`** copies a layer or group, with every layer and mask inside it, as a
-  hidden layer directly above it, in one undo step. The source may be protected; the copies are
+  hidden layer directly above it, in one undo step. A layer holding a transform mask, such as one
+  you have translated, is not copied: undoing such a copy crashes Krita. Copy first, then translate
+  the copy. The source may be protected; the copies are
   yours. Nothing shows until you show the copy with `krita_layer_update` (`visible: true`), perhaps
   hiding the original, to compare. `id_map` gives each copied node's new id. An ORA reopen
   refuses a name two layers share, so name the copy apart from its source, and rename the layers
@@ -194,6 +196,26 @@ mask's `bounds_px` and a mask stroke's `layer_bounds_px` are its layer's, as Kri
 - **What they refuse:** a protected layer, or one holding a protected layer (`LOCKED_TARGET`); a
   layer a clone layer shows, which Krita would turn into a paint layer
   (`UNSUPPORTED_CAPABILITY`, `reason: clone_source`); and removing a document's last layer.
+
+**Move a layer by whole pixels.** `krita_layer_transform` with `operation: {type: "translate",
+by_px: [x, y]}` moves a paint layer or a group, with all it holds.
+- **How.** A transform mask on top of the layer's masks holds the move, so the layer's own pixels
+  never change. The first translate adds the mask and moves it, in two undo steps; each later one
+  moves the same mask, in one. `undo_steps` says which, and `krita_history_step` takes them back
+  together. `translation_px` is the layer's whole move so far, and inspect reports it on the mask.
+- **Where paint goes.** Paint, fills and selections on a translated layer act on its own pixels,
+  where you aim them, and the result shows moved by `translation_px`. To paint at a place on the
+  canvas, aim at that place minus `translation_px`. A stroke's or fill's `changed_bounds_px` and
+  `layer_bounds_px` stay in the layer's own pixels. Region verification on the layer, or on any
+  layer inside a translated group, is refused: give `verify: "full"`.
+- **Masks.** A transparency mask added later sits above the transform mask and stays where it is
+  painted on the canvas; one there before moves with the layer.
+- **What it refuses:** a protected layer, one holding one, or one inside a protected group; any
+  layer but a paint layer or a group; a layer whose transform mask a translate did not make, or
+  with more than one, or whose translate mask is hidden; a move past 16384 px in all on an axis;
+  and Krita's cumulative undo, which would merge two moves.
+- **Saving.** A KRA keeps the move and its mask. An ORA drops the transform mask, so the reopened
+  file would show the layer unmoved, and the save is refused (`SAVE_VERIFY_FAILED`).
 
 **Try a whole alternative on a branch.** `krita_document_duplicate` saves the document to a new
 `.kra` path inside a root, verifies the file by reopening it, as a save does, and opens that file
@@ -448,11 +470,12 @@ Every failure returns `error: {code, message, retryable, details}`. The table gi
 - **Region verification needs the pixel brush engine.** Color Smudge, the Quick Brush, MyPaint, spray,
   deform and others need `verify: "full"`.
 - Stochastic presets do not repeat exactly.
-- No filters, transforms or flood fills from a seed. A mask moves and is copied only with its
-  layer, and a clone layer's source is neither moved nor removed.
+- No filters, scale, rotate or shear, or flood fills from a seed. Translate moves by whole pixels
+  only. A mask moves and is copied only with its layer, and a clone layer's source is neither moved
+  nor removed.
 - **A fill is one flat colour.** No gradients or patterns, and no fill of a shape past the canvas.
-- **Masks are transparency masks on paint layers.** No masks on groups, no filter, transform or
-  selection masks made by a tool, and a mask takes only `name` and `visible` from
+- **Masks are transparency masks on paint layers.** No masks on groups, no filter or selection
+  masks made by a tool, a transform mask only as a translate's, and a mask takes only `name` and `visible` from
   `krita_layer_update`.
 
 **Documents and history.**

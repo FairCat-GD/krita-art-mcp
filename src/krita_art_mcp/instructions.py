@@ -28,7 +28,7 @@ editable_layer_ids (KRA) or editable_layer_names (ORA, PNG).
 tightens), then confine each repair with krita_selection_set. An ellipse or polygon selection \
 is antialiased: keep it a pixel inside the allowed mask.
 - To try a change, duplicate the layer (a hidden copy) and work on the copy. To group layers, \
-create a group and reorder them into it.
+create a group and reorder them into it. Copy before you move one with krita_layer_transform.
 - To try a whole alternative, krita_document_duplicate branches the document to a new .kra and \
 opens it with the same protection; compare the two with krita_preview_render.
 - Changes to an animated document are refused.

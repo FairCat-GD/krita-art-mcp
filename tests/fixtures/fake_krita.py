@@ -9,7 +9,7 @@ import zipfile
 import zlib
 from typing import Any
 
-from bridge_core import documents, history, nodes, saving, shapes
+from bridge_core import documents, history, nodes, saving, shapes, translations
 from bridge_core.bridge import Bridge
 from bridge_core.errors import BridgeError
 
@@ -18,6 +18,9 @@ SPACE = ("RGBA", "U8", documents.SRGB_PROFILE)
 # A paint layer with no pixels of its own reads as this, B, G, R, A.
 UNREAD = bytes([30, 20, 10, 255])
 MASK = "transparencymask"
+TRANSFORM_MASK = "transformmask"
+# A new transform mask's params, which a translate's parse reads as [0, 0].
+FRESH_TRANSFORM = translations.translate_xml(0, 0)
 
 
 class FakeDocument:
@@ -54,6 +57,7 @@ def fake_node(key: int, index: int, name: str, parent_id: str, order: int, **cha
         "color_model": "RGBA",
         "depth": "U8",
         "profile_id": documents.SRGB_PROFILE,
+        "transform_sha256": None,
         **changes,
     }
 
@@ -153,6 +157,11 @@ class FakePort:
         # ignored the hide.
         self.issued: set[str] = set()
         self.copy_visible = False
+        # Each transform mask's params by (document key, node id), as toXML writes them; whether
+        # Krita takes a transform's XML, and whether it pushes a step that changes nothing.
+        self.transforms: dict[tuple[int, str], str] = {}
+        self.transform_takes = True
+        self.transform_inert = False
 
     def _buffers(self, key: int) -> dict[str, bytearray]:
         own = self.own.get(key)
@@ -278,12 +287,18 @@ class FakePort:
             # A transparency mask's bounds are its layer's (measured on Krita 5.3.4.1).
             if node["type"] == MASK and node["parent_id"] in bounds:
                 node["bounds_px"] = dict(bounds[node["parent_id"]])
+            node["transform_sha256"] = None
+            if node["type"] == TRANSFORM_MASK:
+                node["transform_sha256"] = _digest(self._params(document.key, node["id"]))
         return tree
+
+    def _params(self, key: int, mask_id: str) -> str:
+        return self.transforms.get((key, mask_id), FRESH_TRANSFORM)
 
     def structure(self, document: Any) -> dict[str, Any]:
         self.calls.append("structure")
         tree = self.tree(document)
-        keys = ("id", "parent_id", "order", "type", "blend_mode")
+        keys = ("id", "parent_id", "order", "type", "blend_mode", "transform_sha256")
         shape = [{key: node[key] for key in keys} for node in tree["nodes"]]
         return {"root_id": tree["root_id"], "nodes": shape}
 
@@ -513,6 +528,8 @@ class FakePort:
                 buffers[made["id"]] = bytearray(buffers[node["id"]])
             if node["id"] in pixels:
                 pixels[made["id"]] = pixels[node["id"]]
+            if (key, node["id"]) in self.transforms:
+                self.transforms[(key, made["id"])] = self.transforms[(key, node["id"])]
             copies.append(made)
         copies[0].update(name=name, visible=self.copy_visible)
         return copies
@@ -591,6 +608,43 @@ class FakePort:
     def _added(self, key: int, node: dict[str, Any]) -> None:
         entry = {"kind": "add", "id": node["id"], "parent": node["parent_id"]}
         self._command(key, history.ADD, {**entry, "order": node["order"], "nodes": None})
+
+    def create_transform(self, document: Any, name: str) -> Any:
+        # A detached transform mask at identity; no step.
+        self._maybe_fail("create_transform")
+        key = document.key
+        node = fake_node(key, 0, name, "", 0, type=TRANSFORM_MASK, color_model="A")
+        node["id"] = self._fresh_id(key, 900 + len(self._tree(key)["nodes"]))
+        return [node]
+
+    def set_transform(self, document: Any, mask_id: str, xml: str) -> None:
+        # fromXML: one unnamed step that sets the params, unless Krita does not take them.
+        self._marked()
+        self._maybe_fail("set_transform")
+        key = document.key
+        node = self._layer(key, mask_id)
+        if node["type"] != TRANSFORM_MASK or not self.transform_takes:
+            raise BridgeError("INTERNAL_ERROR", "Krita did not take the transform.")
+        old = self._params(key, mask_id)
+        new = old if self.transform_inert else xml
+        self._entry(key, {"label": "", "transform": (mask_id, old, new), "blend": None})
+        self._set_params(key, mask_id, new)
+        self._maybe_fail("set_transform_after")
+
+    def _set_params(self, key: int, mask_id: str, xml: str) -> None:
+        self.transforms[(key, mask_id)] = xml
+        self._layer(key, mask_id)["transform_sha256"] = _digest(xml)
+        self._redraw(key)
+
+    def transform_xml(self, document: Any, mask_id: str) -> str:
+        self.calls.append("transform_xml")
+        self._maybe_fail("transform_xml")
+        self._layer(document.key, mask_id)
+        return self._params(document.key, mask_id)
+
+    def translation_of(self, key: int, mask_id: str) -> tuple[int, int] | None:
+        # For a test's render: what a translate holds on the mask, as its parse reads it.
+        return translations.translation(self._params(key, mask_id))
 
     def set_selection(self, document: Any, recipe: list[tuple[Any, ...]]) -> None:
         self._marked()
@@ -783,6 +837,11 @@ class FakePort:
                 self._put(key, command["nodes"], command["parent"], command["order"])
             self._redraw(key)
             return
+        transform = entry.get("transform")
+        if transform is not None:
+            mask_id, old, new = transform
+            self._set_params(key, mask_id, old if side == "before" else new)
+            return
         if entry["blend"] is not None:
             node_id, old, new = entry["blend"]
             self._layer(key, node_id)["blend_mode"] = old if side == "before" else new
@@ -831,6 +890,9 @@ class FakePort:
                 for node in tree["nodes"]
             },
             "composite": self._composite(key),
+            "transforms": {
+                node_id: xml for (owner, node_id), xml in self.transforms.items() if owner == key
+            },
         }
         for hook in self.on_export:
             hook(saved)
@@ -855,6 +917,8 @@ class FakePort:
         self.front_key = front
         if saved["kind"] == ".kra":
             self.own[key] = ({}, {})
+            for node_id, xml in saved.get("transforms", {}).items():
+                self.transforms[(key, node_id)] = xml
         tree = copy.deepcopy(saved["tree"])
         root = f"root-{key}"
         nodes = []
@@ -1379,3 +1443,7 @@ def _file_sha256(path: str) -> str:
             return hashlib.sha256(stream.read()).hexdigest()
     except OSError:
         return ""
+
+
+def _digest(xml: str) -> str:
+    return hashlib.sha256(xml.encode("utf-8")).hexdigest()

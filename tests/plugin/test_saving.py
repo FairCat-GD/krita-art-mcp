@@ -6,7 +6,7 @@ from pathlib import Path
 from typing import Any
 
 import pytest
-from bridge_core import documents, files, saving
+from bridge_core import documents, files, saving, translations
 from bridge_core.errors import BridgeError
 from bridge_core.jobs import Call
 from bridge_core.registry import Handle, Registry
@@ -572,6 +572,22 @@ def test_a_kra_compares_masks_and_every_field(world: World) -> None:
     body = world.refused("save", document_id, "hero-r03.kra")
     assert [(m["name"], m["field"]) for m in body["details"]["mismatches"]] == [
         ("mask", "alpha_locked")
+    ]
+
+
+def test_a_kra_compares_a_transform_masks_params(world: World) -> None:
+    document_id = world.open()
+    top = world.port.tree(world.handle(document_id).document)["nodes"][0]["id"]
+    mask = world.add(document_id, "translate", top, type="transformmask")
+    assert world.save(document_id)["layers_preserved"] is True
+
+    def moved(found: dict[str, Any]) -> None:
+        found["transforms"][mask] = translations.translate_xml(5, 0)
+
+    world.port.on_export.append(moved)
+    body = world.refused("save", document_id, "hero-r03.kra")
+    assert [(m["name"], m["field"]) for m in body["details"]["mismatches"]] == [
+        ("translate", "transform_sha256")
     ]
 
 

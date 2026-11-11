@@ -7,7 +7,8 @@ example. This script then writes the envelope, `guard` and `source` into every s
 each `data` into the completed rule, open's `layers` into inspect's and document_duplicate's,
 inspect's `protection` into document_duplicate's, layer_update's
 `verification` object into paint_stroke's and paint_fill's and its whole `verification` into
-layer_create's, layer_duplicate's, layer_reorder's and layer_remove's, the stroke's colour into
+layer_create's, layer_duplicate's, layer_reorder's, layer_remove's and layer_transform's, the
+stroke's colour into
 sample's `color` and the fill's, the stroke's mask paint into the fill's `mask`, selection_set's
 rect, ellipse and polygon shapes into the fill's, and the outcome values into operation_get's
 `outcome`, and formats the files.
@@ -119,6 +120,7 @@ def amended(tools: dict[str, dict[str, Any]]) -> dict[str, dict[str, Any]]:
         "krita_layer_duplicate",
         "krita_layer_reorder",
         "krita_layer_remove",
+        "krita_layer_transform",
     ):
         _data(tools[name])["properties"]["verification"] = copy.deepcopy(
             _data(tools["krita_layer_update"])["properties"]["verification"]

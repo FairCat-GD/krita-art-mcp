@@ -431,6 +431,22 @@ def test_set_child_nodes_only_swaps_a_new_documents_first_layer() -> None:
     assert found == [(f"{ADAPTER}.documents", "create")]
 
 
+def test_transform_masks_are_made_and_set_at_their_sites_only() -> None:
+    # A transform mask's fromXML pushes its own unnamed step (K53), a preset's none; the harness
+    # makes a transform mask only as a fixture.
+    made = sorted((m, f) for m, _, tree in _sources() for f in _uses(tree, "createTransformMask"))
+    assert made == [
+        (f"{ADAPTER}.documents", "add_fixture_node"),
+        (f"{ADAPTER}.documents", "create_transform"),
+    ]
+    taken = sorted((m, f) for m, _, tree in _sources() for f in _uses(tree, "fromXML"))
+    assert taken == [
+        (f"{ADAPTER}.documents", "set_transform"),
+        (f"{ADAPTER}.painting", "edit_preset"),
+        (f"{ADAPTER}.painting", "restore_preset"),
+    ]
+
+
 def test_set_selection_is_called_at_its_four_sites_only() -> None:
     allowed = [(m, len(_allowed_set_selections(tree, m))) for m, _, tree in _sources()]
     assert sorted((m, n) for m, n in allowed if n) == [

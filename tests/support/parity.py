@@ -14,7 +14,7 @@ def refused_alike(
     arguments: dict[str, Any],
     rule: tuple[object, str] | None = None,
     *,
-    schema: tuple[str, ...] | None = None,
+    schema: tuple[str | int, ...] | None = None,
 ) -> dict[str, Any]:
     # Decision 10: with the server's half off, the plugin must refuse alike. A rule in a named
     # function (module, name) is switched off; a rule in the schema, the keyword at that path
@@ -38,12 +38,12 @@ def refused_alike(
     return dict(plugin)
 
 
-def _without(load: Any, tool: str, path: tuple[str, ...]) -> Any:
+def _without(load: Any, tool: str, path: tuple[str | int, ...]) -> Any:
     def cut(name: str) -> dict[str, Any]:
         found: dict[str, Any] = copy.deepcopy(load(name))
         if name == tool:
             *parents, key = path
-            node = found
+            node: Any = found
             for part in parents:
                 node = node[part]
             del node[key]

@@ -51,6 +51,7 @@ RETRYABLE = [
     ("bridge_core/registry.py", "DOCUMENT_IN_USE (computed)"),
     ("bridge_core/saving.py", "BUSY"),
     ("bridge_core/transfer.py", "IO_ERROR"),
+    ("bridge_core/transforms.py", "INTERNAL_ERROR"),
     ("krita_adapter/documents.py", "KRITA_MODAL_DIALOG"),
     ("krita_adapter/documents.py", "MULTIPLE_WINDOWS"),
 ]
@@ -227,6 +228,13 @@ class World:
             "verify": "region",
         }
 
+    def translate_args(self, document_id: str, by: list[int]) -> dict[str, Any]:
+        return {
+            "document_id": document_id,
+            "layer_id": PAINT,
+            "operation": {"type": "translate", "by_px": by},
+        }
+
     def history_args(self, document_id: str, action: str = "undo") -> dict[str, Any]:
         return {"document_id": document_id, "action": action, "steps": 1}
 
@@ -273,7 +281,7 @@ def test_every_op_is_classed(world: World) -> None:
     fixtures = {op for op in registered if op.startswith(HARNESS)}
     assert READS.isdisjoint(BOUNDED) and not (READS | BOUNDED) & fixtures
     assert registered == READS | BOUNDED | fixtures
-    assert len(registered) == 38
+    assert len(registered) == 39
     # The prefix hides no tool op: these are the fixture ops, by name.
     assert fixtures == set(harness.handlers(world.registry, world.port, world.data)) | {
         "harness.retention"
@@ -440,6 +448,38 @@ def test_the_layer_ops_pass_their_markers(world: World) -> None:
     assert world.done("layer.remove", removal)["removed"] == [copy]
 
 
+def test_a_translate_passes_its_marker_making_and_moving_its_mask(world: World) -> None:
+    document_id = world.document()
+    made = world.done("layer.transform", world.translate_args(document_id, [3, -2]))
+    assert made["created_mask"] is True and made["undo_steps"] == 2
+    moved = world.done("layer.transform", world.translate_args(document_id, [1, 1]))
+    assert moved["created_mask"] is False and moved["translation_px"] == [4, -1]
+
+
+def test_a_translate_whose_document_changed_as_it_began_changed_nothing(world: World) -> None:
+    document_id = world.document()
+    tree = world.port._tree(1)
+
+    def renamed() -> None:
+        tree["nodes"][0]["name"] = "renamed by hand"
+
+    world.port.on_read.append(renamed)
+    body = world.failure("layer.transform", world.translate_args(document_id, [3, 0]))
+    assert body["code"] == "INTERNAL_ERROR" and body["retryable"] is True
+    assert _outcome(body) == NOT_APPLIED
+    assert world.port.live[1].get("stack", []) == []
+    assert all(node["type"] != "transformmask" for node in world.port._tree(1)["nodes"])
+
+
+def test_a_translate_krita_refused_between_its_steps_is_not_applied(world: World) -> None:
+    document_id = world.document()
+    world.port.fail["set_transform"] = BridgeError("INTERNAL_ERROR", "Krita did not take it.")
+    body = world.failure("layer.transform", world.translate_args(document_id, [3, 0]))
+    assert body["details"]["rolled_back"] is True and body["details"]["rollback_verified"] is True
+    assert _outcome(body) == NOT_APPLIED
+    assert all(node["type"] != "transformmask" for node in world.port._tree(1)["nodes"])
+
+
 def test_each_selection_passes_its_marker(world: World) -> None:
     document_id = world.document()
     assert world.done("selection.set", world.selection_args(document_id, "all"))["undo_steps"] == 1
@@ -530,7 +570,9 @@ def test_a_layer_refused_for_its_parent(world: World) -> None:
     assert _outcome(world.failure("layer.create", args)) == NOT_APPLIED
 
 
-@pytest.mark.parametrize("op", ["layer.duplicate", "layer.reorder", "layer.remove"])
+@pytest.mark.parametrize(
+    "op", ["layer.duplicate", "layer.reorder", "layer.remove", "layer.transform"]
+)
 def test_a_layer_op_refused_before_its_marker(world: World, op: str) -> None:
     document_id = world.document()
     args = {
@@ -542,6 +584,7 @@ def test_a_layer_op_refused_before_its_marker(world: World, op: str) -> None:
             "above_id": None,
         },
         "layer.remove": {"document_id": document_id, "layer_id": BASE, "verify": "full"},
+        "layer.transform": {**world.translate_args(document_id, [1, 0]), "layer_id": BASE},
     }[op]
     assert _outcome(world.failure(op, args)) == NOT_APPLIED
 

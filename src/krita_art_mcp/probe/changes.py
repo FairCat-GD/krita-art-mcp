@@ -138,6 +138,11 @@ async def _read_only(report: Report, a: Client, ora: Path, raster: Path) -> None
                 "above_id": None,
             },
             "krita_layer_remove": {"guard": guard(document_id), "layer_id": protected[0]},
+            "krita_layer_transform": {
+                "guard": guard(document_id),
+                "layer_id": protected[0],
+                "operation": {"type": "translate", "by_px": [1, 0]},
+            },
             "krita_document_duplicate": {
                 "guard": guard(document_id),
                 "path": str(ora.parent / "read-only branch.kra"),
@@ -146,8 +151,8 @@ async def _read_only(report: Report, a: Client, ora: Path, raster: Path) -> None
         found = {name: code(await tool(a, name, arguments)) for name, arguments in calls.items()}
         report.check(
             "a read_only document refuses layer_create, selection_set, protection_set, "
-            "history_step, layer_update, layer_duplicate, layer_reorder, layer_remove and "
-            "document_duplicate",
+            "history_step, layer_update, layer_duplicate, layer_reorder, layer_remove, "
+            "layer_transform and document_duplicate",
             set(found.values()) == {"DOCUMENT_READ_ONLY"},
             ", ".join(f"{name}: {found_code}" for name, found_code in found.items()),
         )

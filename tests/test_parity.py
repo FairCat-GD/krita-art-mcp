@@ -386,6 +386,34 @@ def test_both_sides_refuse_a_layer_moved_inside_or_above_itself(
     assert refused["details"]["field"] == field
 
 
+def _translate(world: World, by: list[Any]) -> dict[str, Any]:
+    return {
+        "guard": {"document_id": _document(world), "request_id": "req-translate"},
+        "layer_id": A_LAYER,
+        "operation": {"type": "translate", "by_px": by},
+    }
+
+
+def test_both_sides_refuse_a_translate_that_moves_nothing(
+    world: World, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    rule = (changes, "transform_rules")
+    arguments = _translate(world, [0, 0])
+    refused = refused_alike(world, monkeypatch, "krita_layer_transform", arguments, rule)
+    assert refused["details"]["field"] == "by_px"
+
+
+def test_both_sides_refuse_a_translate_past_its_range(
+    world: World, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    path = ("inputSchema", "properties", "operation", "oneOf", 0, "properties", "by_px", "items")
+    arguments = _translate(world, [16385, 0])
+    refused = refused_alike(
+        world, monkeypatch, "krita_layer_transform", arguments, schema=(*path, "maximum")
+    )
+    assert refused["details"]["field"] == "by_px"
+
+
 def test_both_sides_refuse_a_copy_with_no_name(
     world: World, monkeypatch: pytest.MonkeyPatch
 ) -> None:

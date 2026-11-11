@@ -27,11 +27,13 @@ class DocumentsPort(Protocol):
     def layers(self, document: Any) -> tuple[str, list[dict[str, Any]]]: ...
 
     # {root_id, active_id, nodes}: every node depth-first in Krita's child order, as Krita
-    # reports it (type as Node.type(), opacity 0-255, offset_px, bounds_px).
+    # reports it (type as Node.type(), opacity 0-255, offset_px, bounds_px, and transform_sha256,
+    # the SHA-256 of a transform mask's toXML, null on any other node).
     def tree(self, document: Any) -> dict[str, Any]: ...
 
-    # The tree's shape alone, {root_id, nodes: [{id, parent_id, order, type, blend_mode}]}, as
-    # tree() reports those fields: what a node step's state reads, without the rest's cost.
+    # The tree's shape alone, {root_id, nodes: [{id, parent_id, order, type, blend_mode,
+    # transform_sha256}]}, as tree() reports those fields: what a node step's state reads,
+    # without the rest's cost.
     def structure(self, document: Any) -> dict[str, Any]: ...
 
     # The projection over the whole canvas, B, G, R, A for integer RGBA (K12), as a bytes-like
@@ -98,6 +100,16 @@ class DocumentsPort(Protocol):
     # Adds a detached node under parent_id, directly above above_id or on top, in one "Add
     # Layer" step; waits, and returns its id.
     def attach(self, document: Any, node: Any, parent_id: str, above_id: str | None) -> str: ...
+
+    # A detached transform mask, named; making it pushes no step.
+    def create_transform(self, document: Any, name: str) -> Any: ...
+
+    # TransformMask.fromXML on an attached mask, one command stroke, then waits, raise or not;
+    # INTERNAL_ERROR when Krita does not take the XML.
+    def set_transform(self, document: Any, mask_id: str, xml: str) -> None: ...
+
+    # A transform mask's params as TransformMask.toXML writes them.
+    def transform_xml(self, document: Any, mask_id: str) -> str: ...
 
     # Builds a selection by the recipe's steps, in order, and commits it with setSelection (one
     # undo step); a recipe of ("clear",) commits None. Waits.

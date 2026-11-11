@@ -9,7 +9,7 @@ from typing import Any
 from . import brushes, dynamics, log, mutation, shapes, verification
 from .documents import COLOR_MODEL, DEPTH, SRGB_PROFILE
 from .errors import BridgeError, exact, integer, number
-from .history import LABELS, in_front
+from .history import LABELS, in_front, refuse_cumulative
 from .inspection import TYPES
 from .jobs import Call, Handler
 from .opening import LAYER_ID
@@ -208,7 +208,7 @@ def handlers(
         taper = args["dynamics"]
         # The preset's own dirty flag before the brush is set, which the taper puts back.
         dirty = None if taper is None else _taperable(resources, preset, asked["preset_id"])
-        _refuse_cumulative(port)
+        refuse_cumulative(port)
         effects = port.effects(document, mode == verification.REGION)
         if mode == verification.REGION:
             verification.refuse_reach(tree, effects, layer_id, "this stroke past its reach")
@@ -286,7 +286,7 @@ def handlers(
         unheld(FILL_PRESET, preset["xml"])
         _, found = preset_fingerprint(preset["xml"])
         listed = None if found is None else activated.get((FILL_PRESET, found), found)
-        _refuse_cumulative(port)
+        refuse_cumulative(port)
         effects = port.effects(document, mode == verification.REGION)
         if mode == verification.REGION:
             verification.refuse_reach(tree, effects, layer_id, "this fill past its reach")
@@ -617,16 +617,6 @@ def _tapered(
 
 
 # Refusals before any change.
-
-
-def _refuse_cumulative(port: DocumentsPort) -> None:
-    if port.cumulative_undo():
-        details: dict[str, Any] = {"reason": "cumulative_undo"}
-        message = (
-            "Krita's cumulative undo merges strokes into one undo step, so a stroke could "
-            "not be undone alone; turn it off in Krita's settings."
-        )
-        raise BridgeError("UNSUPPORTED_CAPABILITY", message, False, details)
 
 
 def _paintable(port: DocumentsPort, document: Any, layer_id: str) -> None:
