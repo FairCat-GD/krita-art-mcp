@@ -12,9 +12,9 @@ X2a: review fixes — construction.
   - Done: R1, R2, R3, D1, F1, C1, M1, X1, X1a, E1, L1, B1, T1, S1 and X2.
   - Remaining, in order: X2a and V1.
 - **X2 inserted X2a.** X2a cuts 0.29.0 and V1 0.30.0. S1 shipped 0.28.0.
-- **X2 is committed locally, not pushed.** `origin/main` holds everything through "review:
-  transform refusals read an unwaited tree, and 7 smaller". List `origin/main..HEAD` before any
-  push, and push only on the owner's approval.
+- **X2 and its review fixes are pushed.** `origin/main` holds everything through "review: X2a's
+  gate tested a finding nobody asks, and 3 smaller". List `origin/main..HEAD` before any push,
+  and push only on the owner's approval.
 - **What X2 found that X2a fixes first:**
   - **F1, the High.** L1's four layer ops and `layer_update` read `KritaDocuments.tree`, which never
     waits, before their first wait, and refuse, scope and judge from it. S1's review fixed exactly

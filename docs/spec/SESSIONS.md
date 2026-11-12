@@ -47,7 +47,7 @@ Never push without being asked.
 | T1 | Translate, on a native route or not at all | 1, 15 | **0.27.0** |
 | S1 | Scale, rotate, shear; cut first if the round runs long | 1, 3 | **0.28.0** |
 | X2 | Architecture review: construction | all | — |
-| X2a | Review fixes: construction | 1, 4, 5, 9, 10, 11 | **0.29.0** |
+| X2a | Review fixes: construction | 1, 4, 5, 9, 10, 11, 13, 16 | **0.29.0** |
 | V1 | Re-measure, docs, full run, close the round | 18 | **0.30.0** |
 
 A review session changes no product code and cuts no version; a session it inserts takes the next
@@ -2230,6 +2230,16 @@ blocks moved under it (F26).
 - **Numbers:** 1152 server tests (+0), 1204 plugin tests (+0), probe 226 PASS (+0), 0 FAIL, 25
   MEASURED, 150.1 s with 0 documents open. 25 tools, 25 schema files, 30 error codes, 39 ops, 17
   capabilities, instructions 3,371 characters, `api_version` 0.4.0.
+- **Review (`/code-review high`), 4 findings: 4 fixed and 0 skipped.**
+  - **X2a's gates tested F9 "as chosen",** though F9 is not among its questions. The gate now
+    names F9's fixed remedy: an unnamed undo Krita did not take stays retryable.
+  - **The table gave X2a fewer decisions than its Read line;** it names 13 and 16 too.
+  - **The review used F21 for two findings in one paragraph,** X1's and its own; each is
+    qualified.
+  - **The session F1 and the finding F1 sat side by side** in the review's preamble; the
+    session is named as the frame session.
+  - **Falsified:** nothing; the fixes are to documents.
+  - **Numbers after the review:** unchanged.
 
 ---
 
@@ -2298,7 +2308,8 @@ undo ledger and history*, *Painting* (a taper), *The save*, *The server*, *Testi
   - each new parity row, and the bounds test's new constants;
   - the call's own id in a lost finish's and open's details; the copy's id in a failed duplicate;
   - the taper held on an interrupt in its restore; the armed tapered stroke;
-  - the translate refused past the undo limit; F7, F9 and F16 as chosen;
+  - the translate refused past the undo limit; F7 and F16 as chosen; an unnamed undo Krita did
+    not take, under its empty "Redo ", left retryable (F9);
   - the new pins and the wait rule over the tree.
 - `probe`: the whole baseline, with F17's checks.
 - Each new check falsified once.
