@@ -47,12 +47,13 @@ Never push without being asked.
 | T1 | Translate, on a native route or not at all | 1, 15 | **0.27.0** |
 | S1 | Scale, rotate, shear; cut first if the round runs long | 1, 3 | **0.28.0** |
 | X2 | Architecture review: construction | all | — |
-| V1 | Re-measure, docs, full run, close the round | 18 | **0.29.0** |
+| X2a | Review fixes: construction | 1, 4, 5, 9, 10, 11 | **0.29.0** |
+| V1 | Re-measure, docs, full run, close the round | 18 | **0.30.0** |
 
 A review session changes no product code and cuts no version; a session it inserts takes the next
 version, and every later version shifts by one. X1 inserted X1a, so E1 and every later version
-moved up by one. E1 on a no-go and T1 without a native route ship no version, and the later
-versions move down by one; the handoff says so.
+moved up by one; X2 inserted X2a, so V1 moved up by one. E1 on a no-go and T1 without a native
+route ship no version, and the later versions move down by one; the handoff says so.
 
 ---
 
@@ -2194,6 +2195,125 @@ plan.
 hold. Name functions, not lines, in the amendments: X1 found every line pointer in the later
 blocks moved under it (F26).
 
+**Done (2026-11-12, no version).**
+- **Decided with the owner in plan mode:**
+  - `doctor` and the probe ran for the baseline, at 0 unsaved with the Codex agent paused.
+  - The product fixes land in an inserted **X2a**, before V1: X2a 0.29.0, V1 0.30.0. Every finding
+    goes there but F10, the fake's per-command pixel undo, which goes to the backlog.
+- **The review.** `REVIEW-2026-11-12.md`: 21 findings (1 High, 2 Medium, 18 Low) and 10 Info, each
+  verified on the code path at `ac27e19`; §2 holds every invariant to its enforcing site and test;
+  §5 reads construction forward against X2a and V1. The read ran twice, by six independent readers
+  in two waves of three, the second without the first's notes, but for two exceptions its method
+  states.
+- **The findings that matter most.**
+  - L1's four layer ops and `layer_update` refuse, scope and judge from a tree read before Krita is
+    idle (F1). With a change landing at the first wait, a remove takes a protected layer and its
+    rollback reverses a correct undo, a duplicate's rollback undoes the attach of a copied transform
+    mask (K53's crash), and a region-scope leak is verified. Reproduced on the fake.
+  - Parity gaps for the new tools' rules behind the documents' claim (F2).
+  - A failure's details name a derived step id `krita_operation_get` refuses (F3).
+- **Amendments:**
+  - **X2a inserted**, 0.29.0, with the fixes the owner chose; V1 0.30.0, amended. Decided at plan
+    time, with the owner.
+  - **Two exceptions to the cold second read,** stated in the review: the second outcomes brief
+    added three questions from the first wave, and a second frame brief that leaked the first
+    wave's questions was stopped and relaunched verbatim. The session's own.
+- **Measured,** on Krita 5.3.4.1, commit `ac27e19`:
+  - `verify` as found: 6 stages PASS; tests 232.1 s, plugin-tests 28.0 s.
+  - `probe` as found: 226 PASS, 0 FAIL, 25 MEASURED in 150.1 s with 0 documents open; the journal
+    check read 841 dispatched lines, all settled. `doctor` 6 of 6, 0 open documents, 0 unsaved.
+  - Codex's renderer: the stroke's input 4,339 normalised and 2,902 rendered bytes; the
+    transform's output 4,975; the longest description 1,103 (the transform).
+  - The scale's reads through `affine._rects`, and simulations on the test worlds, each written
+    under its finding; a fault injection of 210 raises over the construction ops, all confirmed.
+- **Falsified:** nothing; a review adds no check.
+- **Numbers:** 1152 server tests (+0), 1204 plugin tests (+0), probe 226 PASS (+0), 0 FAIL, 25
+  MEASURED, 150.1 s with 0 documents open. 25 tools, 25 schema files, 30 error codes, 39 ops, 17
+  capabilities, instructions 3,371 characters, `api_version` 0.4.0.
+
+---
+
+## X2a: Review fixes — construction
+
+Inserted by the owner at X2's plan mode, 2026-11-12, from `REVIEW-2026-11-12.md`: the product
+fixes the review found, before V1 closes the round. The owner chose the inserted session over
+folding the fixes into V1, and sent F10 alone to the backlog.
+
+**Read:** `REVIEW-2026-11-12.md` whole (F1–F9 and F11–F21 are its scope);
+`FEATURE-recovery-and-construction.md` decisions 1, 4, 5, 9, 10, 11, 13, 16; `ARCHITECTURE.md` *The
+tool contract* (Argument rules are written twice, Codex's limits), *The verification core*, *The
+undo ledger and history*, *Painting* (a taper), *The save*, *The server*, *Testing strategy*, and
+*Reference* K22, K51, K53, K54.
+
+**Ask at the start of X2a:**
+- **F4:** an integral float such as `1.0` refused on the server too, or taken by the plugin as the
+  whole number it is.
+- **F7:** a taper refused before any paint: keep the seal and say so, or let the change tell the
+  frame that nothing began.
+- **F16:** a `no_change` transform Krita kept as a step: keep `dirty` and say the step stays, or
+  another outcome.
+- **F20:** new output fields optional, or the replay rule written beside decision 9.
+
+- **The idle tree** (F1). `layers.create`, `layers.duplicate`, `layers.reorder`, `layers.remove`
+  and `layer_update.update` take S1's pattern from `affine.run` and `transforms.translate`: the
+  before-read first (a paint-layer create, which has none, refreshes first), the tree read again, a
+  retryable refusal if anything watched or a scoped bound moved, and the waited tree passed as
+  `before` and to `Mutation.run(tree=...)`. A wait inside `KritaDocuments.tree` is the other route;
+  the done-note says which was taken and why. The stroke's and the fill's refusals and scope read
+  the same tree, and follow.
+- **Parity** (F2, F4). A `refused_alike(..., schema=path)` row for each pair F2 lists;
+  `test_the_plugins_bounds_are_the_schemas_limits` takes `MAX_TRANSLATE`, `MAX_SIZE`, `MAX_SHEAR`,
+  the knot bounds and `MAX_NAME`; F4's two rules as the owner chose, or listed under "Not held".
+- **The chain's details** (F3, F13, F14, F15). `saving.chained` puts the call's own id in
+  `details.operation_id` and keeps the step's under another key; a failed layer duplicate names its
+  copy; derived request ids take a form no tool input admits, or such agent ids are refused;
+  `branching._open_error` reads only `_unregistered` and pre-send failures as unsent.
+- **The frame and history** (F5, F7, F9, F16). A first translate refused before its marker when its
+  steps pass Krita's undo limit, as the reorder is; F7 and F16 as the owner chose; the fake models
+  Krita's empty "Redo ", and `history.step`'s foreign rule takes it into account.
+- **Tapers** (F6, F8). `put_back` holds the preset on any raise, `BaseException` included; the
+  fake's `edit_preset` and `restore_preset` pass the marker gate; the armed world runs a tapered
+  stroke.
+- **The scan and the parse** (F11, F12). `Node.remove()` and `Node.duplicate()` pinned to their one
+  site each, the `addChildNode` sites listed; the tree's reads under the wait rule;
+  `translations.translation` refuses attributes on its outer elements.
+- **The probe** (F17). A matrix check for `layer.translate` in `probe/transforms.py` and for
+  `layer.scale`, `.rotate` and `.shear` in `probe/affine.py`; a reorder and a remove of a visible
+  translated layer, each undone.
+- **Descriptions and documents** (F18, F19, F21). The transform's description says where paint
+  lands on a translated layer; `size_px` takes the guide's wording; `krita_history_step`'s
+  description and the guide's step 8 name the transforms and a first translate's two steps; the
+  taper's knots start at 0 and end at 1; `krita_layer_duplicate`'s description names the
+  transform-mask refusal; `ARCHITECTURE.md`'s Codex sizes, the ops outside `RECEIPTS`, the journal
+  check's 841, the `no_change` transform, the held preset before `_listed`, the parity paragraph and
+  "Not held"; `USER-GUIDE.md`'s unfinished-save line; `BACKLOG.md`'s "or stroke", and F10 added.
+  CHANGELOG 0.28.0's count stays, since an entry's content is never rewritten.
+- **Docs.** `ARCHITECTURE.md`, `USER-GUIDE.md`, `BACKLOG.md`, the server instructions if a line
+  moves, `CHANGELOG.md`: 0.29.0, the baseline.
+
+**Gates:**
+- `uv run scripts/verify.py`, with these tests:
+  - for each of the five ops, a change landing at the first wait refused retryably, changing
+    nothing, and the region leak refused;
+  - each new parity row, and the bounds test's new constants;
+  - the call's own id in a lost finish's and open's details; the copy's id in a failed duplicate;
+  - the taper held on an interrupt in its restore; the armed tapered stroke;
+  - the translate refused past the undo limit; F7, F9 and F16 as chosen;
+  - the new pins and the wait rule over the tree.
+- `probe`: the whole baseline, with F17's checks.
+- Each new check falsified once.
+
+**Watch for:**
+- **A retryable refusal is a change of nothing,** proven where it is raised: the AST scan finds each
+  new one, and `tests/plugin/test_outcomes.py` pins it in `RETRYABLE` with its own test, as S1's two
+  are.
+- **X1a's two-step tests** (`tests/plugin/test_mutation.py`) pin the rollback's order; they stay
+  green.
+- **Every schema change moves the Codex sizes.** The stroke's normalised input has 661 bytes before
+  Codex strips descriptions; `amend_schemas.py` runs after each.
+- **Version first.** The plugin's hash and `serve`'s gate both read it; `install-plugin` and a Krita
+  restart at 0 unsaved, the Codex agent paused, before the probe; ask the owner.
+
 ---
 
 ## V1: Re-measure, docs, full run, close the round
@@ -2201,11 +2321,15 @@ blocks moved under it (F26).
 **Read:** `FEATURE-recovery-and-construction.md` decision 18; `ARCHITECTURE.md` whole;
 `docs/USER-GUIDE.md`; `docs/BACKLOG.md`; every done-note in this file.
 
+**Amended at X2 (2026-11-12), with the owner.** X2a comes before it, so V1 cuts 0.30.0. Its
+read-through takes `REVIEW-2026-11-12.md` F21's items no X2a change touched; its re-measure reads
+the Codex sizes again; the baseline table gains the capability count.
+
 - **Re-measure representative workflows** after the hints and fills, from the journal and the
   client's own records, as counts and timings. That reopens or closes the batch question (decision
   18).
 - **Docs.** `ARCHITECTURE.md` and `USER-GUIDE.md` read through whole; "Phase 1" language corrected
-  where it is no longer true; the README; `CHANGELOG.md`: 0.29.0; the baseline.
+  where it is no longer true; the README; `CHANGELOG.md`: 0.30.0; the baseline.
 - **The close,** as the workflow says: the release commit with the last done-note, then
   `docs: close round 2` deleting `docs/spec/`'s files, and the handoff says no round is in progress.
 - **The backlog.** Anything left open moves there, with checks nobody did by hand.

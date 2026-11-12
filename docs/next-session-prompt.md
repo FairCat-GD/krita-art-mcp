@@ -1,62 +1,49 @@
-Read everything, as X2's block says: every session's code and tests so far, cold, against
-`FEATURE-recovery-and-construction.md` and `docs/spec/SESSIONS.md`; `REVIEW-2026-11-06.md` whole,
-for the findings the owner left open; then CLAUDE.md, docs/ARCHITECTURE.md's overview, invariants
-and baseline, your block in docs/spec/SESSIONS.md and S1's done-note, then this file, and do
-Session X2: the architecture review of construction. It changes no product code and cuts no
-version.
+Read `REVIEW-2026-11-12.md` whole (F1–F9 and F11–F21 are your scope);
+`FEATURE-recovery-and-construction.md` decisions 1, 4, 5, 9, 10, 11, 13, 16; `ARCHITECTURE.md` *The
+tool contract* (Argument rules are written twice, Codex's limits), *The verification core*, *The
+undo ledger and history*, *Painting* (a taper), *The save*, *The server*, *Testing strategy*, and
+*Reference* K22, K51, K53, K54; then CLAUDE.md, docs/ARCHITECTURE.md's overview, invariants and
+baseline, your block in docs/spec/SESSIONS.md and X2's done-note, then this file, and do Session
+X2a: review fixes — construction.
 
 ## State you need that is not in the specs
 
 - **Round 2 is recovery and construction.**
-  - Done: R1, R2, R3, D1, F1, C1, M1, X1, X1a, E1, L1, B1, T1 and S1.
-  - Remaining, in order: X2 and V1.
-- **S1 shipped 0.28.0.** V1 cuts 0.29.0. A session X2 inserts takes the next version, and V1 moves
-  up by one.
-- **S1 and its review fixes are pushed.** `origin/main` holds everything through "review:
+  - Done: R1, R2, R3, D1, F1, C1, M1, X1, X1a, E1, L1, B1, T1, S1 and X2.
+  - Remaining, in order: X2a and V1.
+- **X2 inserted X2a.** X2a cuts 0.29.0 and V1 0.30.0. S1 shipped 0.28.0.
+- **X2 is committed locally, not pushed.** `origin/main` holds everything through "review:
   transform refusals read an unwaited tree, and 7 smaller". List `origin/main..HEAD` before any
   push, and push only on the owner's approval.
-- **What S1 built that X2 should attack:**
-  - **The frame takes an op's own witness.** `Mutation.run(..., witness_of=...)` pushes or seals
-    the pixel step where a target's diff would, and `_pixel` and `_unnamed` use it for an unpushed
-    step. Only `affine.py` passes one.
-  - **The witness rect is predicted.** `affine.mapped` gives where an operation takes each paint
-    layer's bounds, widened by `REACH` (3) times the scale plus `SLACK` (4). Both digests are real
-    reads over it, and the judge refuses, rolled back, a layer whose new bounds leave it. A digest
-    padded with the default pixel failed live: a resample leaves colour under alpha 0 outside a
-    layer's exact bounds (K54).
-  - **`history.step` takes a reversed move as foreign** when Krita named the step as expected on
-    its other side: another step of that name moved (Krita's Layer > Transform shares the
-    transforms' names). A step Krita did not take stays retryable.
-  - **The receipt's `data` is a flat `anyOf` of four shapes,** and `amend_schemas` and the copy
-    test take every non-null branch. No other tool has more than one.
-  - **Refusals before the marker:** masks and other kinds, transform masks in the subtree or on a
-    group above, lock flags, styles, clone sources, more than 50 nodes, cumulative undo, a filter
-    Krita lacks; then, from the waited tree, empty bounds, a change of nothing (the shear through a
-    replica of Krita's `mapRect`), and reads past one for a layer or four in all. Hidden and pass-through groups are taken, as measured.
-  - **The fake** models the three operations by a nearest-pixel remap about the pivot, and its
-    `crop` reads off the canvas as zero bytes.
+- **What X2 found that X2a fixes first:**
+  - **F1, the High.** L1's four layer ops and `layer_update` read `KritaDocuments.tree`, which never
+    waits, before their first wait, and refuse, scope and judge from it. S1's review fixed exactly
+    this in `affine.run` and `transforms.translate`; copy that. The review's three runs (a
+    protected layer removed, K53's crash path, a region leak verified) are the tests to write.
+  - **The decisions to ask at the start** are in the block: F4's integral floats, F7's seal, F16's
+    `dirty`, F20's replayed receipts.
+  - **F10 is not X2a's.** The fake's per-command pixel undo goes to `BACKLOG.md` in X2a's docs pass.
 - **What turned out wrong or harder:**
-  - **Krita's exact bounds skip alpha-0 pixels,** though a resample leaves colour there.
-  - **An ORA's layers load with their x and y as `offset_px`.**
-  - **Probe wall time** read 257 s twice under machine load; the run after the review read 149.6 s,
-    and S1's checks alone take about 4 s.
+  - **The cold read's second wave was not wholly cold:** the outcomes brief carried three of the
+    first wave's questions; the review says which.
 - **Decisions written down nowhere else:**
   - **Plan reviews are the owner's call:** Opus at X1a, E1, L1, B1, T1 and S1. Propose one when a
-    plan reworks a heavily tested path, and ask which model.
-  - **Live runs** were allowed at 0 unsaved with the Codex agent paused, for S1; ask again.
-- **Baseline** (ARCHITECTURE's table, v0.28.0):
+    plan reworks a heavily tested path, and ask which model. X2a's F1 reworks five ops' starts.
+  - **Live runs** were allowed at 0 unsaved with the Codex agent paused, for X2's baseline; ask
+    again.
+- **Baseline** (ARCHITECTURE's table, v0.28.0, measured again at X2):
   - `verify`: 6 stages, all PASS; 1152 server tests and 1204 plugin-core tests, 0 skipped;
-  - `probe`: 226 PASS, 0 FAIL, 25 MEASURED, 149.6 s with 0 documents open, the journal check
+  - `probe`: 226 PASS, 0 FAIL, 25 MEASURED, 150.1 s with 0 documents open, the journal check
     reading 841 dispatched lines;
   - 25 tools, 25 schema files, 30 error codes, 39 bridge ops, 17 capabilities, instructions 3,371
-    characters.
-- **Not done:** nothing from S1's block.
+    characters;
+  - Codex's renderer: the stroke's normalised input 4,339 of 5,000 bytes, 661 to spare.
+- **Not done:** nothing from X2's block.
 
 ## Watch for
 
-- **A review session writes `docs/spec/REVIEW-<date>.md` and nothing else of product code.** In
-  plan mode the owner picks which findings become scope: amendments to V1, or an inserted session.
-  Name functions, not lines, in the amendments (F26).
+- **A retryable refusal is a change of nothing,** proven at its raise: the AST scan finds each new
+  one, and `tests/plugin/test_outcomes.py` pins it in `RETRYABLE` with its own test.
 - **The standing traps:**
   - **Nothing private in any file or commit message.** Last before each commit: draft the
     message into `"$(git rev-parse --git-dir)/COMMIT_DRAFT"`, run `verify` with it, commit
