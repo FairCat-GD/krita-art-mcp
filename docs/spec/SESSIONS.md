@@ -2153,6 +2153,28 @@ uses X1a's helper for schema-side rules (F10). S1 ships 0.28.0.
   - probe 226 PASS (+10), 0 FAIL, 25 MEASURED, 257.4 s with 0 documents open;
   - 25 tools, 25 schema files, 30 error codes, 39 ops, 17 capabilities (+3);
   - instructions 3,371 characters (-4); `api_version` 0.4.0.
+- **Review (`/code-review high`), 8 findings: 8 fixed.**
+  - **Bounds-dependent refusals read the unwaited first tree,** so a layer Krita was still settling
+    could be refused `empty` or `no_change`, not retryable. They now read the tree taken after the
+    before-read; bounds that moved since the first read are refused for a retry.
+  - **The total read cap guarded bytes no longer kept.** All witness rects together may now take
+    four reads (`MAX_TOTAL_PIXELS`), seconds at the measured 0.04 s per 16 Mpx; each still one.
+  - **The history rule was a list of three labels.** It is general now: a move reversed after Krita
+    named the step as expected on its other side moved another step of that name, so it is foreign,
+    not retryable. A step Krita did not take shows another name and stays retryable. A first form,
+    any reversed witnessed step, broke that retryable case and was dropped.
+  - **The guide misstated what that rule changed;** it says it now.
+  - **The fake's `crop` had two paths;** it has one.
+  - **The probe's undo-label helper was copied;** `probe/common.py` holds `undo_labels`.
+  - **A needless copy of the operation and a wrapped condition** are gone.
+  - **Paragraph comments** in `affine.py`, the probe and the fake are one line each.
+  - **Falsified:** the refusal on the unwaited read, the total cap, the rule for a stroke and for a
+    transform. Each failed at its own test, the tree restored byte for byte.
+  - **Checked live:** `install-plugin`, a Krita restart at 0 unsaved, `doctor` 6 of 6.
+  - **Numbers after the review:**
+    - 1152 server tests, 1204 plugin tests (+3);
+    - probe 226 PASS, 0 FAIL, 25 MEASURED, 149.6 s with 0 documents open; the journal check read
+      841 lines. The 257 s runs before it were the machine's load.
 
 ---
 

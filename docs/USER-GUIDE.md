@@ -244,7 +244,8 @@ layers inside it turn with it).
   alpha-locked layer, which you unlock with `krita_layer_update` first; a styled layer
   (`layer_style`); a layer a clone layer shows (`clone_source`); an empty layer; a change of
   nothing (`no_change`); more than 50 layers and groups (`too_many_nodes`); reads past 8192 × 8192
-  (`too_large`); and Krita's cumulative undo.
+  for one layer, or four times that for all of them (`too_large`); and Krita's cumulative undo. A
+  layer whose bounds Krita was still settling as the call began is refused for a retry.
 
 **Try a whole alternative on a branch.** `krita_document_duplicate` saves the document to a new
 `.kra` path inside a root, verifies the file by reopening it, as a save does, and opens that file
@@ -366,9 +367,10 @@ explicit recipes. A source's `baseline_id` shows the document as opened beside i
 never below the last protection change. Layer and mask creation, duplicates, reorders and
 removals, selection commits, blend changes, strokes and fills, on layers and masks, undo; other
 property changes cannot. A reorder's steps move together: a count that would split one is refused
-with the count to ask for, in `details.steps_needed`. A scale, rotate or shear you make with
-Krita's own Layer > Transform carries the same name as the bridge's, so when one of yours lies above
-the bridge's step, history stops there for good (`INVALID_ARGUMENT`, not a retry).
+with the count to ask for, in `details.steps_needed`. A step you make in Krita can carry the same
+name as one of the bridge's, as Layer > Transform's do. When an undo or redo moved such a step of
+yours and put it back, history stops there as not the bridge's (`INVALID_ARGUMENT`), with no retry
+offered, since a retry would move yours again.
 
 **9. Save to a new path.** The file is written beside the path, reopened in Krita, compared, and only
 then moved into place. It never overwrites.

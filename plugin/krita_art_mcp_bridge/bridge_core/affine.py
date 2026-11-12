@@ -40,6 +40,9 @@ MAX_SIZE = 16384
 MAX_TURN = 360
 MAX_SHEAR = 45
 MAX_NODES = 50
+# All the witness rects together, each read up to three times: 16 Mpx read and hashed in about
+# 0.04 s on 5.3.4.1, so this stays seconds inside the server's wait.
+MAX_TOTAL_PIXELS = 4 * MAX_READ_PIXELS
 # The node types a transform takes, and holds, as Node.type() names them.
 TAKES = {"paintlayer", "grouplayer"}
 # A filter reaches at most this many source pixels past an edge (Lanczos3), and a few more
@@ -105,20 +108,11 @@ def run(
         message = "A layer style would not follow the transform, so a styled layer is refused."
         raise BridgeError("UNSUPPORTED_CAPABILITY", message, False, details)
     refuse_clone_source(effects, inside, "moves such clones when their source is transformed")
-    bounds = node["bounds_px"]
-    if bounds["width"] <= 0 or bounds["height"] <= 0:
-        details = {"layer_id": layer_id, "reason": "empty"}
-        message = "The layer shows nothing, so it has no bounds to transform about."
-        raise BridgeError("INVALID_ARGUMENT", message, False, details)
-    _refuse_no_change(operation, bounds, layer_id)
     refuse_cumulative(port, "transform")
     if kind == SCALE and operation["filter"] not in port.filter_strategies():
         details = {"layer_id": layer_id, "reason": "filter", "filter": operation["filter"]}
         message = "This Krita has no such filter."
         raise BridgeError("UNSUPPORTED_CAPABILITY", message, False, details)
-    pivot = [bounds["x"] + bounds["width"] / 2, bounds["y"] + bounds["height"] / 2]
-    devices = [one for one in first["nodes"] if one["id"] in inside and one["type"] == "paintlayer"]
-    rects = _rects(devices, operation, bounds, pivot, layer_id)
     size = info["size_px"]
     canvas = verification.scope(verification.FULL, first, layer_id, size)
     reads = mutation.verifiable(handle, info, effects, verification.FULL, canvas)
@@ -136,18 +130,28 @@ def run(
     frame.read()
     # Read once Krita is idle, so a change it was still applying is not taken for this one.
     before = port.tree(document)
-    if mutation.watched(before) != mutation.watched(first) or _bounds(before, inside) != _bounds(
-        first, inside
-    ):
+    moved = mutation.watched(before) != mutation.watched(first)
+    if moved or _bounds(before, inside) != _bounds(first, inside):
         details = {"layer_id": layer_id}
         message = "The document changed as the call began; nothing was changed. Retry."
         raise BridgeError("INTERNAL_ERROR", message, True, details)
+    # The bounds Krita scales and pivots on, read once it is idle.
+    bounds = next(one for one in before["nodes"] if one["id"] == layer_id)["bounds_px"]
+    if bounds["width"] <= 0 or bounds["height"] <= 0:
+        details = {"layer_id": layer_id, "reason": "empty"}
+        message = "The layer shows nothing, so it has no bounds to transform about."
+        raise BridgeError("INVALID_ARGUMENT", message, False, details)
+    _refuse_no_change(operation, bounds, layer_id)
+    pivot = [bounds["x"] + bounds["width"] / 2, bounds["y"] + bounds["height"] / 2]
+    devices = [
+        one for one in before["nodes"] if one["id"] in inside and one["type"] == "paintlayer"
+    ]
+    rects = _rects(devices, operation, bounds, pivot, layer_id)
     kept = [Kept(port, document, one, rects[one["id"]]) for one in devices]
-    sent = {**operation}
     loose = {one: {"offset_px"} for one in inside}
 
     def change(steps: mutation.Steps) -> dict[str, Any]:
-        port.transform_node(document, layer_id, sent, pivot)
+        port.transform_node(document, layer_id, operation, pivot)
         port.refresh(document)
         after: dict[str, Any] = port.tree(document)
         return after
@@ -222,9 +226,7 @@ def run(
 
 
 class Kept:
-    # A paint layer's bounds and its own bytes' digest over a rect that holds where it is and
-    # where the operation takes it. A resample leaves colour under alpha 0 outside a layer's
-    # exact bounds (K54), so only a read tells what a rect holds.
+    # A paint layer's bounds, and a digest read over where it is and goes: never padded (K54).
     def __init__(
         self, port: DocumentsPort, document: Any, node: dict[str, Any], rect: dict[str, int] | None
     ) -> None:
@@ -385,8 +387,7 @@ def _rects(
     pivot: list[float],
     layer_id: str,
 ) -> dict[str, dict[str, int] | None]:
-    # Each paint layer's witness rect, or None for an empty one, which stays empty. Each is
-    # read before and after the change, so each must fit one read, and all of them together.
+    # Each paint layer's witness rect, or None for an empty one, which stays empty.
     rects: dict[str, dict[str, int] | None] = {}
     total = 0
     for device in devices:
@@ -398,12 +399,13 @@ def _rects(
         assert rect is not None
         rects[device["id"]] = rect
         total += _area(rect)
-        if _area(rect) > MAX_READ_PIXELS or total > MAX_READ_PIXELS:
+        if _area(rect) > MAX_READ_PIXELS or total > MAX_TOTAL_PIXELS:
             details = {
                 "layer_id": layer_id,
                 "reason": "too_large",
                 "rect": rect,
                 "max_read_pixels": MAX_READ_PIXELS,
+                "max_total_pixels": MAX_TOTAL_PIXELS,
             }
             message = "The transform's reads would pass one read; Phase 1 cannot verify it."
             raise BridgeError("UNSUPPORTED_CAPABILITY", message, False, details)

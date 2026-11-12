@@ -33,16 +33,16 @@ Krita restart and a restart of the MCP client.
   - a locked, alpha-locked or styled layer, or a clone layer's source;
   - an empty layer, or a change of nothing (a scale to the layer's own size, or a shear too small to
     move an edge, which Krita would skip);
-  - more than 50 layers, or reads past one;
+  - more than 50 layers, or reads past one for a layer or four for all of them;
   - Krita's cumulative undo, or a filter Krita lacks.
 - **The capabilities `layer.scale`, `layer.rotate` and `layer.shear`**, true.
 
 ### Changed
 
-- **`krita_history_step` stops for good at the owner's own transform.** Krita's Layer > Transform
-  names its steps as the bridge's are named. When a move undid one, could not confirm it and put it
-  back, history now stops there as not the bridge's, rather than asking for a retry that would do
-  the same again.
+- **`krita_history_step` stops for good at the owner's own step of the bridge's name.** Krita's
+  steps can carry the bridge's names, Layer > Transform's among them. When a move reversed such a
+  step, history now stops there as not the bridge's, rather than asking for a retry that would move
+  it again. A step Krita did not take stays retryable.
 - **The server instructions** say to copy a layer before `krita_layer_transform` alters it. 3,371
   characters.
 

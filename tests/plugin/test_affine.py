@@ -734,3 +734,38 @@ def test_pixels_past_the_witness_rect_are_refused_and_undone(
     assert body["code"] == "INTERNAL_ERROR" and details["layer_ids"] == [PAINT]
     assert details["rolled_back"] is True and details["rollback_verified"] is True
     assert world.own(PAINT) == own and world.index() == 0 and not handle.unsafe
+
+
+def test_a_layer_read_empty_before_krita_was_idle_is_refused_for_a_retry(world: World) -> None:
+    # The first read is not waited for, so what it says of the bounds is never refused on.
+    document_id, handle = world.document()
+    node = world.port._layer(1, PAINT)
+    node["bounds_px"] = _box(0, 0, 0, 0)
+
+    def settled() -> None:
+        node["bounds_px"] = _box(2, 2, 4, 2)
+
+    world.port.on_read.append(settled)
+    body = world.refused(OP, _args(document_id, PAINT, ROTATE))
+    assert body["code"] == "INTERNAL_ERROR" and body["retryable"] is True
+    assert world.port.reshaped == [] and not handle.dirty
+
+
+def test_layers_whose_reads_pass_the_total_together_are_refused(
+    world: World, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    document_id, handle = world.document()
+    group = world.node(GROUP)["bounds_px"]
+    pivot = [group["x"] + group["width"] / 2, group["y"] + group["height"] / 2]
+    areas = []
+    for layer in (INNER, SHADE):
+        old = world.node(layer)["bounds_px"]
+        rect = _union([old, affine.mapped(old, ROTATE, group, pivot)])
+        areas.append(rect["width"] * rect["height"])
+    # Each fits alone; together they pass.
+    monkeypatch.setattr(affine, "MAX_TOTAL_PIXELS", sum(areas) - 1)
+    assert max(areas) <= affine.MAX_TOTAL_PIXELS
+    body = world.refused(OP, _args(document_id, GROUP, ROTATE))
+    assert body["details"]["reason"] == "too_large"
+    assert body["details"]["max_total_pixels"] == affine.MAX_TOTAL_PIXELS
+    assert world.port.reshaped == [] and not handle.dirty

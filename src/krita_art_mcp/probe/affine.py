@@ -5,7 +5,7 @@ from typing import Any
 import numpy as np
 from mcp import Client
 
-from krita_art_mcp.bridge_client import BridgeClient, Done
+from krita_art_mcp.bridge_client import BridgeClient
 from krita_art_mcp.probe import fixtures
 from krita_art_mcp.probe.common import (
     by_name,
@@ -13,11 +13,11 @@ from krita_art_mcp.probe.common import (
     capture_composite,
     close,
     guard,
-    harness_call,
     history_args,
     inspect_data,
     open_working,
     protect,
+    undo_labels,
 )
 from krita_art_mcp.probe.report import Report, code, differs, tool
 
@@ -43,13 +43,6 @@ MARKED = {"x": 8, "y": 8, "width": 12, "height": 8}
 
 def _args(document_id: str, layer_id: str, operation: dict[str, Any]) -> dict[str, Any]:
     return {"guard": guard(document_id), "layer_id": layer_id, "operation": operation}
-
-
-def _labels(client: BridgeClient, document_id: str) -> tuple[Any, Any]:
-    found = harness_call(client, "harness.undo_labels", document_id=document_id)
-    if not isinstance(found, Done):
-        return None, None
-    return found.result.get("undo"), found.result.get("redo")
 
 
 def _reason(refused: dict[str, Any]) -> Any:
@@ -143,7 +136,7 @@ async def _scale(
     )
     data = scaled.get("data") or {}
     after = await capture_composite(a, document_id)
-    undo, _ = _labels(client, document_id)
+    undo, _ = undo_labels(client, document_id)
     grown = {"x": 2, "y": 4, "width": 24, "height": 16}
     history, detail = await _undone_and_redone(a, document_id, start, after)
     report.check(
@@ -171,7 +164,7 @@ async def _rotate(
     )
     data = turned.get("data") or {}
     after = await capture_composite(a, document_id)
-    undo, _ = _labels(client, document_id)
+    undo, _ = undo_labels(client, document_id)
     upright = {"x": 10, "y": 6, "width": 8, "height": 12}
     history, detail = await _undone_and_redone(a, document_id, start, after)
     report.check(
@@ -199,7 +192,7 @@ async def _shear(
     )
     data = sheared.get("data") or {}
     after = await capture_composite(a, document_id)
-    undo, _ = _labels(client, document_id)
+    undo, _ = undo_labels(client, document_id)
     bounds = data.get("bounds_after_px") or {}
     history, detail = await _undone_and_redone(a, document_id, start, after)
     report.check(
@@ -262,8 +255,7 @@ async def _filters(report: Report, a: Client, document_id: str, names: dict[str,
 
 
 async def _order(report: Report, a: Client, document_id: str, names: dict[str, str]) -> None:
-    # The bridge predicts Krita's no-op shear by shearing x, then y: this shear keeps the marked
-    # layer's size under either other order, so only a change here shows the order is Krita's.
+    # Only Krita's order, x then y, changes the marked layer's size under this shear.
     operation = {"type": "shear", "degrees": [-4, 3.6]}
     sheared = await tool(a, TOOL, _args(document_id, names["probe mark"], operation))
     undone = await tool(a, "krita_history_step", history_args(document_id, "undo"))
@@ -304,9 +296,9 @@ async def _refusals(
         a, TOOL, _args(document_id, names["probe base"], {"type": "rotate", "degrees": 45})
     )
     same = await tool(a, TOOL, _args(document_id, mark, {"type": "scale", "size_px": [12, 8]}))
-    labels = _labels(client, document_id)
+    labels = undo_labels(client, document_id)
     tiny = await tool(a, TOOL, _args(document_id, mark, {"type": "shear", "degrees": [0.5, 0]}))
-    after = _labels(client, document_id)
+    after = undo_labels(client, document_id)
     found = {
         "translated": (code(moved), _reason(moved)),
         "masked": (code(held), _reason(held)),

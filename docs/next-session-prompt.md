@@ -12,8 +12,9 @@ version.
   - Remaining, in order: X2 and V1.
 - **S1 shipped 0.28.0.** V1 cuts 0.29.0. A session X2 inserts takes the next version, and V1 moves
   up by one.
-- **S1 is not pushed.** `origin/main` holds everything through "docs: the handoff says T1 is
-  pushed". List `origin/main..HEAD` before any push, and push only on the owner's approval.
+- **S1 and its review fixes are pushed.** `origin/main` holds everything through "review:
+  transform refusals read an unwaited tree, and 7 smaller". List `origin/main..HEAD` before any
+  push, and push only on the owner's approval.
 - **What S1 built that X2 should attack:**
   - **The frame takes an op's own witness.** `Mutation.run(..., witness_of=...)` pushes or seals
     the pixel step where a target's diff would, and `_pixel` and `_unnamed` use it for an unpushed
@@ -23,30 +24,30 @@ version.
     reads over it, and the judge refuses, rolled back, a layer whose new bounds leave it. A digest
     padded with the default pixel failed live: a resample leaves colour under alpha 0 outside a
     layer's exact bounds (K54).
-  - **`history.step` takes a `REVERSED` move of "Scale Layer", "Rotate Layer" or "Shear Layer" as
-    foreign:** Krita's own menu pushes the same names, and the fingerprint does not see pixels.
+  - **`history.step` takes a reversed move as foreign** when Krita named the step as expected on
+    its other side: another step of that name moved (Krita's Layer > Transform shares the
+    transforms' names). A step Krita did not take stays retryable.
   - **The receipt's `data` is a flat `anyOf` of four shapes,** and `amend_schemas` and the copy
     test take every non-null branch. No other tool has more than one.
   - **Refusals before the marker:** masks and other kinds, transform masks in the subtree or on a
-    group above, lock flags, styles, clone sources, empty bounds, a change of nothing (the shear
-    through a replica of Krita's `mapRect`), more than 50 nodes, reads past one, cumulative undo, a
-    filter Krita lacks. Hidden and pass-through groups are taken, as measured.
+    group above, lock flags, styles, clone sources, more than 50 nodes, cumulative undo, a filter
+    Krita lacks; then, from the waited tree, empty bounds, a change of nothing (the shear through a
+    replica of Krita's `mapRect`), and reads past one for a layer or four in all. Hidden and pass-through groups are taken, as measured.
   - **The fake** models the three operations by a nearest-pixel remap about the pivot, and its
     `crop` reads off the canvas as zero bytes.
 - **What turned out wrong or harder:**
   - **Krita's exact bounds skip alpha-0 pixels,** though a resample leaves colour there.
   - **An ORA's layers load with their x and y as `offset_px`.**
-  - **Probe wall time** was 257 s, against 145 s at 0.27.0. The machine ran at a load average of
-    about 3.4, and the benchmark and save stages took most of it; S1's checks alone took 3.7 s. A
-    run on a quiet machine would say whether the baseline moved.
+  - **Probe wall time** read 257 s twice under machine load; the run after the review read 149.6 s,
+    and S1's checks alone take about 4 s.
 - **Decisions written down nowhere else:**
   - **Plan reviews are the owner's call:** Opus at X1a, E1, L1, B1, T1 and S1. Propose one when a
     plan reworks a heavily tested path, and ask which model.
   - **Live runs** were allowed at 0 unsaved with the Codex agent paused, for S1; ask again.
 - **Baseline** (ARCHITECTURE's table, v0.28.0):
-  - `verify`: 6 stages, all PASS; 1152 server tests and 1201 plugin-core tests, 0 skipped;
-  - `probe`: 226 PASS, 0 FAIL, 25 MEASURED, 257 s with 0 documents open under load, the journal
-    check reading 841 dispatched lines;
+  - `verify`: 6 stages, all PASS; 1152 server tests and 1204 plugin-core tests, 0 skipped;
+  - `probe`: 226 PASS, 0 FAIL, 25 MEASURED, 149.6 s with 0 documents open, the journal check
+    reading 841 dispatched lines;
   - 25 tools, 25 schema files, 30 error codes, 39 bridge ops, 17 capabilities, instructions 3,371
     characters.
 - **Not done:** nothing from S1's block.

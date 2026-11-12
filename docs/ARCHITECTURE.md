@@ -869,9 +869,11 @@ bounds (K54).
   painting is); a mask or another kind in the subtree (`node_type`), a transform mask in it or on a
   group holding it (`transform_mask`), a locked or alpha-locked layer, a styled one, a clone's
   source (`layers.refuse_clone_source`, fed by `effects` with reach, since Krita moves those
-  clones); an empty target; a change of nothing, a scale to the bounds' own size or a shear whose
-  replica of Krita's `mapRect` keeps the size (Krita then pushes no step); more than 50 nodes;
-  reads past one, each layer's or all of them together; cumulative undo; a filter Krita lacks.
+  clones); more than 50 nodes; cumulative undo; a filter Krita lacks. Then, from the tree read once
+  Krita is idle after the before-read (bounds that moved since the first read are refused,
+  retryable): an empty target; a change of nothing, a scale to the bounds' own size or a shear whose
+  replica of Krita's `mapRect` keeps the size (Krita then pushes no step); a witness rect past one
+  read, or all of them past four (`MAX_TOTAL_PIXELS`, seconds at the measured 0.04 s per 16 Mpx).
 - **The witness.** Each paint layer in the subtree gets a rect before the change: its bounds united
   with where the operation takes them about the pivot (`affine.mapped`), widened by a filter's
   reach, three source pixels times the scale, and four more. Its bytes there are hashed before and
@@ -1181,10 +1183,12 @@ duplicate's attach, a reorder's adds and a translate's mask too, measured), "Rem
 remove, and a reorder's first step), "Composition Mode Change", "Scripted Brush Stroke", and an
 unnamed step for a selection and for a transform mask's params (`fromXML` names its stroke after a
 bare command, measured), and "Scale Layer", "Rotate Layer" and "Shear Layer", one under each of
-`layer.transform.scale`, `.rotate` and `.shear` (measured). Krita's own Layer > Transform menu names
-its steps the same, and the fingerprint does not see pixels, so the witness alone tells them apart:
-a history move that undid such a step and could not confirm it, then put it back, stops history as
-foreign, not retryable, since a retry would only undo the owner's step again. They
+`layer.transform.scale`, `.rotate` and `.shear` (measured). Krita's own steps can carry the bridge's
+names, Layer > Transform's among them, and the fingerprint does not see pixels, so the witness alone
+tells them apart. A history move reversed after Krita named the step as expected on its other side
+moved a step of that name that was not the bridge's: it stops history as foreign, not retryable,
+since a retry would move it again. A step Krita did not take shows another name there and stays
+retryable. They
 are read only by `move`, so on a localised Krita ordinary calls complete, `krita_history_step`
 refuses every step as not the bridge's, and any change that needs a rollback ends in
 `ROLLBACK_FAILED` and an unsafe document. English is a requirement until the backlog's item lands.
@@ -1518,7 +1522,8 @@ Each has its detail in `docs/BACKLOG.md`, or in `docs/spec/SESSIONS.md` where ro
 - Labels are English; region scope is the pixel engine only; filters are classed by type.
 - Selection steps and a translate's params steps are confirmed by state alone.
 - Scale, rotate and shear take no masks and no layer kinds but paint layers and groups, are not
-  limited by the selection, and stop history for good at the owner's own transform of the same name.
+  limited by the selection.
+- History stops for good at an owner's step of the bridge's name that a move reversed.
 - Undoing the attach of a copied transform mask crashes Krita (K53), so a layer holding one is not
   duplicated. An ORA drops a translate, so such a save is refused.
 - Erasing, a single dab and antialiasing off are refused.
@@ -1702,8 +1707,8 @@ depend on it: 87 open documents cost about 50 s more.
 |---|---|
 | `uv run scripts/verify.py` | 6 stages, all PASS |
 | Server tests (3.12) | 1152 passed, 0 skipped |
-| Plugin-core tests (3.10) | 1201 passed, 0 skipped |
-| `uv run krita-art-mcp probe` | 226 PASS, 0 FAIL, 25 MEASURED; 257 s under a load average of 3.4, about 145 s on a quiet machine at 0.27.0; the scale, rotate and shear checks take about 4 s |
+| Plugin-core tests (3.10) | 1204 passed, 0 skipped |
+| `uv run krita-art-mcp probe` | 226 PASS, 0 FAIL, 25 MEASURED; about 150 s |
 | `uv run krita-art-mcp doctor` | 6 steps, all PASS, with a root allowed |
 | Registered tools | 25 |
 | Schema files | 25 |

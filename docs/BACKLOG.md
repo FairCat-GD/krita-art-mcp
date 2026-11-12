@@ -135,7 +135,7 @@ contract", "Phase N" and "review N" mean.
   - a locked, alpha-locked or styled layer, and a clone's source, whose clones Krita moves;
   - a transform limited to the selection, which `scaleNode` and its kin cannot take (libkis passes
     none), and a pivot other than the bounds' centre;
-  - a scale, rotate or shear of more than 50 layers, or past one read.
+  - a scale, rotate or shear of more than 50 layers, or past one read for a layer or four in all.
   - Krita's own Layer > Transform steps share the bridge's labels, so history stops for good at
     one above the bridge's; a label of the bridge's own cannot be set through libkis.
 - **An edge stroke that once painted nothing** (0.25.0). In one probe run of three, the

@@ -11,7 +11,7 @@ from mcp import Client
 from PIL import Image
 
 from krita_art_mcp import paths
-from krita_art_mcp.bridge_client import BridgeClient
+from krita_art_mcp.bridge_client import BridgeClient, Done
 from krita_art_mcp.probe import fixtures
 from krita_art_mcp.probe.report import tool
 from krita_art_mcp.tools.saving import file_sha256
@@ -77,6 +77,14 @@ def history_args(document_id: str, action: str, steps: int = 1) -> dict[str, Any
 
 def harness_call(client: BridgeClient, op: str, **args: Any) -> Any:
     return client.call(op, args, request_id=str(uuid.uuid4()))
+
+
+def undo_labels(client: BridgeClient, document_id: str) -> tuple[Any, Any]:
+    # What Krita's Undo and Redo actions name, or (None, None) when the call fails.
+    found = harness_call(client, "harness.undo_labels", document_id=document_id)
+    if not isinstance(found, Done):
+        return None, None
+    return found.result.get("undo"), found.result.get("redo")
 
 
 def open_args(source: Path, mode: str, work: Path | None = None, **extra: Any) -> dict[str, Any]:

@@ -5,7 +5,7 @@ from typing import Any
 import numpy as np
 from mcp import Client
 
-from krita_art_mcp.bridge_client import BridgeClient, Done
+from krita_art_mcp.bridge_client import BridgeClient
 from krita_art_mcp.probe import fixtures
 from krita_art_mcp.probe.common import (
     brush_colour,
@@ -14,11 +14,11 @@ from krita_art_mcp.probe.common import (
     capture_composite,
     close,
     guard,
-    harness_call,
     history_args,
     inspect_data,
     open_working,
     protect,
+    undo_labels,
 )
 from krita_art_mcp.probe.report import Report, code, differs, tool
 
@@ -36,13 +36,6 @@ def _args(document_id: str, layer_id: str, by: list[int]) -> dict[str, Any]:
         "layer_id": layer_id,
         "operation": {"type": "translate", "by_px": by},
     }
-
-
-def _labels(client: BridgeClient, document_id: str) -> tuple[Any, Any]:
-    found = harness_call(client, "harness.undo_labels", document_id=document_id)
-    if not isinstance(found, Done):
-        return None, None
-    return found.result.get("undo"), found.result.get("redo")
 
 
 async def _moved(a: Client, document_id: str) -> dict[str, Any]:
@@ -107,7 +100,7 @@ async def _first(
     data = made.get("data") or {}
     after = await capture_composite(a, document_id)
     own_after = await capture(a, document_id, WHOLE, "layer", paint)
-    undo, _ = _labels(client, document_id)
+    undo, _ = undo_labels(client, document_id)
     expected = None
     if before is not None:
         expected = before.copy()

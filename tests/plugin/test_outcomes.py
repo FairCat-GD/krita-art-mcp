@@ -12,6 +12,7 @@ from bridge_core import (
     documents,
     files,
     harness,
+    history,
     jobs,
     log,
     opening,
@@ -1129,6 +1130,22 @@ def test_a_step_krita_did_not_take_is_retryable_and_changed_nothing(world: World
     body = world.failure("history.step", world.history_args(document_id))
     assert body["retryable"] is True and _outcome(body) == NOT_APPLIED
     assert handle.dirty is False and len(handle.ledger.steps) == before
+
+
+def test_a_step_of_the_same_name_not_the_bridges_stops_history_without_a_retry(
+    world: World,
+) -> None:
+    # A step named as the bridge's, made over another layer: the undo moved it, the witness
+    # showed the bridge's stroke still there, so history stops rather than ask for a retry.
+    document_id = world.document()
+    world.done("paint.stroke", world.stroke_args(document_id))
+    handle = world.registry.find(document_id)
+    before = world.port._state(1)
+    world.port.buffers[BASE][0:4] = bytes([1, 2, 3, 255])
+    world.port._push(1, history.LABELS["paint.stroke"][0], before)
+    body = world.failure("history.step", world.history_args(document_id))
+    assert body["code"] == "INVALID_ARGUMENT" and body["retryable"] is False
+    assert handle.ledger.undo_available() == 0 and not handle.unsafe
 
 
 def test_a_step_krita_lost_is_uncertain(world: World, monkeypatch: pytest.MonkeyPatch) -> None:

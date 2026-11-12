@@ -20,15 +20,13 @@ UNDO = "undo"
 REDO = "redo"
 # The names Krita's Undo and Redo actions give each step an op pushes, in Krita's order (K7), as
 # measured on Krita 5.3.4 in English; any other name is a step the bridge did not make. A
-# selection's step and a transform mask's params change are unnamed (K53). A scale, rotate or
-# shear is labelled by its operation (K54).
+# selection's step and a transform mask's params change are unnamed (K53). Krita's own Layer >
+# Transform names its steps as a scale, rotate or shear's are named (K54).
 ADD = "Add Layer"
 REMOVE = "Remove Layer"
 SCALE = "Scale Layer"
 ROTATE = "Rotate Layer"
 SHEAR = "Shear Layer"
-# Krita's own Layer > Transform menu pushes these names too.
-SHARED = {SCALE, ROTATE, SHEAR}
 LABELS: dict[str, tuple[str, ...]] = {
     "layer.create": (ADD,),
     "layer.duplicate": (ADD,),
@@ -231,13 +229,8 @@ def handlers(registry: Registry, port: DocumentsPort, data: Path) -> dict[str, H
                     (ledger.undone if action == UNDO else ledger.redone)()
                     applied.append(ledger.steps[index])
                     continue
-                if (
-                    outcome == REVERSED
-                    and "raised" not in seen
-                    and ledger.steps[index].label in SHARED
-                ):
-                    # The move undid or redid an owner's step of the same name and put it back,
-                    # so a retry would only do so again.
+                if outcome == REVERSED and seen.get("found_label") == ledger.steps[index].label:
+                    # Krita moved a step of that name that was not this one, as a retry would.
                     outcome = FOREIGN
                 if outcome == FOREIGN:
                     # History cannot cross a step it cannot name, now or later.

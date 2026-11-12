@@ -162,8 +162,7 @@ class FakePort:
         self.transforms: dict[tuple[int, str], str] = {}
         self.transform_takes = True
         self.transform_inert = False
-        # The filters Krita lists; a scale, rotate or shear that pushes a step whose only change
-        # is the layers' offsets; and the operations each one was sent.
+        # Krita's filters, a transform whose step moves only offsets, and each transform sent.
         self.filters = sorted(affine.FILTERS)
         self.reshape_inert = False
         self.reshaped: list[dict[str, Any]] = []
@@ -646,16 +645,14 @@ class FakePort:
     def transform_node(
         self, document: Any, node_id: str, operation: dict[str, Any], pivot: list[float]
     ) -> None:
-        # Krita's scaleNode, rotateNode and shearNode: every paint layer under the node
-        # resampled about the pivot, nearest pixel, in one labelled step (K54).
+        # Krita's scaleNode and kin (K54): each paint layer resampled about the pivot, one step.
         self._marked()
         self._maybe_fail("transform_node")
         key = document.key
         node = self._layer(key, node_id)
         self.reshaped.append(copy.deepcopy(operation))
         kind = operation["type"]
-        # libkis returns silently for a mask, and a shear that keeps the bounds' size does
-        # nothing and pushes no step.
+        # A mask, or a shear that keeps the bounds' size, is skipped with no step, as libkis does.
         if node["type"] not in ("paintlayer", "grouplayer") or (
             kind == affine.SHEAR and affine.keeps_size(node["bounds_px"], operation["degrees"])
         ):
@@ -1308,8 +1305,7 @@ def _resampled(
     node: dict[str, Any],
     pivot: list[float],
 ) -> bytes:
-    # Each pixel takes the one the operation brings to its centre: the inverse map about the
-    # pivot, nearest pixel; what comes from off the canvas is transparent.
+    # Each pixel takes the nearest one the inverse map brings to its centre; off-canvas is clear.
     kind = operation["type"]
     if kind == affine.SCALE:
         bounds = node["bounds_px"]
@@ -1364,14 +1360,6 @@ def crop(canvas: bytes, width: int, rect: dict[str, int], depth: int) -> bytes:
     # Off the canvas reads as zero bytes, as a layer's default pixel does.
     height = len(canvas) // (width * depth) if width else 0
     left, right = max(0, rect["x"]), min(width, rect["x"] + rect["width"])
-    if rect["x"] >= 0 and right == rect["x"] + rect["width"]:
-        inside = (
-            canvas[((rect["y"] + row) * width + rect["x"]) * depth :][: rect["width"] * depth]
-            if 0 <= rect["y"] + row < height
-            else bytes(rect["width"] * depth)
-            for row in range(rect["height"])
-        )
-        return b"".join(inside)
     rows = []
     for row in range(rect["y"], rect["y"] + rect["height"]):
         line = bytearray(rect["width"] * depth)
