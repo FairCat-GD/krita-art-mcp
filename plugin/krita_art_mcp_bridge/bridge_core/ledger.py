@@ -11,7 +11,7 @@ from .port import DocumentsPort
 # changes in place, and adds, removes and moves change the rest.
 Nodes = tuple[tuple[str, str, str, int, tuple[int, ...] | None], ...]
 Fingerprint = tuple[Nodes, str | None]
-# A layer, a rect, and the SHA-256 of the layer's own BGRA bytes over it before and after.
+# A layer, a rect, and the SHA-256 of the layer's own bytes over it before and after.
 Witness = tuple[str, dict[str, int], str, str]
 
 

@@ -38,6 +38,27 @@ _MATRIX: dict[str, tuple[bool, str | None, str]] = {
         "and each move, verified against protection and undone on a leak. A KRA keeps it; an "
         "ORA drops it, so its save is refused.",
     ),
+    "layer.scale": (
+        True,
+        "0.28.0",
+        "A paint layer, or a group of paint layers and groups, scaled to a whole-pixel size about "
+        "its bounds' centre with one of Krita's eight filters (Node.scaleNode): its pixels are "
+        "resampled, in one undo step, verified against protection and undone on a leak.",
+    ),
+    "layer.rotate": (
+        True,
+        "0.28.0",
+        "A paint layer, or a group of paint layers and groups, turned by degrees about its "
+        "bounds' centre, Bicubic (Node.rotateNode): its pixels are resampled, in one undo step, "
+        "verified against protection and undone on a leak.",
+    ),
+    "layer.shear": (
+        True,
+        "0.28.0",
+        "A paint layer, or a group of paint layers and groups, sheared by degrees on x and y "
+        "about its bounds' centre, Bilinear (Node.shearNode): its pixels are resampled, in one "
+        "undo step, verified against protection and undone on a leak.",
+    ),
     "stroke.per_point_input": (
         False,
         None,

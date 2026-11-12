@@ -9,7 +9,7 @@ import zipfile
 import zlib
 from typing import Any
 
-from bridge_core import documents, history, nodes, saving, shapes, translations
+from bridge_core import affine, documents, history, nodes, saving, shapes, translations
 from bridge_core.bridge import Bridge
 from bridge_core.errors import BridgeError
 
@@ -162,6 +162,11 @@ class FakePort:
         self.transforms: dict[tuple[int, str], str] = {}
         self.transform_takes = True
         self.transform_inert = False
+        # The filters Krita lists; a scale, rotate or shear that pushes a step whose only change
+        # is the layers' offsets; and the operations each one was sent.
+        self.filters = sorted(affine.FILTERS)
+        self.reshape_inert = False
+        self.reshaped: list[dict[str, Any]] = []
 
     def _buffers(self, key: int) -> dict[str, bytearray]:
         own = self.own.get(key)
@@ -634,6 +639,57 @@ class FakePort:
         self._entry(key, {"label": "", "transform": (mask_id, old, new), "blend": None})
         self._set_params(key, mask_id, new)
         self._maybe_fail("set_transform_after")
+
+    def filter_strategies(self) -> list[str]:
+        return list(self.filters)
+
+    def transform_node(
+        self, document: Any, node_id: str, operation: dict[str, Any], pivot: list[float]
+    ) -> None:
+        # Krita's scaleNode, rotateNode and shearNode: every paint layer under the node
+        # resampled about the pivot, nearest pixel, in one labelled step (K54).
+        self._marked()
+        self._maybe_fail("transform_node")
+        key = document.key
+        node = self._layer(key, node_id)
+        self.reshaped.append(copy.deepcopy(operation))
+        kind = operation["type"]
+        # libkis returns silently for a mask, and a shear that keeps the bounds' size does
+        # nothing and pushes no step.
+        if node["type"] not in ("paintlayer", "grouplayer") or (
+            kind == affine.SHEAR and affine.keeps_size(node["bounds_px"], operation["degrees"])
+        ):
+            return
+        self.paintable(key, None)
+        before = self._state(key)
+        tree = self._tree(key)
+        inside = nodes.subtree(tree, node_id)
+        width, height = self.live[key]["size_px"]
+        found = {one["id"]: one for one in tree["nodes"]}
+        for one in inside:
+            layer = found[one]
+            if layer["type"] != "paintlayer":
+                continue
+            if not self.reshape_inert:
+                buffer = self._buffers(key)[one]
+                moved = _resampled(bytes(buffer), width, height, operation, node, pivot)
+                buffer[:] = moved
+                layer["bounds_px"] = _opaque(moved, width, height)
+            # Krita moves a layer's offset on a rotate or a shear (K54).
+            if kind != affine.SCALE:
+                layer["offset_px"] = [layer["offset_px"][0] + 7, layer["offset_px"][1] - 3]
+        for one in reversed(inside):
+            if found[one]["type"] == "grouplayer":
+                held = [
+                    found[child]["bounds_px"]
+                    for child in nodes.children(tree).get(one, [])
+                    if found[child]["visible"]
+                ]
+                found[one]["bounds_px"] = _span([*held, _EMPTY])
+        self._redraw(key)
+        label = history.LABELS[f"layer.transform.{kind}"][0]
+        self._push(key, label, before)
+        self._maybe_fail("transform_node_after")
 
     def _set_params(self, key: int, mask_id: str, xml: str) -> None:
         self.transforms[(key, mask_id)] = xml
@@ -1241,8 +1297,62 @@ def _fill(canvas: bytearray, size: list[int], box: dict[str, int], pixel: bytes)
         canvas[start : start + (right - left) * 4] = pixel * max(0, right - left)
 
 
+_EMPTY = {"x": 0, "y": 0, "width": 0, "height": 0}
+
+
+def _resampled(
+    buffer: bytes,
+    width: int,
+    height: int,
+    operation: dict[str, Any],
+    node: dict[str, Any],
+    pivot: list[float],
+) -> bytes:
+    # Each pixel takes the one the operation brings to its centre: the inverse map about the
+    # pivot, nearest pixel; what comes from off the canvas is transparent.
+    kind = operation["type"]
+    if kind == affine.SCALE:
+        bounds = node["bounds_px"]
+        scale_x = operation["size_px"][0] / bounds["width"]
+        scale_y = operation["size_px"][1] / bounds["height"]
+        inverse = (1 / scale_x, 0.0, 0.0, 1 / scale_y)
+    elif kind == affine.ROTATE:
+        turn = math.radians(operation["degrees"])
+        inverse = (math.cos(turn), math.sin(turn), -math.sin(turn), math.cos(turn))
+    else:
+        shear_x = math.tan(math.radians(operation["degrees"][0]))
+        shear_y = math.tan(math.radians(operation["degrees"][1]))
+        inverse = (1 + shear_x * shear_y, -shear_x, -shear_y, 1.0)
+    out = bytearray(width * height * 4)
+    for y in range(height):
+        for x in range(width):
+            dx, dy = x + 0.5 - pivot[0], y + 0.5 - pivot[1]
+            sx = math.floor(pivot[0] + inverse[0] * dx + inverse[1] * dy)
+            sy = math.floor(pivot[1] + inverse[2] * dx + inverse[3] * dy)
+            if 0 <= sx < width and 0 <= sy < height:
+                source = (sy * width + sx) * 4
+                out[(y * width + x) * 4 : (y * width + x) * 4 + 4] = buffer[source : source + 4]
+    return bytes(out)
+
+
+def _opaque(buffer: bytes, width: int, height: int) -> dict[str, int]:
+    # The exact bounds of what is not transparent.
+    xs = [i % width for i in range(width * height) if buffer[i * 4 + 3]]
+    ys = [i // width for i in range(width * height) if buffer[i * 4 + 3]]
+    if not xs:
+        return dict(_EMPTY)
+    return {
+        "x": min(xs),
+        "y": min(ys),
+        "width": max(xs) - min(xs) + 1,
+        "height": max(ys) - min(ys) + 1,
+    }
+
+
 def _span(rects: list[dict[str, int]]) -> dict[str, int]:
     found = [rect for rect in rects if rect["width"] > 0 and rect["height"] > 0]
+    if not found:
+        return dict(_EMPTY)
     left = min(rect["x"] for rect in found)
     top = min(rect["y"] for rect in found)
     right = max(rect["x"] + rect["width"] for rect in found)
@@ -1251,10 +1361,26 @@ def _span(rects: list[dict[str, int]]) -> dict[str, int]:
 
 
 def crop(canvas: bytes, width: int, rect: dict[str, int], depth: int) -> bytes:
-    rows = (
-        canvas[((rect["y"] + row) * width + rect["x"]) * depth :][: rect["width"] * depth]
-        for row in range(rect["height"])
-    )
+    # Off the canvas reads as zero bytes, as a layer's default pixel does.
+    height = len(canvas) // (width * depth) if width else 0
+    left, right = max(0, rect["x"]), min(width, rect["x"] + rect["width"])
+    if rect["x"] >= 0 and right == rect["x"] + rect["width"]:
+        inside = (
+            canvas[((rect["y"] + row) * width + rect["x"]) * depth :][: rect["width"] * depth]
+            if 0 <= rect["y"] + row < height
+            else bytes(rect["width"] * depth)
+            for row in range(rect["height"])
+        )
+        return b"".join(inside)
+    rows = []
+    for row in range(rect["y"], rect["y"] + rect["height"]):
+        line = bytearray(rect["width"] * depth)
+        if 0 <= row < height and left < right:
+            start = (row * width + left) * depth
+            line[(left - rect["x"]) * depth : (right - rect["x"]) * depth] = canvas[
+                start : start + (right - left) * depth
+            ]
+        rows.append(bytes(line))
     return b"".join(rows)
 
 

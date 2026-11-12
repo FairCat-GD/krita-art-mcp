@@ -123,6 +123,21 @@ contract", "Phase N" and "review N" mean.
     update takes only a transparency mask's `name` and `visible`);
   - a transparency mask placed below the transform mask, so it moves with the layer: a mask's
     create takes only another transparency mask as `above_id`.
+- **Scale, rotate and shear, beyond what 0.28.0 ships.** Each is refused today:
+  - a layer holding a mask. The bridge reads a mask's bounds as its layer's, as Krita reports them,
+    but a mask's selection can run past them, so a rollback could not confirm the mask's own
+    change. Reading each mask's own selection extent, and measuring every coverage, a vector
+    selection's included, would let a mask turn with its layer;
+  - other layer kinds (vector, file, fill, filter and clone layers, filter, selection and colorize
+    masks), which Krita's visitor transforms each its own way, none measured;
+  - a transform mask on the layer, whose params Krita maps through the transform so it is no longer
+    a translate's, or on a group holding it, measured once without a crash but near T1's crash;
+  - a locked, alpha-locked or styled layer, and a clone's source, whose clones Krita moves;
+  - a transform limited to the selection, which `scaleNode` and its kin cannot take (libkis passes
+    none), and a pivot other than the bounds' centre;
+  - a scale, rotate or shear of more than 50 layers, or past one read.
+  - Krita's own Layer > Transform steps share the bridge's labels, so history stops for good at
+    one above the bridge's; a label of the bridge's own cannot be set through libkis.
 - **An edge stroke that once painted nothing** (0.25.0). In one probe run of three, the
   region-scope stroke past the top-left corner, with no selection, completed but painted no pixel,
   so its check failed; the two runs around it passed. Nothing in 0.25.0 touches that path. A repeat

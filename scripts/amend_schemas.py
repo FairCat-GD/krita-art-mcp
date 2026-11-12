@@ -99,6 +99,18 @@ def _data(tool: dict[str, Any]) -> dict[str, Any]:
     return shape
 
 
+def _branches(tool: dict[str, Any]) -> list[dict[str, Any]]:
+    # Every shape a completed call's data takes; a tool whose operations report apart has more
+    # than one.
+    found: list[dict[str, Any]] = tool["outputSchema"]["properties"]["data"]["anyOf"]
+    return [shape for shape in found if shape.get("type") != "null"]
+
+
+def _completed(tool: dict[str, Any]) -> dict[str, Any]:
+    shapes = [copy.deepcopy(shape) for shape in _branches(tool)]
+    return shapes[0] if len(shapes) == 1 else {"anyOf": shapes}
+
+
 def amended(tools: dict[str, dict[str, Any]]) -> dict[str, dict[str, Any]]:
     tools = copy.deepcopy(tools)
     layers = _data(tools["krita_document_open"])["properties"]["layers"]
@@ -122,9 +134,10 @@ def amended(tools: dict[str, dict[str, Any]]) -> dict[str, dict[str, Any]]:
         "krita_layer_remove",
         "krita_layer_transform",
     ):
-        _data(tools[name])["properties"]["verification"] = copy.deepcopy(
-            _data(tools["krita_layer_update"])["properties"]["verification"]
-        )
+        for shape in _branches(tools[name]):
+            shape["properties"]["verification"] = copy.deepcopy(
+                _data(tools["krita_layer_update"])["properties"]["verification"]
+            )
     # A sample's color is exactly what a stroke's brush.color and a fill's color take.
     taken = tools["krita_paint_stroke"]["inputSchema"]["properties"]["brush"]["properties"]["color"]
     sampled = _data(tools["krita_sample"])["properties"]["samples"]["items"]["properties"]["color"]
@@ -156,9 +169,7 @@ def amended(tools: dict[str, dict[str, Any]]) -> dict[str, dict[str, Any]]:
         output["additionalProperties"] = False
         # One chain, not an allOf: Codex renders an allOf ahead of the `type` beside it.
         output["if"] = {"properties": {"status": {"const": "completed"}}}
-        output["then"] = {
-            "properties": {"data": copy.deepcopy(_data(tool)), "error": {"type": "null"}}
-        }
+        output["then"] = {"properties": {"data": _completed(tool), "error": {"type": "null"}}}
         output["else"] = {**copy.deepcopy(FAILED_RULE), "else": copy.deepcopy(PENDING_RULE)}
     return tools
 

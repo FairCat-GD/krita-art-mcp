@@ -193,6 +193,7 @@ class Mutation:
         self.ids = ids or {}
         self.noun = noun
         self.before: verification.Reading | None = None
+        self.witness_of: Callable[[], Witness | None] | None = None
 
     def read(self) -> verification.Reading:
         # A write elsewhere that Krita has not drawn yet (K42) is not read as this change.
@@ -217,9 +218,13 @@ class Mutation:
         compensate: Callable[[], bool] = lambda: False,
         tree: dict[str, Any] | None = None,
         changing: bool = True,
+        witness_of: Callable[[], Witness | None] | None = None,
     ) -> Applied:
+        # witness_of, for a pixel change of more than one layer: the witness of the first layer
+        # that moved, read now, or None when none did.
         port, handle, call = self.port, self.handle, self.call
         assert self.reads is None or self.before is not None, "the before-read comes first"
+        self.witness_of = witness_of
         # An op that names no step never reads its state, so it reads no selection either.
         start: Fingerprint = fingerprint(port, handle.document, tree) if self.labels else ((), None)
         call.mark()
@@ -278,6 +283,13 @@ class Mutation:
         applied.verdict = verification.check(
             before, after, reads.allowed, self.handle.preserve_composite_alpha
         )
+        if self.witness_of is not None:
+            found = self.witness_of()
+            if found is None:
+                applied.steps.seal()
+            else:
+                applied.steps.push(witness=found, region=applied.verdict.changed_bounds_px)
+            return
         if reads.target_id is None or reads.target_rect is None:
             return
         _, applied.diff = verification.changes(
@@ -397,8 +409,10 @@ class Mutation:
         reads = self.reads
         return (
             reads is not None
-            and reads.target_id is not None
-            and reads.target_rect is not None
+            and (
+                self.witness_of is not None
+                or (reads.target_id is not None and reads.target_rect is not None)
+            )
             and len(steps.pushed) == len(steps.labels) - 1
         )
 
@@ -415,20 +429,27 @@ class Mutation:
         port, handle, steps, reads = self.port, self.handle, applied.steps, self.reads
         document, label = handle.document, steps.labels[len(steps.pushed)]
         if self._pixel(steps):
-            assert reads is not None and reads.target_rect is not None
             before = applied.before
             assert before is not None
             port.refresh(document)
             again = verification.again(port, document, before)
             if verification.same(before, again) and back():
                 return BACK, {}
-            _, diff = verification.changes(
-                before.target, again.target, reads.target_rect, reads.channels
-            )
-            if diff is None:
-                return FAILED, {}
-            witness = self._witness(before.target, again.target, diff)
-            del again
+            if self.witness_of is not None:
+                del again
+                found = self.witness_of()
+                if found is None:
+                    return FAILED, {}
+                witness = found
+            else:
+                assert reads is not None and reads.target_rect is not None
+                _, diff = verification.changes(
+                    before.target, again.target, reads.target_rect, reads.channels
+                )
+                if diff is None:
+                    return FAILED, {}
+                witness = self._witness(before.target, again.target, diff)
+                del again
             step = Step(
                 self.op, self.call.operation_id, label, steps.state, steps.state, None, witness
             )

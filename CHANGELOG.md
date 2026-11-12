@@ -6,6 +6,46 @@ All notable changes to krita-art-mcp are documented here. The format follows
 
 ## [Unreleased]
 
+## [0.28.0] — 2026-11-12
+
+A paint layer, or a group of them, can be scaled, rotated or sheared. Krita's own Layer > Transform
+resamples it about the centre of its bounds in one undo step, and the bridge checks the whole canvas
+against protection and undoes a leak. `api_version` stays 0.4.0: operations, fields and a
+capability were added, and nothing was renamed or removed. This release needs `install-plugin`, a
+Krita restart and a restart of the MCP client.
+
+### Added
+
+- **`krita_layer_transform` scales, rotates and shears.**
+  - `{type: "scale", size_px: [w, h], filter}` makes the layer's bounds w × h px, with one of
+    Krita's eight filters, Bicubic by default.
+  - `{type: "rotate", degrees}` turns it clockwise for positive degrees, Bicubic.
+  - `{type: "shear", degrees: [x, y]}` shears x, then y, Bilinear.
+  - Each pivots on the bounds' centre (a group's shown layers'), takes every layer in a group with
+    it, hidden ones too, and is one undo step that `krita_history_step` undoes and redoes.
+  - The receipt gives `pivot_px`, `bounds_before_px`, `bounds_after_px` and the filter Krita used.
+  - Resampling loses detail: copy the layer first to keep the original.
+- **What it refuses:**
+  - a protected layer or one holding one;
+  - a layer holding a mask or a layer of another kind;
+  - a transform mask on the layer or on a group holding it (scale, rotate or shear before you
+    translate);
+  - a locked, alpha-locked or styled layer, or a clone layer's source;
+  - an empty layer, or a change of nothing (a scale to the layer's own size, or a shear too small to
+    move an edge, which Krita would skip);
+  - more than 50 layers, or reads past one;
+  - Krita's cumulative undo, or a filter Krita lacks.
+- **The capabilities `layer.scale`, `layer.rotate` and `layer.shear`**, true.
+
+### Changed
+
+- **`krita_history_step` stops for good at the owner's own transform.** Krita's Layer > Transform
+  names its steps as the bridge's are named. When a move undid one, could not confirm it and put it
+  back, history now stops there as not the bridge's, rather than asking for a retry that would do
+  the same again.
+- **The server instructions** say to copy a layer before `krita_layer_transform` alters it. 3,371
+  characters.
+
 ## [0.27.0] — 2026-11-11
 
 A layer or group can be moved by whole pixels. A transform mask on top of its masks holds the move,

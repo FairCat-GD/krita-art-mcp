@@ -1,4 +1,5 @@
 import logging
+import math
 import time
 from typing import Any
 
@@ -8,7 +9,7 @@ from ..bridge_core import log
 from ..bridge_core.errors import BridgeError
 from ..bridge_core.translations import TRANSFORM_MASK, translation
 from . import painting, selections
-from .qt import EXCLUDE_USER_INPUT, QApplication, QCoreApplication, QIcon
+from .qt import EXCLUDE_USER_INPUT, QApplication, QCoreApplication, QIcon, QPointF
 
 ANNOUNCEMENT = "krita-art-mcp: an agent is working on this document"
 ANNOUNCEMENT_MS = 1500
@@ -310,6 +311,25 @@ class KritaDocuments:
             document.waitForDone()
         if not taken:
             raise BridgeError("INTERNAL_ERROR", "Krita did not take the transform.")
+
+    def filter_strategies(self) -> list[str]:
+        return sorted(str(name) for name in Krita.instance().filterStrategies())
+
+    def transform_node(
+        self, document: Any, node_id: str, operation: dict[str, Any], pivot: list[float]
+    ) -> None:
+        node = _node(document, node_id)
+        kind = operation["type"]
+        try:
+            if kind == "scale":
+                width, height = operation["size_px"]
+                node.scaleNode(QPointF(*pivot), width, height, operation["filter"])
+            elif kind == "rotate":
+                node.rotateNode(math.radians(operation["degrees"]))
+            else:
+                node.shearNode(*operation["degrees"])
+        finally:
+            document.waitForDone()
 
     def set_selection(self, document: Any, recipe: list[tuple[Any, ...]]) -> None:
         selections.commit(document, recipe, _node)

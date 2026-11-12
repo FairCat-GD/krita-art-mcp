@@ -2048,6 +2048,112 @@ uses X1a's helper for schema-side rules (F10). S1 ships 0.28.0.
 - **These are silent no-ops on masks.** Refuse a mask target.
 - **`history.LABELS` needs each English label,** measured.
 
+**Done (2026-11-12). 0.28.0.**
+- **Decided with the owner in plan mode:**
+  - **Scale takes `size_px`,** the new size of the exact bounds, about their centre.
+  - **Targets:** a paint layer, or a group of paint layers and groups. Any mask in the subtree is
+    refused, to the backlog: the bridge reads a mask's bounds as its layer's, and its selection can
+    run past them.
+  - **Live runs and Krita restarts** at 0 unsaved, with the Codex agent paused.
+  - **An adversarial plan review by Opus** found 7 design faults, 17 gaps and 11 nits, all folded
+    in. The main ones:
+    - the receipt would have failed its own schema, since `amend_schemas` copied one `data` branch;
+    - a mask's own extent is invisible to the bridge;
+    - an offset-only no-op would have marked the document unsafe;
+    - a fixed filter margin would have failed large upscales;
+    - a shear Krita skips would have sealed history;
+    - Krita's own menu pushes the bridge's labels;
+    - the total read was unbounded;
+    - clones were never fed to the refusal, the tree was read before the wait, and nothing
+      refreshed after the call.
+- **The measurement** ran through a temporary `harness.reshape` (transform, state, read, undo,
+  redo, filters) that never shipped, on harness ORAs through a stdio `serve`:
+  - **Steps:** each operation is one step, "Scale Layer", "Rotate Layer" or "Shear Layer"; undo,
+    redo and a second undo gave back every node's bounds, offset, own bytes and the composite, in
+    15 single-layer cases, 6 group cases and 2 under translate masks. Nothing changed 4 s later.
+  - **Sense:** positive degrees turn clockwise; a positive x shear moves rows below the centre
+    right, a positive y columns right of it down.
+  - **The no-op shear:** a shear Krita's `mapRect` keeps pushed no step and changed nothing, at 7
+    thresholds; the replica agreed at each.
+  - **Offsets:** rotate and shear move a layer's offset, scale does not. A half turn of a flat rect
+    changed no byte, bounds or composite, moved the offset and pushed a step.
+  - **Bounds:** a scale lands on `size_px` about the centre for all 8 filters on flat paint; an
+    unknown filter name gave Bicubic's bytes.
+  - **Groups:** a group's bounds are its shown layers'; its layers, a hidden one too, turn about
+    its centre. Pass-through and hidden groups held every condition.
+  - **KRA:** a verified save after each operation completed. At 4096 x 4096 each operation took
+    under a second, a read and hash of 16 Mpx about 0.04 s.
+- **Shipped:**
+  - `krita_layer_transform` with `scale`, `rotate` and `shear`; `bridge_core/affine.py` (the rules,
+    the refusals, the witness rects, the judge and `back`); `transforms.py` sends each type its way.
+  - Ports `filter_strategies` and `transform_node`, each libkis call pinned to its one site.
+  - `Mutation.run`'s `witness_of`: an op's own pixel witness, pushed or sealed where a target's
+    diff is, and used for an unpushed step's rollback.
+  - `history.LABELS` keys `layer.transform.scale`, `.rotate` and `.shear`, and a `REVERSED` move of
+    one of them stops history as foreign.
+  - `layers.refuse_clone_source`, shared and given what Krita does.
+  - The receipt's `data` as a flat `anyOf` of four shapes; `amend_schemas` and the copy test take
+    every branch. The server sends `filter` "Bicubic" when it is left out.
+  - `layer.scale`, `layer.rotate` and `layer.shear`, true.
+  - The fake taught the three operations (nearest-pixel remap about the pivot, offsets, labelled
+    step, inert, silent no-op) and off-canvas reads.
+  - `probe/affine.py`, 10 checks; the read-only refusal check takes a scale too.
+- **Amendments:**
+  - **The witness is the op's, through a frame callback,** not the frame's one target read over the
+    canvas and old bounds: a group's or a layer's own bytes can stay the same while another layer
+    or the bounds move, and a rollback would then find no witness and go unsafe.
+  - **The witness rect is fixed before the change,** where the plan had none predicted. The first
+    probe run failed the leak's rollback on a layer an earlier check had turned: a Bicubic resample
+    leaves colour under alpha 0 outside a layer's exact bounds (sampled live: the marker's blue at
+    alpha 0 a pixel above them), so the plan's digest, the kept bytes padded with the default pixel,
+    was not what a read gives. Each layer's rect is now its bounds and where the operation takes
+    them, widened by three source pixels times the scale and four more, read before and after; the
+    judge refuses, rolled back, a layer whose new bounds leave it. The sense, order and factor it
+    needs are measured.
+  - **Hidden groups are taken,** where the plan refused them: their bounds were current after the
+    frame's refresh, which comes before the pivot is read.
+  - **A `REVERSED` history move of a transform label is foreign** (the review).
+  - **The capability set grows by three,** one per operation.
+  - **The frame's witness callback is tested through `test_affine.py`** (pushed, sealed, an
+    unpushed step's rollback, a raise in the rollback), not apart in `test_mutation.py`.
+- **Checked live:**
+  - `install-plugin` and a Krita restart at 0 unsaved four times: the instrument, 0.28.0, the
+    witness fix, and a comment that moved the source hash;
+  - `doctor` 6 of 6.
+- **Probe runs:**
+  - The first: 224 PASS, 2 FAIL (the leak's rollback after a turn, and its `uncertain` journal
+    line), 25 MEASURED.
+  - After the witness fix: 226 PASS, 0 FAIL, 25 MEASURED in 257.4 s with 0 documents open; the
+    journal check read 841 dispatched lines.
+  - The affine checks alone took 3.7 s. The machine ran at a load average of about 3.4, a browser
+    renderer near 60% of a core, through both runs; the benchmark and save stages, which S1 does
+    not touch, took most of the extra time.
+- **Falsified,** each once, the tree restored byte for byte:
+  - **42 mutations in product code and the probe's constants:**
+    - the rules: the size's minimum, the filter list, rotate and shear of nothing, the type
+      dispatch;
+    - the refusals: a transform mask in the subtree and on a group above, other kinds, the lock
+      flags, styles, clone sources, empty bounds, the same size, cumulative undo, a filter Krita
+      lacks, too many nodes, too large;
+    - Krita's arithmetic: the `mapRect` rounding and the shear's cross term;
+    - the call's start: the bounds compared, and the refusal retryable;
+    - the frame: the witness pushed, the unpushed step taken as a pixel one, the re-witness;
+    - the judge: offsets loose, the escape, a composite change no layer shows, a sealed step's
+      `no_change`, the leak;
+    - `back`: the bytes, the offsets loose; the witness rect's reach; the before digest read with
+      colour under alpha 0;
+    - the history rule, a capability, the marker;
+    - on the server: rotate and shear of nothing, the filter default, a schema bound, `amend_schemas`'
+      branches, the probe's labels.
+  - **One by breaking an assertion:** the scan's pinned sites.
+  - Every one failed at its own test.
+  - **The probe:** one run with its 10 new assertions inverted failed those 10 and no others.
+- **Numbers:**
+  - 1152 server tests (+17), 1201 plugin tests (+74);
+  - probe 226 PASS (+10), 0 FAIL, 25 MEASURED, 257.4 s with 0 documents open;
+  - 25 tools, 25 schema files, 30 error codes, 39 ops, 17 capabilities (+3);
+  - instructions 3,371 characters (-4); `api_version` 0.4.0.
+
 ---
 
 ## X2: Architecture review: construction

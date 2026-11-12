@@ -290,7 +290,9 @@ def test_no_example_source_carries_revision() -> None:
 @pytest.mark.parametrize("tool_name", PHASE_1_TOOLS)
 def test_the_two_copies_of_data_in_an_output_schema_agree(tool_name: str) -> None:
     output = schemas.load(tool_name)["outputSchema"]
-    assert output["properties"]["data"]["anyOf"][0] == output["then"]["properties"]["data"]
+    shapes = [one for one in output["properties"]["data"]["anyOf"] if one.get("type") != "null"]
+    copied = output["then"]["properties"]["data"]
+    assert (shapes == copied["anyOf"]) if len(shapes) > 1 else (shapes == [copied])
 
 
 def _shown(schema: dict[str, Any]) -> Iterator[dict[str, Any]]:

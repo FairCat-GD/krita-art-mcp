@@ -43,6 +43,7 @@ NOT_APPLIED, UNCERTAIN = "not_applied", "uncertain"
 # Each retryable raise in the plugin, by file and code; each has a test here that it changed
 # nothing, because that is what its not_applied rests on.
 RETRYABLE = [
+    ("bridge_core/affine.py", "INTERNAL_ERROR"),
     ("bridge_core/files.py", "FILE_EXISTS"),
     ("bridge_core/harness.py", "BUSY"),
     ("bridge_core/history.py", "INTERNAL_ERROR"),
@@ -469,6 +470,60 @@ def test_a_translate_whose_document_changed_as_it_began_changed_nothing(world: W
     assert _outcome(body) == NOT_APPLIED
     assert world.port.live[1].get("stack", []) == []
     assert all(node["type"] != "transformmask" for node in world.port._tree(1)["nodes"])
+
+
+def _painted(world: World) -> None:
+    buffer = world.port.buffers[PAINT]
+    for y in range(10, 20):
+        buffer[(y * WIDTH + 10) * 4 : (y * WIDTH + 30) * 4] = bytes([1, 2, 3, 255]) * 20
+    world.port._layer(1, PAINT)["bounds_px"] = {"x": 10, "y": 10, "width": 20, "height": 10}
+
+
+def _reshape(document_id: str, operation: dict[str, Any]) -> dict[str, Any]:
+    return {"document_id": document_id, "layer_id": PAINT, "operation": operation}
+
+
+@pytest.mark.parametrize(
+    "operation",
+    [
+        {"type": "scale", "size_px": [40, 20], "filter": "Bicubic"},
+        {"type": "rotate", "degrees": 30},
+        {"type": "shear", "degrees": [0, 20]},
+    ],
+)
+def test_a_scale_rotate_or_shear_passes_its_marker(world: World, operation: dict[str, Any]) -> None:
+    document_id = world.document()
+    _painted(world)
+    assert world.done("layer.transform", _reshape(document_id, operation))["undo_steps"] == 1
+
+
+def test_a_transform_whose_document_changed_as_it_began_changed_nothing(world: World) -> None:
+    document_id = world.document()
+    _painted(world)
+    tree = world.port._tree(1)
+
+    def renamed() -> None:
+        tree["nodes"][0]["name"] = "renamed by hand"
+
+    world.port.on_read.append(renamed)
+    operation = {"type": "rotate", "degrees": 30}
+    body = world.failure("layer.transform", _reshape(document_id, operation))
+    assert body["code"] == "INTERNAL_ERROR" and body["retryable"] is True
+    assert _outcome(body) == NOT_APPLIED
+    assert world.port.live[1].get("stack", []) == [] and world.port.reshaped == []
+
+
+def test_a_transform_refused_or_raised_before_krita_moved_is_not_applied(world: World) -> None:
+    document_id = world.document()
+    _painted(world)
+    held = {**_reshape(document_id, {"type": "rotate", "degrees": 30}), "layer_id": BASE}
+    assert _outcome(world.failure("layer.transform", held)) == NOT_APPLIED
+    world.port.fail["transform_node"] = BridgeError("INTERNAL_ERROR", "Krita did not take it.")
+    body = world.failure(
+        "layer.transform", _reshape(document_id, {"type": "rotate", "degrees": 30})
+    )
+    assert body["details"]["rollback_verified"] is True
+    assert _outcome(body) == NOT_APPLIED
 
 
 def test_a_translate_krita_refused_between_its_steps_is_not_applied(world: World) -> None:

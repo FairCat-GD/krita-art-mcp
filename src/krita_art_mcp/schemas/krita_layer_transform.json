@@ -1,6 +1,6 @@
 {
   "name": "krita_layer_transform",
-  "description": "Move a paint layer or group by whole pixels: a transform mask on top of its masks holds the move, and the layer's own pixels never change. The first translate adds the mask, then moves it (two undo steps); a later one moves the same mask (one); undo_steps says which, and krita_history_step moves them together. The whole canvas is checked against protection and a leak is undone. Refused for a protected layer, one holding one or one in a protected group, a transform mask no translate made, and under Krita's cumulative undo. A KRA keeps the move; an ORA drops it, so an ORA save is refused. Duplicate a layer before translating it: a translated layer is not copied.",
+  "description": "Move, scale, rotate or shear a paint layer or group, one operation per call; the whole canvas is checked against protection and a leak is undone, and krita_history_step moves the call's undo steps together. translate moves by whole pixels through a transform mask on top of its masks, so the layer's own pixels never change: the first adds the mask, then moves it (two undo steps), a later one moves the same mask (one). A KRA keeps the move; an ORA drops it, so an ORA save is refused. scale, rotate and shear resample the layer and every layer in it about its bounds' centre, in one undo step; resampling loses detail, so copy the layer first (krita_layer_duplicate) to keep the original. They take only paint layers and groups of them: a mask, a locked or styled layer, a clone's source and a transform mask (scale, rotate or shear before translating) are refused, and the selection does not limit them. Refused for a protected layer or one holding one (translate: or in a protected group), and under Krita's cumulative undo. Duplicate a layer before translating it: a translated layer is not copied.",
   "inputSchema": {
     "type": "object",
     "properties": {
@@ -50,6 +50,87 @@
             "required": [
               "type",
               "by_px"
+            ],
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "properties": {
+              "type": {
+                "const": "scale"
+              },
+              "size_px": {
+                "description": "[width, height] in whole px, each 1 to 16384: the new size of the layer's bounds, about their centre; past 8192 x 8192 in all is refused as too large. The bounds after may differ by a pixel where an edge is soft.",
+                "type": "array",
+                "items": {
+                  "type": "integer",
+                  "minimum": 1,
+                  "maximum": 16384
+                },
+                "minItems": 2,
+                "maxItems": 2
+              },
+              "filter": {
+                "description": "Bicubic, the default, or another of Krita's resampling filters.",
+                "type": "string",
+                "enum": [
+                  "Bicubic",
+                  "Bilinear",
+                  "BSpline",
+                  "Bell",
+                  "Hermite",
+                  "Lanczos3",
+                  "Mitchell",
+                  "NearestNeighbor"
+                ]
+              }
+            },
+            "required": [
+              "type",
+              "size_px"
+            ],
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "properties": {
+              "type": {
+                "const": "rotate"
+              },
+              "degrees": {
+                "description": "Degrees, -360 to 360 exclusive and not 0; positive turns clockwise on screen, about the bounds' centre. Krita resamples with Bicubic.",
+                "type": "number",
+                "exclusiveMinimum": -360,
+                "exclusiveMaximum": 360
+              }
+            },
+            "required": [
+              "type",
+              "degrees"
+            ],
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "properties": {
+              "type": {
+                "const": "shear"
+              },
+              "degrees": {
+                "description": "[x, y] in degrees, each -45 to 45 and not both 0, about the bounds' centre: a positive x moves rows below the centre right, a positive y moves columns right of it down. Krita resamples with Bilinear; a shear too small to move an edge by a pixel is refused.",
+                "type": "array",
+                "items": {
+                  "type": "number",
+                  "minimum": -45,
+                  "maximum": 45
+                },
+                "minItems": 2,
+                "maxItems": 2
+              }
+            },
+            "required": [
+              "type",
+              "degrees"
             ],
             "additionalProperties": false
           }
@@ -351,6 +432,899 @@
             "additionalProperties": false
           },
           {
+            "type": "object",
+            "properties": {
+              "layer_id": {
+                "type": "string",
+                "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+              },
+              "type": {
+                "const": "scale"
+              },
+              "size_px": {
+                "type": "array",
+                "items": {
+                  "type": "integer"
+                },
+                "minItems": 2,
+                "maxItems": 2
+              },
+              "filter": {
+                "type": "string",
+                "enum": [
+                  "Bicubic",
+                  "Bilinear",
+                  "BSpline",
+                  "Bell",
+                  "Hermite",
+                  "Lanczos3",
+                  "Mitchell",
+                  "NearestNeighbor"
+                ]
+              },
+              "pivot_px": {
+                "description": "The centre of the layer's bounds before the call, which the operation keeps in place.",
+                "type": "array",
+                "items": {
+                  "type": "number"
+                },
+                "minItems": 2,
+                "maxItems": 2
+              },
+              "bounds_before_px": {
+                "type": "object",
+                "properties": {
+                  "x": {
+                    "type": "integer"
+                  },
+                  "y": {
+                    "type": "integer"
+                  },
+                  "width": {
+                    "type": "integer",
+                    "minimum": 0
+                  },
+                  "height": {
+                    "type": "integer",
+                    "minimum": 0
+                  }
+                },
+                "required": [
+                  "x",
+                  "y",
+                  "width",
+                  "height"
+                ],
+                "additionalProperties": false
+              },
+              "bounds_after_px": {
+                "type": "object",
+                "properties": {
+                  "x": {
+                    "type": "integer"
+                  },
+                  "y": {
+                    "type": "integer"
+                  },
+                  "width": {
+                    "type": "integer",
+                    "minimum": 0
+                  },
+                  "height": {
+                    "type": "integer",
+                    "minimum": 0
+                  }
+                },
+                "required": [
+                  "x",
+                  "y",
+                  "width",
+                  "height"
+                ],
+                "additionalProperties": false,
+                "description": "The layer's bounds after the call; for a group, its shown layers'."
+              },
+              "undo_steps": {
+                "const": 1
+              },
+              "verification": {
+                "anyOf": [
+                  {
+                    "type": "object",
+                    "properties": {
+                      "mode": {
+                        "type": "string",
+                        "enum": [
+                          "region",
+                          "full"
+                        ]
+                      },
+                      "rect": {
+                        "type": "object",
+                        "properties": {
+                          "x": {
+                            "type": "integer",
+                            "minimum": 0
+                          },
+                          "y": {
+                            "type": "integer",
+                            "minimum": 0
+                          },
+                          "width": {
+                            "type": "integer",
+                            "minimum": 0
+                          },
+                          "height": {
+                            "type": "integer",
+                            "minimum": 0
+                          }
+                        },
+                        "required": [
+                          "x",
+                          "y",
+                          "width",
+                          "height"
+                        ],
+                        "additionalProperties": false
+                      },
+                      "changed_px": {
+                        "type": "integer",
+                        "minimum": 0
+                      },
+                      "changed_bounds_px": {
+                        "anyOf": [
+                          {
+                            "type": "object",
+                            "properties": {
+                              "x": {
+                                "type": "integer",
+                                "minimum": 0
+                              },
+                              "y": {
+                                "type": "integer",
+                                "minimum": 0
+                              },
+                              "width": {
+                                "type": "integer",
+                                "minimum": 1
+                              },
+                              "height": {
+                                "type": "integer",
+                                "minimum": 1
+                              }
+                            },
+                            "required": [
+                              "x",
+                              "y",
+                              "width",
+                              "height"
+                            ],
+                            "additionalProperties": false
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      },
+                      "changed_outside_px": {
+                        "const": 0
+                      },
+                      "alpha_changed_px": {
+                        "type": "integer",
+                        "minimum": 0
+                      },
+                      "before": {
+                        "anyOf": [
+                          {
+                            "type": "object",
+                            "properties": {
+                              "uri": {
+                                "type": "string",
+                                "minLength": 2,
+                                "pattern": "^/"
+                              },
+                              "path": {
+                                "type": "string",
+                                "minLength": 2,
+                                "pattern": "^/"
+                              },
+                              "mime_type": {
+                                "const": "image/png"
+                              },
+                              "sha256": {
+                                "type": "string",
+                                "pattern": "^[0-9a-f]{64}$"
+                              },
+                              "size_bytes": {
+                                "type": "integer",
+                                "minimum": 1
+                              },
+                              "retention_days": {
+                                "type": "integer",
+                                "minimum": 1
+                              }
+                            },
+                            "required": [
+                              "uri",
+                              "path",
+                              "mime_type",
+                              "sha256",
+                              "size_bytes",
+                              "retention_days"
+                            ],
+                            "additionalProperties": false
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      },
+                      "after": {
+                        "anyOf": [
+                          {
+                            "type": "object",
+                            "properties": {
+                              "uri": {
+                                "type": "string",
+                                "minLength": 2,
+                                "pattern": "^/"
+                              },
+                              "path": {
+                                "type": "string",
+                                "minLength": 2,
+                                "pattern": "^/"
+                              },
+                              "mime_type": {
+                                "const": "image/png"
+                              },
+                              "sha256": {
+                                "type": "string",
+                                "pattern": "^[0-9a-f]{64}$"
+                              },
+                              "size_bytes": {
+                                "type": "integer",
+                                "minimum": 1
+                              },
+                              "retention_days": {
+                                "type": "integer",
+                                "minimum": 1
+                              }
+                            },
+                            "required": [
+                              "uri",
+                              "path",
+                              "mime_type",
+                              "sha256",
+                              "size_bytes",
+                              "retention_days"
+                            ],
+                            "additionalProperties": false
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      }
+                    },
+                    "required": [
+                      "mode",
+                      "rect",
+                      "changed_px",
+                      "changed_bounds_px",
+                      "changed_outside_px",
+                      "alpha_changed_px",
+                      "before",
+                      "after"
+                    ],
+                    "additionalProperties": false
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              }
+            },
+            "required": [
+              "layer_id",
+              "type",
+              "size_px",
+              "filter",
+              "pivot_px",
+              "bounds_before_px",
+              "bounds_after_px",
+              "undo_steps",
+              "verification"
+            ],
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "properties": {
+              "layer_id": {
+                "type": "string",
+                "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+              },
+              "type": {
+                "const": "rotate"
+              },
+              "degrees": {
+                "type": "number"
+              },
+              "filter": {
+                "const": "Bicubic"
+              },
+              "pivot_px": {
+                "description": "The centre of the layer's bounds before the call, which the operation keeps in place.",
+                "type": "array",
+                "items": {
+                  "type": "number"
+                },
+                "minItems": 2,
+                "maxItems": 2
+              },
+              "bounds_before_px": {
+                "type": "object",
+                "properties": {
+                  "x": {
+                    "type": "integer"
+                  },
+                  "y": {
+                    "type": "integer"
+                  },
+                  "width": {
+                    "type": "integer",
+                    "minimum": 0
+                  },
+                  "height": {
+                    "type": "integer",
+                    "minimum": 0
+                  }
+                },
+                "required": [
+                  "x",
+                  "y",
+                  "width",
+                  "height"
+                ],
+                "additionalProperties": false
+              },
+              "bounds_after_px": {
+                "type": "object",
+                "properties": {
+                  "x": {
+                    "type": "integer"
+                  },
+                  "y": {
+                    "type": "integer"
+                  },
+                  "width": {
+                    "type": "integer",
+                    "minimum": 0
+                  },
+                  "height": {
+                    "type": "integer",
+                    "minimum": 0
+                  }
+                },
+                "required": [
+                  "x",
+                  "y",
+                  "width",
+                  "height"
+                ],
+                "additionalProperties": false,
+                "description": "The layer's bounds after the call; for a group, its shown layers'."
+              },
+              "undo_steps": {
+                "const": 1
+              },
+              "verification": {
+                "anyOf": [
+                  {
+                    "type": "object",
+                    "properties": {
+                      "mode": {
+                        "type": "string",
+                        "enum": [
+                          "region",
+                          "full"
+                        ]
+                      },
+                      "rect": {
+                        "type": "object",
+                        "properties": {
+                          "x": {
+                            "type": "integer",
+                            "minimum": 0
+                          },
+                          "y": {
+                            "type": "integer",
+                            "minimum": 0
+                          },
+                          "width": {
+                            "type": "integer",
+                            "minimum": 0
+                          },
+                          "height": {
+                            "type": "integer",
+                            "minimum": 0
+                          }
+                        },
+                        "required": [
+                          "x",
+                          "y",
+                          "width",
+                          "height"
+                        ],
+                        "additionalProperties": false
+                      },
+                      "changed_px": {
+                        "type": "integer",
+                        "minimum": 0
+                      },
+                      "changed_bounds_px": {
+                        "anyOf": [
+                          {
+                            "type": "object",
+                            "properties": {
+                              "x": {
+                                "type": "integer",
+                                "minimum": 0
+                              },
+                              "y": {
+                                "type": "integer",
+                                "minimum": 0
+                              },
+                              "width": {
+                                "type": "integer",
+                                "minimum": 1
+                              },
+                              "height": {
+                                "type": "integer",
+                                "minimum": 1
+                              }
+                            },
+                            "required": [
+                              "x",
+                              "y",
+                              "width",
+                              "height"
+                            ],
+                            "additionalProperties": false
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      },
+                      "changed_outside_px": {
+                        "const": 0
+                      },
+                      "alpha_changed_px": {
+                        "type": "integer",
+                        "minimum": 0
+                      },
+                      "before": {
+                        "anyOf": [
+                          {
+                            "type": "object",
+                            "properties": {
+                              "uri": {
+                                "type": "string",
+                                "minLength": 2,
+                                "pattern": "^/"
+                              },
+                              "path": {
+                                "type": "string",
+                                "minLength": 2,
+                                "pattern": "^/"
+                              },
+                              "mime_type": {
+                                "const": "image/png"
+                              },
+                              "sha256": {
+                                "type": "string",
+                                "pattern": "^[0-9a-f]{64}$"
+                              },
+                              "size_bytes": {
+                                "type": "integer",
+                                "minimum": 1
+                              },
+                              "retention_days": {
+                                "type": "integer",
+                                "minimum": 1
+                              }
+                            },
+                            "required": [
+                              "uri",
+                              "path",
+                              "mime_type",
+                              "sha256",
+                              "size_bytes",
+                              "retention_days"
+                            ],
+                            "additionalProperties": false
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      },
+                      "after": {
+                        "anyOf": [
+                          {
+                            "type": "object",
+                            "properties": {
+                              "uri": {
+                                "type": "string",
+                                "minLength": 2,
+                                "pattern": "^/"
+                              },
+                              "path": {
+                                "type": "string",
+                                "minLength": 2,
+                                "pattern": "^/"
+                              },
+                              "mime_type": {
+                                "const": "image/png"
+                              },
+                              "sha256": {
+                                "type": "string",
+                                "pattern": "^[0-9a-f]{64}$"
+                              },
+                              "size_bytes": {
+                                "type": "integer",
+                                "minimum": 1
+                              },
+                              "retention_days": {
+                                "type": "integer",
+                                "minimum": 1
+                              }
+                            },
+                            "required": [
+                              "uri",
+                              "path",
+                              "mime_type",
+                              "sha256",
+                              "size_bytes",
+                              "retention_days"
+                            ],
+                            "additionalProperties": false
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      }
+                    },
+                    "required": [
+                      "mode",
+                      "rect",
+                      "changed_px",
+                      "changed_bounds_px",
+                      "changed_outside_px",
+                      "alpha_changed_px",
+                      "before",
+                      "after"
+                    ],
+                    "additionalProperties": false
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              }
+            },
+            "required": [
+              "layer_id",
+              "type",
+              "degrees",
+              "filter",
+              "pivot_px",
+              "bounds_before_px",
+              "bounds_after_px",
+              "undo_steps",
+              "verification"
+            ],
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "properties": {
+              "layer_id": {
+                "type": "string",
+                "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+              },
+              "type": {
+                "const": "shear"
+              },
+              "degrees": {
+                "type": "array",
+                "items": {
+                  "type": "number"
+                },
+                "minItems": 2,
+                "maxItems": 2
+              },
+              "filter": {
+                "const": "Bilinear"
+              },
+              "pivot_px": {
+                "description": "The centre of the layer's bounds before the call, which the operation keeps in place.",
+                "type": "array",
+                "items": {
+                  "type": "number"
+                },
+                "minItems": 2,
+                "maxItems": 2
+              },
+              "bounds_before_px": {
+                "type": "object",
+                "properties": {
+                  "x": {
+                    "type": "integer"
+                  },
+                  "y": {
+                    "type": "integer"
+                  },
+                  "width": {
+                    "type": "integer",
+                    "minimum": 0
+                  },
+                  "height": {
+                    "type": "integer",
+                    "minimum": 0
+                  }
+                },
+                "required": [
+                  "x",
+                  "y",
+                  "width",
+                  "height"
+                ],
+                "additionalProperties": false
+              },
+              "bounds_after_px": {
+                "type": "object",
+                "properties": {
+                  "x": {
+                    "type": "integer"
+                  },
+                  "y": {
+                    "type": "integer"
+                  },
+                  "width": {
+                    "type": "integer",
+                    "minimum": 0
+                  },
+                  "height": {
+                    "type": "integer",
+                    "minimum": 0
+                  }
+                },
+                "required": [
+                  "x",
+                  "y",
+                  "width",
+                  "height"
+                ],
+                "additionalProperties": false,
+                "description": "The layer's bounds after the call; for a group, its shown layers'."
+              },
+              "undo_steps": {
+                "const": 1
+              },
+              "verification": {
+                "anyOf": [
+                  {
+                    "type": "object",
+                    "properties": {
+                      "mode": {
+                        "type": "string",
+                        "enum": [
+                          "region",
+                          "full"
+                        ]
+                      },
+                      "rect": {
+                        "type": "object",
+                        "properties": {
+                          "x": {
+                            "type": "integer",
+                            "minimum": 0
+                          },
+                          "y": {
+                            "type": "integer",
+                            "minimum": 0
+                          },
+                          "width": {
+                            "type": "integer",
+                            "minimum": 0
+                          },
+                          "height": {
+                            "type": "integer",
+                            "minimum": 0
+                          }
+                        },
+                        "required": [
+                          "x",
+                          "y",
+                          "width",
+                          "height"
+                        ],
+                        "additionalProperties": false
+                      },
+                      "changed_px": {
+                        "type": "integer",
+                        "minimum": 0
+                      },
+                      "changed_bounds_px": {
+                        "anyOf": [
+                          {
+                            "type": "object",
+                            "properties": {
+                              "x": {
+                                "type": "integer",
+                                "minimum": 0
+                              },
+                              "y": {
+                                "type": "integer",
+                                "minimum": 0
+                              },
+                              "width": {
+                                "type": "integer",
+                                "minimum": 1
+                              },
+                              "height": {
+                                "type": "integer",
+                                "minimum": 1
+                              }
+                            },
+                            "required": [
+                              "x",
+                              "y",
+                              "width",
+                              "height"
+                            ],
+                            "additionalProperties": false
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      },
+                      "changed_outside_px": {
+                        "const": 0
+                      },
+                      "alpha_changed_px": {
+                        "type": "integer",
+                        "minimum": 0
+                      },
+                      "before": {
+                        "anyOf": [
+                          {
+                            "type": "object",
+                            "properties": {
+                              "uri": {
+                                "type": "string",
+                                "minLength": 2,
+                                "pattern": "^/"
+                              },
+                              "path": {
+                                "type": "string",
+                                "minLength": 2,
+                                "pattern": "^/"
+                              },
+                              "mime_type": {
+                                "const": "image/png"
+                              },
+                              "sha256": {
+                                "type": "string",
+                                "pattern": "^[0-9a-f]{64}$"
+                              },
+                              "size_bytes": {
+                                "type": "integer",
+                                "minimum": 1
+                              },
+                              "retention_days": {
+                                "type": "integer",
+                                "minimum": 1
+                              }
+                            },
+                            "required": [
+                              "uri",
+                              "path",
+                              "mime_type",
+                              "sha256",
+                              "size_bytes",
+                              "retention_days"
+                            ],
+                            "additionalProperties": false
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      },
+                      "after": {
+                        "anyOf": [
+                          {
+                            "type": "object",
+                            "properties": {
+                              "uri": {
+                                "type": "string",
+                                "minLength": 2,
+                                "pattern": "^/"
+                              },
+                              "path": {
+                                "type": "string",
+                                "minLength": 2,
+                                "pattern": "^/"
+                              },
+                              "mime_type": {
+                                "const": "image/png"
+                              },
+                              "sha256": {
+                                "type": "string",
+                                "pattern": "^[0-9a-f]{64}$"
+                              },
+                              "size_bytes": {
+                                "type": "integer",
+                                "minimum": 1
+                              },
+                              "retention_days": {
+                                "type": "integer",
+                                "minimum": 1
+                              }
+                            },
+                            "required": [
+                              "uri",
+                              "path",
+                              "mime_type",
+                              "sha256",
+                              "size_bytes",
+                              "retention_days"
+                            ],
+                            "additionalProperties": false
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      }
+                    },
+                    "required": [
+                      "mode",
+                      "rect",
+                      "changed_px",
+                      "changed_bounds_px",
+                      "changed_outside_px",
+                      "alpha_changed_px",
+                      "before",
+                      "after"
+                    ],
+                    "additionalProperties": false
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              }
+            },
+            "required": [
+              "layer_id",
+              "type",
+              "degrees",
+              "filter",
+              "pivot_px",
+              "bounds_before_px",
+              "bounds_after_px",
+              "undo_steps",
+              "verification"
+            ],
+            "additionalProperties": false
+          },
+          {
             "type": "null"
           }
         ]
@@ -451,88 +1425,56 @@
     "then": {
       "properties": {
         "data": {
-          "type": "object",
-          "properties": {
-            "layer_id": {
-              "type": "string",
-              "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
-            },
-            "transform_mask_id": {
-              "type": "string",
-              "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
-            },
-            "created_mask": {
-              "description": "Whether this call added the transform mask.",
-              "type": "boolean"
-            },
-            "by_px": {
-              "type": "array",
-              "items": {
-                "type": "integer"
-              },
-              "minItems": 2,
-              "maxItems": 2
-            },
-            "translation_px": {
-              "type": "array",
-              "items": {
-                "type": "integer"
-              },
-              "minItems": 2,
-              "maxItems": 2,
-              "description": "The layer's whole translation after the call. Paint on the layer lands where it is aimed, in the layer's own pixels, and shows moved by this; so do a paint receipt's changed_bounds_px and layer_bounds_px, which stay in the layer's own."
-            },
-            "undo_steps": {
-              "type": "integer",
-              "minimum": 1
-            },
-            "verification": {
-              "anyOf": [
-                {
-                  "type": "object",
-                  "properties": {
-                    "mode": {
-                      "type": "string",
-                      "enum": [
-                        "region",
-                        "full"
-                      ]
-                    },
-                    "rect": {
+          "anyOf": [
+            {
+              "type": "object",
+              "properties": {
+                "layer_id": {
+                  "type": "string",
+                  "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+                },
+                "transform_mask_id": {
+                  "type": "string",
+                  "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+                },
+                "created_mask": {
+                  "description": "Whether this call added the transform mask.",
+                  "type": "boolean"
+                },
+                "by_px": {
+                  "type": "array",
+                  "items": {
+                    "type": "integer"
+                  },
+                  "minItems": 2,
+                  "maxItems": 2
+                },
+                "translation_px": {
+                  "type": "array",
+                  "items": {
+                    "type": "integer"
+                  },
+                  "minItems": 2,
+                  "maxItems": 2,
+                  "description": "The layer's whole translation after the call. Paint on the layer lands where it is aimed, in the layer's own pixels, and shows moved by this; so do a paint receipt's changed_bounds_px and layer_bounds_px, which stay in the layer's own."
+                },
+                "undo_steps": {
+                  "type": "integer",
+                  "minimum": 1
+                },
+                "verification": {
+                  "anyOf": [
+                    {
                       "type": "object",
                       "properties": {
-                        "x": {
-                          "type": "integer",
-                          "minimum": 0
+                        "mode": {
+                          "type": "string",
+                          "enum": [
+                            "region",
+                            "full"
+                          ]
                         },
-                        "y": {
-                          "type": "integer",
-                          "minimum": 0
-                        },
-                        "width": {
-                          "type": "integer",
-                          "minimum": 0
-                        },
-                        "height": {
-                          "type": "integer",
-                          "minimum": 0
-                        }
-                      },
-                      "required": [
-                        "x",
-                        "y",
-                        "width",
-                        "height"
-                      ],
-                      "additionalProperties": false
-                    },
-                    "changed_px": {
-                      "type": "integer",
-                      "minimum": 0
-                    },
-                    "changed_bounds_px": {
-                      "anyOf": [
-                        {
+                        "rect": {
                           "type": "object",
                           "properties": {
                             "x": {
@@ -545,11 +1487,11 @@
                             },
                             "width": {
                               "type": "integer",
-                              "minimum": 1
+                              "minimum": 0
                             },
                             "height": {
                               "type": "integer",
-                              "minimum": 1
+                              "minimum": 0
                             }
                           },
                           "required": [
@@ -560,139 +1502,1068 @@
                           ],
                           "additionalProperties": false
                         },
-                        {
-                          "type": "null"
+                        "changed_px": {
+                          "type": "integer",
+                          "minimum": 0
+                        },
+                        "changed_bounds_px": {
+                          "anyOf": [
+                            {
+                              "type": "object",
+                              "properties": {
+                                "x": {
+                                  "type": "integer",
+                                  "minimum": 0
+                                },
+                                "y": {
+                                  "type": "integer",
+                                  "minimum": 0
+                                },
+                                "width": {
+                                  "type": "integer",
+                                  "minimum": 1
+                                },
+                                "height": {
+                                  "type": "integer",
+                                  "minimum": 1
+                                }
+                              },
+                              "required": [
+                                "x",
+                                "y",
+                                "width",
+                                "height"
+                              ],
+                              "additionalProperties": false
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "changed_outside_px": {
+                          "const": 0
+                        },
+                        "alpha_changed_px": {
+                          "type": "integer",
+                          "minimum": 0
+                        },
+                        "before": {
+                          "anyOf": [
+                            {
+                              "type": "object",
+                              "properties": {
+                                "uri": {
+                                  "type": "string",
+                                  "minLength": 2,
+                                  "pattern": "^/"
+                                },
+                                "path": {
+                                  "type": "string",
+                                  "minLength": 2,
+                                  "pattern": "^/"
+                                },
+                                "mime_type": {
+                                  "const": "image/png"
+                                },
+                                "sha256": {
+                                  "type": "string",
+                                  "pattern": "^[0-9a-f]{64}$"
+                                },
+                                "size_bytes": {
+                                  "type": "integer",
+                                  "minimum": 1
+                                },
+                                "retention_days": {
+                                  "type": "integer",
+                                  "minimum": 1
+                                }
+                              },
+                              "required": [
+                                "uri",
+                                "path",
+                                "mime_type",
+                                "sha256",
+                                "size_bytes",
+                                "retention_days"
+                              ],
+                              "additionalProperties": false
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "after": {
+                          "anyOf": [
+                            {
+                              "type": "object",
+                              "properties": {
+                                "uri": {
+                                  "type": "string",
+                                  "minLength": 2,
+                                  "pattern": "^/"
+                                },
+                                "path": {
+                                  "type": "string",
+                                  "minLength": 2,
+                                  "pattern": "^/"
+                                },
+                                "mime_type": {
+                                  "const": "image/png"
+                                },
+                                "sha256": {
+                                  "type": "string",
+                                  "pattern": "^[0-9a-f]{64}$"
+                                },
+                                "size_bytes": {
+                                  "type": "integer",
+                                  "minimum": 1
+                                },
+                                "retention_days": {
+                                  "type": "integer",
+                                  "minimum": 1
+                                }
+                              },
+                              "required": [
+                                "uri",
+                                "path",
+                                "mime_type",
+                                "sha256",
+                                "size_bytes",
+                                "retention_days"
+                              ],
+                              "additionalProperties": false
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
                         }
-                      ]
+                      },
+                      "required": [
+                        "mode",
+                        "rect",
+                        "changed_px",
+                        "changed_bounds_px",
+                        "changed_outside_px",
+                        "alpha_changed_px",
+                        "before",
+                        "after"
+                      ],
+                      "additionalProperties": false
                     },
-                    "changed_outside_px": {
-                      "const": 0
+                    {
+                      "type": "null"
+                    }
+                  ]
+                }
+              },
+              "required": [
+                "layer_id",
+                "transform_mask_id",
+                "created_mask",
+                "by_px",
+                "translation_px",
+                "undo_steps",
+                "verification"
+              ],
+              "additionalProperties": false
+            },
+            {
+              "type": "object",
+              "properties": {
+                "layer_id": {
+                  "type": "string",
+                  "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+                },
+                "type": {
+                  "const": "scale"
+                },
+                "size_px": {
+                  "type": "array",
+                  "items": {
+                    "type": "integer"
+                  },
+                  "minItems": 2,
+                  "maxItems": 2
+                },
+                "filter": {
+                  "type": "string",
+                  "enum": [
+                    "Bicubic",
+                    "Bilinear",
+                    "BSpline",
+                    "Bell",
+                    "Hermite",
+                    "Lanczos3",
+                    "Mitchell",
+                    "NearestNeighbor"
+                  ]
+                },
+                "pivot_px": {
+                  "description": "The centre of the layer's bounds before the call, which the operation keeps in place.",
+                  "type": "array",
+                  "items": {
+                    "type": "number"
+                  },
+                  "minItems": 2,
+                  "maxItems": 2
+                },
+                "bounds_before_px": {
+                  "type": "object",
+                  "properties": {
+                    "x": {
+                      "type": "integer"
                     },
-                    "alpha_changed_px": {
+                    "y": {
+                      "type": "integer"
+                    },
+                    "width": {
                       "type": "integer",
                       "minimum": 0
                     },
-                    "before": {
-                      "anyOf": [
-                        {
-                          "type": "object",
-                          "properties": {
-                            "uri": {
-                              "type": "string",
-                              "minLength": 2,
-                              "pattern": "^/"
-                            },
-                            "path": {
-                              "type": "string",
-                              "minLength": 2,
-                              "pattern": "^/"
-                            },
-                            "mime_type": {
-                              "const": "image/png"
-                            },
-                            "sha256": {
-                              "type": "string",
-                              "pattern": "^[0-9a-f]{64}$"
-                            },
-                            "size_bytes": {
-                              "type": "integer",
-                              "minimum": 1
-                            },
-                            "retention_days": {
-                              "type": "integer",
-                              "minimum": 1
-                            }
-                          },
-                          "required": [
-                            "uri",
-                            "path",
-                            "mime_type",
-                            "sha256",
-                            "size_bytes",
-                            "retention_days"
-                          ],
-                          "additionalProperties": false
-                        },
-                        {
-                          "type": "null"
-                        }
-                      ]
-                    },
-                    "after": {
-                      "anyOf": [
-                        {
-                          "type": "object",
-                          "properties": {
-                            "uri": {
-                              "type": "string",
-                              "minLength": 2,
-                              "pattern": "^/"
-                            },
-                            "path": {
-                              "type": "string",
-                              "minLength": 2,
-                              "pattern": "^/"
-                            },
-                            "mime_type": {
-                              "const": "image/png"
-                            },
-                            "sha256": {
-                              "type": "string",
-                              "pattern": "^[0-9a-f]{64}$"
-                            },
-                            "size_bytes": {
-                              "type": "integer",
-                              "minimum": 1
-                            },
-                            "retention_days": {
-                              "type": "integer",
-                              "minimum": 1
-                            }
-                          },
-                          "required": [
-                            "uri",
-                            "path",
-                            "mime_type",
-                            "sha256",
-                            "size_bytes",
-                            "retention_days"
-                          ],
-                          "additionalProperties": false
-                        },
-                        {
-                          "type": "null"
-                        }
-                      ]
+                    "height": {
+                      "type": "integer",
+                      "minimum": 0
                     }
                   },
                   "required": [
-                    "mode",
-                    "rect",
-                    "changed_px",
-                    "changed_bounds_px",
-                    "changed_outside_px",
-                    "alpha_changed_px",
-                    "before",
-                    "after"
+                    "x",
+                    "y",
+                    "width",
+                    "height"
                   ],
                   "additionalProperties": false
                 },
-                {
-                  "type": "null"
+                "bounds_after_px": {
+                  "type": "object",
+                  "properties": {
+                    "x": {
+                      "type": "integer"
+                    },
+                    "y": {
+                      "type": "integer"
+                    },
+                    "width": {
+                      "type": "integer",
+                      "minimum": 0
+                    },
+                    "height": {
+                      "type": "integer",
+                      "minimum": 0
+                    }
+                  },
+                  "required": [
+                    "x",
+                    "y",
+                    "width",
+                    "height"
+                  ],
+                  "additionalProperties": false,
+                  "description": "The layer's bounds after the call; for a group, its shown layers'."
+                },
+                "undo_steps": {
+                  "const": 1
+                },
+                "verification": {
+                  "anyOf": [
+                    {
+                      "type": "object",
+                      "properties": {
+                        "mode": {
+                          "type": "string",
+                          "enum": [
+                            "region",
+                            "full"
+                          ]
+                        },
+                        "rect": {
+                          "type": "object",
+                          "properties": {
+                            "x": {
+                              "type": "integer",
+                              "minimum": 0
+                            },
+                            "y": {
+                              "type": "integer",
+                              "minimum": 0
+                            },
+                            "width": {
+                              "type": "integer",
+                              "minimum": 0
+                            },
+                            "height": {
+                              "type": "integer",
+                              "minimum": 0
+                            }
+                          },
+                          "required": [
+                            "x",
+                            "y",
+                            "width",
+                            "height"
+                          ],
+                          "additionalProperties": false
+                        },
+                        "changed_px": {
+                          "type": "integer",
+                          "minimum": 0
+                        },
+                        "changed_bounds_px": {
+                          "anyOf": [
+                            {
+                              "type": "object",
+                              "properties": {
+                                "x": {
+                                  "type": "integer",
+                                  "minimum": 0
+                                },
+                                "y": {
+                                  "type": "integer",
+                                  "minimum": 0
+                                },
+                                "width": {
+                                  "type": "integer",
+                                  "minimum": 1
+                                },
+                                "height": {
+                                  "type": "integer",
+                                  "minimum": 1
+                                }
+                              },
+                              "required": [
+                                "x",
+                                "y",
+                                "width",
+                                "height"
+                              ],
+                              "additionalProperties": false
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "changed_outside_px": {
+                          "const": 0
+                        },
+                        "alpha_changed_px": {
+                          "type": "integer",
+                          "minimum": 0
+                        },
+                        "before": {
+                          "anyOf": [
+                            {
+                              "type": "object",
+                              "properties": {
+                                "uri": {
+                                  "type": "string",
+                                  "minLength": 2,
+                                  "pattern": "^/"
+                                },
+                                "path": {
+                                  "type": "string",
+                                  "minLength": 2,
+                                  "pattern": "^/"
+                                },
+                                "mime_type": {
+                                  "const": "image/png"
+                                },
+                                "sha256": {
+                                  "type": "string",
+                                  "pattern": "^[0-9a-f]{64}$"
+                                },
+                                "size_bytes": {
+                                  "type": "integer",
+                                  "minimum": 1
+                                },
+                                "retention_days": {
+                                  "type": "integer",
+                                  "minimum": 1
+                                }
+                              },
+                              "required": [
+                                "uri",
+                                "path",
+                                "mime_type",
+                                "sha256",
+                                "size_bytes",
+                                "retention_days"
+                              ],
+                              "additionalProperties": false
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "after": {
+                          "anyOf": [
+                            {
+                              "type": "object",
+                              "properties": {
+                                "uri": {
+                                  "type": "string",
+                                  "minLength": 2,
+                                  "pattern": "^/"
+                                },
+                                "path": {
+                                  "type": "string",
+                                  "minLength": 2,
+                                  "pattern": "^/"
+                                },
+                                "mime_type": {
+                                  "const": "image/png"
+                                },
+                                "sha256": {
+                                  "type": "string",
+                                  "pattern": "^[0-9a-f]{64}$"
+                                },
+                                "size_bytes": {
+                                  "type": "integer",
+                                  "minimum": 1
+                                },
+                                "retention_days": {
+                                  "type": "integer",
+                                  "minimum": 1
+                                }
+                              },
+                              "required": [
+                                "uri",
+                                "path",
+                                "mime_type",
+                                "sha256",
+                                "size_bytes",
+                                "retention_days"
+                              ],
+                              "additionalProperties": false
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        }
+                      },
+                      "required": [
+                        "mode",
+                        "rect",
+                        "changed_px",
+                        "changed_bounds_px",
+                        "changed_outside_px",
+                        "alpha_changed_px",
+                        "before",
+                        "after"
+                      ],
+                      "additionalProperties": false
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
                 }
-              ]
+              },
+              "required": [
+                "layer_id",
+                "type",
+                "size_px",
+                "filter",
+                "pivot_px",
+                "bounds_before_px",
+                "bounds_after_px",
+                "undo_steps",
+                "verification"
+              ],
+              "additionalProperties": false
+            },
+            {
+              "type": "object",
+              "properties": {
+                "layer_id": {
+                  "type": "string",
+                  "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+                },
+                "type": {
+                  "const": "rotate"
+                },
+                "degrees": {
+                  "type": "number"
+                },
+                "filter": {
+                  "const": "Bicubic"
+                },
+                "pivot_px": {
+                  "description": "The centre of the layer's bounds before the call, which the operation keeps in place.",
+                  "type": "array",
+                  "items": {
+                    "type": "number"
+                  },
+                  "minItems": 2,
+                  "maxItems": 2
+                },
+                "bounds_before_px": {
+                  "type": "object",
+                  "properties": {
+                    "x": {
+                      "type": "integer"
+                    },
+                    "y": {
+                      "type": "integer"
+                    },
+                    "width": {
+                      "type": "integer",
+                      "minimum": 0
+                    },
+                    "height": {
+                      "type": "integer",
+                      "minimum": 0
+                    }
+                  },
+                  "required": [
+                    "x",
+                    "y",
+                    "width",
+                    "height"
+                  ],
+                  "additionalProperties": false
+                },
+                "bounds_after_px": {
+                  "type": "object",
+                  "properties": {
+                    "x": {
+                      "type": "integer"
+                    },
+                    "y": {
+                      "type": "integer"
+                    },
+                    "width": {
+                      "type": "integer",
+                      "minimum": 0
+                    },
+                    "height": {
+                      "type": "integer",
+                      "minimum": 0
+                    }
+                  },
+                  "required": [
+                    "x",
+                    "y",
+                    "width",
+                    "height"
+                  ],
+                  "additionalProperties": false,
+                  "description": "The layer's bounds after the call; for a group, its shown layers'."
+                },
+                "undo_steps": {
+                  "const": 1
+                },
+                "verification": {
+                  "anyOf": [
+                    {
+                      "type": "object",
+                      "properties": {
+                        "mode": {
+                          "type": "string",
+                          "enum": [
+                            "region",
+                            "full"
+                          ]
+                        },
+                        "rect": {
+                          "type": "object",
+                          "properties": {
+                            "x": {
+                              "type": "integer",
+                              "minimum": 0
+                            },
+                            "y": {
+                              "type": "integer",
+                              "minimum": 0
+                            },
+                            "width": {
+                              "type": "integer",
+                              "minimum": 0
+                            },
+                            "height": {
+                              "type": "integer",
+                              "minimum": 0
+                            }
+                          },
+                          "required": [
+                            "x",
+                            "y",
+                            "width",
+                            "height"
+                          ],
+                          "additionalProperties": false
+                        },
+                        "changed_px": {
+                          "type": "integer",
+                          "minimum": 0
+                        },
+                        "changed_bounds_px": {
+                          "anyOf": [
+                            {
+                              "type": "object",
+                              "properties": {
+                                "x": {
+                                  "type": "integer",
+                                  "minimum": 0
+                                },
+                                "y": {
+                                  "type": "integer",
+                                  "minimum": 0
+                                },
+                                "width": {
+                                  "type": "integer",
+                                  "minimum": 1
+                                },
+                                "height": {
+                                  "type": "integer",
+                                  "minimum": 1
+                                }
+                              },
+                              "required": [
+                                "x",
+                                "y",
+                                "width",
+                                "height"
+                              ],
+                              "additionalProperties": false
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "changed_outside_px": {
+                          "const": 0
+                        },
+                        "alpha_changed_px": {
+                          "type": "integer",
+                          "minimum": 0
+                        },
+                        "before": {
+                          "anyOf": [
+                            {
+                              "type": "object",
+                              "properties": {
+                                "uri": {
+                                  "type": "string",
+                                  "minLength": 2,
+                                  "pattern": "^/"
+                                },
+                                "path": {
+                                  "type": "string",
+                                  "minLength": 2,
+                                  "pattern": "^/"
+                                },
+                                "mime_type": {
+                                  "const": "image/png"
+                                },
+                                "sha256": {
+                                  "type": "string",
+                                  "pattern": "^[0-9a-f]{64}$"
+                                },
+                                "size_bytes": {
+                                  "type": "integer",
+                                  "minimum": 1
+                                },
+                                "retention_days": {
+                                  "type": "integer",
+                                  "minimum": 1
+                                }
+                              },
+                              "required": [
+                                "uri",
+                                "path",
+                                "mime_type",
+                                "sha256",
+                                "size_bytes",
+                                "retention_days"
+                              ],
+                              "additionalProperties": false
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "after": {
+                          "anyOf": [
+                            {
+                              "type": "object",
+                              "properties": {
+                                "uri": {
+                                  "type": "string",
+                                  "minLength": 2,
+                                  "pattern": "^/"
+                                },
+                                "path": {
+                                  "type": "string",
+                                  "minLength": 2,
+                                  "pattern": "^/"
+                                },
+                                "mime_type": {
+                                  "const": "image/png"
+                                },
+                                "sha256": {
+                                  "type": "string",
+                                  "pattern": "^[0-9a-f]{64}$"
+                                },
+                                "size_bytes": {
+                                  "type": "integer",
+                                  "minimum": 1
+                                },
+                                "retention_days": {
+                                  "type": "integer",
+                                  "minimum": 1
+                                }
+                              },
+                              "required": [
+                                "uri",
+                                "path",
+                                "mime_type",
+                                "sha256",
+                                "size_bytes",
+                                "retention_days"
+                              ],
+                              "additionalProperties": false
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        }
+                      },
+                      "required": [
+                        "mode",
+                        "rect",
+                        "changed_px",
+                        "changed_bounds_px",
+                        "changed_outside_px",
+                        "alpha_changed_px",
+                        "before",
+                        "after"
+                      ],
+                      "additionalProperties": false
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                }
+              },
+              "required": [
+                "layer_id",
+                "type",
+                "degrees",
+                "filter",
+                "pivot_px",
+                "bounds_before_px",
+                "bounds_after_px",
+                "undo_steps",
+                "verification"
+              ],
+              "additionalProperties": false
+            },
+            {
+              "type": "object",
+              "properties": {
+                "layer_id": {
+                  "type": "string",
+                  "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+                },
+                "type": {
+                  "const": "shear"
+                },
+                "degrees": {
+                  "type": "array",
+                  "items": {
+                    "type": "number"
+                  },
+                  "minItems": 2,
+                  "maxItems": 2
+                },
+                "filter": {
+                  "const": "Bilinear"
+                },
+                "pivot_px": {
+                  "description": "The centre of the layer's bounds before the call, which the operation keeps in place.",
+                  "type": "array",
+                  "items": {
+                    "type": "number"
+                  },
+                  "minItems": 2,
+                  "maxItems": 2
+                },
+                "bounds_before_px": {
+                  "type": "object",
+                  "properties": {
+                    "x": {
+                      "type": "integer"
+                    },
+                    "y": {
+                      "type": "integer"
+                    },
+                    "width": {
+                      "type": "integer",
+                      "minimum": 0
+                    },
+                    "height": {
+                      "type": "integer",
+                      "minimum": 0
+                    }
+                  },
+                  "required": [
+                    "x",
+                    "y",
+                    "width",
+                    "height"
+                  ],
+                  "additionalProperties": false
+                },
+                "bounds_after_px": {
+                  "type": "object",
+                  "properties": {
+                    "x": {
+                      "type": "integer"
+                    },
+                    "y": {
+                      "type": "integer"
+                    },
+                    "width": {
+                      "type": "integer",
+                      "minimum": 0
+                    },
+                    "height": {
+                      "type": "integer",
+                      "minimum": 0
+                    }
+                  },
+                  "required": [
+                    "x",
+                    "y",
+                    "width",
+                    "height"
+                  ],
+                  "additionalProperties": false,
+                  "description": "The layer's bounds after the call; for a group, its shown layers'."
+                },
+                "undo_steps": {
+                  "const": 1
+                },
+                "verification": {
+                  "anyOf": [
+                    {
+                      "type": "object",
+                      "properties": {
+                        "mode": {
+                          "type": "string",
+                          "enum": [
+                            "region",
+                            "full"
+                          ]
+                        },
+                        "rect": {
+                          "type": "object",
+                          "properties": {
+                            "x": {
+                              "type": "integer",
+                              "minimum": 0
+                            },
+                            "y": {
+                              "type": "integer",
+                              "minimum": 0
+                            },
+                            "width": {
+                              "type": "integer",
+                              "minimum": 0
+                            },
+                            "height": {
+                              "type": "integer",
+                              "minimum": 0
+                            }
+                          },
+                          "required": [
+                            "x",
+                            "y",
+                            "width",
+                            "height"
+                          ],
+                          "additionalProperties": false
+                        },
+                        "changed_px": {
+                          "type": "integer",
+                          "minimum": 0
+                        },
+                        "changed_bounds_px": {
+                          "anyOf": [
+                            {
+                              "type": "object",
+                              "properties": {
+                                "x": {
+                                  "type": "integer",
+                                  "minimum": 0
+                                },
+                                "y": {
+                                  "type": "integer",
+                                  "minimum": 0
+                                },
+                                "width": {
+                                  "type": "integer",
+                                  "minimum": 1
+                                },
+                                "height": {
+                                  "type": "integer",
+                                  "minimum": 1
+                                }
+                              },
+                              "required": [
+                                "x",
+                                "y",
+                                "width",
+                                "height"
+                              ],
+                              "additionalProperties": false
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "changed_outside_px": {
+                          "const": 0
+                        },
+                        "alpha_changed_px": {
+                          "type": "integer",
+                          "minimum": 0
+                        },
+                        "before": {
+                          "anyOf": [
+                            {
+                              "type": "object",
+                              "properties": {
+                                "uri": {
+                                  "type": "string",
+                                  "minLength": 2,
+                                  "pattern": "^/"
+                                },
+                                "path": {
+                                  "type": "string",
+                                  "minLength": 2,
+                                  "pattern": "^/"
+                                },
+                                "mime_type": {
+                                  "const": "image/png"
+                                },
+                                "sha256": {
+                                  "type": "string",
+                                  "pattern": "^[0-9a-f]{64}$"
+                                },
+                                "size_bytes": {
+                                  "type": "integer",
+                                  "minimum": 1
+                                },
+                                "retention_days": {
+                                  "type": "integer",
+                                  "minimum": 1
+                                }
+                              },
+                              "required": [
+                                "uri",
+                                "path",
+                                "mime_type",
+                                "sha256",
+                                "size_bytes",
+                                "retention_days"
+                              ],
+                              "additionalProperties": false
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "after": {
+                          "anyOf": [
+                            {
+                              "type": "object",
+                              "properties": {
+                                "uri": {
+                                  "type": "string",
+                                  "minLength": 2,
+                                  "pattern": "^/"
+                                },
+                                "path": {
+                                  "type": "string",
+                                  "minLength": 2,
+                                  "pattern": "^/"
+                                },
+                                "mime_type": {
+                                  "const": "image/png"
+                                },
+                                "sha256": {
+                                  "type": "string",
+                                  "pattern": "^[0-9a-f]{64}$"
+                                },
+                                "size_bytes": {
+                                  "type": "integer",
+                                  "minimum": 1
+                                },
+                                "retention_days": {
+                                  "type": "integer",
+                                  "minimum": 1
+                                }
+                              },
+                              "required": [
+                                "uri",
+                                "path",
+                                "mime_type",
+                                "sha256",
+                                "size_bytes",
+                                "retention_days"
+                              ],
+                              "additionalProperties": false
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        }
+                      },
+                      "required": [
+                        "mode",
+                        "rect",
+                        "changed_px",
+                        "changed_bounds_px",
+                        "changed_outside_px",
+                        "alpha_changed_px",
+                        "before",
+                        "after"
+                      ],
+                      "additionalProperties": false
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                }
+              },
+              "required": [
+                "layer_id",
+                "type",
+                "degrees",
+                "filter",
+                "pivot_px",
+                "bounds_before_px",
+                "bounds_after_px",
+                "undo_steps",
+                "verification"
+              ],
+              "additionalProperties": false
             }
-          },
-          "required": [
-            "layer_id",
-            "transform_mask_id",
-            "created_mask",
-            "by_px",
-            "translation_px",
-            "undo_steps",
-            "verification"
-          ],
-          "additionalProperties": false
+          ]
         },
         "error": {
           "type": "null"
@@ -765,11 +2636,12 @@
       },
       "layer_id": "6f1c2d3e-4a5b-4c6d-8e9f-0a1b2c3d4e5f",
       "operation": {
-        "type": "translate",
-        "by_px": [
-          12,
-          -4
-        ]
+        "type": "scale",
+        "size_px": [
+          24,
+          16
+        ],
+        "filter": "Bicubic"
       }
     },
     "structuredContent": {
@@ -780,17 +2652,29 @@
       "operation_id": null,
       "data": {
         "layer_id": "6f1c2d3e-4a5b-4c6d-8e9f-0a1b2c3d4e5f",
-        "transform_mask_id": "9c4d5e6f-7a8b-4c9d-8e0f-2a3b4c5d6e7f",
-        "created_mask": true,
-        "by_px": [
-          12,
-          -4
+        "type": "scale",
+        "size_px": [
+          24,
+          16
         ],
-        "translation_px": [
-          12,
-          -4
+        "filter": "Bicubic",
+        "pivot_px": [
+          14.0,
+          12.0
         ],
-        "undo_steps": 2,
+        "bounds_before_px": {
+          "x": 8,
+          "y": 8,
+          "width": 12,
+          "height": 8
+        },
+        "bounds_after_px": {
+          "x": 2,
+          "y": 4,
+          "width": 24,
+          "height": 16
+        },
+        "undo_steps": 1,
         "verification": {
           "mode": "full",
           "rect": {
@@ -799,12 +2683,12 @@
             "width": 64,
             "height": 48
           },
-          "changed_px": 512,
+          "changed_px": 288,
           "changed_bounds_px": {
-            "x": 8,
-            "y": 8,
-            "width": 32,
-            "height": 20
+            "x": 2,
+            "y": 4,
+            "width": 24,
+            "height": 16
           },
           "changed_outside_px": 0,
           "alpha_changed_px": 0,

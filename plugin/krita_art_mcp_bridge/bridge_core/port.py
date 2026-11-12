@@ -109,6 +109,17 @@ class DocumentsPort(Protocol):
     # INTERNAL_ERROR when Krita does not take the XML.
     def set_transform(self, document: Any, mask_id: str, xml: str) -> None: ...
 
+    # The resampling filters Krita knows by id, sorted.
+    def filter_strategies(self) -> list[str]: ...
+
+    # Scales, rotates or shears a layer and everything in it, as one native step, then waits:
+    # {type: scale, size_px, filter} about pivot, {type: rotate, degrees} or {type: shear,
+    # degrees: [x, y]}, each about the exact bounds' centre. libkis returns silently for a mask
+    # and falls back to Bicubic for an unknown filter, so the caller checks both first.
+    def transform_node(
+        self, document: Any, node_id: str, operation: dict[str, Any], pivot: list[float]
+    ) -> None: ...
+
     # Builds a selection by the recipe's steps, in order, and commits it with setSelection (one
     # undo step); a recipe of ("clear",) commits None. Waits.
     def set_selection(self, document: Any, recipe: list[tuple[Any, ...]]) -> None: ...

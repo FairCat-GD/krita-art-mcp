@@ -114,6 +114,24 @@ def transform_stack() -> tuple[Layer, ...]:
     )
 
 
+def affine_stack() -> tuple[Layer, ...]:
+    # Top first: a group holding a layer, a layer carrying a marker in its top-left corner, a
+    # layer to translate, another to hold a mask, and an opaque base, all flat, so where the
+    # marker goes shows which way a turn or shear went.
+    marked = rect(12, 8, (220, 40, 60))
+    marked[0:2, 0:2] = (40, 60, 220, 255)
+    return (
+        Layer(
+            "probe group",
+            children=(Layer("probe inner", rect(8, 6, (40, 200, 90)), x=40, y=30),),
+        ),
+        Layer("probe mark", marked, x=8, y=8),
+        Layer("probe other", rect(6, 4, (90, 40, 200)), x=50, y=4),
+        Layer("probe masked", rect(6, 4, (30, 110, 200)), x=50, y=40),
+        Layer("probe base", rect(WIDTH, HEIGHT, (200, 180, 30))),
+    )
+
+
 def rim_stack() -> tuple[Layer, ...]:
     # A silhouette whose edge fades through two rings of partial alpha, and a hidden recolour
     # layer that covers it and spills past it, on a transparent canvas.

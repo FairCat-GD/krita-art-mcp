@@ -81,7 +81,7 @@ do. Undoable is not the same as additive, so a stroke stays destructive.
 |---|---|---|
 | Read-only | `krita_server_info`, `krita_document_list`, `krita_document_inspect`, `krita_resource_list`, `krita_capture`, `krita_sample`, `krita_preview_render`, `krita_operation_get` | Change no document. Captures and previews write their PNGs to the data folder. One exception, chosen on purpose: `krita_operation_get` polled for a save or a duplicate that came back running finishes it, putting its file in place and opening a duplicate's branch, but only in the server process that made the call |
 | Not destructive | `krita_protection_set`, `krita_document_open`, `krita_document_create`, `krita_document_save`, `krita_layer_duplicate`, `krita_document_duplicate` | Add: tighter protection, a working copy, a document, a new file, a hidden copy of a layer, a branch of a document |
-| Destructive | `krita_layer_create`, `krita_paint_stroke`, `krita_paint_fill`, `krita_selection_set`, `krita_layer_update`, `krita_layer_reorder`, `krita_layer_remove`, `krita_layer_transform`, `krita_history_step`, `krita_operation_cancel`, `krita_document_close` | Change what is there: what a layer shows (a new mask can hide it, a move can cover it, a translate shifts it), pixels, the selection, a layer, the layer stack, history, a queued call, or unsaved changes a close discards |
+| Destructive | `krita_layer_create`, `krita_paint_stroke`, `krita_paint_fill`, `krita_selection_set`, `krita_layer_update`, `krita_layer_reorder`, `krita_layer_remove`, `krita_layer_transform`, `krita_history_step`, `krita_operation_cancel`, `krita_document_close` | Change what is there: what a layer shows (a new mask can hide it, a move can cover it, a translate shifts it), pixels (a scale, rotate or shear resamples them), the selection, a layer, the layer stack, history, a queued call, or unsaved changes a close discards |
 
 **Codex's approval setting.** By default Codex reviews every call a tool's hints call destructive.
 Measured in two long sessions, each such call carried 2 to 3 s beyond the tool's own time, and each
@@ -217,6 +217,35 @@ by_px: [x, y]}` moves a paint layer or a group, with all it holds.
 - **Saving.** A KRA keeps the move and its mask. An ORA drops the transform mask, so the reopened
   file would show the layer unmoved, and the save is refused (`SAVE_VERIFY_FAILED`).
 
+**Scale, rotate or shear a layer.** `krita_layer_transform` with one of these operations resamples
+a paint layer, or a group with every layer in it, through Krita's own Layer > Transform, in one
+undo step, about the centre of the layer's bounds (for a group, its shown layers' bounds; hidden
+layers inside it turn with it).
+- **`{type: "scale", size_px: [w, h], filter}`** makes the bounds w × h px. `filter` is one of
+  Krita's eight (`Bicubic`, the default, `Bilinear`, `BSpline`, `Bell`, `Hermite`, `Lanczos3`,
+  `Mitchell`, `NearestNeighbor`); any other name is refused, since Krita would quietly use Bicubic.
+  Read the bounds from `krita_document_inspect` and work out the size; where an edge is soft the
+  bounds after can differ by a pixel.
+- **`{type: "rotate", degrees}`**, between -360 and 360: positive turns clockwise on screen. Krita
+  resamples with Bicubic.
+- **`{type: "shear", degrees: [x, y]}`**, each from -45 to 45: a positive x moves the rows below the
+  centre right and those above it left; a positive y moves the columns right of the centre down.
+  Krita resamples with Bilinear. A shear too small to move an edge by a pixel is refused, since
+  Krita would change nothing.
+- **Resampling loses detail,** and undo is the only way back. To keep the original, copy the layer
+  first with `krita_layer_duplicate` and transform the copy, or the original with the copy kept
+  hidden.
+- **What it reports:** `pivot_px`, `bounds_before_px` and `bounds_after_px`, the `filter` Krita
+  used, and the whole canvas checked against protection; a leak is undone. The selection does not
+  limit a transform: the whole layer turns.
+- **What it refuses:** a protected layer or one holding one (`LOCKED_TARGET`); a layer holding a mask
+  or a layer of another kind (`reason: node_type`); a transform mask on the layer or on a group
+  holding it (`reason: transform_mask`: scale, rotate or shear before you translate); a locked or
+  alpha-locked layer, which you unlock with `krita_layer_update` first; a styled layer
+  (`layer_style`); a layer a clone layer shows (`clone_source`); an empty layer; a change of
+  nothing (`no_change`); more than 50 layers and groups (`too_many_nodes`); reads past 8192 × 8192
+  (`too_large`); and Krita's cumulative undo.
+
 **Try a whole alternative on a branch.** `krita_document_duplicate` saves the document to a new
 `.kra` path inside a root, verifies the file by reopening it, as a save does, and opens that file
 as a document of its own. Its receipt names it `new_document_id`.
@@ -337,7 +366,9 @@ explicit recipes. A source's `baseline_id` shows the document as opened beside i
 never below the last protection change. Layer and mask creation, duplicates, reorders and
 removals, selection commits, blend changes, strokes and fills, on layers and masks, undo; other
 property changes cannot. A reorder's steps move together: a count that would split one is refused
-with the count to ask for, in `details.steps_needed`.
+with the count to ask for, in `details.steps_needed`. A scale, rotate or shear you make with
+Krita's own Layer > Transform carries the same name as the bridge's, so when one of yours lies above
+the bridge's step, history stops there for good (`INVALID_ARGUMENT`, not a retry).
 
 **9. Save to a new path.** The file is written beside the path, reopened in Krita, compared, and only
 then moved into place. It never overwrites.
@@ -470,8 +501,8 @@ Every failure returns `error: {code, message, retryable, details}`. The table gi
 - **Region verification needs the pixel brush engine.** Color Smudge, the Quick Brush, MyPaint, spray,
   deform and others need `verify: "full"`.
 - Stochastic presets do not repeat exactly.
-- No filters, scale, rotate or shear, or flood fills from a seed. Translate moves by whole pixels
-  only. A mask moves and is copied only with its layer, and a clone layer's source is neither moved
+- No filters, or flood fills from a seed. Translate moves by whole pixels only; scale, rotate and
+  shear take paint layers and groups of them, with no masks, and pivot on the bounds' centre. A mask moves and is copied only with its layer, and a clone layer's source is neither moved
   nor removed.
 - **A fill is one flat colour.** No gradients or patterns, and no fill of a shape past the canvas.
 - **Masks are transparency masks on paint layers.** No masks on groups, no filter or selection

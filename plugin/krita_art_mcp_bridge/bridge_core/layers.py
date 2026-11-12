@@ -204,7 +204,7 @@ def handlers(registry: Registry, port: DocumentsPort, data: Path) -> dict[str, H
             message = "A group cannot go inside itself."
             raise BridgeError("INVALID_ARGUMENT", message, False, details)
         effects = port.effects(document, True)
-        _refuse_clone_source(effects, moving)
+        refuse_clone_source(effects, moving)
         # One step for the remove and one for each node added back, all within one history
         # call and Krita's undo stack, or no history call or rollback could take them whole.
         reach = min(MAX_STEPS, port.undo_limit())
@@ -289,7 +289,7 @@ def handlers(registry: Registry, port: DocumentsPort, data: Path) -> dict[str, H
             refuse_held(before, layer_id, handle.protected)
         effects = port.effects(document, True)
         gone = nodes.subtree(before, layer_id)
-        _refuse_clone_source(effects, gone)
+        refuse_clone_source(effects, gone)
         left = [
             one
             for one in nodes.children(before).get(before["root_id"], [])
@@ -433,9 +433,13 @@ def _kind(tree: dict[str, Any], node_id: str) -> str:
     return kind
 
 
-def _refuse_clone_source(effects: dict[str, Any], inside: list[str]) -> None:
-    # Krita turns a removed layer's clones into paint layers (K52), and a move starts with a
-    # remove. A clone whose source Krita does not name may show one of these nodes.
+# What Krita does to a clone when its source is removed or moved (K52).
+REMOVED = "turns such clones into paint layers when their source is removed or moved"
+
+
+def refuse_clone_source(effects: dict[str, Any], inside: list[str], does: str = REMOVED) -> None:
+    # A clone whose source Krita does not name may show one of these nodes; effects must be
+    # read with reach.
     clones = sorted(
         clone_id
         for clone_id, source_id in effects["clones"].items()
@@ -443,10 +447,7 @@ def _refuse_clone_source(effects: dict[str, Any], inside: list[str]) -> None:
     )
     if clones:
         details = {"layer_id": inside[0], "reason": "clone_source", "clone_ids": clones}
-        message = (
-            "A clone layer shows this layer, and Krita turns such clones into paint layers when "
-            "their source is removed or moved, so this is refused."
-        )
+        message = f"A clone layer shows this layer, and Krita {does}, so this is refused."
         raise BridgeError("UNSUPPORTED_CAPABILITY", message, False, details)
 
 

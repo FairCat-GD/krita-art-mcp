@@ -1,6 +1,6 @@
 # krita-art-mcp — architecture, as built
 
-This is the system as it stands at 0.27.0, in round 2, on the Phase 1 round 1 built. Every session
+This is the system as it stands at 0.28.0, in round 2, on the Phase 1 round 1 built. Every session
 keeps it true, in the same commit as the change. Each section stands on its own: a session reads
 the overview, the invariants and the baseline, then only the sections its work touches.
 `docs/USER-GUIDE.md` is the same system from the user's side.
@@ -13,7 +13,7 @@ loop: open a working copy with every existing layer protected; inspect, capture 
 layer, select, tighten protection; paint native strokes and fills, each verified and rolled back on
 a leak; soften or revise with transparency masks painted the same way; try a change on a hidden
 copy of a layer, group layers by moving them, remove what is not kept; move a layer by whole
-pixels through a transform mask; branch the whole document
+pixels through a transform mask, or scale, rotate or shear it; branch the whole document
 to try an alternative beside it; preview at game size; undo or keep; save to a new KRA or ORA,
 verified by reopening; close.
 
@@ -254,7 +254,9 @@ poll from another process finishes nothing: values and fields, no rename, so it 
 three layer tools were added and `krita_history_step` refuses to split an operation's steps, a
 refusal it did not make before but no field or value changed, so it stays. At 0.26.0 a tool and a
 handle field were added, so it stays. At 0.27.0 a tool and the layers' `translation_px` were added,
-and a duplicate refuses a layer holding a transform mask, a new refusal, so it stays.
+and a duplicate refuses a layer holding a transform mask, a new refusal, so it stays. At 0.28.0
+`krita_layer_transform` took three operations, each with a receipt shape of its own beside the
+translate's, so it stays.
 
 **Schemas are data.** Each of the 25 `schemas/krita_<tool>.json` holds `name`, `description`,
 `inputSchema`, `outputSchema`, `annotations` and `example`. `MCPServer` tools are built by hand with
@@ -286,7 +288,8 @@ sample's `color` sent as a stroke's colour.
   `krita_layer_duplicate`, whose copy is always hidden, so the composite cannot change, and
   `krita_document_duplicate`, which writes a new file, opens it, and leaves its source as it was.
 - The other eleven are destructive, because undoable is not additive. A fill overwrites what is
-  there, a reorder, a remove or a translate changes what shows, and `krita_layer_create` can make a mask that
+  there, a reorder, a remove or a translate changes what shows, a scale, rotate or shear resamples
+  pixels, and `krita_layer_create` can make a mask that
   hides its whole layer, as `visible: false` would; it was additive until masks went live at
   0.22.0.
 - `idempotentHint` is true and `openWorldHint` false on every tool.
@@ -346,11 +349,12 @@ schema, where a job ends at its first raise and each check reads what the one be
 document before the layer before the pixels.
 
 **Argument rules are written twice on purpose.** Each side trusts no caller, and a refusal the server
-makes carries no `operation_id`. Each pair is held by a parity test in `tests/test_parity.py`: 21
+makes carries no `operation_id`. Each pair is held by a parity test in `tests/test_parity.py`: 25
 today, from open's format, editable lists and mode to a capture's area, a layer's coverage, a
 fill's colour and area, a stroke's or fill's colour and mask paint, a taper's rules, a layer moved
-inside or above itself, a copy's name, a layer's name length, a removal's `verify`, and a
-translate that moves nothing or past its range. `tests/support/parity.py`'s
+inside or above itself, a copy's name, a layer's name length, a removal's `verify`, a
+translate that moves nothing or past its range, and a scale, rotate or shear of nothing, past its
+schema's bounds, or of another type or field. `tests/support/parity.py`'s
 `refused_alike` calls the tool, turns the server's half off, and calls again, so the server's own
 translation carries the same arguments to the plugin. Both must refuse with one code and one
 `retryable`, the plugin before its marker.
@@ -441,9 +445,9 @@ the overhang bounds on-curve points only, so a brush's reach can pass it.
 presets have no seed), `operation.cancel_running`, `color_spaces`, `filters` (Phase 2), `animation`
 (Phase 5). True since 0.9.0: `stroke.native_brush`, `stroke.smoothing`, `selection.enforced`; since
 0.21.0, `paint.fill`; since 0.22.0, `mask.transparency`; since 0.24.0, `stroke.dynamics`; since
-0.27.0, `layer.translate`.
+0.27.0, `layer.translate`; since 0.28.0, `layer.scale`, `layer.rotate` and `layer.shear`.
 
-**The instructions.** `instructions.py` is 3,375 of Claude Code's 4,096 characters (C4). A test
+**The instructions.** `instructions.py` is 3,371 of Claude Code's 4,096 characters (C4). A test
 holds at least 700 spare, room for the round's later sessions. It states the rules an agent would
 otherwise learn from a refusal, and leaves to the tools what belongs to one: a field's range, unit
 and form to its description, and a tool's own rule to the tool's, each moved rule held there by a
@@ -817,7 +821,7 @@ step) and `attach` (`addChildNode`, "Add Layer"), which the create also uses (K5
 - **Ranks, not raw order.** Krita's child index counts the global selection's mask under the root,
   so `nodes.ranks` leaves it out, for the judges, the placements and the ledger's fingerprint.
 
-**Translate** (`bridge_core/transforms.py`, the params in `bridge_core/translations.py`). A paint
+**Transforms: translate** (`bridge_core/transforms.py`, the params in `bridge_core/translations.py`). A paint
 layer or a group, pass-through or not, moves by whole pixels through a transform mask on top of its
 masks, named "Translate"; the layer's own pixels never change (K53, measured).
 - **The params** are Krita's own: the transform tool's free transform at identity, as a fresh mask's
@@ -850,6 +854,40 @@ masks, named "Translate"; the layer's own pixels never change (K53, measured).
   later sits above the transform mask and stays where it is painted.
 - **Inspect, open and the branch** report each transform mask's `translation_px`, or null for params
   no translate made.
+
+**Transforms: scale, rotate and shear** (`bridge_core/affine.py`; `transforms.py` sends each
+operation type its own way). A paint layer, or a group of paint layers and groups, resampled by
+Krita's own `scaleNode`, `rotateNode` or `shearNode` in one step each, about the centre of its exact
+bounds (K54).
+- **The operations.** A scale takes the bounds' new size and one of Krita's eight filters, checked by
+  the tool against a fixed list and `Krita.filterStrategies()`, since `scaleNode` takes any other
+  name as Bicubic; the pivot it passes is the bounds' `QRectF` centre. Rotate takes degrees,
+  clockwise on screen, sent as radians, Bicubic; shear takes degrees on x and y, x then y,
+  Bilinear (measured).
+- **Refused before the marker:** the root, an unknown id or another type; a protected layer or one
+  holding one (`protection.refuse_held`; a protected group above is judged by the composite, as
+  painting is); a mask or another kind in the subtree (`node_type`), a transform mask in it or on a
+  group holding it (`transform_mask`), a locked or alpha-locked layer, a styled one, a clone's
+  source (`layers.refuse_clone_source`, fed by `effects` with reach, since Krita moves those
+  clones); an empty target; a change of nothing, a scale to the bounds' own size or a shear whose
+  replica of Krita's `mapRect` keeps the size (Krita then pushes no step); more than 50 nodes;
+  reads past one, each layer's or all of them together; cumulative undo; a filter Krita lacks.
+- **The witness.** Each paint layer in the subtree gets a rect before the change: its bounds united
+  with where the operation takes them about the pivot (`affine.mapped`), widened by a filter's
+  reach, three source pixels times the scale, and four more. Its bytes there are hashed before and
+  after. The frame takes the op's `witness_of`, the first layer whose digest moved, as a stroke's
+  frame takes its target's diff: it pushes the step with that witness, or seals when nothing moved.
+  A resample leaves colour under alpha 0 outside a layer's exact bounds (measured), so only a read
+  tells what a rect holds; a digest padded with the default pixel failed a rollback live.
+- **The change** is the one libkis call, waited, then a refresh and the tree. **The judge**, in
+  order: no node added or removed, `drift` with `offset_px` loose on the subtree (Krita moves the
+  offset on a rotate or a shear); every layer's new bounds inside its rect, or `INTERNAL_ERROR`,
+  rolled back by what the rect saw; a sealed step with a changed composite is `INTERNAL_ERROR`, and
+  one without is `no_change`, rolled back with history sealed (a half turn of symmetric paint); a
+  leak is `PROTECTED_REGION_CHANGED`. **`back`** is the watched tree, offsets loose, and every
+  layer's bounds and digest as before.
+- **Full scope always,** no hashed layers. The receipt gives `pivot_px`, the bounds before and
+  after, the filter Krita used and `undo_steps: 1`.
 
 **The inset.** A polygon or ellipse selection is antialiased and the allowed mask is binary, so a
 selection on the mask's own edge paints pixels the mask forbids: 58 px with a soft brush and 67 with a
@@ -888,8 +926,8 @@ the flags. The diff draws offending pixels red over the scope as it was, faded t
 1024 px long, block-reduced so none vanishes, and goes inline only under the size bound.
 
 **The frame.** `bridge_core/mutation.py` holds invariant 5's sequence once, and the stroke, the
-fill, `krita_layer_update` and the five layer ops (create, duplicate, reorder, remove, translate)
-run on it;
+fill, `krita_layer_update` and the layer ops (create, duplicate, reorder, remove, and the
+transform's translate, scale, rotate and shear) run on it;
 the save keeps its own ladder, and a selection, which has no verdict, pushes its step by hand.
 - **Before the change.** `verifiable` refuses a scope or target rect the reads cannot see and takes
   the allowed mask over the scope, as a `Reads`. That names the composite's scope, and optionally
@@ -901,16 +939,18 @@ the save keeps its own ladder, and a selection, which has no verdict, pushes its
   raise marks the document lost. The write-nothing update does not arm it.
 - **Steps.** An op names its undo labels up front, one or more, and the frame refuses a change
   that took any other number; a reorder names one remove and an add per node it moves, a first
-translate an add and its params change. An op that
+translate an add and its params change, a scale, rotate or shear its one step. An op that
   names none reads no start state, so no selection. A node change pushes each step the moment
   Krita holds it, with its state after, so at most one step is ever unpushed (F7). A pixel change's
   step is pushed by the frame after the reads, with the witness over the target's diff, or sealed
-  when the diff is empty.
+  when the diff is empty; an op whose change reaches several layers brings its own `witness_of`
+  instead, the first of them that moved.
 - **A problem** is a `BridgeError` from the change or the judge, keeping its code, or any other
   `Exception`, logged as `INTERNAL_ERROR`. Either is re-raised never retryable, after the rollback.
 - **The rollback,** in order:
   1. A step named but never pushed is the newest Krita may hold, so it goes first. A pixel step is
-     undone by a witness built from a re-read, unless the re-read shows the document back. A node
+     undone by a witness built from a re-read, or by the op's `witness_of`, unless the re-read
+     shows the document back. A node
      step is undone by its label and state, unless the state never moved.
   2. Each pushed step is undone, newest first, through `history.move`. The first reads the state
      afresh, so a step Krita holds above the op's own is never undone in its place. The view comes
@@ -1140,7 +1180,11 @@ as Krita's actions read them on 5.3.4 in English: "Add Layer" (a transparency ma
 duplicate's attach, a reorder's adds and a translate's mask too, measured), "Remove Layer" (a
 remove, and a reorder's first step), "Composition Mode Change", "Scripted Brush Stroke", and an
 unnamed step for a selection and for a transform mask's params (`fromXML` names its stroke after a
-bare command, measured). They
+bare command, measured), and "Scale Layer", "Rotate Layer" and "Shear Layer", one under each of
+`layer.transform.scale`, `.rotate` and `.shear` (measured). Krita's own Layer > Transform menu names
+its steps the same, and the fingerprint does not see pixels, so the witness alone tells them apart:
+a history move that undid such a step and could not confirm it, then put it back, stops history as
+foreign, not retryable, since a retry would only undo the owner's step again. They
 are read only by `move`, so on a localised Krita ordinary calls complete, `krita_history_step`
 refuses every step as not the bridge's, and any change that needs a rollback ends in
 `ROLLBACK_FAILED` and an unsafe document. English is a requirement until the backlog's item lands.
@@ -1473,6 +1517,8 @@ Each has its detail in `docs/BACKLOG.md`, or in `docs/spec/SESSIONS.md` where ro
   `krita_document_open` opens it.
 - Labels are English; region scope is the pixel engine only; filters are classed by type.
 - Selection steps and a translate's params steps are confirmed by state alone.
+- Scale, rotate and shear take no masks and no layer kinds but paint layers and groups, are not
+  limited by the selection, and stop history for good at the owner's own transform of the same name.
 - Undoing the attach of a copied transform mask crashes Krita (K53), so a layer holding one is not
   duplicated. An ORA drops a translate, so such a save is refused.
 - Erasing, a single dab and antialiasing off are refused.
@@ -1524,6 +1570,7 @@ cite stay in the PDD, in git history.
 | K51 | `Preset.fromXML` edits the preset in place and sets it dirty; the view's current preset and `Preset(resource)` are one object; `reload_preset_action` reloads the current preset from storage and clears the flag; the resource model's `Dirty` column says whether a preset holds unsaved changes. The Distance sensor reads `length` as an integer, and in a scripted stroke counts the first dab's distance from the canvas origin; a curve's `is_corner` points run straight | `libs/libkis/Preset.cpp`; `libs/ui/kis_paintop_box.cc` (`slotReloadPreset`); `libs/resources/KisResourceModel.h`; `plugins/paintops/libpaintop/KisSensorData.cpp`; `libs/image/kis_painter.cc` (`paintPainterPath`); `libs/image/kis_cubic_curve.cpp`; measured |
 | K52 | `Node.remove()` runs one `KisImageLayerRemoveCommand` ("Remove Layer"), which takes each node of the subtree off its own parent and turns the removed layers' clones into paint layers, undone together; `addChildNode` runs one `KisImageLayerAddCommand` ("Add Layer"), above `above` or on top; `Node.duplicate()` clones the subtree with a new uuid for every node and pushes no step; `setName` and `setVisible` on a detached node push none | `libs/libkis/Node.cpp`; `libs/image/commands/kis_image_layer_remove_command.cpp`, `kis_image_layer_remove_command_impl.cpp`, `kis_image_layer_add_command.cpp`; `libs/image/kis_base_node.cpp`, `kis_node.cpp`; measured |
 | K53 | `TransformMask.fromXML` runs a `KisSimpleModifyTransformMaskCommand` under a bare `KUndo2Command` through `runSingleCommandStroke`, named after its empty text, and does not wait; a fresh mask holds the transform tool's free transform at identity; `toXML` writes attributes in a per-session hash order; an affine mask renders through its worker until a static cache rebuilt 3000 ms later; `KisRecalculateTransformMaskJob::run` uses its layer's image unchecked, and undoing the attach of a copied transform mask crashes Krita there | `libs/libkis/TransformMask.cpp`; `libs/image/kis_processing_applicator.cpp`; `libs/image/commands_new/KisSimpleModifyTransformMaskCommand.cpp`; `libs/image/kis_transform_mask.cpp`; `libs/image/kis_recalculate_transform_mask_job.cpp`; measured |
+| K54 | `Node.scaleNode(origin, w, h, strategy)` scales by w and h over the exact bounds' size about `origin`, taking an unknown strategy as Bicubic; `rotateNode(radians)` turns about the exact bounds' centre, Bicubic; `shearNode(degX, degY)` shears x then y about it, Bilinear, and pushes no step when `mapRect` keeps the bounds' size; each is one processing step ("Scale Layer", "Rotate Layer", "Shear Layer") that waits and returns silently for a mask; the visitor resamples every paint device and mask selection below, maps a transform mask's params, and moves the node's clones; rotate and shear move a layer's offset; a resample leaves colour under alpha 0 outside the exact bounds | `libs/libkis/Node.cpp:695-743`; `libs/image/kis_image.cc:1078-1340`; `libs/image/processing/kis_transform_processing_visitor.cpp`; `libs/image/kis_transform_worker.cc:59-67`; measured |
 | C1 | `mcp` 2.3.0: `FastMCP` is `MCPServer`; `Image` takes no `_meta`; a raised exception yields only "Error executing tool X" | Probed 2026-10-22 |
 | C2 | Codex passes MCP images to image-capable models and honours `codex/imageDetail` | openai/codex `codex-rs/core/src/mcp_tool_call.rs` |
 | C4 | Claude Code: output limit 25,000 tokens; instructions and descriptions truncated at 4,096 characters | code.claude.com/docs/en/mcp |
@@ -1622,29 +1669,48 @@ the code is shaped as it is.
     too. Removing that copy, removing or reordering a hidden translated layer, and undoing a translate
     on a hidden layer did not.
   - A mask added after a translate sits above the transform mask and stays where it is painted.
+- Scale, rotate and shear, on 0.28.0's measurement, on harness ORAs: paint layers, an isolated, a
+  pass-through and a hidden group.
+  - Each is one step, "Scale Layer", "Rotate Layer" or "Shear Layer"; undo, redo and a second undo
+    give back every node's bounds, offset and own bytes and the composite; nothing changes 4 s later.
+  - A scale lands on the size asked about the bounds' centre for every filter, on flat paint; an
+    unknown filter name gave Bicubic's bytes. `filterStrategies()` lists eight.
+  - Rotate turns clockwise for positive degrees; shear moves rows below the centre right for a
+    positive x and columns right of it down for a positive y, x first (a shear of [-4, 3.6] on a
+    12 x 8 layer at (8, 8) changed it, which any other order keeps).
+  - A shear Krita's `mapRect` keeps pushed no step and changed nothing, at every threshold tried;
+    the replica agreed.
+  - Rotate and shear move a layer's offset; scale does not. A half turn of a flat rect changed no
+    byte, bounds or composite, moved the offset, and pushed a step.
+  - A group's bounds are its shown layers'; its layers, a hidden one too, turn about its centre. A
+    hidden group's bounds were current after a refresh.
+  - After a 30 degree turn, a layer held the marker's colour under alpha 0 a pixel outside its exact
+    bounds; a witness that padded the old bytes with the default pixel failed the leak's rollback
+    there.
+  - A KRA save after each verified. At 4096 x 4096 each took under a second.
 - Krita's memory grows across large opens and saves, to 2 GB or more in a probe run; a restart resets
   it. A Krita holding 87 documents ran document ops about three times slower, and left the paint
   benchmarks, the preview benchmark and H4 idle alone.
 
-## Baseline (v0.27.0)
+## Baseline (v0.28.0)
 
-Taken on 2026-11-11 on Krita 5.3.4.1, macOS, Apple Silicon, on a Krita restarted that session, with
+Taken on 2026-11-12 on Krita 5.3.4.1, macOS, Apple Silicon, on a Krita restarted that session, with
 **0 documents open**. The probe prints the open-document count beside its time, because document ops
 depend on it: 87 open documents cost about 50 s more.
 
 | Check | Expected |
 |---|---|
 | `uv run scripts/verify.py` | 6 stages, all PASS |
-| Server tests (3.12) | 1135 passed, 0 skipped |
-| Plugin-core tests (3.10) | 1127 passed, 0 skipped |
-| `uv run krita-art-mcp probe` | 216 PASS, 0 FAIL, 25 MEASURED; about 145 s |
+| Server tests (3.12) | 1152 passed, 0 skipped |
+| Plugin-core tests (3.10) | 1201 passed, 0 skipped |
+| `uv run krita-art-mcp probe` | 226 PASS, 0 FAIL, 25 MEASURED; 257 s under a load average of 3.4, about 145 s on a quiet machine at 0.27.0; the scale, rotate and shear checks take about 4 s |
 | `uv run krita-art-mcp doctor` | 6 steps, all PASS, with a root allowed |
 | Registered tools | 25 |
 | Schema files | 25 |
 | Error codes | 30 |
 | Bridge ops | 39 |
 | Bridge protocol; `api_version` | 1; 0.4.0 |
-| Server instructions | 3,375 of 4,096 characters, at least 700 spare |
+| Server instructions | 3,371 of 4,096 characters, at least 700 spare |
 | CLI commands | 5 |
 
 A documentation or refactoring change should not move any of these. If one moves, that is the

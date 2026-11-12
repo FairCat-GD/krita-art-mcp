@@ -14,6 +14,7 @@ from krita_art_mcp.bridge_client import BridgeClient, Done
 from krita_art_mcp.journal import Journal
 from krita_art_mcp.probe import (
     acceptance,
+    affine,
     branching,
     dynamics,
     edges,
@@ -157,6 +158,7 @@ async def run(report: Report, a: Client, b: Client, client: BridgeClient, harnes
             await dynamics.run(report, a, client, folder, harness, hard)
             await layers.run(report, a, client, folder, harness, hard)
             await transforms.run(report, a, client, folder, harness)
+            await affine.run(report, a, client, folder, harness)
         with report.timed("benchmark"):
             for spec in BENCHMARKS:
                 await _benchmark(report, a, client, harness, folder, spec, hard)

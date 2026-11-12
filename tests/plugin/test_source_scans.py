@@ -447,6 +447,22 @@ def test_transform_masks_are_made_and_set_at_their_sites_only() -> None:
     ]
 
 
+@pytest.mark.parametrize(
+    ("call", "site"),
+    [
+        ("scaleNode", "transform_node"),
+        ("rotateNode", "transform_node"),
+        ("shearNode", "transform_node"),
+        ("filterStrategies", "filter_strategies"),
+    ],
+)
+def test_a_layer_is_resampled_at_its_one_site(call: str, site: str) -> None:
+    # Each resamples in one step that the bridge must check before and witness after (K54),
+    # and scaleNode takes an unknown filter as Bicubic, silently.
+    found = sorted((m, f) for m, _, tree in _sources() for f in _uses(tree, call))
+    assert found == [(f"{ADAPTER}.documents", site)]
+
+
 def test_set_selection_is_called_at_its_four_sites_only() -> None:
     allowed = [(m, len(_allowed_set_selections(tree, m))) for m, _, tree in _sources()]
     assert sorted((m, n) for m, n in allowed if n) == [

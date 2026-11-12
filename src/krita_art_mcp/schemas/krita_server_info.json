@@ -94,7 +94,10 @@
                     "filters",
                     "animation",
                     "mask.transparency",
-                    "layer.translate"
+                    "layer.translate",
+                    "layer.scale",
+                    "layer.rotate",
+                    "layer.shear"
                   ]
                 },
                 "additionalProperties": {
@@ -140,7 +143,10 @@
                   "filters",
                   "animation",
                   "mask.transparency",
-                  "layer.translate"
+                  "layer.translate",
+                  "layer.scale",
+                  "layer.rotate",
+                  "layer.shear"
                 ]
               },
               "limits": {
@@ -368,7 +374,10 @@
                   "filters",
                   "animation",
                   "mask.transparency",
-                  "layer.translate"
+                  "layer.translate",
+                  "layer.scale",
+                  "layer.rotate",
+                  "layer.shear"
                 ]
               },
               "additionalProperties": {
@@ -414,7 +423,10 @@
                 "filters",
                 "animation",
                 "mask.transparency",
-                "layer.translate"
+                "layer.translate",
+                "layer.scale",
+                "layer.rotate",
+                "layer.shear"
               ]
             },
             "limits": {
@@ -643,9 +655,24 @@
             "notes": "Animation arrives in Phase 5."
           },
           "layer.translate": {
-            "supported": false,
-            "since": null,
-            "notes": "Translate is not built in this release."
+            "supported": true,
+            "since": "0.27.0",
+            "notes": "Paint layers and groups moved by whole pixels through a transform mask."
+          },
+          "layer.scale": {
+            "supported": true,
+            "since": "0.28.0",
+            "notes": "A paint layer or group scaled about its bounds' centre, in one undo step."
+          },
+          "layer.rotate": {
+            "supported": true,
+            "since": "0.28.0",
+            "notes": "A paint layer or group turned about its bounds' centre, in one undo step."
+          },
+          "layer.shear": {
+            "supported": true,
+            "since": "0.28.0",
+            "notes": "A paint layer or group sheared about its bounds' centre, in one undo step."
           }
         },
         "limits": {

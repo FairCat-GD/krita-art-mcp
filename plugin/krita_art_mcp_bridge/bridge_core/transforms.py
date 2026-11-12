@@ -1,7 +1,7 @@
 from pathlib import Path
 from typing import Any
 
-from . import mutation, nodes, verification
+from . import affine, mutation, nodes, verification
 from .errors import BridgeError, exact, integer
 from .history import LABELS, refuse_cumulative
 from .jobs import Call, Handler
@@ -24,9 +24,14 @@ def transform_rules(operation: Any) -> None:
     # Argument rules, held on the server too (decision 10).
     if not isinstance(operation, dict):
         raise BridgeError("INVALID_ARGUMENT", "operation is an object.", False, _field())
+    kind = operation.get("type")
+    if kind in affine.KINDS:
+        affine.rules(operation)
+        return
+    if kind != TRANSLATE:
+        message = "operation.type is translate, scale, rotate or shear."
+        raise BridgeError("INVALID_ARGUMENT", message, False, _field())
     exact(operation, OPERATION_FIELDS)
-    if operation["type"] != TRANSLATE:
-        raise BridgeError("INVALID_ARGUMENT", "operation.type is translate.", False, _field())
     by = operation["by_px"]
     if (
         not isinstance(by, list)
@@ -137,7 +142,12 @@ def handlers(registry: Registry, port: DocumentsPort, data: Path) -> dict[str, H
             "verification": frame.files(applied),
         }
 
-    guarded = registry.guarded(translate)
+    def transform(handle: Handle, args: dict[str, Any], call: Call) -> dict[str, Any]:
+        if args["operation"]["type"] == TRANSLATE:
+            return translate(handle, args, call)
+        return affine.run(port, handle, args, call, data)
+
+    guarded = registry.guarded(transform)
 
     def layer_transform(args: dict[str, Any], call: Call) -> dict[str, Any]:
         exact(args, TRANSFORM_FIELDS)

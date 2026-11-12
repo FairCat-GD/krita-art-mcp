@@ -441,6 +441,48 @@ def test_a_layer_is_translated_undone_and_read_through_the_tools(world: World) -
     assert still["error"]["code"] == "INVALID_ARGUMENT" and still["operation_id"] is None
 
 
+def test_a_layer_is_scaled_rotated_and_sheared_through_the_tools(world: World) -> None:
+    server = world.server()
+    document_id = _document(server)
+    layer = layer_id(1, 0)
+    world.port.paintable(1)
+    buffer = world.port.buffers[layer]
+    for y in range(4, 8):
+        buffer[(y * 64 + 4) * 4 : (y * 64 + 12) * 4] = bytes([1, 2, 3, 255]) * 8
+    world.port._layer(1, layer)["bounds_px"] = {"x": 4, "y": 4, "width": 8, "height": 4}
+
+    def transform(request_id: str, operation: dict[str, Any]) -> dict[str, Any]:
+        arguments = {
+            "guard": _guard(document_id, request_id),
+            "layer_id": layer,
+            "operation": operation,
+        }
+        found: dict[str, Any] = server.content("krita_layer_transform", arguments)
+        return found
+
+    scaled = transform("req-s1", {"type": "scale", "size_px": [16, 8]})
+    assert scaled["status"] == "completed", scaled
+    # The schema's default filter is the one sent.
+    assert world.port.reshaped[-1] == {"type": "scale", "size_px": [16, 8], "filter": "Bicubic"}
+    data = scaled["data"]
+    assert (data["type"], data["filter"], data["undo_steps"]) == ("scale", "Bicubic", 1)
+    assert data["pivot_px"] == [8.0, 6.0] and data["verification"]["mode"] == "full"
+    rotated = transform("req-r1", {"type": "rotate", "degrees": 90})
+    sheared = transform("req-h1", {"type": "shear", "degrees": [20, 0]})
+    assert (rotated["data"]["filter"], sheared["data"]["filter"]) == ("Bicubic", "Bilinear")
+    undone = server.content(
+        "krita_history_step", {"guard": _guard(document_id, "req-u1"), "action": "undo", "steps": 1}
+    )
+    assert [step["tool"] for step in undone["data"]["steps"]] == ["krita_layer_transform"]
+    for sent in (scaled, rotated, sheared):
+        got = server.content("krita_operation_get", {"operation_id": sent["operation_id"]})
+        assert got["data"]["receipt_valid"] is True
+        assert got["data"]["receipt"]["data"]["type"] == sent["data"]["type"]
+    for nothing in ({"type": "rotate", "degrees": 0}, {"type": "shear", "degrees": [0, 0]}):
+        still = transform("req-z", nothing)
+        assert still["error"]["code"] == "INVALID_ARGUMENT" and still["operation_id"] is None
+
+
 def test_a_layer_moved_inside_itself_is_refused_before_dispatch(world: World) -> None:
     server = world.server()
     document_id = _document(server)

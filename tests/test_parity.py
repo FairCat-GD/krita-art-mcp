@@ -414,6 +414,124 @@ def test_both_sides_refuse_a_translate_past_its_range(
     assert refused["details"]["field"] == "by_px"
 
 
+def _reshape(world: World, operation: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "guard": {"document_id": _document(world), "request_id": "req-reshape"},
+        "layer_id": A_LAYER,
+        "operation": operation,
+    }
+
+
+@pytest.mark.parametrize(
+    ("operation", "field"),
+    [
+        ({"type": "rotate", "degrees": 0}, "degrees"),
+        ({"type": "shear", "degrees": [0, 0]}, "degrees"),
+    ],
+)
+def test_both_sides_refuse_a_turn_or_shear_of_nothing(
+    world: World, monkeypatch: pytest.MonkeyPatch, operation: dict[str, Any], field: str
+) -> None:
+    rule = (changes, "transform_rules")
+    arguments = _reshape(world, operation)
+    refused = refused_alike(world, monkeypatch, "krita_layer_transform", arguments, rule)
+    assert refused["details"]["field"] == field
+
+
+OPERATION = ("inputSchema", "properties", "operation", "oneOf")
+
+
+@pytest.mark.parametrize(
+    ("operation", "cut", "field"),
+    [
+        (
+            {"type": "scale", "size_px": [0, 4], "filter": "Bicubic"},
+            (1, "properties", "size_px", "items", "minimum"),
+            "size_px",
+        ),
+        (
+            {"type": "scale", "size_px": [16385, 4], "filter": "Bicubic"},
+            (1, "properties", "size_px", "items", "maximum"),
+            "size_px",
+        ),
+        (
+            {"type": "scale", "size_px": [4.5, 4], "filter": "Bicubic"},
+            (1, "properties", "size_px", "items", "type"),
+            "size_px",
+        ),
+        (
+            {"type": "scale", "size_px": [4, 4, 4], "filter": "Bicubic"},
+            (1, "properties", "size_px", "maxItems"),
+            "size_px",
+        ),
+        (
+            {"type": "scale", "size_px": [4, 4], "filter": "Box"},
+            (1, "properties", "filter", "enum"),
+            "filter",
+        ),
+        (
+            {"type": "rotate", "degrees": 360},
+            (2, "properties", "degrees", "exclusiveMaximum"),
+            "degrees",
+        ),
+        (
+            {"type": "rotate", "degrees": -360},
+            (2, "properties", "degrees", "exclusiveMinimum"),
+            "degrees",
+        ),
+        (
+            {"type": "shear", "degrees": [46, 0]},
+            (3, "properties", "degrees", "items", "maximum"),
+            "degrees",
+        ),
+        (
+            {"type": "shear", "degrees": [0, -46]},
+            (3, "properties", "degrees", "items", "minimum"),
+            "degrees",
+        ),
+        ({"type": "shear", "degrees": [10]}, (3, "properties", "degrees", "minItems"), "degrees"),
+    ],
+)
+def test_both_sides_refuse_a_scale_rotate_or_shear_past_its_schema(
+    world: World,
+    monkeypatch: pytest.MonkeyPatch,
+    operation: dict[str, Any],
+    cut: tuple[Any, ...],
+    field: str,
+) -> None:
+    arguments = _reshape(world, operation)
+    refused = refused_alike(
+        world, monkeypatch, "krita_layer_transform", arguments, schema=(*OPERATION, *cut)
+    )
+    assert refused["details"]["field"] == field
+
+
+@pytest.mark.parametrize(
+    ("operation", "cut"),
+    [
+        ({"type": "warp"}, ("inputSchema", "properties", "operation", "oneOf")),
+        (
+            {"type": "rotate", "degrees": 10, "filter": "Bicubic"},
+            (*OPERATION, 2, "additionalProperties"),
+        ),
+        (
+            {"type": "shear", "degrees": [10, 0], "filter": "Bilinear"},
+            (*OPERATION, 3, "additionalProperties"),
+        ),
+        (
+            {"type": "scale", "size_px": [4, 4], "filter": "Bicubic", "degrees": 1},
+            (*OPERATION, 1, "additionalProperties"),
+        ),
+    ],
+)
+def test_both_sides_refuse_an_operation_of_another_type_or_field(
+    world: World, monkeypatch: pytest.MonkeyPatch, operation: dict[str, Any], cut: tuple[Any, ...]
+) -> None:
+    arguments = _reshape(world, operation)
+    refused = refused_alike(world, monkeypatch, "krita_layer_transform", arguments, schema=cut)
+    assert refused["code"] == "INVALID_ARGUMENT"
+
+
 def test_both_sides_refuse_a_copy_with_no_name(
     world: World, monkeypatch: pytest.MonkeyPatch
 ) -> None:

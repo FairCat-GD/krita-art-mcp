@@ -5,6 +5,7 @@ from typing import Any
 
 import bridge_core
 import pytest
+from bridge_core import affine as bridge_affine
 from bridge_core import documents as bridge_documents
 from bridge_core import errors as bridge_errors
 from bridge_core import history as bridge_history
@@ -34,6 +35,7 @@ from krita_art_mcp import (
 )
 from krita_art_mcp.bridge_client import WAIT_BUDGET_S
 from krita_art_mcp.instructions import INSTRUCTIONS
+from krita_art_mcp.probe import affine as probe_affine
 from krita_art_mcp.probe import painting as probe_painting
 from krita_art_mcp.probe import saving as probe_saving
 from krita_art_mcp.probe import updates as probe_updates
@@ -88,6 +90,9 @@ def test_the_server_and_plugin_constants_agree() -> None:
     # The undo labels the probe expects are the ones the plugin checks.
     assert probe_painting.LABEL == bridge_history.LABELS["paint.stroke"][0]
     assert probe_updates.BLEND_LABEL == bridge_history.LABELS["layer.update"][0]
+    for kind, label in probe_affine.LABELS.items():
+        assert bridge_history.LABELS[f"layer.transform.{kind}"] == (label,)
+    assert probe_affine.FILTERS == bridge_affine.FILTERS
     assert set(bridge_saving.SRGB_PROFILES) == colour.SRGB_PROFILES
     assert tool_saving.FORMATS == bridge_saving.FORMATS
     assert tool_branching.FORMATS == bridge_saving.DUPLICATE_FORMATS

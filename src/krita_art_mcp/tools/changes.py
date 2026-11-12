@@ -19,6 +19,10 @@ from krita_art_mcp.tools.pixels import IMAGE_META, discard, operation_id_of, tod
 
 log = logging.getLogger(__name__)
 
+# What a scale's filter is when the call names none, as the schema says.
+SCALE_FILTER = "Bicubic"
+TRANSFORMED = {"scale": "Scaled", "rotate": "Rotated", "shear": "Sheared"}
+
 # Each op that pushes ledger steps, by the tool that sends it.
 STEP_TOOLS = {
     "layer.create": "krita_layer_create",
@@ -171,10 +175,13 @@ def layer_transform(call: ToolCall, arguments: dict[str, Any]) -> CallToolResult
     if refused is not None:
         return refused
     guard = arguments["guard"]
+    operation = arguments["operation"]
+    if operation["type"] == "scale":
+        operation = {"filter": SCALE_FILTER, **operation}
     op_args = {
         "document_id": guard["document_id"],
         "layer_id": arguments["layer_id"],
-        "operation": arguments["operation"],
+        "operation": operation,
     }
 
     def send(before_send: BeforeSend) -> Outcome:
@@ -189,20 +196,41 @@ def layer_transform(call: ToolCall, arguments: dict[str, Any]) -> CallToolResult
 
 
 def transform_rules(arguments: dict[str, Any]) -> CallToolResult | None:
-    # The plugin checks this too; the schema holds the rest.
-    if arguments["operation"]["by_px"] == [0, 0]:
+    # The plugin checks these too; the schema holds the rest.
+    operation = arguments["operation"]
+    kind = operation["type"]
+    if kind == "translate" and operation["by_px"] == [0, 0]:
         message = "by_px [0, 0] moves nothing."
         return envelope.failure("INVALID_ARGUMENT", message, details={"field": "by_px"})
+    if kind == "rotate" and operation["degrees"] == 0:
+        message = "degrees 0 turns nothing."
+        return envelope.failure("INVALID_ARGUMENT", message, details={"field": "degrees"})
+    if kind == "shear" and operation["degrees"] == [0, 0]:
+        message = "degrees [0, 0] shears nothing."
+        return envelope.failure("INVALID_ARGUMENT", message, details={"field": "degrees"})
     return None
 
 
 def transform_receipt(outcome: Outcome) -> CallToolResult:
     def text(result: dict[str, Any]) -> str:
-        made = "added its transform mask and moved" if result["created_mask"] else "moved"
+        if result.get("type") is None:
+            made = "added its transform mask and moved" if result["created_mask"] else "moved"
+            line = (
+                f"Translated layer {result['layer_id']} in {result['document_id']}: {made} it by "
+                f"{result['by_px']} to {result['translation_px']}, in {result['undo_steps']} "
+                "undo step(s) taken together"
+            )
+            return line + _checked(result) + "."
+        asked = (
+            f"to {result['size_px'][0]} x {result['size_px'][1]} px"
+            if result["type"] == "scale"
+            else f"by {result['degrees']} degrees"
+        )
+        before, after = result["bounds_before_px"], result["bounds_after_px"]
         line = (
-            f"Translated layer {result['layer_id']} in {result['document_id']}: {made} it by "
-            f"{result['by_px']} to {result['translation_px']}, in {result['undo_steps']} undo "
-            "step(s) taken together"
+            f"{TRANSFORMED[result['type']]} layer {result['layer_id']} in {result['document_id']} "
+            f"{asked} about {result['pivot_px']} with {result['filter']}, in one undo step: its "
+            f"bounds went from {_rect(before)} to {_rect(after)}"
         )
         return line + _checked(result) + "."
 
@@ -603,3 +631,7 @@ def without_document(result: dict[str, Any]) -> dict[str, Any]:
 def document_of(result: dict[str, Any]) -> str | None:
     document_id: str | None = result.get("document_id")
     return document_id
+
+
+def _rect(rect: dict[str, int]) -> str:
+    return f"{rect['width']} x {rect['height']} at ({rect['x']}, {rect['y']})"
