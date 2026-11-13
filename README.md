@@ -6,14 +6,21 @@ game size, and undo or keep it. It is for painted (non-pixel) 2D game art.
 
 ## What it does
 
-Phase 1 is complete, and round 2 has reached 0.28.0, with 25 tools.
+0.30.0 has 25 tools: looking at a painting, painting it, building and transforming its layers,
+trying an alternative beside it, and saving the result.
 
 - **Works on a copy.** A document opens as a working copy with every existing layer protected, and
   the source is never written.
 - **Paints with Krita's brushes.** One stroke per call, one undo step, with a preset you already have.
-  A stroke can taper in size and opacity along its length. There is no tool that writes raw pixels
-  or runs code.
-- **Checks every stroke.** Each change is compared with what protection allows, inside the same job,
+  A stroke can taper in size and opacity along its length, and a flat antialiased fill covers a
+  shape or the selection in one call. There is no tool that writes raw pixels or runs code.
+- **Softens and revises with masks.** A transparency mask on your layer, made from a coverage or the
+  selection and painted with reveal or hide, changes what shows without touching the pixels.
+- **Builds the stack.** Layers and groups are copied, moved, grouped and removed, and a layer moves
+  by whole pixels, scales, rotates or shears through Krita's own transforms.
+- **Tries alternatives.** A document branches to a new verified file, opened beside its source with
+  the same protection, and a hidden copy of a layer carries a trial.
+- **Checks every change.** Each one is compared with what protection allows, inside the same job,
   and undone if it leaks.
 - **Shows the result at game size.** Comparison sheets put the document as opened beside its current
   state, at the asset's own sizes and over review backgrounds.
@@ -58,7 +65,7 @@ client cannot read the repository, and how to update.
 ## Documentation
 
 - [`docs/USER-GUIDE.md`](docs/USER-GUIDE.md): setup, the core loop call by call, every error code and
-  what to do, Phase 1's limits, and what it leaves on your computer.
+  what to do, what it cannot do, and what it leaves on your computer.
 - [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md): the system as built, its invariants, and the
   baseline counts.
 - [`docs/BACKLOG.md`](docs/BACKLOG.md): what has been named but not planned, the later phases among

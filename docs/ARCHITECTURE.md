@@ -1,6 +1,6 @@
 # krita-art-mcp — architecture, as built
 
-This is the system as it stands at 0.29.0, in round 2, on the Phase 1 round 1 built. Every session
+This is the system as it stands at 0.30.0, the release that closed round 2. Every session
 keeps it true, in the same commit as the change. Each section stands on its own: a session reads
 the overview, the invariants and the baseline, then only the sections its work touches.
 `docs/USER-GUIDE.md` is the same system from the user's side.
@@ -54,8 +54,10 @@ protocol, `1`. The protocol stays 1 while the server and the plugin are released
 - **The contract:** the draft tool schemas and acceptance exercises that came with the PDD, for all
   69 planned tools. They were the starting point for every schema here, never the authority, and
   Phase 2 starts from their draft shapes. It is frozen, and kept in `docs/reference/contract-package/`.
-- **Phase N:** the PDD's roadmap. Phase 1 is built. Phases 2 to 6 are construct, integrity,
-  delivery, asset modules and input-aware strokes, each its own round.
+- **Phase N:** the PDD's roadmap. Phase 1 is built, and round 2 built the construction half of
+  Phase 2 — fills, transparency masks, tapers, layer and document construction, translate and the
+  affine transforms — without the profile gate the draft wanted (decision 3). Phases 2 to 6 are
+  construct, integrity, delivery, asset modules and input-aware strokes, each its own round.
 - **Review N and F-numbers:** the three architecture reviews of round 1, named for their sessions
   (6, 10, 13), and their findings.
 - `docs/spec/` held the PDD, the round's plan and the reviews. `docs/BACKLOG.md`'s header says how to
@@ -397,7 +399,7 @@ translation carries the same arguments to the plugin. Both must refuse with one 
 | `PROTOCOL_MISMATCH` | no | bridge client |
 | `KRITA_MODAL_DIALOG`, `MULTIPLE_WINDOWS` | yes | plugin, at job start only |
 | `BUSY` | yes | plugin: an autosave holding a document during a save |
-| `TIMEOUT` | no | **reserved: nothing produces it.** Phase 1 has no hard limit; a long call returns `running` |
+| `TIMEOUT` | no | **reserved: nothing produces it.** This build has no hard limit; a long call returns `running` |
 | `CANCELLED` | yes | plugin: a queued job cancelled, or stopped at quit |
 | `REQUEST_ID_CONFLICT` | no | both sides |
 | `DOCUMENT_NOT_FOUND`, `LAYER_NOT_FOUND` | no | plugin |
@@ -414,7 +416,7 @@ translation carries the same arguments to the plugin. Both must refuse with one 
 | `ROLLBACK_FAILED` | no | plugin; the document is then unsafe |
 | `INTERNAL_ERROR` | no | anywhere; `details.outcome` is `uncertain` or `unregistered` for a call whose fate is unknown, and `applied` for a finished call whose answer failed |
 
-**The contract's placeholders.** Phase 1 keeps the contract's shape, and the PDD wants refusals typed
+**The contract's placeholders.** This build keeps the contract's shape, and the PDD wants refusals typed
 rather than fields hidden. So the schemas admit inputs that always refuse, and outputs carry fields
 with one value. A refused value stays advertised only if a named phase will make it live, decided at
 the round 2 intake for the schemas that round amends.
@@ -427,7 +429,7 @@ the round 2 intake for the schemas that round amends.
 | `krita_document_create` depths other than `U8` | `UNSUPPORTED_CAPABILITY` | No phase names it |
 | `krita_document_create` `color_model: RGBA`, `background: transparent` | the one value | No phase names it |
 | `krita_document_save` `overwrite: false`, `verify_reopen: true` | required constants | No phase names a change |
-| `krita_protection_set` `preserve_canvas` | stored and reported; nothing in Phase 1 changes a canvas | Phase 2, with `canvas_resize` |
+| `krita_protection_set` `preserve_canvas` | stored and reported; nothing here changes a canvas | Phase 2, with `canvas_resize` |
 
 | Output | Today | Becomes live |
 |---|---|---|
@@ -463,10 +465,10 @@ presets have no seed), `operation.cancel_running`, `color_spaces`, `filters` (Ph
 0.27.0, `layer.translate`; since 0.28.0, `layer.scale`, `layer.rotate` and `layer.shear`.
 
 **The instructions.** `instructions.py` is 3,371 of Claude Code's 4,096 characters (C4). A test
-holds at least 700 spare, room for the round's later sessions. It states the rules an agent would
-otherwise learn from a refusal, and leaves to the tools what belongs to one: a field's range, unit
-and form to its description, and a tool's own rule to the tool's, each moved rule held there by a
-test.
+holds at least 700 spare, the room the instruction lines of the tools still to come will need. It
+states the rules an agent would otherwise learn from a refusal, and leaves to the tools what
+belongs to one: a field's range, unit and form to its description, and a tool's own rule to the
+tool's, each moved rule held there by a test.
 
 ## The data layer
 
@@ -957,8 +959,9 @@ the save keeps its own ladder, and a selection, which has no verdict, pushes its
   The frame reads the tree again as the last act before the marker, after the selection, and
   `mutation.steady` refuses retryably when anything watched or a named bound moved: Krita's event
   loop turns only inside a wait (K40, K41), so nothing can land between that read and the change.
-  `KritaDocuments.tree` waits, so the first read is idle too. Not covered: `port.effects` and
-  `port.describe`, which no comparison watches, and the selection, read just before the tree.
+  `KritaDocuments.tree` and `structure` wait, so the first read, and a reorder's reads between its
+  steps, are idle too. Not covered: `port.effects` and `port.describe`, which no comparison
+  watches, and the selection, read just before the tree.
 - **`Mutation.run`** takes the start fingerprint, then the marker and `before_change()` together,
   then, inside `unconfirmed`, the op's change, the after-read, `check`, and the op's `judge`. The
   rollback runs inside `unconfirmed` too: the op's own `BridgeError` passes through, and any other
@@ -1155,7 +1158,7 @@ Distance sensor (K51), on the pixel engine alone. `bridge_core/dynamics.py` is p
   crashed Krita on a stray `data()` call (measured). The probe reads it through
   `harness.preset_dirty`.
 
-**The input gate.** Phase 1 always paints with `Node.paintPath` at pressure 1 (K4), even on a build
+**The input gate.** Every stroke paints with `Node.paintPath` at pressure 1 (K4), even on a build
 with `paintPolylineStroke`, because that branch cannot be tested on released Krita. The server refuses
 before the journal, in order: argument errors, numbers that are not finite among them; the
 colour's alpha; the input gate; smoothed control points that overflow; a stroke under half a pixel,
@@ -1195,6 +1198,12 @@ are what an undo step changes in place. `translation_px` is in `mutation.WATCHED
 node op's drift check and `back` see it, and in the save's `KRA_FIELDS`. Labels do not
 identify a step, and a stroke's fingerprint does not either, so a stroke carries a **witness**: the
 target's own bytes over its diff, hashed before and after, checked before and after every move.
+
+**A step is known by its effect, not by its identity.** Where the owner's own steps leave the
+document in the state the bridge's step left it, they answer for it: two of the owner's params
+steps above two translates, [2,0] to [1,0] to [2,0], let an undo of a translate complete, and
+Krita undid the owner's step. The composite is then what the undo promised; what is lost is the
+owner's own step, taken back in the bridge's place.
 
 **`history.move`** undoes or redoes one step with the document's view in front (K7): posted events
 flushed, the top label naming the step and the fingerprint matching, then the opposite label and
@@ -1435,7 +1444,7 @@ document, and fails the checks it overlaps. The stock presets `b) Basic-2 Opacit
 **The journal check comes last.** It is the live evidence that `uncertain` stays rare.
 - **What it reads.** Every line the probe's servers journaled, through the journal's own reader,
   so a line a later one settled counts as settled.
-- **When it fails.** On fewer than 340 dispatched lines, under half a whole run's 846, since that
+- **When it fails.** On fewer than 340 dispatched lines, under half a whole run's 848, since that
   means it read the wrong place. Or on any request left with an unknown attempt, which it names:
   uncertain, unregistered, or dispatched with no finished line.
 - **What it cannot see.** Reads, harness ops and the probe's own direct bridge calls, none of which
@@ -1536,7 +1545,7 @@ These span subsystems. A decision about one subsystem is in its section.
 
 ## Known debt, deliberately deferred
 
-Each has its detail in `docs/BACKLOG.md`, or in `docs/spec/SESSIONS.md` where round 2 takes it up.
+Each has its detail in `docs/BACKLOG.md`.
 
 - The save reads whole canvases unbanded, so it stops at 8192² pixels.
 - The save has a ladder of its own, and a selection pushes its step outside the frame, with no
@@ -1549,7 +1558,9 @@ Each has its detail in `docs/BACKLOG.md`, or in `docs/spec/SESSIONS.md` where ro
 - Selection steps and a translate's params steps are confirmed by state alone.
 - Scale, rotate and shear take no masks and no layer kinds but paint layers and groups, are not
   limited by the selection.
-- History stops for good at an owner's step of the bridge's name that a move reversed.
+- History stops for good at an owner's step of the bridge's name that a move reversed, and an
+  owner's step that ends in the state the bridge's step left answers for it, so an undo takes
+  the owner's back instead.
 - Undoing the attach of a copied transform mask crashes Krita (K53), so a layer holding one is not
   duplicated. An ORA drops a translate, so such a save is refused.
 - Erasing, a single dab and antialiasing off are refused.
@@ -1727,7 +1738,7 @@ the code is shaped as it is.
   it. A Krita holding 87 documents ran document ops about three times slower, and left the paint
   benchmarks, the preview benchmark and H4 idle alone.
 
-## Baseline (v0.29.0)
+## Baseline (v0.30.0)
 
 Taken on 2026-11-13 on Krita 5.3.4.1, macOS, Apple Silicon, on a Krita restarted that session, with
 **0 documents open**. The probe prints the open-document count beside its time, because document ops

@@ -219,7 +219,7 @@ def test_the_instructions_fit_in_4096_characters_and_name_the_wait_budget() -> N
 SPARE_FLOOR = 700
 
 
-def test_the_instructions_leave_room_for_the_round_s_later_lines() -> None:
+def test_the_instructions_leave_room_for_the_tools_still_to_come() -> None:
     assert len(INSTRUCTIONS) <= 4096 - SPARE_FLOOR
 
 

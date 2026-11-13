@@ -6,6 +6,30 @@ All notable changes to krita-art-mcp are documented here. The format follows
 
 ## [Unreleased]
 
+## [0.30.0] — 2026-11-13
+
+Round 2 is complete and documented: recovery that tells the truth about every failed change, flat
+fills, transparency masks, tapered strokes, layer and document construction, and Krita's own
+transforms. This release changes no behaviour; it corrects what the documents and one schema
+example say. It still needs `install-plugin`, a Krita restart and a restart of the MCP client,
+because the plugin carries the version.
+
+### Changed
+
+- **The user guide says what the build does, not which phase it belongs to.** It opens with what
+  you can do with it, and its limits are under *What it cannot do*: the tools have grown past the
+  phase the guide was first written for.
+- **The README lists what the tools do now.** Fills, transparency masks, layer construction,
+  transforms and document branches were missing from it, and it named an older version.
+- **`krita_server_info`'s example tells the truth.** It showed fills, masks, native strokes,
+  smoothing and the enforced selection as not built, and a 0.2.0 server; it now carries the
+  capability matrix this release ships.
+
+### Fixed
+
+- **Every version in this file links to the commit that released it again.** The links stopped at
+  0.16.0, so none of round 2's releases could be reached from its entry.
+
 ## [0.29.0] — 2026-11-13
 
 The fixes the construction review found. The four layer tools, `krita_layer_update` and the paint
@@ -1065,6 +1089,20 @@ The first release is the scaffold that the Phase 1 tools are built on.
   reports its version to the client; it offers no tools yet.
 - **`krita-art-mcp --version`.** It prints the installed version.
 
+[0.29.0]: https://github.com/FairCat-GD/krita-art-mcp/commit/fa949c0c14a81cb7b71e90f81e8292ed59077c16
+[0.28.0]: https://github.com/FairCat-GD/krita-art-mcp/commit/dd3569d7daec92cbf3ff559ee3c17d99e5417fc8
+[0.27.0]: https://github.com/FairCat-GD/krita-art-mcp/commit/ff567d74585aabf4165d9a18989b13805ce21b84
+[0.26.0]: https://github.com/FairCat-GD/krita-art-mcp/commit/ecad8041866c7be2b13bdf010101f80d2448441f
+[0.25.0]: https://github.com/FairCat-GD/krita-art-mcp/commit/214d844aec766320b16e7e7c733a69294a4378d7
+[0.24.0]: https://github.com/FairCat-GD/krita-art-mcp/commit/7f246cdb92f8728005c414f8b3ebf0acc15d7e2a
+[0.23.0]: https://github.com/FairCat-GD/krita-art-mcp/commit/93fc88369721081e577f58ebe8af91551818d7aa
+[0.22.0]: https://github.com/FairCat-GD/krita-art-mcp/commit/6e182147307f08f099f106890c9f1c6b3fe0c96a
+[0.21.0]: https://github.com/FairCat-GD/krita-art-mcp/commit/4a559271a339e74fb9e819f2a9cfba2aae631628
+[0.20.1]: https://github.com/FairCat-GD/krita-art-mcp/commit/6455008884b2836846ca176da90647f052d299b3
+[0.20.0]: https://github.com/FairCat-GD/krita-art-mcp/commit/93760dfdb13fb022f478636c576f5c11f2a0ceb3
+[0.19.0]: https://github.com/FairCat-GD/krita-art-mcp/commit/cbbc8fcb48fe0502db1dbdbacec9219a3e4f38df
+[0.18.0]: https://github.com/FairCat-GD/krita-art-mcp/commit/a55cc4f0167700909c37bc0034800be26ff3d2bc
+[0.17.0]: https://github.com/FairCat-GD/krita-art-mcp/commit/c12b8f0b5e56e5906640842ab613a37256461de4
 [0.16.0]: https://github.com/FairCat-GD/krita-art-mcp/commit/04e9f6c5a91819ffa7452eef97fb53f400f8d207
 [0.15.0]: https://github.com/FairCat-GD/krita-art-mcp/commit/52113ab900602e3a85faa6fad2ddffadaca627a3
 [0.14.0]: https://github.com/FairCat-GD/krita-art-mcp/commit/9b6c6ccc10ae0fca01b5322850ed69f1cb9fa128

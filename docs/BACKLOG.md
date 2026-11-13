@@ -38,8 +38,17 @@ contract", "Phase N" and "review N" mean.
 - **A server-side batch.** Left out at the round 2 intake, with the Codex agent's agreement. `exec`
   already awaits calls and stops on a failed envelope: 1,253 of 1,377 consecutive calls were under
   0.25 s apart. One would earn its cost through shared-context enforcement, durable partial receipts
-  and recovery across a client's interruption, never atomic rollback (K29). Round 2's last session
-  re-measures.
+  and recovery across a client's interruption, never atomic rollback (K29).
+  - **Re-measured at 0.30.0, from the journal alone,** which holds the mutating calls and no reads:
+    in the newest real session, 775 calls spent 2.4 minutes inside the server, a median of 2.9 s
+    passed from one answer to the next call, and 64 of its 774 gaps were under 0.25 s; an earlier
+    session through another MCP client left a median of 0.22 s, with no such per-call cost. So what
+    the agent waits for is still the client's review of each destructive call, which the client's
+    own `default_tools_approval_mode` removes (the user guide says so), not the server.
+  - **What a decision still needs:** a painting session on the construction tools, with the
+    client's own records. Every session the journal holds predates fills, so nothing measures how
+    much a fill that replaces a run of strokes, or a layer op that replaces several, already took
+    the pressure off a batch.
 - **Wrap authoring and a tiled preview.** Left out at the round 2 intake: Phase 5 owns tiling, and
   paired shapes at opposite edges were workable. A scripted stroke honours wrap-around (K47) and
   paints the opposite edge; `Canvas.setWrapAroundMode` is not axis-aware, and the actions
@@ -98,8 +107,8 @@ contract", "Phase N" and "review N" mean.
   pixels of its own, and could be read through `Node.projectionPixelData`.
 - **Masks beyond transparency masks on paint layers** (0.22.0). An agent makes transparency masks on
   paint layers only, and a transform mask only as a translate's. Masks on groups, and filter or
-  colorize masks, are refused or absent, and a mask takes only `name` and `visible` from `krita_layer_update`. Left out by the
-  round 2 intake's scope for M1.
+  colorize masks, are refused or absent, and a mask takes only `name` and `visible` from
+  `krita_layer_update`. Left out by the round 2 intake's scope for M1.
 - **Layer ops, beyond what 0.25.0 ships.** Each of these is refused or absent today:
   - several layers per call, as the contract's drafts take them (`layer_ids` arrays, a duplicate's
     destination parent);
@@ -243,6 +252,26 @@ contract", "Phase N" and "review N" mean.
   property write Krita would keep across an undo (K22) is lost in the fake, and a test of history
   or of a rollback over a pixel step proves less than it seems. A per-command entry restoring only
   the subtree's buffers, bounds and offsets would fix it, with a K22 test (X2's review, F10).
+- **The refusals still name Phase 1** (0.30.0). The documents now say what the build does rather
+  than which phase it is, but about fifteen refusal messages still open with "Phase 1 …" (the
+  save's formats and megapixels, the create's and the open's formats and spaces, frame 0, the
+  layer reads, verification's scope), two of them held equal on both sides. Rewording them changes
+  what an agent reads, so it belongs to a session that re-runs the message and parity tests.
+- **A Krita quit while a taper holds a preset edited** (0.24.0). The hold lives in the plugin's
+  memory (`bridge_core/painting.py`), so a Krita restart forgets it and the next stroke paints with
+  whatever the preset then is. E1 measured that no preset file or bundle moved on disk during an
+  edit, which is what a crash mid-stroke leaves, and declined the quit case: a quit may run save
+  paths a crash never would. Measuring it would say whether a quit can write an edited preset.
+- **A failed branch open names the branch as the failure's `document_id`** (0.26.0). When
+  `document.duplicate_open` cannot close the branch it opened, the branch stays owned and unsafe,
+  and the failure carries its id rather than the source's (`bridge_core/opening.py`), so an agent
+  reading `document_id` is pointed at a document it never asked about. Harmless, since the message
+  names the file and the retry.
+- **An undo can take back the owner's own step** (0.27.0). A step is known by its effect: where the
+  owner's steps leave the document in the state the bridge's step left it, a move of the bridge's
+  step is confirmed and Krita undoes the owner's. Measured with two of the owner's params steps
+  above two translates. The composite is what the undo promised, so nothing is silently wrong;
+  telling the two apart would need an identity libkis does not give a step.
 - **An unregistered finish gets no retry hint.** `tools/saving.py`'s `rerun` reads `submitted`,
   which an unregistered call leaves false, so a finish the bridge never registered is not told
   that retrying the save under its `request_id` finishes it, though that retry would run. Found

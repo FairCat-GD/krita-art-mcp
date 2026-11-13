@@ -2439,3 +2439,71 @@ the Codex sizes again; the baseline table gains the capability count.
 - **The review follows the close,** so its findings go in the review commit's message and the
   handoff.
 - **A release restarts the MCP client too.** Tell the owner before the restart.
+
+**Done (2026-11-13, 0.30.0).**
+- **Decided with the owner at the start:**
+  - **The re-measure counts what exists.** No session on the construction tools exists, so the
+    journal is read for what it holds and decision 18's batch question stays open in
+    `BACKLOG.md`, naming the evidence a decision needs.
+  - **"Phase 1" stops being the product's scope** in the documents: they say what the build does
+    and cannot do, and "Phase N" stays only where it points at the PDD's roadmap.
+  - **This session restarted Krita** once `doctor` read 0 unsaved, with the Codex agent paused.
+  - **Every extra was taken:** the changelog's link references, the backlog's open Info items from
+    X2, two one-line truths, and `krita_server_info`'s example.
+- **Re-measured,** on 0.30.0:
+  - **Codex's renderer,** through the port at `rust-v0.166.0`: the stroke's normalised input 4,378
+    of 5,000 bytes, 622 to spare, and rendered 2,941; the transform's rendered output 4,975; the
+    longest tool description 1,202 (the transform) and the longest field description 517 (the
+    stroke). None has moved since X2a, so the architecture's lines stand.
+  - **The workflows, from the journal alone,** read read-only as counts and timings. It holds three
+    real client sessions, of 199, 1,131 and 775 mutating calls; reads are not journaled. The
+    newest, 775 calls, spent 2.4 minutes inside the server across a sitting of 3 h 17 m, at server
+    medians of 0.040 s for a selection and 0.247 s for a stroke; a median of 2.9 s passed from one
+    answer to the next call, and 64 of its 774 gaps were under 0.25 s. An earlier session through
+    another MCP client left a median of 0.22 s, with no such per-call cost.
+  - **The batch question is not decided.** Every session the journal holds predates fills (0.21.0),
+    so nothing measures what a fill replacing a run of strokes, or a layer op replacing several,
+    already took off a batch. What the agent waits for is still the client's review of each
+    destructive call, which its own `default_tools_approval_mode` removes.
+- **The documents,** read through whole against the code:
+  - `ARCHITECTURE.md`: 0.30.0 and the round closed; the phase words in the terms, the `TIMEOUT`
+    row, the placeholders, `preserve_canvas` and the input gate; `structure` waiting as `tree`
+    does; a step known by its effect, in the ledger and in *Known debt*; the instructions' spare
+    floor stated for the tools still to come; the *Known debt* pointer into the deleted spec; the
+    journal check's 848; the baseline at v0.30.0.
+  - `USER-GUIDE.md`: it opens with what the build does; its limits are *What it cannot do*; a
+    taper's first and last knots; the two phase words in the error table.
+  - `README.md`: 0.30.0 with 25 tools, and the fills, masks, layer construction, transforms and
+    branches it never named.
+  - `CHANGELOG.md`: the 0.30.0 entry, and link references for 0.17.0 to 0.29.0, which stopped at
+    0.16.0.
+  - `BACKLOG.md`: the batch item with what was re-measured and what is missing; three open
+    behaviours X2 recorded as Info (a quit while a taper holds a preset edited, a failed branch
+    open naming the branch as its `document_id`, an undo taking back the owner's own step); and the
+    refusals that still say "Phase 1".
+  - `krita_server_info`'s example carries the shipped capability matrix and this version, where it
+    had five built capabilities as not built and a 0.2.0 server.
+  - The spare-floor test's name no longer names a round that is closing.
+- **Amendments:**
+  - **The Codex sizes needed no correction.** The block asked for them again because every schema
+    description X2a moved changed them; measured, they are X2a's exactly, so nothing moved. The
+    session's own finding.
+  - **The re-measure is from the journal alone,** with no client records, because the newest real
+    session predates fills: the block's "after the hints and fills" has no data. Decided with the
+    owner at the start.
+  - **The refusal messages keep "Phase 1",** about fifteen of them, two held equal on both sides.
+    Rewording them changes what an agent reads, which V1's scope excludes, so it is in
+    `BACKLOG.md`. The session's own finding.
+  - **`structure`'s wait went into the frame's paragraph.** X2a made `tree` and `structure` wait;
+    only `tree` was written down. The read-through's own finding.
+- **Measured,** on Krita 5.3.4.1, macOS, Apple Silicon, on a Krita restarted this session:
+  - `probe`: 231 PASS, 0 FAIL, 25 MEASURED in 149.7 s with 0 documents open; the journal check read
+    848 dispatched lines, all settled; the paint stage 33.8 s, the benchmark stage 29.2 s.
+  - `doctor` 6 of 6, 0 open documents, 0 unsaved, before and after the restart.
+  - The Codex and journal numbers above.
+- **Falsified:** nothing; V1 adds no check. Instead each count the documents state was read from the
+  code (tools, schema files, error codes, capabilities, hints, op classes, parity functions, the
+  instructions' length), as were the constants they cite and the schema descriptions X2a moved.
+- **Numbers:** 1176 server tests (+0), 1223 plugin tests (+0), probe 231 PASS (+0), 0 FAIL, 25
+  MEASURED, 149.7 s with 0 documents open. 25 tools, 25 schema files, 30 error codes, 39 ops, 17
+  capabilities, 28 parity tests, instructions 3,371 characters, `api_version` 0.4.0.

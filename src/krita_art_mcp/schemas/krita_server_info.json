@@ -583,31 +583,51 @@
       "operation_id": null,
       "data": {
         "session_id": "3f2a9c41d7e84b0c9a61f2d5c8e07b13",
-        "server_version": "0.2.0",
-        "plugin_version": "0.2.0",
+        "server_version": "0.30.0",
+        "plugin_version": "0.30.0",
         "protocol": 1,
         "krita_version": "5.3.4",
         "qt_major": 5,
         "capabilities": {
+          "stroke.native_brush": {
+            "supported": true,
+            "since": "0.9.0",
+            "notes": "One Krita brush stroke per call (Node.paintPath, every point at pressure 1), one undo step, verified against protection and undone on a leak."
+          },
           "paint.fill": {
-            "supported": false,
-            "since": null,
-            "notes": "Fills are not built in this release."
+            "supported": true,
+            "since": "0.21.0",
+            "notes": "A flat antialiased fill of a rect, ellipse, polygon, closed curve or the selection: one native Krita fill per call (Node.paintPath with no stroke), one undo step, verified against protection and undone on a leak."
           },
           "mask.transparency": {
-            "supported": false,
-            "since": null,
-            "notes": "Transparency masks are not built in this release."
-          },
-          "stroke.native_brush": {
-            "supported": false,
-            "since": null,
-            "notes": "Native brush strokes are not built in this release."
+            "supported": true,
+            "since": "0.22.0",
+            "notes": "Transparency masks on paint layers: made with a coverage (all, none or the selection) in one undo step, painted with reveal or hide by strokes and fills, read alone as grey, and shown or hidden; each change verified against protection and undone on a leak."
           },
           "stroke.dynamics": {
             "supported": true,
             "since": "0.24.0",
             "notes": "Size and opacity along a stroke's arc length through Krita's Distance sensor, pixel brush engine only: the preset is edited in memory for that one stroke and put back, checked by its digest and dirty flag."
+          },
+          "layer.translate": {
+            "supported": true,
+            "since": "0.27.0",
+            "notes": "Paint layers and groups moved by whole pixels through a transform mask on top of their masks: the layer's own pixels never change, Krita's undo takes back the mask's attach and each move, verified against protection and undone on a leak. A KRA keeps it; an ORA drops it, so its save is refused."
+          },
+          "layer.scale": {
+            "supported": true,
+            "since": "0.28.0",
+            "notes": "A paint layer, or a group of paint layers and groups, scaled to a whole-pixel size about its bounds' centre with one of Krita's eight filters (Node.scaleNode): its pixels are resampled, in one undo step, verified against protection and undone on a leak."
+          },
+          "layer.rotate": {
+            "supported": true,
+            "since": "0.28.0",
+            "notes": "A paint layer, or a group of paint layers and groups, turned by degrees about its bounds' centre, Bicubic (Node.rotateNode): its pixels are resampled, in one undo step, verified against protection and undone on a leak."
+          },
+          "layer.shear": {
+            "supported": true,
+            "since": "0.28.0",
+            "notes": "A paint layer, or a group of paint layers and groups, sheared by degrees on x and y about its bounds' centre, Bilinear (Node.shearNode): its pixels are resampled, in one undo step, verified against protection and undone on a leak."
           },
           "stroke.per_point_input": {
             "supported": false,
@@ -615,14 +635,14 @@
             "notes": "Per-point pressure, tilt, rotation and timing need Krita 6.1 / 5.4."
           },
           "stroke.smoothing": {
-            "supported": false,
-            "since": null,
-            "notes": "Server-side smoothing (none, catmull_rom) comes with native brush strokes."
+            "supported": true,
+            "since": "0.9.0",
+            "notes": "none and catmull_rom, applied on the server; Krita's tool smoothing is not reachable from scripts."
           },
           "undo.grouping": {
             "supported": false,
             "since": null,
-            "notes": "Krita's scripting API cannot group undo steps; each change is its own step."
+            "notes": "Krita's scripting API cannot group undo steps: each is its own. A reorder takes one for the remove and one for each node it adds back, and a first translate one for its mask and one for the move; each receipt states them and history moves them together."
           },
           "stroke.deterministic": {
             "supported": false,
@@ -635,14 +655,14 @@
             "notes": "A running Krita call cannot be interrupted; only queued operations can be cancelled."
           },
           "selection.enforced": {
-            "supported": false,
-            "since": null,
-            "notes": "krita_selection_set sets the selection; strokes that keep to it arrive with native brush strokes."
+            "supported": true,
+            "since": "0.9.0",
+            "notes": "Strokes and fills keep to the global selection; colour paint on a layer with a local selection mask is refused, and mask paint keeps to the global selection alone."
           },
           "color_spaces": {
             "supported": false,
             "since": null,
-            "notes": "Documents are not created or painted in this release; Phase 1 paints RGBA / U8 / sRGB."
+            "notes": "Documents are created RGBA / U8 / sRGB and opened RGBA / U8; others are refused."
           },
           "filters": {
             "supported": false,
@@ -653,26 +673,6 @@
             "supported": false,
             "since": null,
             "notes": "Animation arrives in Phase 5."
-          },
-          "layer.translate": {
-            "supported": true,
-            "since": "0.27.0",
-            "notes": "Paint layers and groups moved by whole pixels through a transform mask."
-          },
-          "layer.scale": {
-            "supported": true,
-            "since": "0.28.0",
-            "notes": "A paint layer or group scaled about its bounds' centre, in one undo step."
-          },
-          "layer.rotate": {
-            "supported": true,
-            "since": "0.28.0",
-            "notes": "A paint layer or group turned about its bounds' centre, in one undo step."
-          },
-          "layer.shear": {
-            "supported": true,
-            "since": "0.28.0",
-            "notes": "A paint layer or group sheared about its bounds' centre, in one undo step."
           }
         },
         "limits": {

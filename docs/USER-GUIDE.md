@@ -4,7 +4,9 @@ krita-art-mcp is a Krita MCP server. It lets an AI agent paint in your running K
 brush engine, on a copy of your work, with your accepted art protected. This guide is for the person
 setting it up and for the agent using it. `docs/ARCHITECTURE.md` explains how it works.
 
-It covers Phase 1: observing a painting, painting safely, and delivering a verified save.
+It covers what the build does: looking at a painting; painting strokes, fills and transparency
+masks safely; building, moving and transforming layers; branching a document to try an
+alternative; and delivering a verified save.
 
 ## What you need
 
@@ -316,9 +318,9 @@ changed on the canvas, and `layer_bounds_px` is the layer's whole extent, past i
 ```
 
 - **Knots.** `size` and `opacity` each take 2 to 16 knots. `at` is the fraction of the stroke's
-  length, from 0 to 1, rising by at least 0.001. `value` multiplies `brush.size_px` or
-  `brush.opacity` at that point. Values run in straight lines between knots, so add knots for a
-  softer curve.
+  length, rising by at least 0.001, with the first knot at 0 and the last at 1. `value` multiplies
+  `brush.size_px` or `brush.opacity` at that point. Values run in straight lines between knots, so
+  add knots for a softer curve.
 - **How Krita does it.** Krita's own Distance sensor drives the taper. For that one stroke it
   replaces the preset's own size or opacity sensors, and the receipt's
   `effective_brush.dynamics.replaced` names them.
@@ -461,7 +463,7 @@ Every failure returns `error: {code, message, retryable, details}`. The table gi
 | `KRITA_MODAL_DIALOG` | yes | A dialog is open in Krita | Ask the owner to close it, then retry |
 | `MULTIPLE_WINDOWS` | yes | Krita has more than one main window | Ask the owner to close the extra one, then retry |
 | `BUSY` | yes | An autosave holds the document during a save | Retry shortly; nothing was written |
-| `TIMEOUT` | no | Reserved. Nothing produces it in Phase 1 | A long call returns `running` instead |
+| `TIMEOUT` | no | Reserved. Nothing produces it | A long call returns `running` instead |
 | `CANCELLED` | yes | A queued call was cancelled, or Krita quit first; it never ran | Send it again if you still want it |
 | `REQUEST_ID_CONFLICT` | no | That `request_id` was used with other arguments | Use a fresh UUID |
 | `DOCUMENT_NOT_FOUND` | no | The document was closed, or Krita restarted | List the documents, and reopen if you need it |
@@ -473,7 +475,7 @@ Every failure returns `error: {code, message, retryable, details}`. The table gi
 | `OUTSIDE_ALLOWED_MASK` | no | The stroke or fill lies entirely outside the allowed mask; nothing was painted | Move it |
 | `RESOURCE_HASH_MISMATCH` | no | A preset or mask differs from the hash given | List it again, and do not edit presets during a session |
 | `SOURCE_HASH_MISMATCH` | no | The source, the working copy or a branch's file differs from the hash given or kept | Hash the file again, or find what changed it |
-| `COLOR_PROFILE_MISMATCH` | no | The document is not 8-bit RGBA, or this needs sRGB | Work on another document; Phase 1 does not convert |
+| `COLOR_PROFILE_MISMATCH` | no | The document is not 8-bit RGBA, or this needs sRGB | Work on another document; nothing here converts |
 | `DOCUMENT_DIRTY` | no | A close with `refuse` while the bridge or Krita holds a change no verified save holds; `details` names `dirty` and `krita_modified` | Save, or close with `discard` |
 | `DOCUMENT_UNSAFE` | no | A rollback could not be confirmed | Close it, and reopen from your last verified save |
 | `DOCUMENT_READ_ONLY` | no | The owner opened it by hand, or it opened `read_only` | Open a working copy |
@@ -485,7 +487,7 @@ Every failure returns `error: {code, message, retryable, details}`. The table gi
 | `ROLLBACK_FAILED` | no | A change leaked and the undo could not be confirmed; the document is now unsafe | As `DOCUMENT_UNSAFE` |
 | `INTERNAL_ERROR` | no | Something unexpected. Read `details.outcome`: `applied` is done, however the answer reads; `uncertain` was sent and its fate is unknown; `unregistered` never reached the bridge and is retryable | Inspect first after `applied` or `uncertain`. Otherwise see `logs/plugin.log` |
 
-## Phase 1's limits
+## What it cannot do
 
 **Size and format.**
 - **A save takes documents of up to 8192² pixels,** that is 8192 × 8192 or any shape of the same area.
