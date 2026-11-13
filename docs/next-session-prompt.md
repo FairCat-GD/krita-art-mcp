@@ -9,9 +9,9 @@ X2a's done-note, then this file, and do Session V1: re-measure, docs, full run, 
   - Done: R1, R2, R3, D1, F1, C1, M1, X1, X1a, E1, L1, B1, T1, S1, X2 and X2a.
   - Remaining: V1 alone, which closes the round.
 - **X2a shipped 0.29.0.** V1 cuts 0.30.0 and is the round's release, followed by the close commit.
-- **X2a is not pushed.** `origin/main` holds everything through "review: X2a's gate tested a
-  finding nobody asks, and 3 smaller"; X2a's own commits are local. List `origin/main..HEAD`
-  before any push, and push only on the owner's approval.
+- **X2a is pushed.** `origin/main` holds everything through "review: a probe check could not
+  fail on the flag it named, and 1 more". List `origin/main..HEAD` before any push, and push
+  only on the owner's approval.
 - **What X2a left V1:**
   - `REVIEW-2026-11-12.md`'s F21 items are all taken: the Codex sizes, the two ops outside
     `RECEIPTS`, the journal check's count, the `no_change` transform, the held preset's order, the
@@ -37,9 +37,9 @@ X2a's done-note, then this file, and do Session V1: re-measure, docs, full run, 
   - **What the frame still does not watch,** recorded under *Known debt*: `port.effects`,
     `port.describe` and the selection, which is read just before the tree.
 - **Baseline** (ARCHITECTURE's table, v0.29.0, measured at X2a):
-  - `verify`: 6 stages, all PASS; 1176 server tests and 1222 plugin-core tests, 0 skipped;
-  - `probe`: 231 PASS, 0 FAIL, 25 MEASURED, 153.0 s with 0 documents open, the journal check
-    reading 846 dispatched lines;
+  - `verify`: 6 stages, all PASS; 1176 server tests and 1223 plugin-core tests, 0 skipped;
+  - `probe`: 231 PASS, 0 FAIL, 25 MEASURED, about 155 s with 0 documents open, the journal
+    check reading 846 dispatched lines;
   - 25 tools, 25 schema files, 30 error codes, 39 bridge ops, 17 capabilities, 28 parity tests,
     instructions 3,371 characters;
   - Codex's renderer: the stroke's normalised input 4,378 of 5,000 bytes, 622 to spare.

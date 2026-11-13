@@ -1258,6 +1258,23 @@ def test_a_step_of_the_same_name_not_the_bridges_stops_history_without_a_retry(
     assert handle.ledger.undo_available() == 0 and not handle.unsafe
 
 
+def test_a_node_step_of_the_same_name_not_the_bridges_stops_history(world: World) -> None:
+    # The owner's own "Add Layer" above the bridge's. Krita is never asked to move: the state
+    # it shows is not the one the bridge's step left, so history stops before anything moves.
+    document_id = world.document()
+    world.done("layer.create", world.layer_args(document_id))
+    handle = world.registry.find(document_id)
+    before = world.port._state(1)
+    tree = world.port._tree(1)
+    tree["nodes"].append(fake_node(1, 9, "theirs", tree["root_id"], len(tree["nodes"])))
+    world.port._push(1, history.LABELS["layer.create"][0], before)
+    body = world.failure("history.step", world.history_args(document_id))
+    assert body["code"] == "INVALID_ARGUMENT" and body["retryable"] is False
+    assert body["details"]["state_matched"] is False
+    assert body["details"]["action"] == "undo"
+    assert handle.ledger.undo_available() == 0 and not handle.unsafe
+
+
 def test_a_step_krita_lost_is_uncertain(world: World, monkeypatch: pytest.MonkeyPatch) -> None:
     document_id = world.document()
     world.done("paint.stroke", world.stroke_args(document_id))

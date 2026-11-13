@@ -1737,7 +1737,7 @@ depend on it: 87 open documents cost about 50 s more.
 |---|---|
 | `uv run scripts/verify.py` | 6 stages, all PASS |
 | Server tests (3.12) | 1176 passed, 0 skipped |
-| Plugin-core tests (3.10) | 1222 passed, 0 skipped |
+| Plugin-core tests (3.10) | 1223 passed, 0 skipped |
 | `uv run krita-art-mcp probe` | 231 PASS, 0 FAIL, 25 MEASURED; about 150 s |
 | `uv run krita-art-mcp doctor` | 6 steps, all PASS, with a root allowed |
 | Registered tools | 25 |

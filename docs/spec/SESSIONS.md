@@ -2394,6 +2394,22 @@ undo ledger and history*, *Painting* (a taper), *The save*, *The server*, *Testi
 - **Numbers:** 1176 server tests (+24), 1222 plugin tests (+18), probe 231 PASS (+5), 0 FAIL, 25
   MEASURED, 153.0 s with 0 documents open. 25 tools, 25 schema files, 30 error codes, 39 ops, 17
   capabilities, 28 parity tests (+3 functions), instructions 3,371 characters, `api_version` 0.4.0.
+- **Review (`/code-review high`), 2 findings: 1 fixed, 1 withdrawn.**
+  - **The probe's kept-step check could not fail on the flag it named.** It ran late in the
+    affine stage, where every earlier check had already dirtied the document, so `dirty is True`
+    held whether or not the frame kept it: removing the frame's guard would have shipped green.
+    It now opens a working copy of its own and reads the flag False before and True after.
+  - **Withdrawn: the narrowed foreign rule was said to make a named foreign step retryable.**
+    Chasing it showed the case never reaches that branch: `history.move`'s first `_shows` refuses
+    a document whose state is not the one the step left, so the owner's own "Add Layer" stops
+    history before Krita is asked to move anything. The fix drafted for it — treating every
+    named step as foreign — would itself have regressed F9, by sealing on a label that happens
+    to match while Krita took nothing. The code is as it was committed, and a test now pins the
+    case end to end.
+  - **Falsified:** the new pin, by making `_shows` match every state, which let the move run and
+    complete; and the probe's check by its live run, which reads `dirty False to True`.
+  - **Numbers after the review:** 1223 plugin tests (+1), 1176 server tests, probe 231 PASS, 0
+    FAIL, 25 MEASURED in 155.4 s with 0 documents open.
 
 ---
 

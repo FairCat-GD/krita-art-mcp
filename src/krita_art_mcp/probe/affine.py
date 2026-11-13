@@ -93,8 +93,6 @@ async def run(report: Report, a: Client, client: BridgeClient, folder: Path, har
         await _group(report, a, document_id, names)
         await _filters(report, a, document_id, names)
         await _order(report, a, document_id, names)
-        # Before the refusals, which leave "probe other" holding a transform mask.
-        await _kept_step(report, a, client, document_id, names)
         await _refusals(report, a, client, document_id, names)
         await _kra(report, a, document_id, names, folder)
         # Protection seals history, so the checks that undo come first.
@@ -108,6 +106,8 @@ async def run(report: Report, a: Client, client: BridgeClient, folder: Path, har
         )
     finally:
         await close(a, document_id)
+    # On a copy of its own, which nothing has dirtied, so the flag proves the rule.
+    await _kept_step(report, a, client, ora, harness)
 
 
 async def _undone_and_redone(
@@ -348,32 +348,43 @@ async def _capability(report: Report, a: Client) -> None:
 
 
 async def _kept_step(
-    report: Report, a: Client, client: BridgeClient, document_id: str, names: dict[str, str]
+    report: Report, a: Client, client: BridgeClient, ora: Path, harness: Path
 ) -> None:
     # A half turn of flat paint maps the layer onto itself: Krita pushes its step and moves the
-    # offset all the same, so the call is refused and the document stays changed (K54).
-    flat = names["probe other"]
-    before = await capture_composite(a, document_id)
-    dirty_before = await document_dirty(a, document_id)
-    refused = await tool(a, TOOL, _args(document_id, flat, {"type": "rotate", "degrees": 180}))
-    details = (refused.get("error") or {}).get("details") or {}
-    undo, _ = undo_labels(client, document_id)
-    after = await capture_composite(a, document_id)
-    dirty = await document_dirty(a, document_id)
-    report.check(
-        "a half turn that changes no pixel is refused, and the step Krita keeps leaves the "
-        "document dirty with history sealed",
-        code(refused) == "INVALID_ARGUMENT"
-        and details.get("reason") == "no_change"
-        and details.get("krita_kept_step") is True
-        and details.get("history_sealed") is True
-        and undo == LABELS["rotate"]
-        and dirty is True
-        and not differs(after, before),
-        f"{code(refused)}, {details.get('reason')}, kept {details.get('krita_kept_step')}, "
-        f"undo {undo}, dirty {dirty_before} to {dirty}, "
-        f"{differs(after, before) or 'composite as before'}",
-    )
+    # offset all the same, so the call is refused and the document is left changed (K54). On a
+    # working copy nothing else has touched, so the flag it turns proves the rule.
+    opened = await open_working(a, ora, harness, "kept", editable_layer_names=EDITABLE)
+    document_id = opened.get("document_id")
+    if opened.get("status") != "completed" or not document_id:
+        report.check("the kept-step check's working copy opens", False, str(opened.get("error")))
+        return
+    try:
+        names = {name: layer["id"] for name, layer in by_name(opened["data"]["layers"]).items()}
+        before = await capture_composite(a, document_id)
+        was = await document_dirty(a, document_id)
+        half = {"type": "rotate", "degrees": 180}
+        refused = await tool(a, TOOL, _args(document_id, names["probe other"], half))
+        details = (refused.get("error") or {}).get("details") or {}
+        undo, _ = undo_labels(client, document_id)
+        after = await capture_composite(a, document_id)
+        dirty = await document_dirty(a, document_id)
+        report.check(
+            "a half turn that changes no pixel is refused, and the step Krita keeps turns a "
+            "clean document dirty with history sealed",
+            code(refused) == "INVALID_ARGUMENT"
+            and details.get("reason") == "no_change"
+            and details.get("krita_kept_step") is True
+            and details.get("history_sealed") is True
+            and undo == LABELS["rotate"]
+            and was is False
+            and dirty is True
+            and not differs(after, before),
+            f"{code(refused)}, {details.get('reason')}, kept {details.get('krita_kept_step')}, "
+            f"undo {undo}, dirty {was} to {dirty}, "
+            f"{differs(after, before) or 'composite as before'}",
+        )
+    finally:
+        await close(a, document_id)
 
 
 async def _kra(
