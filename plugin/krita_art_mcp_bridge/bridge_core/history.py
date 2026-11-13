@@ -16,6 +16,12 @@ from .registry import Handle, Registry
 HISTORY_FIELDS = {"document_id", "action", "steps"}
 MAX_STEPS = 50
 
+
+def reach(port: DocumentsPort) -> int:
+    # The steps one call may push and still take back whole: Krita's own limit, and ours.
+    return min(MAX_STEPS, port.undo_limit())
+
+
 UNDO = "undo"
 REDO = "redo"
 # The names Krita's Undo and Redo actions give each step an op pushes, in Krita's order (K7), as
@@ -136,14 +142,19 @@ def _shows(
     front = port.front() == document
     undo_label, redo_label = port.undo_labels(document)
     found = undo_label if action == UNDO else redo_label
-    if (
-        front
-        and found == label
-        and (known or fingerprint(port, document)) == state
-        and _holds(port, document, pixels)
-    ):
+    # Whether the document reached the state the move would have left: an unnamed step reads the
+    # same empty label either way (Krita keeps Redo enabled as "Redo "), so only this tells a
+    # step Krita did not take from one it moved.
+    matched = (known or fingerprint(port, document)) == state
+    if front and found == label and matched and _holds(port, document, pixels):
         return None
-    return {"expected_label": label, "found_label": found, "action": action, "in_front": front}
+    return {
+        "expected_label": label,
+        "found_label": found,
+        "action": action,
+        "in_front": front,
+        "state_matched": matched,
+    }
 
 
 def _pixels(step: Step, after: bool) -> tuple[str, dict[str, int], str] | None:
@@ -229,8 +240,10 @@ def handlers(registry: Registry, port: DocumentsPort, data: Path) -> dict[str, H
                     (ledger.undone if action == UNDO else ledger.redone)()
                     applied.append(ledger.steps[index])
                     continue
-                if outcome == REVERSED and seen.get("found_label") == ledger.steps[index].label:
-                    # Krita moved a step of that name that was not this one, as a retry would.
+                named = seen.get("found_label") == ledger.steps[index].label
+                if outcome == REVERSED and named and seen.get("state_matched"):
+                    # Krita moved a step of that name that was not this one, as a retry would;
+                    # one it did not take leaves the state as it was and stays retryable.
                     outcome = FOREIGN
                 if outcome == FOREIGN:
                     # History cannot cross a step it cannot name, now or later.

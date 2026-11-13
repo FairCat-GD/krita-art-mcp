@@ -3,7 +3,7 @@ from typing import Any
 
 from . import affine, mutation, nodes, verification
 from .errors import BridgeError, exact, integer
-from .history import LABELS, refuse_cumulative
+from .history import LABELS, reach, refuse_cumulative
 from .jobs import Call, Handler
 from .layers import drift
 from .opening import LAYER_ID
@@ -68,6 +68,22 @@ def handlers(registry: Registry, port: DocumentsPort, data: Path) -> dict[str, H
             )
             raise BridgeError("INVALID_ARGUMENT", message, False, details)
         refuse_cumulative(port, "translation")
+        # A first translate adds the mask and moves it: two steps one history call and one
+        # rollback must take whole.
+        steps = 1 if mask_id is not None else 2
+        takes = reach(port)
+        if steps > takes:
+            details = {
+                "layer_id": layer_id,
+                "reason": "too_many_steps",
+                "undo_steps": steps,
+                "max_steps": takes,
+            }
+            message = (
+                f"A first translate takes {steps} undo steps, more than the {takes} history can "
+                "take back at once; raise Krita's undo limit."
+            )
+            raise BridgeError("UNSUPPORTED_CAPABILITY", message, False, details)
         info = port.describe(document)
         size = info["size_px"]
         scope = verification.scope(verification.FULL, first, layer_id, size)
@@ -86,11 +102,7 @@ def handlers(registry: Registry, port: DocumentsPort, data: Path) -> dict[str, H
         )
         frame.read()
         # Read once Krita is idle, so a change it was still applying is not taken for this one.
-        before = port.tree(document)
-        if mutation.watched(before) != mutation.watched(first):
-            details = {"layer_id": layer_id}
-            message = "The document changed as the call began; nothing was changed. Retry."
-            raise BridgeError("INTERNAL_ERROR", message, True, details)
+        before = mutation.steady(port, document, first, (), {"layer_id": layer_id})
         xml = translate_xml(total[0], total[1])
 
         def change(steps: mutation.Steps) -> tuple[str, dict[str, Any]]:
@@ -129,7 +141,7 @@ def handlers(registry: Registry, port: DocumentsPort, data: Path) -> dict[str, H
         def back() -> bool:
             return mutation.watched(port.tree(document)) == mutation.watched(before)
 
-        applied = frame.run(change, judge, back)
+        applied = frame.run(change, judge, back, tree=before)
         target, _ = applied.value
         return {
             "document_id": handle.document_id,

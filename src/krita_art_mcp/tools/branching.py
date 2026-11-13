@@ -134,7 +134,10 @@ def _open_error(save: Done, finished: Done, opened: Failed, hint: bool) -> dict[
         and opened.session_id == save.session_id
     )
     # An open that never reached the bridge runs on a retry, unless Krita has restarted since.
-    unsent = not opened.submitted or error["details"].get("outcome") == UNREGISTERED
+    # An uncertain open was sent: only a call the bridge never registered, and one that failed
+    # before the send, never reached Krita.
+    sent = opened.submitted or error["details"].get("outcome") == UNCERTAIN
+    unsent = not sent or error["details"].get("outcome") == UNREGISTERED
     if rerun:
         if hint:
             message = f"{message} {saving.retry_hint(error['details'], TOOL, 'opens it')}"

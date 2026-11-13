@@ -1,7 +1,7 @@
 import contextlib
 import hashlib
 import logging
-from collections.abc import Callable, Iterator
+from collections.abc import Callable, Iterable, Iterator
 from pathlib import Path
 from typing import Any
 
@@ -9,7 +9,15 @@ from . import log, verification
 from .errors import BridgeError
 from .history import DONE, UNDO, in_front, move
 from .jobs import Call
-from .ledger import Fingerprint, Step, Witness, fingerprint, node_states
+from .ledger import (
+    Fingerprint,
+    Step,
+    Witness,
+    fingerprint,
+    fingerprint_of,
+    node_states,
+    selection_state,
+)
 from .port import DocumentsPort
 from .rects import union
 from .registry import Handle
@@ -39,6 +47,27 @@ FAILED = "failed"
 
 def watched(tree: dict[str, Any]) -> dict[str, dict[str, Any]]:
     return {node["id"]: {key: node[key] for key in WATCHED} for node in tree["nodes"]}
+
+
+def bounds_of(tree: dict[str, Any], ids: Iterable[str]) -> dict[str, Any]:
+    wanted = set(ids)
+    return {node["id"]: node["bounds_px"] for node in tree["nodes"] if node["id"] in wanted}
+
+
+def steady(
+    port: DocumentsPort,
+    document: Any,
+    first: dict[str, Any],
+    ids: Iterable[str] = (),
+    details: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    # The tree once Krita is idle. A change that landed since first was read would have been
+    # refused, scoped or judged against, so the call is refused for a retry instead.
+    now = port.tree(document)
+    if watched(now) != watched(first) or bounds_of(now, ids) != bounds_of(first, ids):
+        message = "The document changed as the call began; nothing was changed. Retry."
+        raise BridgeError("INTERNAL_ERROR", message, True, dict(details or {}))
+    return now
 
 
 @contextlib.contextmanager
@@ -119,6 +148,8 @@ class Steps:
         self.state = start
         # A step Krita pushed whose undo changes no pixel, so nothing could confirm it.
         self.sealed = False
+        # A change may say its first step never began, so a refusal before it seals nothing.
+        self.began = True
 
     @property
     def taken(self) -> int:
@@ -219,14 +250,14 @@ class Mutation:
         tree: dict[str, Any] | None = None,
         changing: bool = True,
         witness_of: Callable[[], Witness | None] | None = None,
+        bounds: Iterable[str] = (),
     ) -> Applied:
         # witness_of, for a pixel change of more than one layer: the witness of the first layer
         # that moved, read now, or None when none did.
         port, handle, call = self.port, self.handle, self.call
         assert self.reads is None or self.before is not None, "the before-read comes first"
         self.witness_of = witness_of
-        # An op that names no step never reads its state, so it reads no selection either.
-        start: Fingerprint = fingerprint(port, handle.document, tree) if self.labels else ((), None)
+        start: Fingerprint = self._start(tree, bounds)
         call.mark()
         was = handle.before_change()
         steps = Steps(port, handle, self.op, call.operation_id, self.labels, start)
@@ -258,6 +289,19 @@ class Mutation:
             if step.witness is None:
                 step.region = None if applied.verdict is None else applied.verdict.changed_bounds_px
         return applied
+
+    def _start(self, tree: dict[str, Any] | None, ids: Iterable[str]) -> Fingerprint:
+        # The tree is read last, after the selection, so no wait stands between the state the op
+        # was judged on and the marker: Krita's event loop turns only inside a wait (K41).
+        port, document = self.port, self.handle.document
+        # An op that names no step never reads its state, so it reads no selection either.
+        if tree is None:
+            return fingerprint(port, document) if self.labels else ((), None)
+        if not self.labels:
+            steady(port, document, tree, ids, self.ids)
+            return (), None
+        state = selection_state(port, document, port.describe(document)["size_px"])
+        return fingerprint_of(steady(port, document, tree, ids, self.ids), state)
 
     def files(self, applied: Applied) -> dict[str, Any] | None:
         if self.reads is None or applied.before is None or applied.verdict is None:
@@ -328,7 +372,8 @@ class Mutation:
         rolled_back, confirmed, counted, seen = self._restore(applied, kept, back, compensate)
         found = problem.body["details"]
         # A step Krita may hold that the ledger cannot name seals history below it.
-        sealed = len(applied.steps.pushed) < len(self.labels) or not confirmed
+        steps = applied.steps
+        sealed = (steps.began and len(steps.pushed) < len(self.labels)) or not confirmed
         details = {
             **found,
             "document_id": self.handle.document_id,
@@ -349,7 +394,9 @@ class Mutation:
                 self.data, reads.mode, applied.before, None, applied.verdict, True
             )
         if confirmed:
-            self.handle.dirty = was
+            # A step Krita keeps leaves the document changed, whatever the pixels read.
+            if not found.get("krita_kept_step"):
+                self.handle.dirty = was
             # Never retryable: a retry under this request_id would make the change again.
             raise BridgeError(problem.body["code"], problem.body["message"], False, details)
         self.handle.lost()
@@ -372,7 +419,7 @@ class Mutation:
         seen: dict[str, Any] = {}
         try:
             undone, failed, found = False, False, NONE
-            unnamed = len(steps.pushed) < len(steps.labels)
+            unnamed = steps.began and len(steps.pushed) < len(steps.labels)
             pixel = unnamed and self._pixel(steps)
             moved = self._moved_state(steps) if unnamed and not pixel else None
             # The view comes forward only for a step that may move (K7), never to confirm.

@@ -18,6 +18,8 @@ from krita_art_mcp.probe.common import (
     inspect_data,
     open_working,
     protect,
+    remove_args,
+    reorder_args,
     undo_labels,
 )
 from krita_art_mcp.probe.report import Report, code, differs, tool
@@ -70,12 +72,14 @@ async def run(report: Report, a: Client, client: BridgeClient, folder: Path, har
     try:
         names = {name: layer["id"] for name, layer in by_name(opened["data"]["layers"]).items()}
         kept = await capture(a, document_id, WHOLE, "layer", names["probe base"])
+        await _capability(report, a)
         mask = await _first(report, a, client, document_id, names)
         await _second(report, a, document_id, names, mask)
         await _history(report, a, document_id, names)
         await _fill(report, a, document_id, names)
         await _group(report, a, document_id, names)
         await _no_copy(report, a, document_id, names)
+        await _moved_layer_moves_and_goes(report, a, document_id, names)
         # Protection seals history, so the checks that undo come first.
         await _leak(report, a, document_id, names)
         await _kra(report, a, document_id, names, mask, folder, harness)
@@ -232,6 +236,49 @@ async def _no_copy(report: Report, a: Client, document_id: str, names: dict[str,
         "a translated layer is not duplicated",
         code(refused) == "UNSUPPORTED_CAPABILITY" and reason == TRANSFORM,
         f"{code(refused)}, {reason}",
+    )
+
+
+async def _capability(report: Report, a: Client) -> None:
+    data = (await tool(a, "krita_server_info", {})).get("data") or {}
+    entry = (data.get("capabilities") or {}).get("layer.translate") or {}
+    report.check(
+        "the capability matrix marks layer.translate supported since 0.27.0",
+        entry.get("supported") is True and entry.get("since") == "0.27.0",
+        str(entry),
+    )
+
+
+async def _moved_layer_moves_and_goes(
+    report: Report, a: Client, document_id: str, names: dict[str, str]
+) -> None:
+    # K53's ground: both re-attach a transform mask, and each undo takes it back. The layer is
+    # shown, which the go/no-go never tried.
+    paint, group = names["probe paint"], names["probe group"]
+    before = await capture_composite(a, document_id)
+    moved = await tool(a, "krita_layer_reorder", reorder_args(document_id, paint, group, None))
+    # The layer and its transform mask each come back in a step of their own, after the remove.
+    steps = ((moved.get("data") or {}).get("undo_steps")) or 0
+    undone = await tool(a, "krita_history_step", history_args(document_id, "undo", steps))
+    back = await capture_composite(a, document_id)
+    report.check(
+        "a visible translated layer is reordered and the move undone, with its mask",
+        moved.get("status") == "completed"
+        and steps == 3
+        and (undone.get("data") or {}).get("verified") is True
+        and not differs(back, before),
+        f"{code(moved)}, {steps} steps, undo {code(undone)}, "
+        f"{differs(back, before) or 'as before'}",
+    )
+    gone = await tool(a, "krita_layer_remove", remove_args(document_id, paint, "full"))
+    after = await tool(a, "krita_history_step", history_args(document_id, "undo"))
+    again = await capture_composite(a, document_id)
+    report.check(
+        "a visible translated layer is removed and the removal undone, with its mask",
+        gone.get("status") == "completed"
+        and (after.get("data") or {}).get("verified") is True
+        and not differs(again, before),
+        f"{code(gone)}, undo {code(after)}, {differs(again, before) or 'as before'}",
     )
 
 

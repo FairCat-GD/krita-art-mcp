@@ -7,8 +7,10 @@ import bridge_core
 import pytest
 from bridge_core import affine as bridge_affine
 from bridge_core import documents as bridge_documents
+from bridge_core import dynamics as bridge_dynamics
 from bridge_core import errors as bridge_errors
 from bridge_core import history as bridge_history
+from bridge_core import layers as bridge_layers
 from bridge_core import painting as bridge_painting
 from bridge_core import pixels as bridge_pixels
 from bridge_core import previews as bridge_previews
@@ -17,6 +19,7 @@ from bridge_core import protection as bridge_protection
 from bridge_core import resources as bridge_resources
 from bridge_core import saving as bridge_saving
 from bridge_core import selections as bridge_selections
+from bridge_core import translations as bridge_translations
 from bridge_core import verification as bridge_verification
 from bridge_core.jobs import Jobs
 from bridge_core.source_hash import source_hash as plugin_source_hash
@@ -141,6 +144,25 @@ def test_the_plugins_bounds_are_the_schemas_limits() -> None:
         "max": bridge_painting.MAX_SIZE_PX,
     }
     assert observe.LIMITS["stroke_overhang_size_fraction"] == bridge_painting.OVERHANG_OF_SIZE
+    transform = schemas.load("krita_layer_transform")["inputSchema"]["properties"]["operation"]
+    translate, scale, rotate, shear = transform["oneOf"]
+    by_px = translate["properties"]["by_px"]
+    assert by_px["items"]["maximum"] == bridge_translations.MAX_TRANSLATE
+    assert by_px["items"]["minimum"] == -bridge_translations.MAX_TRANSLATE
+    assert scale["properties"]["size_px"]["items"]["maximum"] == bridge_affine.MAX_SIZE
+    assert rotate["properties"]["degrees"]["exclusiveMaximum"] == bridge_affine.MAX_TURN
+    assert rotate["properties"]["degrees"]["exclusiveMinimum"] == -bridge_affine.MAX_TURN
+    assert shear["properties"]["degrees"]["items"]["maximum"] == bridge_affine.MAX_SHEAR
+    assert shear["properties"]["degrees"]["items"]["minimum"] == -bridge_affine.MAX_SHEAR
+    for option in ("size", "opacity"):
+        knots = stroke["dynamics"]["properties"][option]
+        assert (knots["minItems"], knots["maxItems"]) == (
+            bridge_dynamics.MIN_KNOTS,
+            bridge_dynamics.MAX_KNOTS,
+        )
+    for tool_name in ("krita_layer_create", "krita_layer_duplicate"):
+        name = schemas.load(tool_name)["inputSchema"]["properties"]["name"]
+        assert name["maxLength"] == bridge_layers.MAX_NAME
     render = schemas.load("krita_preview_render")["inputSchema"]["properties"]
     assert render["sources"]["maxItems"] == bridge_previews.MAX_SOURCES
     assert tuple(render["overlays"]["items"]["enum"]) == bridge_previews.OVERLAYS

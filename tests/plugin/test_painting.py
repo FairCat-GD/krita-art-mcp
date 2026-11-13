@@ -822,7 +822,7 @@ def test_a_raise_under_another_stroke_marks_the_document_unsafe(world: World) ->
     assert body["code"] == "ROLLBACK_FAILED" and handle.unsafe
     # The top stroke was undone, failed its witness, and was put back.
     assert world.pixels(PAINT, box(45, 60, 1, 1)) == bytes([255, 0, 0, 255])
-    assert world.port.undo_labels(handle.document) == (LABEL, None)
+    assert world.port.undo_labels(handle.document) == (LABEL, "")
 
 
 def test_a_change_with_no_target_pixel_to_witness_marks_the_document_unsafe(

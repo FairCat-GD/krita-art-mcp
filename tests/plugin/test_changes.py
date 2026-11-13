@@ -1039,7 +1039,8 @@ def test_harness_steps_the_ledger_cannot_name_seal_history(world: World) -> None
     assert timed["reads"] == ["Add Layer", "Add Layer"]
     assert handle.ledger.undo_available() == 0
     labels = world.run("harness.undo_labels", {"document_id": document_id})
-    assert (labels["undo"], labels["redo"]) == ("Add Layer", None)
+    # Krita keeps Redo enabled with nothing to redo, and its text names no step.
+    assert (labels["undo"], labels["redo"]) == ("Add Layer", "")
     world.layer(document_id)
     world.run(
         "harness.select_mask",

@@ -803,3 +803,23 @@ def test_a_removal_that_changed_another_layer_is_caught(world: World) -> None:
     # Krita's undo does not take back a name (K22), so nothing confirms the document.
     assert body["code"] == "ROLLBACK_FAILED" and body["details"]["cause"] == "INTERNAL_ERROR"
     assert body["details"]["layer_ids"] == [BASE] and handle.unsafe
+
+
+def test_a_removal_scoped_before_the_layer_grew_is_refused_for_a_retry(world: World) -> None:
+    # The review's leak: LEFT grows past the allowed mask while Krita is waited on, so a region
+    # read taken over its old bounds would verify a change it never saw.
+    document_id, handle = world.document()
+    world.allow(document_id, _box(0, 0, 3, 4))
+    before = world.tree()
+    node = world.port._layer(1, LEFT)
+
+    def grown() -> None:
+        node["bounds_px"] = _box(0, 0, 5, 4)
+
+    world.port.on_read.append(grown)
+    body = world.refused("layer.remove", _remove(document_id, LEFT))
+    assert body["code"] == "INTERNAL_ERROR" and body["retryable"] is True
+    world.port.on_read.clear()
+    node["bounds_px"] = _box(0, 0, 3, 4)
+    assert world.kids() == [BASE, LEFT, RIGHT, GROUP, HELD]
+    _clean(world, handle, before)

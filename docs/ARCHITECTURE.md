@@ -1,6 +1,6 @@
 # krita-art-mcp — architecture, as built
 
-This is the system as it stands at 0.28.0, in round 2, on the Phase 1 round 1 built. Every session
+This is the system as it stands at 0.29.0, in round 2, on the Phase 1 round 1 built. Every session
 keeps it true, in the same commit as the change. Each section stands on its own: a session reads
 the overview, the invariants and the baseline, then only the sections its work touches.
 `docs/USER-GUIDE.md` is the same system from the user's side.
@@ -192,7 +192,9 @@ It polls with 2 s waits and a socket timeout 3 s longer, and after the budget re
   nothing,* a rule the outcome rule (see *Bridge and jobs*) reads and a test holds at every
   retryable raise.
 - So the same `operation_id` sent again runs afresh, which a save's finish needs: it is always
-  sent under one id derived from the save's. Other arguments under it answer
+  sent under one id derived from the save's. The derived `request_id` is the call's with
+  `:finish` or `:open` after it, and the server refuses an agent's `request_id` that ends either
+  way, so no agent's id can ever name a step's. Other arguments under it answer
   `REQUEST_ID_CONFLICT` without replacing the failure, since the finish's arguments are the
   server's own and can differ between attempts.
 - Finished operations keep their results and drop their arguments. Requests an agent named stay for
@@ -210,9 +212,10 @@ client cannot inspect while its own 45-second save runs. That is right for one a
 sequential calls; revisit it when a client runs tools in parallel. The bridge serialises jobs across
 all clients regardless.
 
-**One op outside `RECEIPTS`.** `document.save_finish` is reached only through the save's `finish`
-hook, so a poll of its own id answers "That operation belongs to no tool". Agents are only ever given
-the save's id. The completeness test scans tool functions for `call("…")` literals, so the next
+**Two ops outside `RECEIPTS`.** `document.save_finish` and `document.duplicate_open` are reached
+only through the save's and the duplicate's `finish` hooks, so a poll of either's own id answers
+"That operation belongs to no tool". Agents are only ever given the call's own id: a failure's
+`details.operation_id` is the call's, and the step's stays under `step_operation_id`. The completeness test scans tool functions for `call("…")` literals, so the next
 two-op tool should know its reach.
 
 ## The tool contract
@@ -257,6 +260,13 @@ handle field were added, so it stays. At 0.27.0 a tool and the layers' `translat
 and a duplicate refuses a layer holding a transform mask, a new refusal, so it stays. At 0.28.0
 `krita_layer_transform` took three operations, each with a receipt shape of its own beside the
 translate's, so it stays.
+
+**A receipt the journal replays is checked against today's schema.** A retry inside the journal's
+7-day window answers from the stored receipt, so a receipt written before an output field became
+required fails `_checked` on replay: `INTERNAL_ERROR`, `outcome: applied`, the ids kept and the
+receipt lost. It is safe, and rare — a required field added, then a retry of that same
+`request_id` across the release. New fields in a failure's `details` cannot do it, since `details`
+is an open object.
 
 **Schemas are data.** Each of the 25 `schemas/krita_<tool>.json` holds `name`, `description`,
 `inputSchema`, `outputSchema`, `annotations` and `example`. `MCPServer` tools are built by hand with
@@ -319,11 +329,11 @@ an input passes through and its TypeScript renderer, from `rust-v0.166.0` (the s
 2026-11-04), and renders Codex's own test case as Codex's test expects. For every tool,
 `test_codex_shows_every_input_and_output_whole` holds:
 - the normalised input at most 5,000 bytes, past which Codex strips descriptions and then deeper
-  shapes (the largest is `krita_paint_stroke`'s, 3,190);
+  shapes (the largest is `krita_paint_stroke`'s, 4,378);
 - the rendered input at most 16,000 bytes, past which it becomes `unknown`, and with no `unknown`
-  in it (the largest is 2,127);
+  in it (the largest is `krita_paint_stroke`'s, 2,941);
 - the rendered output at most 16,000 bytes and not `unknown` (the largest is
-  `krita_preview_render`'s, 2,362).
+  `krita_layer_transform`'s, 4,975).
 
 The port follows a pinned tag, so a Codex release that changes its renderer is not seen until the
 port is redone. `Array<number>` hides a tuple's length. `ALL_TOOLS` carries the declarations, so an
@@ -349,10 +359,12 @@ schema, where a job ends at its first raise and each check reads what the one be
 document before the layer before the pixels.
 
 **Argument rules are written twice on purpose.** Each side trusts no caller, and a refusal the server
-makes carries no `operation_id`. Each pair is held by a parity test in `tests/test_parity.py`: 25
+makes carries no `operation_id`. Each pair is held by a parity test in `tests/test_parity.py`: 28
 today, from open's format, editable lists and mode to a capture's area, a layer's coverage, a
-fill's colour and area, a stroke's or fill's colour and mask paint, a taper's rules, a layer moved
-inside or above itself, a copy's name, a layer's name length, a removal's `verify`, a
+fill's colour and area, a stroke's or fill's colour and mask paint, a taper's rules and its
+schema's own (the knot count, a knot's fields, a value's range, and naming neither option), a
+layer moved inside or above itself, a layer id in Krita's own form, a whole number sent as a
+float, a copy's name, a layer's name length, a removal's `verify`, a
 translate that moves nothing or past its range, and a scale, rotate or shear of nothing, past its
 schema's bounds, or of another type or field. `tests/support/parity.py`'s
 `refused_alike` calls the tool, turns the server's half off, and calls again, so the server's own
@@ -369,7 +381,10 @@ translation carries the same arguments to the plugin. Both must refuse with one 
   and the plugin, which gets the server's defaults, any value that does something.
 - **Not held:** `eraser`, which the schema takes only as `false` while the plugin keeps erasing
   for when it comes; preview's `baseline_id` on a target that is not the composite (the backlog);
-  and the `frame` rule, since the server always sends 0.
+  the `frame` rule, since the server always sends 0; and the derived `request_id` form, which
+  only the server can refuse, since the plugin receives the server's own `:finish` and `:open`
+  ids through the same field. `points[].time_ms` and a preview's `integer_zoom` take the whole
+  number rule on the server alone, because the plugin never receives either field.
 
 **The error codes: 30.** The default `retryable` is the server's; a site may override it, and
 `docs/USER-GUIDE.md` says what an agent should do with each.
@@ -885,7 +900,9 @@ bounds (K54).
   order: no node added or removed, `drift` with `offset_px` loose on the subtree (Krita moves the
   offset on a rotate or a shear); every layer's new bounds inside its rect, or `INTERNAL_ERROR`,
   rolled back by what the rect saw; a sealed step with a changed composite is `INTERNAL_ERROR`, and
-  one without is `no_change`, rolled back with history sealed (a half turn of symmetric paint); a
+  one without is `no_change`, with history sealed (a half turn of symmetric paint): Krita keeps
+  that step and the offset it moved, so the receipt says `krita_kept_step` and the document stays
+  dirty, which only a save or a close clears; a
   leak is `PROTECTED_REGION_CHANGED`. **`back`** is the watched tree, offsets loose, and every
   layer's bounds and digest as before.
 - **Full scope always,** no hashed layers. The receipt gives `pivot_px`, the bounds before and
@@ -935,6 +952,13 @@ the save keeps its own ladder, and a selection, which has no verdict, pushes its
   the allowed mask over the scope, as a `Reads`. That names the composite's scope, and optionally
   the target over its own rect, its bytes per pixel (`channels`: 4, or 1 for a mask) and each
   protected layer over its own rect. `Mutation.read` refreshes, then reads.
+- **The tree the op judges by.** An op that refuses, scopes or judges from a tree read before its
+  reads passes it to `Mutation.run`, with the ids whose `bounds_px` anything downstream used.
+  The frame reads the tree again as the last act before the marker, after the selection, and
+  `mutation.steady` refuses retryably when anything watched or a named bound moved: Krita's event
+  loop turns only inside a wait (K40, K41), so nothing can land between that read and the change.
+  `KritaDocuments.tree` waits, so the first read is idle too. Not covered: `port.effects` and
+  `port.describe`, which no comparison watches, and the selection, read just before the tree.
 - **`Mutation.run`** takes the start fingerprint, then the marker and `before_change()` together,
   then, inside `unconfirmed`, the op's change, the after-read, `check`, and the op's `judge`. The
   rollback runs inside `unconfirmed` too: the op's own `BridgeError` passes through, and any other
@@ -971,7 +995,8 @@ translate an add and its params change, a scale, rotate or shear its one step. A
     `protected_pixels_changed` and `target_outside_reach`, and the failed `verification`.
   - `history_sealed` is true when history stopped below the op. That happens when a step was
     named and never pushed, since Krita may hold it whether or not the state moved, or when the
-    document went unsafe.
+    document went unsafe. A change that says nothing began, as a taper does before its paint
+    call, holds no step, so such a refusal seals nothing.
   - Not confirmed: the document is unsafe, its history sealed through `Handle.lost()`, and the
     call is `ROLLBACK_FAILED`, with `cause` and what a failed move saw.
   - `protected_pixels_changed` counts the protected layer's own bytes a pixel, read from what was
@@ -1090,9 +1115,9 @@ Distance sensor (K51), on the pixel engine alone. `bridge_core/dynamics.py` is p
 - **Rules.** Each option is 2 to 16 knots `{at, value}`, at from 0 to 1 rising by 0.001 or more.
   A taper needs `preset_sha256`, colour paint, and an arc length of 1 px or more. These are
   parity pairs with the server, which measures the arc the same way.
-- **Refused before any change,** after `_listed`:
+- **Refused before any change.** A preset held after a failed restore is refused first, before
+  `_listed`; then, after it:
   - another engine;
-  - a preset held after a failed restore;
   - `useDirtyPresets` at anything but Krita's default, `true`, the only value measured;
   - a dirty flag no resource chooser reports.
 
@@ -1187,8 +1212,9 @@ bare command, measured), and "Scale Layer", "Rotate Layer" and "Shear Layer", on
 names, Layer > Transform's among them, and the fingerprint does not see pixels, so the witness alone
 tells them apart. A history move reversed after Krita named the step as expected on its other side
 moved a step of that name that was not the bridge's: it stops history as foreign, not retryable,
-since a retry would move it again. A step Krita did not take shows another name there and stays
-retryable. They
+since a retry would move it again. A step Krita did not take leaves the state as the move found it, and stays
+retryable: its name alone does not tell the two apart, since a selection's step and a translate's
+params step have none and Krita keeps Redo enabled as "Redo " with nothing to redo. They
 are read only by `move`, so on a localised Krita ordinary calls complete, `krita_history_step`
 refuses every step as not the bridge's, and any change that needs a rollback ends in
 `ROLLBACK_FAILED` and an unsafe document. English is a requirement until the backlog's item lands.
@@ -1409,7 +1435,7 @@ document, and fails the checks it overlaps. The stock presets `b) Basic-2 Opacit
 **The journal check comes last.** It is the live evidence that `uncertain` stays rare.
 - **What it reads.** Every line the probe's servers journaled, through the journal's own reader,
   so a line a later one settled counts as settled.
-- **When it fails.** On fewer than 340 dispatched lines, about half a whole run's 753, since that
+- **When it fails.** On fewer than 340 dispatched lines, under half a whole run's 846, since that
   means it read the wrong place. Or on any request left with an unknown attempt, which it names:
   uncertain, unregistered, or dispatched with no finished line.
 - **What it cannot see.** Reads, harness ops and the probe's own direct bridge calls, none of which
@@ -1532,6 +1558,10 @@ Each has its detail in `docs/BACKLOG.md`, or in `docs/spec/SESSIONS.md` where ro
 - A taper's reload route is held by unit tests and E1's measurement. In the probe, the paint
   checks before it leave its preset dirty, so the restore there is by XML alone. Tapers are refused
   under a changed dirty-presets setting, on mask paint, and on engines other than the pixel engine.
+- The frame proves the tree at the marker, not `port.effects`, `port.describe` or the selection:
+  a layer style added, a clone re-pointed or a selection changed as a call begins is not watched.
+- A `no_change` scale, rotate or shear leaves the document dirty with history sealed, so only a
+  save or a close clears it; the step itself can no longer be undone through the bridge.
 
 ## Reference: the ids the code cites
 
@@ -1697,24 +1727,26 @@ the code is shaped as it is.
   it. A Krita holding 87 documents ran document ops about three times slower, and left the paint
   benchmarks, the preview benchmark and H4 idle alone.
 
-## Baseline (v0.28.0)
+## Baseline (v0.29.0)
 
-Taken on 2026-11-12 on Krita 5.3.4.1, macOS, Apple Silicon, on a Krita restarted that session, with
+Taken on 2026-11-13 on Krita 5.3.4.1, macOS, Apple Silicon, on a Krita restarted that session, with
 **0 documents open**. The probe prints the open-document count beside its time, because document ops
 depend on it: 87 open documents cost about 50 s more.
 
 | Check | Expected |
 |---|---|
 | `uv run scripts/verify.py` | 6 stages, all PASS |
-| Server tests (3.12) | 1152 passed, 0 skipped |
-| Plugin-core tests (3.10) | 1204 passed, 0 skipped |
-| `uv run krita-art-mcp probe` | 226 PASS, 0 FAIL, 25 MEASURED; about 150 s |
+| Server tests (3.12) | 1176 passed, 0 skipped |
+| Plugin-core tests (3.10) | 1222 passed, 0 skipped |
+| `uv run krita-art-mcp probe` | 231 PASS, 0 FAIL, 25 MEASURED; about 150 s |
 | `uv run krita-art-mcp doctor` | 6 steps, all PASS, with a root allowed |
 | Registered tools | 25 |
 | Schema files | 25 |
 | Error codes | 30 |
 | Bridge ops | 39 |
 | Bridge protocol; `api_version` | 1; 0.4.0 |
+| Capabilities | 17: 10 supported, 7 not |
+| Parity tests | 28 |
 | Server instructions | 3,371 of 4,096 characters, at least 700 spare |
 | CLI commands | 5 |
 

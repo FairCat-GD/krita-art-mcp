@@ -12,6 +12,7 @@ from krita_art_mcp.probe.common import (
     capture,
     capture_composite,
     close,
+    document_dirty,
     guard,
     history_args,
     inspect_data,
@@ -85,12 +86,15 @@ async def run(report: Report, a: Client, client: BridgeClient, folder: Path, har
     try:
         names = {name: layer["id"] for name, layer in by_name(opened["data"]["layers"]).items()}
         kept = await capture(a, document_id, WHOLE, "layer", names["probe base"])
+        await _capability(report, a)
         await _scale(report, a, client, document_id, names)
         await _rotate(report, a, client, document_id, names)
         await _shear(report, a, client, document_id, names)
         await _group(report, a, document_id, names)
         await _filters(report, a, document_id, names)
         await _order(report, a, document_id, names)
+        # Before the refusals, which leave "probe other" holding a transform mask.
+        await _kept_step(report, a, client, document_id, names)
         await _refusals(report, a, client, document_id, names)
         await _kra(report, a, document_id, names, folder)
         # Protection seals history, so the checks that undo come first.
@@ -322,6 +326,53 @@ async def _refusals(
         and all(_outcome(one) == "not_applied" for one in (moved, held, base, same, tiny))
         and labels == after,
         ", ".join(f"{name}: {result}" for name, result in found.items()),
+    )
+
+
+async def _capability(report: Report, a: Client) -> None:
+    data = (await tool(a, "krita_server_info", {})).get("data") or {}
+    capabilities = data.get("capabilities") or {}
+    found = {
+        name: (
+            (capabilities.get(name) or {}).get("supported"),
+            (capabilities.get(name) or {}).get("since"),
+        )
+        for name in ("layer.scale", "layer.rotate", "layer.shear")
+    }
+    report.check(
+        "the capability matrix marks layer.scale, layer.rotate and layer.shear supported since "
+        "0.28.0",
+        all(entry == (True, "0.28.0") for entry in found.values()),
+        str(found),
+    )
+
+
+async def _kept_step(
+    report: Report, a: Client, client: BridgeClient, document_id: str, names: dict[str, str]
+) -> None:
+    # A half turn of flat paint maps the layer onto itself: Krita pushes its step and moves the
+    # offset all the same, so the call is refused and the document stays changed (K54).
+    flat = names["probe other"]
+    before = await capture_composite(a, document_id)
+    dirty_before = await document_dirty(a, document_id)
+    refused = await tool(a, TOOL, _args(document_id, flat, {"type": "rotate", "degrees": 180}))
+    details = (refused.get("error") or {}).get("details") or {}
+    undo, _ = undo_labels(client, document_id)
+    after = await capture_composite(a, document_id)
+    dirty = await document_dirty(a, document_id)
+    report.check(
+        "a half turn that changes no pixel is refused, and the step Krita keeps leaves the "
+        "document dirty with history sealed",
+        code(refused) == "INVALID_ARGUMENT"
+        and details.get("reason") == "no_change"
+        and details.get("krita_kept_step") is True
+        and details.get("history_sealed") is True
+        and undo == LABELS["rotate"]
+        and dirty is True
+        and not differs(after, before),
+        f"{code(refused)}, {details.get('reason')}, kept {details.get('krita_kept_step')}, "
+        f"undo {undo}, dirty {dirty_before} to {dirty}, "
+        f"{differs(after, before) or 'composite as before'}",
     )
 
 

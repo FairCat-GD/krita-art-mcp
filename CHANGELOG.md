@@ -6,6 +6,58 @@ All notable changes to krita-art-mcp are documented here. The format follows
 
 ## [Unreleased]
 
+## [0.29.0] — 2026-11-13
+
+The fixes the construction review found. The four layer tools, `krita_layer_update` and the paint
+tools judged a change against a tree read before Krita was idle, so a change landing as a call
+began could have a protected layer removed, a correct undo reversed, or a leak verified clean. The
+frame now proves the tree as the last act before every change and refuses retryably when anything
+moved. `api_version` stays 0.4.0: nothing was renamed or removed. This release needs
+`install-plugin`, a Krita restart and a restart of the MCP client.
+
+### Fixed
+
+- **A change landing as a call begins is refused for a retry, never judged.** Every mutating op
+  passes the tree it refused and scoped from to the frame, which reads it again after the
+  selection and immediately before the change; a watched field or a scoped layer's bounds that
+  moved gives `INTERNAL_ERROR`, retryable, with nothing changed. `krita_layer_transform` already
+  did this for itself; the stroke, the fill, `krita_layer_create`, `krita_layer_duplicate`,
+  `krita_layer_reorder`, `krita_layer_remove` and `krita_layer_update` now do too.
+- **A failure's `details.operation_id` is the call's own.** A save's or a duplicate's step kept
+  its own id there, which `krita_operation_get` answers for no tool; the step's is now
+  `step_operation_id`.
+- **A failed `krita_layer_duplicate` names its copy** as `copy_id`, which the frame no longer
+  overwrites with the source's id.
+- **A `request_id` ending in `:finish` or `:open` is refused.** The server sends a save's and a
+  duplicate's second step under an id derived that way, so an agent's own could collide with it.
+- **A duplicate's open that was lost mid-call** is no longer told a retry may send it for the
+  first time; only a call the bridge never registered was unsent.
+- **A first translate is refused** when Krita's undo limit cannot take its two steps back at once
+  (`too_many_steps`), as a reorder already was.
+- **A taper refused before it painted no longer seals history**, since Krita holds no step; and an
+  interrupt inside its restore now holds the preset, which no later stroke uses until it reads as
+  before.
+- **An undo Krita did not take stays retryable** even for a step with no name: Krita keeps Redo
+  enabled as "Redo " with nothing to redo, which read as a step of the expected name.
+- **A `no_change` scale, rotate or shear says the step stays.** Krita keeps its undo step and the
+  offset it moved, so the receipt carries `krita_kept_step` and the document stays dirty instead
+  of reading as unchanged.
+- **The translate's parse refuses params carrying attributes** on `<transform_params>` or
+  `<free_transform>`, which it read as a plain move.
+- **A whole number sent as a float** (`1.0`) is refused by the server, as the plugin already
+  refused it, and `layer_id` and `above_id` take Krita's own id form in the schemas.
+
+### Added
+
+- Parity cases for the taper's schema rules, a translate's and a scale's bounds and item types, a
+  layer id's form and the whole-number rule; the plugin's bounds for a translate, a transform, a
+  taper's knots and a layer's name are held to the schemas.
+- Probe checks for the capability matrix's `layer.translate`, `layer.scale`, `layer.rotate` and
+  `layer.shear`; a visible translated layer reordered and removed, each undone (K53's ground); and
+  a half turn that changes no pixel, which Krita keeps.
+- `Node.remove()`, `Node.duplicate()` and `addChildNode` are pinned to their listed sites, and the
+  adapter's wait rule now covers a node's geometry, so `tree` and `structure` wait.
+
 ## [0.28.0] — 2026-11-12
 
 A paint layer, or a group of them, can be scaled, rotated or sheared. Krita's own Layer > Transform

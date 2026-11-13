@@ -24,7 +24,8 @@
       },
       "layer_id": {
         "type": "string",
-        "minLength": 1
+        "minLength": 1,
+        "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
       },
       "verify": {
         "description": "region, the default, checks the layer's bounds. full checks the whole canvas: use it when a filter, mask, style, clone or copy blend could spread the removal.",

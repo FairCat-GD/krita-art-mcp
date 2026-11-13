@@ -548,9 +548,10 @@ def test_the_witness_is_the_first_layer_that_moved(world: World) -> None:
     assert step.witness is not None and step.witness[0] == SHADE
 
 
-def test_a_step_that_moves_only_offsets_is_refused_and_confirmed(world: World) -> None:
-    # A half turn of symmetric paint: Krita pushes a step that changes no pixel; history stops
-    # below it, and the document is as it was.
+def test_a_step_that_moves_only_offsets_is_refused_and_kept(world: World) -> None:
+    # A half turn of symmetric paint: Krita pushes a step that changes no pixel. History stops
+    # below it and the pixels are as they were, but Krita keeps the step and the moved offset,
+    # so the document is still changed.
     document_id, handle = world.document()
     before = world.composite()
     world.port.reshape_inert = True
@@ -558,9 +559,11 @@ def test_a_step_that_moves_only_offsets_is_refused_and_confirmed(world: World) -
     assert body["code"] == "INVALID_ARGUMENT" and body["details"]["reason"] == "no_change"
     details = body["details"]
     assert details["rolled_back"] is False and details["rollback_verified"] is True
-    assert details["history_sealed"] is True
+    assert details["history_sealed"] is True and details["krita_kept_step"] is True
     assert world.stack() == ["Rotate Layer"] and handle.ledger.steps == []
-    assert world.composite() == before and not handle.unsafe and not handle.dirty
+    assert world.composite() == before and not handle.unsafe
+    # The bridge's state agrees with Krita's, so a close that refuses dirt refuses this.
+    assert handle.dirty
 
 
 def test_a_leak_is_undone_and_confirmed(world: World) -> None:

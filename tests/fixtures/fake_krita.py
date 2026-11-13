@@ -905,7 +905,9 @@ class FakePort:
         info = self.live.get(self.front_key or -1, {})
         stack, index = info.get("stack", []), info.get("index", 0)
         undo = stack[index - 1]["label"] if index > 0 else None
-        redo = stack[index]["label"] if index < len(stack) else None
+        # Krita keeps Redo enabled with nothing to redo, and its text reads "Redo ": an empty
+        # label, the same one an unnamed step shows.
+        redo = stack[index]["label"] if index < len(stack) else ""
         return undo, redo
 
     def undo_limit(self) -> int:
@@ -1078,6 +1080,7 @@ class FakePort:
 
     def edit_preset(self, document: Any, xml: str) -> str:
         # Preset.fromXML: the one preset the view and the resources hold changes, and is dirty.
+        self._marked()
         self.calls.append("edit_preset")
         self._maybe_fail("edit_preset")
         self.preset_edits.append(xml)
@@ -1085,6 +1088,7 @@ class FakePort:
         return self.preset_xml[self.brush_now["preset"]]
 
     def restore_preset(self, document: Any, xml: str, reload: bool) -> str:
+        self._marked()
         self.calls.append("restore_preset")
         self._maybe_fail("restore_preset")
         if not self.restore_keeps_edit:

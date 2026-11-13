@@ -65,7 +65,7 @@ def translation(xml: str) -> tuple[int, int] | None:
         root = ElementTree.fromstring(xml)
     except ElementTree.ParseError:
         return None
-    if root.tag != "transform_params" or _text(root) or len(root) != 2:
+    if root.tag != "transform_params" or root.attrib or _text(root) or len(root) != 2:
         return None
     main, data = root
     if (main.tag, main.attrib, len(main)) != ("main", {"id": PARAMS}, 0):
@@ -73,7 +73,9 @@ def translation(xml: str) -> tuple[int, int] | None:
     if (data.tag, data.attrib, len(data)) != ("data", {"mode": MODE}, 1):
         return None
     [free] = list(data)
-    if free.tag != "free_transform" or len(free) != len(FREE) or _text(free) or _text(data):
+    if free.tag != "free_transform" or free.attrib or len(free) != len(FREE):
+        return None
+    if _text(free) or _text(data):
         return None
     found = {child.tag: child for child in free}
     if set(found) != {tag for tag, _ in FREE}:

@@ -1,6 +1,6 @@
 {
   "name": "krita_layer_transform",
-  "description": "Move, scale, rotate or shear a paint layer or group, one operation per call; the whole canvas is checked against protection and a leak is undone, and krita_history_step moves the call's undo steps together. translate moves by whole pixels through a transform mask on top of its masks, so the layer's own pixels never change: the first adds the mask, then moves it (two undo steps), a later one moves the same mask (one). A KRA keeps the move; an ORA drops it, so an ORA save is refused. scale, rotate and shear resample the layer and every layer in it about its bounds' centre, in one undo step; resampling loses detail, so copy the layer first (krita_layer_duplicate) to keep the original. They take only paint layers and groups of them: a mask, a locked or styled layer, a clone's source and a transform mask (scale, rotate or shear before translating) are refused, and the selection does not limit them. Refused for a protected layer or one holding one (translate: or in a protected group), and under Krita's cumulative undo. Duplicate a layer before translating it: a translated layer is not copied.",
+  "description": "Move, scale, rotate or shear a paint layer or group, one operation per call; the whole canvas is checked against protection and a leak is undone, and krita_history_step moves the call's undo steps together. translate moves by whole pixels through a transform mask on top of its masks, so the layer's own pixels never change: the first adds the mask, then moves it (two undo steps), a later one moves the same mask (one). A KRA keeps the move; an ORA drops it, so an ORA save is refused. scale, rotate and shear resample the layer and every layer in it about its bounds' centre, in one undo step; resampling loses detail, so copy the layer first (krita_layer_duplicate) to keep the original. They take only paint layers and groups of them: a mask, a locked or styled layer, a clone's source and a transform mask (scale, rotate or shear before translating) are refused, and the selection does not limit them. Refused for a protected layer or one holding one (translate: or in a protected group), and under Krita's cumulative undo. Duplicate a layer before translating it: a translated layer is not copied. Paint on a translated layer lands in its own pixels: aim at the canvas point minus translation_px.",
   "inputSchema": {
     "type": "object",
     "properties": {
@@ -24,7 +24,8 @@
       },
       "layer_id": {
         "type": "string",
-        "minLength": 1
+        "minLength": 1,
+        "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
       },
       "operation": {
         "description": "One transform per call.",
@@ -60,7 +61,7 @@
                 "const": "scale"
               },
               "size_px": {
-                "description": "[width, height] in whole px, each 1 to 16384: the new size of the layer's bounds, about their centre; past 8192 x 8192 in all is refused as too large. The bounds after may differ by a pixel where an edge is soft.",
+                "description": "[width, height] in whole px, each 1 to 16384: the new size of the layer's bounds, about their centre; a scale whose reads pass 8192 x 8192 for one layer, or four times that for all of them, is refused as too large. The bounds after may differ by a pixel where an edge is soft.",
                 "type": "array",
                 "items": {
                   "type": "integer",

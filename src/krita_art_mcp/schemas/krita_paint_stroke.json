@@ -222,7 +222,7 @@
         ]
       },
       "dynamics": {
-        "description": "Size and opacity along the stroke, each as knots {at, value}: at is the fraction of the stroke's length, from 0 to 1, rising by at least 0.001; value multiplies brush.size_px or brush.opacity there, in straight lines between knots. It drives the preset's Distance sensor for this stroke alone, replacing the preset's own size or opacity sensors, and puts the preset back after. Pixel brush engine and colour paint only; needs brush.preset_sha256 and a stroke at least 1 px long.",
+        "description": "Size and opacity along the stroke, each as knots {at, value}: at is the fraction of the stroke's length, from 0 to 1, rising by at least 0.001, the first knot at 0 and the last at 1; value multiplies brush.size_px or brush.opacity there, in straight lines between knots. It drives the preset's Distance sensor for this stroke alone, replacing the preset's own size or opacity sensors, and puts the preset back after. Pixel brush engine and colour paint only; needs brush.preset_sha256 and a stroke at least 1 px long.",
         "type": "object",
         "properties": {
           "size": {

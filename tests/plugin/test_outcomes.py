@@ -23,7 +23,14 @@ from bridge_core import (
 from bridge_core.errors import OUTCOMES, BridgeError, cleaned
 from bridge_core.jobs import BOUNDED, HARNESS, READS, Call, Handler, Jobs
 from bridge_core.registry import Registry
-from fake_krita import FakePort, FakeResources, fake_node, layer_id
+from bridge_core.resources import fingerprint
+from fake_krita import (
+    PRESET_XML,
+    FakePort,
+    FakeResources,
+    fake_node,
+    layer_id,
+)
 
 A: dict[str, Any] = {"pid": 101, "started_at": "Mon Nov  2 10:00:00 2026"}
 B: dict[str, Any] = {"pid": 202, "started_at": "Mon Nov  2 10:05:00 2026"}
@@ -44,16 +51,15 @@ NOT_APPLIED, UNCERTAIN = "not_applied", "uncertain"
 # Each retryable raise in the plugin, by file and code; each has a test here that it changed
 # nothing, because that is what its not_applied rests on.
 RETRYABLE = [
-    ("bridge_core/affine.py", "INTERNAL_ERROR"),
     ("bridge_core/files.py", "FILE_EXISTS"),
     ("bridge_core/harness.py", "BUSY"),
     ("bridge_core/history.py", "INTERNAL_ERROR"),
     ("bridge_core/jobs.py", "CANCELLED"),
     ("bridge_core/jobs.py", "CANCELLED"),
+    ("bridge_core/mutation.py", "INTERNAL_ERROR"),
     ("bridge_core/registry.py", "DOCUMENT_IN_USE (computed)"),
     ("bridge_core/saving.py", "BUSY"),
     ("bridge_core/transfer.py", "IO_ERROR"),
-    ("bridge_core/transforms.py", "INTERNAL_ERROR"),
     ("krita_adapter/documents.py", "KRITA_MODAL_DIALOG"),
     ("krita_adapter/documents.py", "MULTIPLE_WINDOWS"),
 ]
@@ -408,6 +414,15 @@ def test_a_stroke_and_history_pass_their_markers(world: World) -> None:
     assert world.done("history.step", world.history_args(document_id, "redo"))["verified"]
 
 
+def test_a_tapered_stroke_passes_its_marker(world: World) -> None:
+    # The preset's edit and its restore are changes of Krita's, so both come after the marker.
+    document_id = world.document()
+    taper = {"size": [{"at": 0, "value": 0.2}, {"at": 1, "value": 1}], "opacity": None}
+    brush = {**world.stroke_args(document_id)["brush"], "preset_sha256": fingerprint(PRESET_XML)[1]}
+    args = world.stroke_args(document_id, brush=brush, dynamics=taper)
+    assert world.done("paint.stroke", args)["effective_brush"]["dynamics"] is not None
+
+
 def test_a_fill_passes_its_marker_and_a_refused_one_is_not_applied(world: World) -> None:
     document_id = world.document()
     assert world.done("paint.fill", world.fill_args(document_id))["undo_steps"] == 1
@@ -512,6 +527,84 @@ def test_a_transform_whose_document_changed_as_it_began_changed_nothing(world: W
     assert body["code"] == "INTERNAL_ERROR" and body["retryable"] is True
     assert _outcome(body) == NOT_APPLIED
     assert world.port.live[1].get("stack", []) == [] and world.port.reshaped == []
+
+
+def _moved(world: World) -> None:
+    # A change of the owner's, landing while Krita is waited on, on a node no op here names.
+    world.port._tree(1)["nodes"][0]["name"] = "renamed by hand"
+
+
+@pytest.mark.parametrize(
+    ("op", "arguments"),
+    [
+        ("layer.duplicate", {"layer_id": PAINT, "name": "trial"}),
+        ("layer.remove", {"layer_id": PAINT, "verify": "region"}),
+        ("layer.update", {"layer_id": PAINT, "properties": {"opacity": 0.5}, "verify": "region"}),
+    ],
+)
+def test_an_op_whose_document_changed_as_it_began_changed_nothing(
+    world: World, op: str, arguments: dict[str, Any]
+) -> None:
+    document_id = world.document()
+    _painted(world)
+    steps = len(world.registry.find(document_id).ledger.steps)
+    world.port.on_read.append(lambda: _moved(world))
+    body = world.failure(op, {"document_id": document_id, **arguments})
+    assert body["code"] == "INTERNAL_ERROR" and body["retryable"] is True
+    assert _outcome(body) == NOT_APPLIED
+    assert world.port.live[1].get("stack", []) == []
+    assert len(world.registry.find(document_id).ledger.steps) == steps
+    assert not world.registry.find(document_id).dirty
+
+
+def test_a_reorder_whose_document_changed_as_it_began_changed_nothing(world: World) -> None:
+    document_id = world.document()
+    group = world.done("layer.create", world.layer_args(document_id, type="group"))["layer_id"]
+    world.port.on_read.append(lambda: _moved(world))
+    move = {"document_id": document_id, "layer_id": PAINT, "parent_id": group, "above_id": None}
+    body = world.failure("layer.reorder", move)
+    assert body["code"] == "INTERNAL_ERROR" and body["retryable"] is True
+    assert _outcome(body) == NOT_APPLIED
+    assert world.port._layer(1, PAINT)["parent_id"] == world.port._tree(1)["root_id"]
+
+
+def test_a_stroke_whose_document_changed_as_it_began_changed_nothing(world: World) -> None:
+    document_id = world.document()
+    before = bytes(world.port.buffers[PAINT])
+    world.port.on_read.append(lambda: _moved(world))
+    body = world.failure("paint.stroke", world.stroke_args(document_id))
+    assert body["code"] == "INTERNAL_ERROR" and body["retryable"] is True
+    assert _outcome(body) == NOT_APPLIED
+    assert bytes(world.port.buffers[PAINT]) == before
+
+
+def test_a_mask_whose_document_changed_as_it_began_changed_nothing(world: World) -> None:
+    document_id = world.document()
+    _painted(world)
+    args = world.layer_args(document_id, type="transparency_mask", parent_id=PAINT, coverage="all")
+    world.port.on_read.append(lambda: _moved(world))
+    body = world.failure("layer.create", args)
+    assert body["code"] == "INTERNAL_ERROR" and body["retryable"] is True
+    assert _outcome(body) == NOT_APPLIED
+    assert all(node["type"] != "transparencymask" for node in world.port._tree(1)["nodes"])
+
+
+def test_a_layer_created_while_the_document_changed_changed_nothing(world: World) -> None:
+    # A paint layer's create reads no pixels, so the frame's own tree read is the first wait.
+    document_id = world.document()
+    real, seen = world.port.tree, []
+
+    def counting(document: Any) -> dict[str, Any]:
+        seen.append(document)
+        if len(seen) == 2:
+            _moved(world)
+        return real(document)
+
+    world.port.tree = counting  # type: ignore[method-assign]
+    body = world.failure("layer.create", world.layer_args(document_id))
+    assert body["code"] == "INTERNAL_ERROR" and body["retryable"] is True
+    assert _outcome(body) == NOT_APPLIED
+    assert world.port.live[1].get("stack", []) == []
 
 
 def test_a_transform_refused_or_raised_before_krita_moved_is_not_applied(world: World) -> None:
@@ -1130,6 +1223,23 @@ def test_a_step_krita_did_not_take_is_retryable_and_changed_nothing(world: World
     body = world.failure("history.step", world.history_args(document_id))
     assert body["retryable"] is True and _outcome(body) == NOT_APPLIED
     assert handle.dirty is False and len(handle.ledger.steps) == before
+
+
+def test_an_unnamed_step_krita_did_not_take_stays_retryable(world: World) -> None:
+    # A translate's params step has no label, and Krita keeps Redo enabled with nothing to redo,
+    # so its text names no step either: only the state tells a step it did not take from one it
+    # moved for someone else.
+    document_id = world.document()
+    _painted(world)
+    world.done("layer.transform", world.translate_args(document_id, [3, 0]))
+    handle = world.registry.find(document_id)
+    handle.dirty = False
+    world.port.undo_works = False
+    # A first translate's two steps move together, so both are asked for.
+    whole = {"document_id": document_id, "action": "undo", "steps": 2}
+    body = world.failure("history.step", whole)
+    assert body["retryable"] is True and _outcome(body) == NOT_APPLIED
+    assert handle.ledger.undo_available() > 0 and not handle.unsafe
 
 
 def test_a_step_of_the_same_name_not_the_bridges_stops_history_without_a_retry(

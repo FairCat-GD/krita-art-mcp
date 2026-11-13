@@ -259,6 +259,8 @@ def test_the_parse_reads_krita_order_doctype_and_negative_zero() -> None:
         ),
         "<!DOCTYPE a [<!ENTITY e 'x'>]><a>&e;</a>",
         "not xml",
+        FRESH_TRANSFORM.replace("<transform_params>", '<transform_params version="2">'),
+        FRESH_TRANSFORM.replace("<free_transform>", '<free_transform warp="1">'),
     ],
     ids=[
         "rotated",
@@ -272,6 +274,8 @@ def test_the_parse_reads_krita_order_doctype_and_negative_zero() -> None:
         "nan",
         "entity",
         "broken",
+        "params-attribute",
+        "transform-attribute",
     ],
 )
 def test_the_parse_reads_no_other_params(xml: str) -> None:
@@ -659,3 +663,19 @@ def test_a_copy_made_before_a_translate_is_translated(world: World) -> None:
     )
     receipt = world.run(OP, _translate(document_id, copy["layer_id"], [2, 0]))
     assert receipt["created_mask"] is True and world.masks(PAINT) == []
+
+
+def test_a_first_translate_past_what_history_takes_back_is_refused(world: World) -> None:
+    # The mask's attach and its move are two steps one undo call must take whole.
+    document_id, handle = world.document()
+    world.port.limit = 1
+    body = world.refused(OP, _translate(document_id, PAINT, [3, 0]))
+    assert body["code"] == "UNSUPPORTED_CAPABILITY"
+    assert body["details"] == {
+        "layer_id": PAINT,
+        "reason": "too_many_steps",
+        "undo_steps": 2,
+        "max_steps": 1,
+    }
+    assert not handle.dirty and handle.ledger.steps == []
+    assert all(node["type"] != TRANSFORM for node in world.port._tree(1)["nodes"])

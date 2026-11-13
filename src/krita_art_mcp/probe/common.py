@@ -71,6 +71,21 @@ async def close(mcp: Client, document_id: str, policy: str = "discard") -> dict[
     return await tool(mcp, "krita_document_close", arguments)
 
 
+def reorder_args(
+    document_id: str, layer_id: str, parent_id: str, above_id: str | None
+) -> dict[str, Any]:
+    return {
+        "guard": guard(document_id),
+        "layer_id": layer_id,
+        "parent_id": parent_id,
+        "above_id": above_id,
+    }
+
+
+def remove_args(document_id: str, layer_id: str, verify: str = "region") -> dict[str, Any]:
+    return {"guard": guard(document_id), "layer_id": layer_id, "verify": verify}
+
+
 def history_args(document_id: str, action: str, steps: int = 1) -> dict[str, Any]:
     return {"guard": guard(document_id), "action": action, "steps": steps}
 

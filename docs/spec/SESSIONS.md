@@ -2325,6 +2325,76 @@ undo ledger and history*, *Painting* (a taper), *The save*, *The server*, *Testi
 - **Version first.** The plugin's hash and `serve`'s gate both read it; `install-plugin` and a Krita
   restart at 0 unsaved, the Codex agent paused, before the probe; ask the owner.
 
+**Done (2026-11-13, 0.29.0).**
+- **Decided with the owner at the start.** The owner left the block's four questions to this
+  session, took the adversarial plan review on Opus, and chose F11's wait inside
+  `KritaDocuments.tree` over recording the gap as debt. The live run was approved once the code
+  was green.
+  - **F4:** both rules tighten on the server. Invariant 8 says inputs are exact and never
+    normalised, and decision 10 keeps a rule on both sides, so the server grew the rules the
+    plugin already had rather than the plugin losing one.
+  - **F7:** the change says nothing began. The taper's two raises come after the preset edit and
+    before the paint call, so Krita holds no step; X1's F15 chose the seal for an unnamed step
+    that *may* hold, which this is not.
+  - **F16:** `dirty` is kept and the receipt says the step stays. Krita keeps "Rotate Layer" and
+    the offset it moved, so the bridge's state now agrees with Krita's; the alternative reworks
+    how an affine step is classed inside the frame, which X1a's and S1's tests pin.
+  - **F20:** the replay rule is written down rather than every new output field going in optional,
+    which is what catches a plugin that omits one. Confirmed on the code: a failure's `details` is
+    an open object, so F13's and F16's new keys cannot break a replay.
+- **What shipped.** Every finding of `REVIEW-2026-11-12.md` but F10, which went to `BACKLOG.md`.
+  - **F1, the High.** `mutation.steady` reads the tree again and refuses retryably when anything
+    watched or a scoped bound moved, and `Mutation.run` calls it as the last act before the
+    marker, after the selection. The five ops, both transform ops and the stroke and fill pass
+    the tree they judged by and the ids whose bounds they used. `tree` and `structure` now wait.
+  - F2 and F4: parity rows for the taper's schema rules, the translate's and the affine bounds and
+    item types, a layer id's form and the whole-number rule; the bounds test took `MAX_TRANSLATE`,
+    `MAX_SIZE`, `MAX_TURN`, `MAX_SHEAR`, the knot bounds and `MAX_NAME`.
+  - F3, F13, F14, F15: the call's own id in a chained failure's details with the step's beside it,
+    the copy named `copy_id`, a derived `request_id` form no agent may send, and an uncertain open
+    no longer read as unsent.
+  - F5 to F9 and F16: the translate's undo-limit guard, `put_back` holding on any raise, a change
+    that never began, the fake's marker gates and its empty "Redo ", a foreign move that needs the
+    state to have moved, and a kept `no_change` step.
+  - F11, F12: the node calls pinned by site, the wait rule over a node's geometry, and the
+    translate's parse refusing attributes on its outer elements.
+  - F17: the matrix checks, a visible translated layer reordered and removed with each undone, and
+    live cover for F16.
+  - F18, F19, F21: the descriptions and every document line F21 named, but CHANGELOG 0.28.0's
+    count, which an entry never rewrites.
+- **Amendments,** each decided in plan mode with the owner:
+  - **F1's check went into the frame, not into each op.** The block and the review put the re-read
+    in the five ops. That leaves the window open: `Mutation.run` builds the start fingerprint
+    before the marker, and `ledger.fingerprint` reads the selection, which waits, so a change can
+    land after an op's own re-read. One place closes it and covers the stroke and the fill too,
+    which the block's bullet also names. The adversarial plan review found this in the first draft.
+  - **F14's refusal is the server's alone,** so it has no parity row: the plugin receives the
+    server's own `:finish` and `:open` ids through the same field and cannot tell them from an
+    agent's. Named under *Not held*.
+  - **F16's signal is `applied.steps.sealed`,** not the layer's offset: a scale never moves the
+    offset (K54), and the fake hard-codes a move for every other kind, so an offset assertion
+    would have proved the fake. The step-free affine cases are all refused before the marker.
+  - **An extra probe check** gives F16 live cover, since the matrix checks alone would have
+    shipped the new `dirty` rule on unit tests.
+- **Measured,** on Krita 5.3.4.1, macOS, Apple Silicon, on a Krita restarted that session:
+  - `probe`: 231 PASS, 0 FAIL, 25 MEASURED in 153.0 s with 0 documents open; the journal check
+    read 846 dispatched lines, all settled. `doctor` 6 of 6, 0 open, 0 unsaved.
+  - The waits added to `tree` and `structure` cost nothing a budget sees: H4 idle p95 7.0 ms,
+    N-01 p95 0.10 s, N-02 p95 0.32 s, N-09 p95 0.24 s; the paint stage 35.1 s against 33.8 s.
+  - F16 live: a half turn of flat paint reads `INVALID_ARGUMENT`, `no_change`, `krita_kept_step`,
+    Krita's top step "Rotate Layer", the document dirty, the composite as before.
+  - Codex's renderer: the stroke's normalised input 4,378 of 5,000 bytes and rendered 2,941; the
+    transform's rendered output 4,975; the longest description 1,202 (the transform).
+  - Two probe runs were needed: the first found three checks of this session wrong, not the
+    product. A reorder of a translated layer takes three steps, not two, and the affine refusals
+    leave their layer holding a transform mask, so the kept-step check now runs before them.
+- **Falsified:** all 18 new checks, each broken once and watched fail at its own step. Sixteen by
+  a scripted mutation of the site each rests on; two by hand, a stray node copy in the adapter and
+  the taper's preset edit moved before the marker.
+- **Numbers:** 1176 server tests (+24), 1222 plugin tests (+18), probe 231 PASS (+5), 0 FAIL, 25
+  MEASURED, 153.0 s with 0 documents open. 25 tools, 25 schema files, 30 error codes, 39 ops, 17
+  capabilities, 28 parity tests (+3 functions), instructions 3,371 characters, `api_version` 0.4.0.
+
 ---
 
 ## V1: Re-measure, docs, full run, close the round

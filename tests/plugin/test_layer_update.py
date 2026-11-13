@@ -274,7 +274,8 @@ def test_an_update_reads_the_tree_once_per_phase(
     world.update(document_id, **properties)
     # Each composite read checks the tree for K46 on its own, before and after an appearance.
     appearance = 2 if "blend_mode" in properties else 0
-    assert len(seen) == reads + appearance
+    # The frame reads it once more, last before the marker, to prove nothing moved since.
+    assert len(seen) == reads + appearance + 1
 
 
 def test_a_blend_change_is_checked_for_what_the_recompose_moved(world: World) -> None:

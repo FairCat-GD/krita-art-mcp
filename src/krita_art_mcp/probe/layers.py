@@ -22,6 +22,8 @@ from krita_art_mcp.probe.common import (
     line_points,
     open_working,
     protect,
+    remove_args,
+    reorder_args,
     select,
     stroke_args,
 )
@@ -87,21 +89,6 @@ async def _layers(a: Client, document_id: str) -> dict[str, dict[str, Any]]:
 
 def _duplicate_args(document_id: str, layer_id: str, name: str) -> dict[str, Any]:
     return {"guard": guard(document_id), "layer_id": layer_id, "name": name}
-
-
-def _reorder_args(
-    document_id: str, layer_id: str, parent_id: str, above_id: str | None
-) -> dict[str, Any]:
-    return {
-        "guard": guard(document_id),
-        "layer_id": layer_id,
-        "parent_id": parent_id,
-        "above_id": above_id,
-    }
-
-
-def _remove_args(document_id: str, layer_id: str, verify: str = "region") -> dict[str, Any]:
-    return {"guard": guard(document_id), "layer_id": layer_id, "verify": verify}
 
 
 def _shown(document_id: str, layer_id: str, visible: bool) -> dict[str, Any]:
@@ -220,7 +207,7 @@ async def _trial(
     shown = await tool(a, "krita_layer_update", _shown(document_id, copy, True))
     hidden = await tool(a, "krita_layer_update", _shown(document_id, left, False))
     trying = await capture_composite(a, document_id)
-    removed = await tool(a, "krita_layer_remove", _remove_args(document_id, copy))
+    removed = await tool(a, "krita_layer_remove", remove_args(document_id, copy))
     undo, _ = _labels(client, document_id)
     back = await tool(a, "krita_layer_update", _shown(document_id, left, True))
     end = await capture_composite(a, document_id)
@@ -242,7 +229,7 @@ async def _trial(
         f"end {differs(end, start) or 'as at start'}",
     )
     base = names["probe base"]
-    refused = await tool(a, "krita_layer_remove", _remove_args(document_id, base))
+    refused = await tool(a, "krita_layer_remove", remove_args(document_id, base))
     details = (refused.get("error") or {}).get("details", {})
     report.check(
         "removing a protected layer is LOCKED_TARGET, naming it",
@@ -268,8 +255,8 @@ async def _grouping(
     )
     group = (made.get("data") or {}).get("layer_id") or ""
     names["probe built group"] = group
-    first = await tool(a, "krita_layer_reorder", _reorder_args(document_id, left, group, None))
-    second = await tool(a, "krita_layer_reorder", _reorder_args(document_id, right, group, left))
+    first = await tool(a, "krita_layer_reorder", reorder_args(document_id, left, group, None))
+    second = await tool(a, "krita_layer_reorder", reorder_args(document_id, right, group, left))
     undo, _ = _labels(client, document_id)
     layers = await _layers(a, document_id)
     report.check(
@@ -286,7 +273,7 @@ async def _grouping(
     )
     inner, moved, mask = names["probe inner"], names["probe group"], names["probe soft"]
     covered = await capture(a, document_id, WHOLE, "mask", mask)
-    moving = await tool(a, "krita_layer_reorder", _reorder_args(document_id, moved, root, None))
+    moving = await tool(a, "krita_layer_reorder", reorder_args(document_id, moved, root, None))
     layers = await _layers(a, document_id)
     kept = await capture(a, document_id, WHOLE, "mask", mask)
     others = [one for one in layers.values() if one["parent_id"] == root and one["id"] != moved]
@@ -326,7 +313,7 @@ async def _history(
         and again[moved]["order"] > again[built]["order"],
         f"{code(split)} needing {needed}, {code(undone)}, {code(redone)}",
     )
-    removed = await tool(a, "krita_layer_remove", _remove_args(document_id, copy or "", "full"))
+    removed = await tool(a, "krita_layer_remove", remove_args(document_id, copy or "", "full"))
     gone = copy not in await _layers(a, document_id)
     undone = await tool(a, "krita_history_step", history_args(document_id, "undo", 1))
     back = copy in await _layers(a, document_id)
@@ -392,7 +379,7 @@ async def _leak(
     protection = await protect(a, document_id, protected, mask)
     before = await capture_composite(a, document_id)
     tree = await _layers(a, document_id)
-    refused = await tool(a, "krita_layer_reorder", _reorder_args(document_id, moved, root, base))
+    refused = await tool(a, "krita_layer_reorder", reorder_args(document_id, moved, root, base))
     details = (refused.get("error") or {}).get("details", {})
     checked = details.get("verification") or {}
     after = await capture_composite(a, document_id)
@@ -434,7 +421,7 @@ async def _refusals(
     )
     nested = (made.get("data") or {}).get("layer_id")
     inside = await tool(
-        a, "krita_layer_reorder", _reorder_args(document_id, group, nested or "", None)
+        a, "krita_layer_reorder", reorder_args(document_id, group, nested or "", None)
     )
     inside_details = (inside.get("error") or {}).get("details", {})
     report.check(
@@ -447,9 +434,9 @@ async def _refusals(
         client, "harness.add_node", document_id=document_id, kind="clone_layer", layer_id=right
     )
     clone = added.result.get("node_id") if isinstance(added, Done) else None
-    removal = await tool(a, "krita_layer_remove", _remove_args(document_id, right, "full"))
+    removal = await tool(a, "krita_layer_remove", remove_args(document_id, right, "full"))
     move = await tool(
-        a, "krita_layer_reorder", _reorder_args(document_id, right, names["root"], None)
+        a, "krita_layer_reorder", reorder_args(document_id, right, names["root"], None)
     )
     found = [((one.get("error") or {}).get("details") or {}) for one in (removal, move)]
     report.check(

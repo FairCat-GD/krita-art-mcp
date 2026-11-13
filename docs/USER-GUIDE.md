@@ -243,9 +243,14 @@ layers inside it turn with it).
   holding it (`reason: transform_mask`: scale, rotate or shear before you translate); a locked or
   alpha-locked layer, which you unlock with `krita_layer_update` first; a styled layer
   (`layer_style`); a layer a clone layer shows (`clone_source`); an empty layer; a change of
-  nothing (`no_change`); more than 50 layers and groups (`too_many_nodes`); reads past 8192 × 8192
+  nothing (`no_change`); more than 50 layers and groups (`too_many_nodes`); for a first
+  translate, more undo steps than Krita's limit takes back at once (`too_many_steps`); reads past
+  8192 × 8192
   for one layer, or four times that for all of them (`too_large`); and Krita's cumulative undo. A
   layer whose bounds Krita was still settling as the call began is refused for a retry.
+- **A half turn that changes no pixel** is refused `no_change`, and Krita keeps its undo step and
+  the offset it moved: the receipt says `krita_kept_step`, history is sealed below it, and the
+  document stays changed. Save it, or close it with `discard`; the bridge can no longer undo it.
 
 **Try a whole alternative on a branch.** `krita_document_duplicate` saves the document to a new
 `.kra` path inside a root, verifies the file by reopening it, as a save does, and opens that file
@@ -364,13 +369,19 @@ explicit recipes. A source's `baseline_id` shows the document as opened beside i
 ```
 
 **8. Undo or keep.** `krita_history_step` undoes or redoes the bridge's own steps, up to 50 a call,
-never below the last protection change. Layer and mask creation, duplicates, reorders and
-removals, selection commits, blend changes, strokes and fills, on layers and masks, undo; other
-property changes cannot. A reorder's steps move together: a count that would split one is refused
-with the count to ask for, in `details.steps_needed`. A step you make in Krita can carry the same
+never below the last protection change. Layer and mask creation, duplicates, reorders, removals
+and transforms, selection commits, blend changes, strokes and fills, on layers and masks, undo;
+other
+property changes cannot. A reorder's steps move together, and so do a first translate's two: a
+count that would split one is refused with the count to ask for, in `details.steps_needed`. A step you make in Krita can carry the same
 name as one of the bridge's, as Layer > Transform's do. When an undo or redo moved such a step of
 yours and put it back, history stops there as not the bridge's (`INVALID_ARGUMENT`), with no retry
-offered, since a retry would move yours again.
+offered, since a retry would move yours again. A step Krita simply did not take leaves everything
+as it was and is offered for a retry.
+
+**Your `request_id` is yours, with one reservation:** it may not end in `:finish` or `:open`. The
+server sends a save's and a duplicate's own second step under your id with one of those after it,
+so an id ending either way is refused (`INVALID_ARGUMENT`, `field: request_id`).
 
 **9. Save to a new path.** The file is written beside the path, reopened in Krita, compared, and only
 then moved into place. It never overwrites.
@@ -561,7 +572,7 @@ its own model: captures and previews reach that client as images.
 | … `journal/` and `journal/args/` | Every journaled call with its arguments | Permanent; nothing sweeps it. About 44 MB of lines in a heavy week |
 | … `harness/` | The probe's own files | A run |
 | Your roots | Working copies, named `<UTC stamp>-<name>`, your saves, and your branches, each opened from its own file | Yours |
-| Beside a save | A hidden `.<name>.<token>.saving.kra`, for the length of the save | A new save or a close removes one left unfinished; a Krita crash can leave one |
+| Beside a save | A hidden `.<name>.<token>.saving.kra`, for the length of the save | A new save, a document duplicate or a close removes one left unfinished, and a save removes an unfinished duplicate's; a Krita crash can leave one |
 | `~/Library/Application Support/Krita/pykrita/` | The plugin | Until the next install |
 | `~/Library/Preferences/kritarc` | The enable flag you set. Krita itself records the last preset and preset history | Krita's |
 

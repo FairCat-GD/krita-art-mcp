@@ -150,12 +150,23 @@ def chained(save: Done, step: Outcome, error: Callable[[Failed], dict[str, Any]]
         )
     return replace(
         step,
-        error=error(step),
+        error=_named(error(step), operation_id),
         submitted=True,
         operation_id=operation_id,
         request_id=request_id,
         session_id=session_id,
     )
+
+
+def _named(error: dict[str, Any], operation_id: str | None) -> dict[str, Any]:
+    # An agent is only ever given the call's own id, and krita_operation_get answers for no
+    # step's: the step's own id stays, under a name of its own.
+    details = error.get("details") or {}
+    step_id = details.get("operation_id")
+    if operation_id is None or step_id is None or step_id == operation_id:
+        return error
+    named = {**details, "operation_id": operation_id, "step_operation_id": step_id}
+    return {**error, "details": named}
 
 
 def _finish_error(save: Done, finished: Failed, caller: Caller, hint: bool) -> dict[str, Any]:

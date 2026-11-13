@@ -381,6 +381,27 @@ def test_an_open_that_failed_is_never_not_applied(
     assert error["details"]["rollback_verified"] is False
 
 
+@pytest.mark.usefixtures("merged")
+def test_an_open_lost_mid_call_is_not_told_it_may_never_have_been_sent() -> None:
+    # _uncertain leaves submitted false, and it was sent: only an unregistered call was not.
+    opened = bridge_client._uncertain("op-o", "the connection closed")
+    steps = {"document.save_finish": _placed(), "document.duplicate_open": opened}
+    failed = branching.finish_duplicate(_bridge(steps), _written(), 5.0)
+    assert isinstance(failed, Failed)
+    assert OPEN_IT in failed.error["message"] and RETRY not in failed.error["message"]
+
+
+@pytest.mark.usefixtures("merged")
+def test_a_failed_step_names_the_calls_own_id_and_keeps_its_own() -> None:
+    # krita_operation_get answers for no step's id, so an agent is given the duplicate's.
+    opened = bridge_client._uncertain("op-o", "the connection closed")
+    steps = {"document.save_finish": _placed(), "document.duplicate_open": opened}
+    failed = branching.finish_duplicate(_bridge(steps), _written(), 5.0)
+    assert isinstance(failed, Failed)
+    details = failed.error["details"]
+    assert (details["operation_id"], details["step_operation_id"]) == ("op-1", "op-o")
+
+
 @pytest.mark.parametrize(
     "opened",
     [

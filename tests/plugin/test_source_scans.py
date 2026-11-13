@@ -284,26 +284,41 @@ def _impure_core_imports(tree: ast.Module, module: str, is_package: bool) -> lis
 
 # Every read libkis offers; never setPixelData, whose one allowed site writes without a wait.
 PIXEL_READS = ("pixelData", "projectionPixelData", "pixelDataAtTime")
+# A node's geometry follows the projection, so it reads stale while Krita is still applying a
+# change. The tree's walkers read it; they take nodes, not a document, so their callers wait.
+GEOMETRY_READS = ("bounds", "position")
+WALKERS = ("_walk", "_translation")
 
 
 def _reads_before_waiting(tree: ast.Module) -> list[str]:
-    # Invariant 6: a function that reads pixels calls waitForDone() before its first read.
+    # Invariant 6: a function that reads pixels or a node's geometry waits first.
     hits = []
     for function in ast.walk(tree):
         if not isinstance(function, (ast.FunctionDef, ast.AsyncFunctionDef)):
             continue
+        if function.name in WALKERS:
+            continue
         calls = sorted(
-            (node.lineno, node.col_offset, node.func.attr)
+            (node.lineno, node.col_offset, _called(node))
             for node in ast.walk(function)
-            if isinstance(node, ast.Call)
-            and isinstance(node.func, ast.Attribute)
-            and node.func.attr in (*PIXEL_READS, "waitForDone")
+            if isinstance(node, ast.Call) and _called(node) is not None
         )
         names = [name for _, _, name in calls]
-        first = next((index for index, name in enumerate(names) if name in PIXEL_READS), None)
+        watched = (*PIXEL_READS, *GEOMETRY_READS, *WALKERS)
+        first = next((index for index, name in enumerate(names) if name in watched), None)
         if first is not None and "waitForDone" not in names[:first]:
             hits.append(f"{function.lineno}: {function.name}")
     return hits
+
+
+def _called(node: ast.Call) -> str | None:
+    # The attribute or plain name a call names, where it is one this rule watches.
+    watched = (*PIXEL_READS, *GEOMETRY_READS, *WALKERS, "waitForDone")
+    if isinstance(node.func, ast.Attribute) and node.func.attr in watched:
+        return node.func.attr
+    if isinstance(node.func, ast.Name) and node.func.id in watched:
+        return node.func.id
+    return None
 
 
 Rule = Callable[[ast.Module, str, bool], list[str]]
@@ -423,6 +438,50 @@ def _uses(tree: ast.Module, name: str) -> list[str]:
 
     visit(tree, "")
     return found
+
+
+# Every libkis call that takes a node off the tree, copies one, or puts one back: each pushes or
+# prepares an undo step the bridge has to name, so each has one site. bridge_core holds none of
+# them (invariant 7), so the scan reads the adapter alone.
+NODE_CALLS = [
+    ("remove", [(f"{ADAPTER}.documents", "remove_node")]),
+    (
+        "duplicate",
+        [
+            # The two Selection copies are not a node's; a Selection's duplicate pushes no step.
+            (f"{ADAPTER}.documents", "create_mask"),
+            (f"{ADAPTER}.documents", "duplicate_node"),
+            (f"{ADAPTER}.selections", "_combined"),
+        ],
+    ),
+    (
+        "addChildNode",
+        [
+            (f"{ADAPTER}.documents", "add_active_mask"),
+            (f"{ADAPTER}.documents", "add_fixture_node"),
+            (f"{ADAPTER}.documents", "add_fixture_node"),
+            (f"{ADAPTER}.documents", "add_fixture_node"),
+            (f"{ADAPTER}.documents", "add_fixture_node"),
+            (f"{ADAPTER}.documents", "attach"),
+            (f"{ADAPTER}.documents", "create_mask"),
+            (f"{ADAPTER}.documents", "label_timing"),
+        ],
+    ),
+]
+
+
+@pytest.mark.parametrize(("call", "sites"), NODE_CALLS, ids=[name for name, _ in NODE_CALLS])
+def test_a_node_is_taken_copied_and_attached_at_its_listed_sites(
+    call: str, sites: list[tuple[str, str]]
+) -> None:
+    # A second copy-and-attach path without the transform-mask refusal would reach K53 unseen.
+    found = sorted(
+        (module, function)
+        for module, _, tree in _sources()
+        if module.startswith(ADAPTER)
+        for function in _uses(tree, call)
+    )
+    assert found == sorted(sites)
 
 
 def test_set_child_nodes_only_swaps_a_new_documents_first_layer() -> None:

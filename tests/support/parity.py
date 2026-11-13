@@ -15,16 +15,18 @@ def refused_alike(
     rule: tuple[object, str] | None = None,
     *,
     schema: tuple[str | int, ...] | None = None,
+    off: Any = None,
 ) -> dict[str, Any]:
     # Decision 10: with the server's half off, the plugin must refuse alike. A rule in a named
-    # function (module, name) is switched off; a rule in the schema, the keyword at that path
-    # from the tool's schema, is cut from the copy a second server is built with.
+    # function (module, name) is switched off, answering off, what it answers when it finds
+    # nothing; a rule in the schema, the keyword at that path from the tool's schema, is cut
+    # from the copy a second server is built with.
     server = world.server()
     ours = server.content(tool, arguments)
     assert ours["status"] == "failed" and ours["operation_id"] is None, ours
     if rule is not None:
         module, name = rule
-        monkeypatch.setattr(module, name, lambda *args: None)
+        monkeypatch.setattr(module, name, lambda *args: off)
     if schema is not None:
         monkeypatch.setattr(schemas, "load", _without(schemas.load, tool, schema))
         server = world.server()

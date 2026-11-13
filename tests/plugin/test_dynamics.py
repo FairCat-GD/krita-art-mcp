@@ -361,3 +361,46 @@ def test_the_harness_reads_a_preset_s_dirty_flag_in_its_own_documents(world: Wor
     owners, _ = world.document()
     theirs = {"document_id": owners, "preset_ids": []}
     assert world.refused("harness.preset_dirty", theirs)["code"] == "PATH_NOT_ALLOWED"
+
+
+def test_an_interrupt_inside_the_restore_holds_the_preset(world: World) -> None:
+    # Nothing else would: the raise leaves before the stroke's own arms are reached. The preset
+    # is window-wide, so the hold must outlive this document, which the interrupt made unsafe.
+    document_id, handle = world.document()
+    real = world.port.restore_preset
+
+    def interrupted(*args: Any) -> str:
+        raise KeyboardInterrupt
+
+    world.port.restore_preset = interrupted  # type: ignore[assignment,method-assign]
+    with pytest.raises(KeyboardInterrupt):
+        _tapered(world, document_id)
+    world.port.restore_preset = real  # type: ignore[method-assign]
+    assert handle.unsafe
+    handle.unsafe = False
+    # The preset is still Krita's edited one, and every stroke refuses it until it reads as before.
+    held = world.stroke_refused(document_id, brush={"preset_sha256": None})
+    assert (held["code"], held["details"]["reason"]) == ("RESOURCE_HASH_MISMATCH", "preset_held")
+    world.resources.xmls[NAME] = world.port.preset_xml[NAME] = world.resources.stored[NAME]
+    world.stroke(document_id)
+
+
+def test_a_taper_krita_did_not_take_seals_no_history(world: World) -> None:
+    # The refusal comes before any paint call, so Krita holds no step to stop history below.
+    document_id, handle = world.document()
+    world.stroke(document_id)
+    before = handle.ledger.undo_available()
+    real = world.port.edit_preset
+
+    def ignored(document: Any, xml: str) -> str:
+        # Krita answers with the preset as it was: the taper was not taken.
+        found: str = world.port.preset_xml[world.port.brush_now["preset"]]
+        return found
+
+    world.port.edit_preset = ignored  # type: ignore[method-assign]
+    body = _refused(world, document_id)
+    world.port.edit_preset = real  # type: ignore[method-assign]
+    details = body["details"]
+    assert body["code"] == "INTERNAL_ERROR" and details["rolled_back"] is False
+    assert details["history_sealed"] is False and details["rollback_verified"] is True
+    assert handle.ledger.undo_available() == before and before > 0

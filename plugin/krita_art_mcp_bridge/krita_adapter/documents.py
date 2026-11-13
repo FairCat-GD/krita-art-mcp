@@ -115,6 +115,9 @@ class KritaDocuments:
         return _layer_id(root), children
 
     def tree(self, document: Any) -> dict[str, Any]:
+        # A node's bounds follow the projection, so they read stale while Krita is still
+        # applying a change.
+        document.waitForDone()
         root = document.rootNode()
         active = document.activeNode()
         nodes: list[dict[str, Any]] = []
@@ -126,6 +129,7 @@ class KritaDocuments:
         }
 
     def structure(self, document: Any) -> dict[str, Any]:
+        document.waitForDone()
         root = document.rootNode()
         nodes: list[dict[str, Any]] = []
         pending = [(root, _layer_id(root))]

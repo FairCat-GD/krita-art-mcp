@@ -3,10 +3,10 @@ import logging
 import threading
 import time
 from collections import Counter
-from collections.abc import Callable
+from collections.abc import Callable, Iterable
 from typing import Any
 
-from jsonschema import Draft202012Validator, ValidationError
+from jsonschema import Draft202012Validator, ValidationError, validators
 from mcp.server.mcpserver import Context
 from mcp.server.mcpserver.tools import Tool
 from mcp.server.mcpserver.utilities.func_metadata import ArgModelBase, FuncMetadata
@@ -105,6 +105,17 @@ def _bound(
     return tool(ToolCall(bridge, journal, places, client_name, started), arguments)
 
 
+def _whole(checker: Any, instance: Any) -> bool:
+    return isinstance(instance, int) and not isinstance(instance, bool)
+
+
+_Wholes = validators.extend(  # type: ignore[no-untyped-call]
+    Draft202012Validator,
+    type_checker=Draft202012Validator.TYPE_CHECKER.redefine("integer", _whole),
+)
+_WHOLES: dict[int, Any] = {}
+
+
 def build(name: str, run: Run) -> Tool:
     spec = schemas.load(name)
     inputs = Draft202012Validator(spec["inputSchema"])
@@ -144,7 +155,11 @@ def _checked(
 ) -> CallToolResult:
     # Errors are returned, never raised: a raise reaches the client as a bare
     # "Error executing tool", without the envelope.
-    problems = _schema_problems(inputs, arguments) + _not_finite(arguments)
+    problems = (
+        _schema_problems(inputs, arguments)
+        + _not_finite(arguments)
+        + whole_numbers(inputs, arguments)
+    )
     if problems:
         result = _invalid(problems)
     else:
@@ -215,6 +230,39 @@ def _not_finite_alone(problem: ValidationError) -> bool:
     for found in problem.context or []:
         branches.setdefault(found.relative_schema_path[0], []).append(found)
     return any(all(_not_finite_alone(found) for found in errors) for errors in branches.values())
+
+
+def whole_numbers(inputs: Draft202012Validator, arguments: dict[str, Any]) -> list[ValidationError]:
+    # Draft 2020-12 reads 1.0 as an integer; the plugin's errors.integer takes int alone, so
+    # the server refuses it here and the pair holds (decision 10). Only where nothing else
+    # objects, so a number that breaks another rule is still reported by that rule alone.
+    if not inputs.is_valid(arguments):
+        return []
+    return [
+        ValidationError("not a whole number", validator="whole", path=path)
+        for path in sorted(_float_paths(_wholes(inputs).iter_errors(arguments)))
+    ]
+
+
+def _float_paths(problems: Iterable[ValidationError]) -> set[tuple[Any, ...]]:
+    # The leaves of every branch: a union's own error names no path of its own.
+    found: set[tuple[Any, ...]] = set()
+    for problem in problems:
+        if problem.context:
+            found |= _float_paths(problem.context)
+        elif problem.validator == "type" and isinstance(problem.instance, float):
+            found.add(tuple(problem.absolute_path))
+    return found
+
+
+def _wholes(inputs: Draft202012Validator) -> Any:
+    # One per tool, built once: a validator whose "integer" takes no float at all.
+    schema = inputs.schema
+    strict = _WHOLES.get(id(schema))
+    if strict is None:
+        strict = _Wholes(schema)
+        _WHOLES[id(schema)] = strict
+    return strict
 
 
 def _not_finite(arguments: dict[str, Any]) -> list[ValidationError]:

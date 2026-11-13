@@ -103,6 +103,18 @@ def restored(record: dict[str, Any]) -> CallToolResult:
     )
 
 
+# The server derives a save's and a duplicate's step ids from the call's by these suffixes.
+DERIVED_SUFFIXES = (":finish", ":open")
+
+
+def request_rules(request_id: str) -> dict[str, Any] | None:
+    # The plugin cannot tell a derived id from an agent's, since the server sends both, so this
+    # rule is the server's alone.
+    if request_id.endswith(DERIVED_SUFFIXES):
+        return {"field": "request_id", "reason": "derived_form"}
+    return None
+
+
 def journaled(
     call: ToolCall,
     tool: str,
@@ -114,6 +126,14 @@ def journaled(
 ) -> CallToolResult:
     # Invariant 9: journaled before it is sent; a retry returns the receipt, and a call that
     # reached a Krita session which has since ended is never sent again.
+    derived = request_rules(request_id)
+    if derived is not None:
+        endings = " or ".join(DERIVED_SUFFIXES)
+        message = (
+            f"request_id must not end in {endings}: the server derives a save's and a "
+            "duplicate's own step ids that way."
+        )
+        return envelope.failure("INVALID_ARGUMENT", message, details=derived)
     digest = args_sha256(tool, arguments)
     try:
         prior = call.journal.lookup(request_id)

@@ -8,7 +8,7 @@ from bridge_core import documents
 from parity import refused_alike
 from worlds import World, running_world
 
-from krita_art_mcp import roots
+from krita_art_mcp import roots, tools
 from krita_art_mcp.tools import branching, changes, painting, pixels, saving
 from krita_art_mcp.tools import documents as documents_tools
 from krita_art_mcp.tools.observe import LIMITS
@@ -23,6 +23,7 @@ CREATE = {
     "background": "transparent",
 }
 A_LAYER = "00000000-0000-4000-8000-000000000001"
+ANOTHER = "00000000-0000-4000-8000-000000000002"
 
 
 @pytest.fixture
@@ -331,6 +332,110 @@ def test_both_sides_hold_a_taper_s_rules(
     )
 
 
+@pytest.mark.parametrize(
+    ("operation", "field"),
+    [
+        ({"type": "translate", "by_px": [1.0, 0]}, "by_px"),
+        ({"type": "scale", "size_px": [4.0, 4], "filter": "Bicubic"}, "size_px"),
+    ],
+    ids=["by_px", "size_px"],
+)
+def test_both_sides_refuse_a_whole_number_sent_as_a_float(
+    world: World, monkeypatch: pytest.MonkeyPatch, operation: dict[str, Any], field: str
+) -> None:
+    # Draft 2020-12 reads 1.0 as an integer; both sides want the whole number itself.
+    arguments = _reshape(world, operation)
+    rule = (tools, "whole_numbers")
+    refused = refused_alike(world, monkeypatch, "krita_layer_transform", arguments, rule, off=[])
+    assert refused["details"]["field"] == field
+
+
+ID_FIELDS = [
+    ("krita_layer_duplicate", "layer_id", ("inputSchema", "properties", "layer_id", "pattern")),
+    ("krita_layer_remove", "layer_id", ("inputSchema", "properties", "layer_id", "pattern")),
+    ("krita_layer_reorder", "layer_id", ("inputSchema", "properties", "layer_id", "pattern")),
+    (
+        "krita_layer_reorder",
+        "above_id",
+        ("inputSchema", "properties", "above_id", "anyOf", 0, "pattern"),
+    ),
+    (
+        "krita_layer_create",
+        "above_id",
+        ("inputSchema", "properties", "above_id", "anyOf", 0, "pattern"),
+    ),
+    ("krita_layer_transform", "layer_id", ("inputSchema", "properties", "layer_id", "pattern")),
+]
+
+
+@pytest.mark.parametrize(
+    ("tool", "field", "cut"), ID_FIELDS, ids=[f"{t}-{f}" for t, f, _ in ID_FIELDS]
+)
+def test_both_sides_want_a_layer_id_in_kritas_own_form(
+    world: World,
+    monkeypatch: pytest.MonkeyPatch,
+    tool: str,
+    field: str,
+    cut: tuple[Any, ...],
+) -> None:
+    document_id = _document(world)
+    arguments = _ids(tool, document_id)
+    arguments[field] = "not-a-layer-id"
+    refused = refused_alike(world, monkeypatch, tool, arguments, schema=cut)
+    assert field in refused["message"]
+
+
+def _ids(tool: str, document_id: str) -> dict[str, Any]:
+    guard = {"document_id": document_id, "request_id": f"req-{tool}"}
+    if tool == "krita_layer_duplicate":
+        return {"guard": guard, "layer_id": A_LAYER, "name": "trial"}
+    if tool == "krita_layer_remove":
+        return {"guard": guard, "layer_id": A_LAYER, "verify": "region"}
+    if tool == "krita_layer_reorder":
+        return {"guard": guard, "layer_id": A_LAYER, "parent_id": ANOTHER, "above_id": None}
+    if tool == "krita_layer_create":
+        return {
+            "guard": guard,
+            "parent_id": ANOTHER,
+            "above_id": None,
+            "type": "paint",
+            "name": "repair",
+        }
+    return {"guard": guard, "layer_id": A_LAYER, "operation": {"type": "rotate", "degrees": 10}}
+
+
+DYNAMICS = ("inputSchema", "properties", "dynamics")
+SEVENTEEN = [{"at": index / 16, "value": 1} for index in range(17)]
+
+
+@pytest.mark.parametrize(
+    ("dynamics", "cut"),
+    [
+        ({"size": SEVENTEEN}, (*DYNAMICS, "properties", "size", "maxItems")),
+        (
+            {"size": [{"at": 0, "value": 1, "extra": 1}, {"at": 1, "value": 1}]},
+            (*DYNAMICS, "properties", "size", "items", "additionalProperties"),
+        ),
+        (
+            {"size": [{"at": 0, "value": 1.5}, {"at": 1, "value": 1}]},
+            (*DYNAMICS, "properties", "size", "items", "properties", "value", "maximum"),
+        ),
+        ({}, (*DYNAMICS, "minProperties")),
+    ],
+    ids=["too-many-knots", "knot-fields", "value-range", "neither-option"],
+)
+def test_both_sides_hold_a_tapers_schema_rules(
+    world: World,
+    monkeypatch: pytest.MonkeyPatch,
+    dynamics: dict[str, Any],
+    cut: tuple[Any, ...],
+) -> None:
+    arguments = _stroke(_document(world), preset_sha256="e" * 64)
+    arguments["dynamics"] = dynamics
+    refused = refused_alike(world, monkeypatch, "krita_paint_stroke", arguments, schema=cut)
+    assert refused["details"]["field"].startswith("dynamics")
+
+
 def test_both_sides_want_a_taper_at_least_a_pixel_long(
     world: World, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -490,6 +595,38 @@ OPERATION = ("inputSchema", "properties", "operation", "oneOf")
             "degrees",
         ),
         ({"type": "shear", "degrees": [10]}, (3, "properties", "degrees", "minItems"), "degrees"),
+        (
+            {"type": "shear", "degrees": [1, 1, 1]},
+            (3, "properties", "degrees", "maxItems"),
+            "degrees",
+        ),
+        (
+            {"type": "shear", "degrees": ["1", 0]},
+            (3, "properties", "degrees", "items", "type"),
+            "degrees",
+        ),
+        ({"type": "rotate", "degrees": "10"}, (2, "properties", "degrees", "type"), "degrees"),
+        (
+            {"type": "scale", "size_px": [4], "filter": "Bicubic"},
+            (1, "properties", "size_px", "minItems"),
+            "size_px",
+        ),
+        (
+            {"type": "translate", "by_px": [-16385, 0]},
+            (0, "properties", "by_px", "items", "minimum"),
+            "by_px",
+        ),
+        (
+            {"type": "translate", "by_px": [1.5, 0]},
+            (0, "properties", "by_px", "items", "type"),
+            "by_px",
+        ),
+        ({"type": "translate", "by_px": [1]}, (0, "properties", "by_px", "minItems"), "by_px"),
+        (
+            {"type": "translate", "by_px": [1, 0, 0]},
+            (0, "properties", "by_px", "maxItems"),
+            "by_px",
+        ),
     ],
 )
 def test_both_sides_refuse_a_scale_rotate_or_shear_past_its_schema(

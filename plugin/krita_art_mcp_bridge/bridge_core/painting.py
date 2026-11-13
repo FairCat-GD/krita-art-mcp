@@ -116,7 +116,7 @@ def handlers(
         loose: dict[str, int],
         loose_ring: dict[str, int],
         effective: dict[str, Any],
-        paint: Callable[[], None],
+        paint: Callable[[mutation.Steps], None],
     ) -> tuple[mutation.Mutation, mutation.Applied]:
         # One verified paint call, from R on: loose is R and loose_ring R' as Krita's unclipped
         # bounds see them.
@@ -154,7 +154,7 @@ def handlers(
             raise BridgeError("INTERNAL_ERROR", message, False, {"layer_id": layer_id})
 
         def change(steps: mutation.Steps) -> None:
-            paint()
+            paint(steps)
 
         def judge(applied: mutation.Applied) -> tuple[Any, Any]:
             assert applied.verdict is not None
@@ -186,7 +186,9 @@ def handlers(
         def back() -> bool:
             return bool(_node_bounds(port.tree(document), layer_id) == old_bounds)
 
-        return frame, frame.run(change, judge, back)
+        # The target's old bounds and each protected layer's set the rects that are read.
+        watch = {layer_id, *protected}
+        return frame, frame.run(change, judge, back, tree=tree, bounds=watch)
 
     def stroke(handle: Handle, args: dict[str, Any], call: Call) -> dict[str, Any]:
         document, layer_id, mode, asked = (
@@ -226,7 +228,9 @@ def handlers(
             loose = _grow(_path_box(args["path"]), margin)
             loose_ring = _grow(loose, max(brushes.MIN_MARGIN_PX, effective["size_px"]))
 
-            def draw() -> None:
+            draw: Callable[[mutation.Steps], None]
+
+            def draw(steps: mutation.Steps) -> None:
                 port.paint_path(document, layer_id, args["path"])
 
             tapered = None
@@ -323,7 +327,7 @@ def handlers(
                 loose,
                 loose_ring,
                 effective,
-                lambda: port.fill_path(document, layer_id, shape),
+                lambda steps: port.fill_path(document, layer_id, shape),
             )
             return {
                 "document_id": handle.document_id,
@@ -547,8 +551,8 @@ def _tapered(
     effective: dict[str, Any],
     dirty: bool | None,
     held: dict[str, set[str]],
-    draw: Callable[[], None],
-) -> tuple[Callable[[], None], dict[str, Any]]:
+    draw: Callable[[mutation.Steps], None],
+) -> tuple[Callable[[mutation.Steps], None], dict[str, Any]]:
     # The paint, with the preset edited for it and put back after: by its own XML, then from
     # Krita's storage when it had no unsaved change before (K51). After the marker, so a
     # preset left edited makes the outcome uncertain.
@@ -576,6 +580,11 @@ def _tapered(
         except Exception:
             logging.getLogger(log.NAME).exception("the taper's preset was not put back")
             return False
+        except BaseException:
+            # Interrupted mid-restore: Krita may hold the edited preset, so hold it before the
+            # raise leaves, where nothing else would.
+            lost()
+            raise
 
     def lost() -> BridgeError:
         held[preset_id] = {digest for digest in (stored, listed) if digest is not None}
@@ -586,7 +595,9 @@ def _tapered(
         )
         return BridgeError("INTERNAL_ERROR", message, False, details)
 
-    def paint() -> None:
+    def paint(steps: mutation.Steps) -> None:
+        # Krita holds no step until the paint call runs, so a refusal before it seals nothing.
+        steps.began = False
         try:
             now = port.edit_preset(document, text)
             wrong = dynamics.took(now, taper, tapered)
@@ -600,7 +611,8 @@ def _tapered(
                     "Krita's brush moved when the taper was set, so the stroke was not painted."
                 )
                 raise BridgeError("INTERNAL_ERROR", message, False, details)
-            draw()
+            steps.began = True
+            draw(steps)
         except Exception as raised:
             if not put_back():
                 logging.getLogger(log.NAME).error("the taper failed: %r", raised)

@@ -7,7 +7,7 @@ from . import log, mutation, verification
 from .errors import BridgeError, exact
 from .history import LABELS, in_front
 from .jobs import Call, Handler
-from .nodes import found
+from .nodes import found, subtree
 from .opening import LAYER_ID
 from .port import DocumentsPort
 from .protection import MASK, refuse_held, refuse_held_line
@@ -90,7 +90,15 @@ def handlers(registry: Registry, port: DocumentsPort, data: Path) -> dict[str, H
                     port.set_properties(document, layer_id, rest)
                 return bool(rest)
 
-            applied = frame.run(change, judge, back, compensate, tree, bool(changes))
+            applied = frame.run(
+                change,
+                judge,
+                back,
+                compensate,
+                tree,
+                bool(changes),
+                bounds=subtree(tree, layer_id),
+            )
             final = applied.value
             undoable = ["blend_mode"] if applied.steps.pushed else []
             result = frame.files(applied)

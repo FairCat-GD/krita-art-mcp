@@ -556,6 +556,18 @@ def test_a_conflict_is_not_applied_from_the_journal_and_the_bridge(world: World)
     assert len(world.port.paths) == 1
 
 
+@pytest.mark.parametrize("ending", [":finish", ":open"])
+def test_a_request_id_of_the_servers_own_derived_form_is_refused(world: World, ending: str) -> None:
+    # The server sends a save's and a duplicate's steps under ids derived this way, and the
+    # plugin cannot tell one from an agent's, so nothing is painted under one.
+    document_id = _document(world)
+    refused = world.server().content("krita_paint_stroke", _stroke(document_id, f"req-s{ending}"))
+    assert refused["error"]["code"] == "INVALID_ARGUMENT"
+    assert refused["error"]["details"]["field"] == "request_id"
+    assert refused["error"]["details"]["outcome"] == "not_applied"
+    assert world.port.paths == []
+
+
 def test_a_cancelled_job_is_not_applied(world: World) -> None:
     document_id = _document(world)
     world.gate.clear()

@@ -129,12 +129,7 @@ def run(
     )
     frame.read()
     # Read once Krita is idle, so a change it was still applying is not taken for this one.
-    before = port.tree(document)
-    moved = mutation.watched(before) != mutation.watched(first)
-    if moved or _bounds(before, inside) != _bounds(first, inside):
-        details = {"layer_id": layer_id}
-        message = "The document changed as the call began; nothing was changed. Retry."
-        raise BridgeError("INTERNAL_ERROR", message, True, details)
+    before = mutation.steady(port, document, first, inside, {"layer_id": layer_id})
     # The bounds Krita scales and pivots on, read once it is idle.
     bounds = next(one for one in before["nodes"] if one["id"] == layer_id)["bounds_px"]
     if bounds["width"] <= 0 or bounds["height"] <= 0:
@@ -184,8 +179,14 @@ def run(
                 details = {"layer_id": layer_id}
                 message = "The composite changed, yet none of the layer's own pixels did."
                 raise BridgeError("INTERNAL_ERROR", message, False, details)
-            details = {"layer_id": layer_id, "reason": "no_change"}
-            message = "The transform changed no pixel."
+            # Krita pushed its step all the same, and a rotate or a shear moved the offset
+            # with it (K54): the only step-free cases are refused before the marker, so the
+            # document is not as it was and stays dirty.
+            details = {"layer_id": layer_id, "reason": "no_change", "krita_kept_step": True}
+            message = (
+                "The transform changed no pixel. Krita keeps its undo step, so the document "
+                "still holds the change; undo it in Krita, or save."
+            )
             raise BridgeError("INVALID_ARGUMENT", message, False, details)
         if verdict.leaked:
             message = (
@@ -201,7 +202,7 @@ def run(
         found = {one["id"]: one["bounds_px"] for one in now["nodes"]}
         return all(device.held(port, document, found.get(device.node_id)) for device in kept)
 
-    applied = frame.run(change, judge, back, tree=before, witness_of=witness_of)
+    applied = frame.run(change, judge, back, tree=before, witness_of=witness_of, bounds=inside)
     after = next(one for one in applied.value["nodes"] if one["id"] == layer_id)
     result: dict[str, Any] = {
         "document_id": handle.document_id,
@@ -410,10 +411,6 @@ def _rects(
             message = "The transform's reads would pass one read; Phase 1 cannot verify it."
             raise BridgeError("UNSUPPORTED_CAPABILITY", message, False, details)
     return rects
-
-
-def _bounds(tree: dict[str, Any], inside: list[str]) -> dict[str, Any]:
-    return {one["id"]: one["bounds_px"] for one in tree["nodes"] if one["id"] in inside}
 
 
 def _ids(tree: dict[str, Any]) -> set[str]:

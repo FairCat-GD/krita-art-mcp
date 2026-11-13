@@ -232,11 +232,21 @@ contract", "Phase N" and "review N" mean.
   file, as a history step does with its capture, would need the selection receipt to allow it.
   It fails safe: an agent inspects rather than repeating it.
 - **Two probe gaps X1's review named, which X1a left.** C1's edge checks run without a
-  selection, so a fill or stroke at the canvas edge under one is not exercised live.
+  selection, so a fill at the canvas edge under one is not exercised live; a stroke is.
   `edges.py`'s replay comparison reads two answers the journal gave from one line, so it proves
   the journal, not a second bridge answer.
 - **Preview's `baseline_id` on a target that is not the composite** is a rule both sides hold
   with no parity case between them (X1's review, F10).
+- **The fake undoes a pixel step as a whole snapshot.** Adds, removes, duplicates and a transform
+  mask's params undo per command, but a transform, strokes, fills and selections push a snapshot
+  of the tree, the selection, the buffers and the canvas (`tests/fixtures/fake_krita.py`). So a
+  property write Krita would keep across an undo (K22) is lost in the fake, and a test of history
+  or of a rollback over a pixel step proves less than it seems. A per-command entry restoring only
+  the subtree's buffers, bounds and offsets would fix it, with a K22 test (X2's review, F10).
+- **An unregistered finish gets no retry hint.** `tools/saving.py`'s `rerun` reads `submitted`,
+  which an unregistered call leaves false, so a finish the bridge never registered is not told
+  that retrying the save under its `request_id` finishes it, though that retry would run. Found
+  while planning X2a; not one of X2's findings.
 - **A property write leaves Krita's flag clear.** A name, opacity, visibility or alpha-lock change
   through libkis is no undo step (K22), so Krita does not mark the document modified, and a tab
   close would drop it without asking; the bridge's `dirty` still holds it. Marking Krita's flag after

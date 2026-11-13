@@ -4,7 +4,7 @@ from typing import Any
 
 from . import mutation, nodes, verification
 from .errors import BridgeError, exact
-from .history import LABELS, MAX_STEPS
+from .history import LABELS, reach
 from .jobs import Call, Handler
 from .opening import LAYER_ID
 from .port import DocumentsPort
@@ -104,7 +104,12 @@ def handlers(registry: Registry, port: DocumentsPort, data: Path) -> dict[str, H
         def back() -> bool:
             return mutation.watched(port.tree(document)) == mutation.watched(before)
 
-        applied = frame.run(change, judge, back)
+        # misplaced compares every field of these nodes, bounds included, and a mask's
+        # scope is its parent's subtree.
+        watch = set(handle.protected) | {parent_id}
+        if is_mask:
+            watch |= set(nodes.subtree(before, parent_id))
+        applied = frame.run(change, judge, back, tree=before, bounds=watch)
         layer_id, _ = applied.value
         return {
             "document_id": handle.document_id,
@@ -172,7 +177,9 @@ def handlers(registry: Registry, port: DocumentsPort, data: Path) -> dict[str, H
         def back() -> bool:
             return mutation.watched(port.tree(document)) == mutation.watched(before)
 
-        applied = frame.run(change, judge, back, tree=before)
+        applied = frame.run(
+            change, judge, back, tree=before, bounds=nodes.subtree(before, layer_id)
+        )
         copy_id, _ = applied.value
         return {
             "document_id": handle.document_id,
@@ -207,17 +214,17 @@ def handlers(registry: Registry, port: DocumentsPort, data: Path) -> dict[str, H
         refuse_clone_source(effects, moving)
         # One step for the remove and one for each node added back, all within one history
         # call and Krita's undo stack, or no history call or rollback could take them whole.
-        reach = min(MAX_STEPS, port.undo_limit())
-        if 1 + len(moving) > reach:
+        takes = reach(port)
+        if 1 + len(moving) > takes:
             details = {
                 "layer_id": layer_id,
                 "reason": "too_many_nodes",
                 "undo_steps": 1 + len(moving),
-                "max_steps": reach,
+                "max_steps": takes,
             }
             message = (
                 f"Moving these {len(moving)} nodes takes {1 + len(moving)} undo steps, more than "
-                f"the {reach} history can take back at once; move fewer at a time."
+                f"the {takes} history can take back at once; move fewer at a time."
             )
             raise BridgeError("UNSUPPORTED_CAPABILITY", message, False, details)
         below = nodes.children(before)
@@ -272,7 +279,7 @@ def handlers(registry: Registry, port: DocumentsPort, data: Path) -> dict[str, H
         def back() -> bool:
             return mutation.watched(port.tree(document)) == mutation.watched(before)
 
-        applied = frame.run(change, judge, back, tree=before)
+        applied = frame.run(change, judge, back, tree=before, bounds=handle.protected)
         return {**result, "undo_steps": len(frame.labels), "verification": frame.files(applied)}
 
     def remove(handle: Handle, args: dict[str, Any], call: Call) -> dict[str, Any]:
@@ -334,7 +341,7 @@ def handlers(registry: Registry, port: DocumentsPort, data: Path) -> dict[str, H
         def back() -> bool:
             return mutation.watched(port.tree(document)) == mutation.watched(before)
 
-        applied = frame.run(change, judge, back, tree=before)
+        applied = frame.run(change, judge, back, tree=before, bounds=gone)
         return {
             "document_id": handle.document_id,
             "layer_id": layer_id,
@@ -558,7 +565,9 @@ def copied(
                 problem = True
     moved = drift(before, after, now=now)
     if problem or moved:
-        details = {"layer_id": copy_id, "derived_from": source_id, "layer_ids": moved}
+        # The frame names the source as layer_id, so the copy, which may be left in the
+        # document, is named apart.
+        details = {"copy_id": copy_id, "derived_from": source_id, "layer_ids": moved}
         message = "Krita's copy is not the source's, or not where it was asked for."
         raise BridgeError("INTERNAL_ERROR", message, False, details)
     return id_map
