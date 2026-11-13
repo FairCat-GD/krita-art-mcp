@@ -41,7 +41,7 @@ resolved at intake; it is read-only and not re-litigated.
 
 `docs/spec/` holds only the round in progress. When a round closes, its files are deleted (git
 history keeps them), and anything still open moves to `docs/BACKLOG.md`. No round is in progress
-until an intake opens one. `docs/BACKLOG.md`'s header says where round 1's files are.
+until an intake opens one. `docs/BACKLOG.md`'s header says where rounds 1 and 2's files are.
 
 **State lives in `docs/next-session-prompt.md`**, rewritten by every session as its last act.
 

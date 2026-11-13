@@ -9,8 +9,10 @@ The phases below are described in full in the PDD, Part 4, and the contract's dr
 `docs/reference/contract-package/`. The rest of round 1's `docs/spec/` left the tree when the round
 closed. Read its files from git history, at round 1's release commit:
 `git show 04e9f6c:docs/spec/PDD.md`, and likewise `SPEC.md`, `SESSIONS.md`, `REVIEW-2026-10-24.md`,
-`REVIEW-2026-10-25.md` and `REVIEW-2026-10-30.md`. `docs/ARCHITECTURE.md`'s overview says what "the
-contract", "Phase N" and "review N" mean.
+`REVIEW-2026-10-25.md` and `REVIEW-2026-10-30.md`. Round 2's left it the same way, at its release
+commit: `git show 40c7491:docs/spec/SESSIONS.md`, and likewise
+`FEATURE-recovery-and-construction.md`, `REVIEW-2026-11-06.md` and `REVIEW-2026-11-12.md`.
+`docs/ARCHITECTURE.md`'s overview says what "the contract", "Phase N" and "review N" mean.
 
 ## Deferred
 

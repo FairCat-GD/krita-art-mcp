@@ -1,54 +1,49 @@
-Read `FEATURE-recovery-and-construction.md` decision 18; `ARCHITECTURE.md` whole;
-`docs/USER-GUIDE.md`; `docs/BACKLOG.md`; every done-note in `docs/spec/SESSIONS.md`; then CLAUDE.md,
-docs/ARCHITECTURE.md's overview, invariants and baseline, your block in docs/spec/SESSIONS.md and
-X2a's done-note, then this file, and do Session V1: re-measure, docs, full run, close the round.
+No round is in progress. Read CLAUDE.md, docs/ARCHITECTURE.md's overview, invariants and baseline,
+then this file; then the sections of docs/ARCHITECTURE.md the request touches. The next session is
+an **intake**: write the owner's request down verbatim, ask what it leaves open, and plan the round
+in `docs/spec/`, with a Read line in every block (see `docs/DEVELOPMENT-WORKFLOW.md`, *Rounds*).
 
-## State you need that is not in the specs
+## State you need that is not in the docs
 
-- **Round 2 is recovery and construction.**
-  - Done: R1, R2, R3, D1, F1, C1, M1, X1, X1a, E1, L1, B1, T1, S1, X2 and X2a.
-  - Remaining: V1 alone, which closes the round.
-- **X2a shipped 0.29.0.** V1 cuts 0.30.0 and is the round's release, followed by the close commit.
-- **X2a is pushed.** `origin/main` holds everything through "review: a probe check could not
-  fail on the flag it named, and 1 more". List `origin/main..HEAD` before any push, and push
-  only on the owner's approval.
-- **What X2a left V1:**
-  - `REVIEW-2026-11-12.md`'s F21 items are all taken: the Codex sizes, the two ops outside
-    `RECEIPTS`, the journal check's count, the `no_change` transform, the held preset's order, the
-    parity paragraph, "Not held", the guide's unfinished-save line and step 8, and the backlog's
-    "or stroke". Only the re-measure and the read-through remain.
-  - **The baseline gained two rows,** the capability count and the parity count, as X2's block
-    asked. Every count in it was measured at 0.29.0.
-  - **Re-measure the Codex sizes again:** every schema description X2a moved changed them, and the
-    stroke's normalised input now has 622 bytes of its 5,000 to spare.
-- **What turned out wrong or harder:**
-  - **The review's own remedy for F1 was not enough.** Putting the re-read in each op leaves the
-    window open, because the frame reads the selection after it, and that waits. The check lives
-    in `Mutation.run` instead, as the last read before the marker. An adversarial plan review
-    found it before any code was written.
-  - **Two probe checks of X2a's were wrong on the first live run,** not the product: a reorder of
-    a translated layer takes three undo steps, and the affine refusals leave their layer holding a
-    transform mask. Both are fixed; the lesson is that a probe check added beside existing ones
-    inherits their leftovers.
+- **krita-art-mcp 0.30.0 is released.** Round 2 (recovery and construction: R1, R2, R3, D1, F1, C1,
+  M1, X1, X1a, E1, L1, B1, T1, S1, X2, X2a, V1) is closed. Its spec files are deleted; the last
+  done-note is in `docs/spec/SESSIONS.md` as of the release commit (`40c7491`), and
+  `docs/BACKLOG.md`'s header says how to read the rest.
+- **What round 2 built,** on the Phase 1 round 1 shipped: every failed change says whether it
+  applied (`details.outcome`); one verified-mutation frame under the paint and layer ops; flat
+  fills; transparency masks; tapered strokes; layer duplicate, reorder and remove; a document
+  branch; translate through a transform mask; scale, rotate and shear; truthful hints; and the
+  discovery work on limits, colours and the forms Codex renders.
+- **Push status:** `origin/main` holds everything through `e987f4a`. The release (`40c7491`), this
+  close and the review commit that follows it wait for the next approved push; list
+  `origin/main..HEAD` before it.
+- **0.30.0 is installed and live.** V1 ran `install-plugin` and restarted Krita at 0 unsaved, so
+  the running plugin is this checkout's. The owner's MCP client still needs its own restart to
+  pick the server up.
+- **Open items live in `docs/BACKLOG.md`.** Round 2 added, among others: the server-side batch with
+  what V1 re-measured and what a decision still needs; the fake's pixel-step snapshot; a Krita quit
+  while a taper holds a preset edited; a failed branch open naming the branch as its `document_id`;
+  an undo that takes back the owner's own step; and the refusals that still say "Phase 1".
 - **Decisions written down nowhere else:**
-  - **Plan reviews are the owner's call:** Opus at X1a, E1, L1, B1, T1, S1 and X2a. Propose one
-    when a plan reworks a heavily tested path, and ask which model.
-  - **Live runs** were allowed at 0 unsaved with the Codex agent paused, for X2a's gate; ask again.
-  - **What the frame still does not watch,** recorded under *Known debt*: `port.effects`,
-    `port.describe` and the selection, which is read just before the tree.
-- **Baseline** (ARCHITECTURE's table, v0.29.0, measured at X2a):
+  - **Plan reviews are the owner's call.** An adversarial review of the plan ran on Opus at X1a,
+    E1, L1, B1, T1, S1 and X2a. Propose one when a plan reworks a heavily tested path, and ask
+    which model.
+  - **Live runs and Krita restarts** were allowed at 0 unsaved with the Codex agent paused, each
+    time they were asked for; ask again.
+  - **The batch question stays open.** The journal holds no session on the construction tools, so
+    what fills and the layer ops already took off a batch is unmeasured.
+- **Baseline** (ARCHITECTURE's table, v0.30.0, measured at V1):
   - `verify`: 6 stages, all PASS; 1176 server tests and 1223 plugin-core tests, 0 skipped;
-  - `probe`: 231 PASS, 0 FAIL, 25 MEASURED, about 155 s with 0 documents open, the journal
-    check reading 846 dispatched lines;
+  - `probe`: 231 PASS, 0 FAIL, 25 MEASURED, about 150 s with 0 documents open, the journal check
+    reading 848 dispatched lines;
   - 25 tools, 25 schema files, 30 error codes, 39 bridge ops, 17 capabilities, 28 parity tests,
-    instructions 3,371 characters;
+    instructions 3,371 characters, `api_version` 0.4.0;
   - Codex's renderer: the stroke's normalised input 4,378 of 5,000 bytes, 622 to spare.
-- **Not done:** nothing from X2a's block.
+- **Not done:** nothing from V1's block. The workflow re-measure ran on the journal alone, as the
+  owner chose, because no session since fills exists.
 
 ## Watch for
 
-- **A retryable refusal is a change of nothing,** proven at its raise: the AST scan finds each new
-  one, and `tests/plugin/test_outcomes.py` pins it in `RETRYABLE` with its own test.
 - **The standing traps:**
   - **Nothing private in any file or commit message.** Last before each commit: draft the
     message into `"$(git rev-parse --git-dir)/COMMIT_DRAFT"`, run `verify` with it, commit
@@ -57,6 +52,8 @@ X2a's done-note, then this file, and do Session V1: re-measure, docs, full run, 
   - **Give stdin-reading commands `< /dev/null`.**
   - **The Python toolchain:** uv is at `~/.local/bin/uv`; CPython 3.12 and 3.10 are uv-managed;
     `/usr/bin/python3` is 3.9.6, never use it for the project.
+  - **A version bump touches `uv.lock`,** because `uv run` rebuilds the package; stage it with the
+    other three version sites (`pyproject.toml`, the plugin's `PLUGIN_VERSION`, the version test).
   - **The owner's Krita is live.** No session touches their documents.
     - Restart Krita only when `doctor` reports 0 unsaved documents, and ask the owner first.
     - `osascript` quitting Krita reports "User canceled" yet Krita quits. Wait for the process to
@@ -73,6 +70,8 @@ X2a's done-note, then this file, and do Session V1: re-measure, docs, full run, 
   size, never print a term, and ask before any write to it.
 - **Another agent works in Krita.** The Codex agent paints the owner's art through this server. Ask
   the owner before any probe or measurement run.
+- **The journal in the data folder is the owner's own work.** Read it read-only, and record counts
+  and timings alone: never a document path, a layer name or a folder.
 - **A client's `serve` runs this checkout as it stands.** Do not edit while `verify` runs: a test
   that spawns `serve` reads the files as they are mid-run.
 - **Brush state is window-wide (K3).** A scratchpad driver must read `harness.brush_state` first,
