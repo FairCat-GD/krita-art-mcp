@@ -1431,7 +1431,9 @@ metadata, a term joined inside one lowercase run, attribution in files (messages
 missing from its nine names.
 
 **Falsification.** Each new check is broken once, watched fail at its own step, and restored; a
-check that already exists is not falsified again.
+check that already exists is not falsified again. Three ways it proves nothing: a pytest `-k` with
+spaces selects no test at all; a mutation that leaves a file unparsable fails collection rather
+than the test; and a mutation a second rule also catches says nothing about the first.
 
 **The probe's harness.** It checks the plugin hash first, then health, stdio, H4 idle and the runtime
 facts, then its document checks, which run only when no Krita document has unsaved changes. It works

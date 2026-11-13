@@ -154,7 +154,14 @@ The why for each is in `docs/ARCHITECTURE.md`, *The invariants*.
 - **Restarts.** A changed plugin loads only after a Krita restart: run `install-plugin`, then
   restart. A session may restart Krita itself only when the bridge reports no unsaved
   documents; with no bridge answering, or any unsaved document, it asks the owner. The harness
-  never quits Krita.
+  never quits Krita, and a release restarts the owner's MCP client too, which a session says
+  before it restarts anything.
+  - `osascript -e 'quit app "krita"'` reports "User canceled" (-128) yet Krita quits. Wait for the
+    process to go, then a few seconds more: `open` straight after fails with -600.
+  - Krita can come back by itself within seconds of a crash, so check `pgrep -x krita` before
+    starting it.
+  - Krita can start with a dialog open, and then refuses every document call with
+    `KRITA_MODAL_DIALOG`. Ask the owner to close it, then rerun.
 
 ## This repository is public: nothing private goes in
 
@@ -199,7 +206,14 @@ plugin installed, enabled and current.
 
 **How it treats the owner's data.** The harness works only in `<data dir>/harness/`, sweeps
 leftovers at start, closes what it opened, and restores the brush state. No test or harness
-touches the owner's documents or `config.json`.
+touches the owner's documents or `config.json`. Read a run from a file, never a pipe: `probe | tail`
+throws away the FAIL lines and the exit code.
+
+**The toolchain and the shell.** uv is at `~/.local/bin/uv` and manages CPython 3.12 and 3.10;
+`/usr/bin/python3` is 3.9.6 and is never used for this project. A version bump touches `uv.lock`,
+because `uv run` rebuilds the package, so stage it beside the three version sites. Give a command
+that reads stdin `< /dev/null`. A client's `serve` runs this checkout as it stands, so nothing is
+edited while `verify` runs: a test that spawns `serve` reads the files as they are mid-run.
 
 ## Git
 

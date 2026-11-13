@@ -14,9 +14,10 @@ in `docs/spec/`, with a Read line in every block (see `docs/DEVELOPMENT-WORKFLOW
   fills; transparency masks; tapered strokes; layer duplicate, reorder and remove; a document
   branch; translate through a transform mask; scale, rotate and shear; truthful hints; and the
   discovery work on limits, colours and the forms Codex renders.
-- **Push status:** `origin/main` holds everything through `e987f4a`. The release (`40c7491`), the
-  close (`b078efb`) and the review commit above it wait for the next approved push; list
-  `origin/main..HEAD` before it.
+- **Push status:** `origin/main` holds everything through "docs: the standing traps move into the
+  rules file", this session's last commit, named by its subject because this note was folded into
+  it. The release (`40c7491`) and the close (`b078efb`) are on the remote with it, and nothing
+  waits for a push.
 - **0.30.0 is installed and live.** V1 ran `install-plugin` and restarted Krita at 0 unsaved, so
   the running plugin is this checkout's. The owner's MCP client still needs its own restart to
   pick the server up.
@@ -52,41 +53,20 @@ in `docs/spec/`, with a Read line in every block (see `docs/DEVELOPMENT-WORKFLOW
 
 ## Watch for
 
-- **The standing traps:**
+- **The two traps kept here on purpose,** because they cost the most when missed:
   - **Nothing private in any file or commit message.** Last before each commit: draft the
     message into `"$(git rev-parse --git-dir)/COMMIT_DRAFT"`, run `verify` with it, commit
     with `git commit -F`, then delete the draft.
-  - **Never `git checkout <path>`.** Stage explicit paths.
-  - **Give stdin-reading commands `< /dev/null`.**
-  - **The Python toolchain:** uv is at `~/.local/bin/uv`; CPython 3.12 and 3.10 are uv-managed;
-    `/usr/bin/python3` is 3.9.6, never use it for the project.
-  - **A version bump touches `uv.lock`,** because `uv run` rebuilds the package; stage it with the
-    other three version sites (`pyproject.toml`, the plugin's `PLUGIN_VERSION`, the version test).
-  - **The owner's Krita is live.** No session touches their documents.
-    - Restart Krita only when `doctor` reports 0 unsaved documents, and ask the owner first.
-    - `osascript` quitting Krita reports "User canceled" yet Krita quits. Wait for the process to
-      go, then a few seconds more, because `open` straight after fails with -600.
-    - After a crash, Krita came back within seconds without being asked. Check `pgrep -x krita`
-      before starting it.
-  - **Krita can start with a dialog open.** It then refuses every document call with
-    `KRITA_MODAL_DIALOG`; ask the owner to close it, then rerun.
-  - **The probe refuses to run its document checks while any document is unsaved.** Ask the
-    owner to save, then rerun.
-  - **Read a probe run from a file, not a pipe.** `probe | tail` throws away the FAIL lines and
-    the exit code; write the whole run to a file and grep it.
+  - **Never `git checkout <path>`.** Stage explicit paths, and falsify a check by copying the
+    file aside and back.
+- **The other standing traps are in the documents now,** not here, so read `CLAUDE.md` whole
+  before you start: it holds the toolchain and the shell, the Krita restart quirks and the probe's
+  output rule, and `ARCHITECTURE.md`'s *Testing strategy* holds the three ways a falsification
+  proves nothing.
 - **The term list is not empty.** `~/.config/hygiene/terms.txt` holds 75 words. Never assume its
   size, never print a term, and ask before any write to it.
 - **Another agent works in Krita.** The Codex agent paints the owner's art through this server. Ask
   the owner before any probe or measurement run.
 - **The journal in the data folder is the owner's own work.** Read it read-only, and record counts
   and timings alone: never a document path, a layer name or a folder.
-- **A client's `serve` runs this checkout as it stands.** Do not edit while `verify` runs: a test
-  that spawns `serve` reads the files as they are mid-run.
-- **Brush state is window-wide (K3).** A scratchpad driver must read `harness.brush_state` first,
-  from a document in the harness folder, with every preset it will activate, and write it back.
-- **Falsifying by test name:** a pytest `-k` with spaces selects nothing. A mutation that leaves
-  a file unparsable fails collection, not the test: check each mutation's run named its test.
-  A mutation that a second rule also catches proves nothing about the first.
-- **Comments state the present.** No session ids, no "used to", no review stories.
 - **Every push needs its own approval.** List `origin/main..HEAD` first.
-- **A release restarts the MCP client too.** Tell the owner before the restart.
