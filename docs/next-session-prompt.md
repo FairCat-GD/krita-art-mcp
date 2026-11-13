@@ -14,8 +14,8 @@ in `docs/spec/`, with a Read line in every block (see `docs/DEVELOPMENT-WORKFLOW
   fills; transparency masks; tapered strokes; layer duplicate, reorder and remove; a document
   branch; translate through a transform mask; scale, rotate and shear; truthful hints; and the
   discovery work on limits, colours and the forms Codex renders.
-- **Push status:** `origin/main` holds everything through `e987f4a`. The release (`40c7491`), this
-  close and the review commit that follows it wait for the next approved push; list
+- **Push status:** `origin/main` holds everything through `e987f4a`. The release (`40c7491`), the
+  close (`b078efb`) and the review commit above it wait for the next approved push; list
   `origin/main..HEAD` before it.
 - **0.30.0 is installed and live.** V1 ran `install-plugin` and restarted Krita at 0 unsaved, so
   the running plugin is this checkout's. The owner's MCP client still needs its own restart to
@@ -24,6 +24,14 @@ in `docs/spec/`, with a Read line in every block (see `docs/DEVELOPMENT-WORKFLOW
   what V1 re-measured and what a decision still needs; the fake's pixel-step snapshot; a Krita quit
   while a taper holds a preset edited; a failed branch open naming the branch as its `document_id`;
   an undo that takes back the owner's own step; and the refusals that still say "Phase 1".
+- **V1's review (`/code-review high`), 7 findings: 7 fixed.** `SESSIONS.md` was already deleted, so
+  the findings and their fixes are in the review commit's message. Two of them correct V1's own
+  done-note, which the release commit keeps as it was written:
+  - **`doctor` did not pass 6 of 6 before the Krita restart.** That run stopped at step 1, because
+    the version bump had not been installed yet; it read 0 open documents and 0 unsaved. It passed
+    6 of 6 after `install-plugin` and the restart.
+  - **V1 never established that the Codex agent was paused.** It checked that Krita held 0 open and
+    0 unsaved documents, and nothing more.
 - **Decisions written down nowhere else:**
   - **Plan reviews are the owner's call.** An adversarial review of the plan ran on Opus at X1a,
     E1, L1, B1, T1, S1 and X2a. Propose one when a plan reworks a heavily tested path, and ask
@@ -33,7 +41,7 @@ in `docs/spec/`, with a Read line in every block (see `docs/DEVELOPMENT-WORKFLOW
   - **The batch question stays open.** The journal holds no session on the construction tools, so
     what fills and the layer ops already took off a batch is unmeasured.
 - **Baseline** (ARCHITECTURE's table, v0.30.0, measured at V1):
-  - `verify`: 6 stages, all PASS; 1176 server tests and 1223 plugin-core tests, 0 skipped;
+  - `verify`: 6 stages, all PASS; 1177 server tests and 1223 plugin-core tests, 0 skipped;
   - `probe`: 231 PASS, 0 FAIL, 25 MEASURED, about 150 s with 0 documents open, the journal check
     reading 848 dispatched lines;
   - 25 tools, 25 schema files, 30 error codes, 39 bridge ops, 17 capabilities, 28 parity tests,

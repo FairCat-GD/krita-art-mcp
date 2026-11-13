@@ -41,12 +41,14 @@ commit: `git show 40c7491:docs/spec/SESSIONS.md`, and likewise
   already awaits calls and stops on a failed envelope: 1,253 of 1,377 consecutive calls were under
   0.25 s apart. One would earn its cost through shared-context enforcement, durable partial receipts
   and recovery across a client's interruption, never atomic rollback (K29).
-  - **Re-measured at 0.30.0, from the journal alone,** which holds the mutating calls and no reads:
-    in the newest real session, 775 calls spent 2.4 minutes inside the server, a median of 2.9 s
-    passed from one answer to the next call, and 64 of its 774 gaps were under 0.25 s; an earlier
-    session through another MCP client left a median of 0.22 s, with no such per-call cost. So what
-    the agent waits for is still the client's review of each destructive call, which the client's
-    own `default_tools_approval_mode` removes (the user guide says so), not the server.
+  - **Re-measured at 0.30.0, from the journal alone,** which holds the mutating calls and no reads,
+    and timed from one call's answer to the next call's dispatch. It does not compare with the
+    figure above, which came from the client's own records, reads among them. In the newest real
+    session, 775 calls spent 2.4 minutes inside the server, a median of 2.9 s passed from one
+    answer to the next call, and 64 of its 774 gaps were under 0.25 s; an earlier session through
+    another MCP client left a median of 0.22 s, with no such per-call cost. So what the agent waits
+    for is still the client's review of each destructive call, which the client's own
+    `default_tools_approval_mode` removes (the user guide says so), not the server.
   - **What a decision still needs:** a painting session on the construction tools, with the
     client's own records. Every session the journal holds predates fills, so nothing measures how
     much a fill that replaces a run of strokes, or a layer op that replaces several, already took

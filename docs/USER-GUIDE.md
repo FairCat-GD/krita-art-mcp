@@ -318,9 +318,10 @@ changed on the canvas, and `layer_bounds_px` is the layer's whole extent, past i
 ```
 
 - **Knots.** `size` and `opacity` each take 2 to 16 knots. `at` is the fraction of the stroke's
-  length, rising by at least 0.001, with the first knot at 0 and the last at 1. `value` multiplies
-  `brush.size_px` or `brush.opacity` at that point. Values run in straight lines between knots, so
-  add knots for a softer curve.
+  length, rising by at least 0.001, with the first knot at 0 and the last at 1. `value` is 0 to 1
+  and multiplies `brush.size_px` or `brush.opacity` at that point, so a taper only ever thins or
+  fades the brush you gave it: to swell, send the narrow width as `size_px` and raise the knots
+  towards 1. Values run in straight lines between knots, so add knots for a softer curve.
 - **How Krita does it.** Krita's own Distance sensor drives the taper. For that one stroke it
   replaces the preset's own size or opacity sensors, and the receipt's
   `effective_brush.dynamics.replaced` names them.

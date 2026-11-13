@@ -29,6 +29,8 @@ because the plugin carries the version.
 
 - **Every version in this file links to the commit that released it again.** The links stopped at
   0.16.0, so none of round 2's releases could be reached from its entry.
+- **A taper's `value` range is in the guide.** It is 0 to 1, so a taper thins or fades the brush
+  you give it and never swells past it; the guide now says so, and how to taper up instead.
 
 ## [0.29.0] — 2026-11-13
 
@@ -1089,6 +1091,7 @@ The first release is the scaffold that the Phase 1 tools are built on.
   reports its version to the client; it offers no tools yet.
 - **`krita-art-mcp --version`.** It prints the installed version.
 
+[0.30.0]: https://github.com/FairCat-GD/krita-art-mcp/commit/40c74913f515a8797e72dbaa1e3bfed4a2ae32ea
 [0.29.0]: https://github.com/FairCat-GD/krita-art-mcp/commit/fa949c0c14a81cb7b71e90f81e8292ed59077c16
 [0.28.0]: https://github.com/FairCat-GD/krita-art-mcp/commit/dd3569d7daec92cbf3ff559ee3c17d99e5417fc8
 [0.27.0]: https://github.com/FairCat-GD/krita-art-mcp/commit/ff567d74585aabf4165d9a18989b13805ce21b84

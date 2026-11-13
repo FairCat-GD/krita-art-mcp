@@ -11,6 +11,7 @@ from typing import Any
 
 import bridge_core
 
+from krita_art_mcp import schemas
 from krita_art_mcp.instructions import INSTRUCTIONS
 from krita_art_mcp.tools import BUILT_TOOLS
 
@@ -21,6 +22,14 @@ EXPECTED_VERSION = "0.30.0"
 
 def test_plugin_version_equals_package_version() -> None:
     assert bridge_core.PLUGIN_VERSION == version("krita-art-mcp") == EXPECTED_VERSION
+
+
+def test_the_readme_and_the_server_info_example_name_this_version() -> None:
+    # Both state a version no code reads, so only a test keeps them from drifting.
+    readme = Path(__file__).resolve().parents[1] / "README.md"
+    assert EXPECTED_VERSION in readme.read_text(encoding="utf-8")
+    example = schemas.load("krita_server_info")["example"]["structuredContent"]["data"]
+    assert example["server_version"] == example["plugin_version"] == EXPECTED_VERSION
 
 
 def test_cli_prints_its_version() -> None:

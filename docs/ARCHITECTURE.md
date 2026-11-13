@@ -59,7 +59,8 @@ protocol, `1`. The protocol stays 1 while the server and the plugin are released
   affine transforms — without the profile gate the draft wanted (decision 3). Phases 2 to 6 are
   construct, integrity, delivery, asset modules and input-aware strokes, each its own round.
 - **Review N and F-numbers:** the three architecture reviews of round 1, named for their sessions
-  (6, 10, 13), and their findings.
+  (6, 10, 13), and round 2's two, X1 and X2. Their findings are cited as F-numbers, and
+  `docs/BACKLOG.md`'s header says how to read any review out of git history.
 - `docs/spec/` held the PDD, the round's plan and the reviews. `docs/BACKLOG.md`'s header says how to
   read them from git history.
 
@@ -1747,7 +1748,7 @@ depend on it: 87 open documents cost about 50 s more.
 | Check | Expected |
 |---|---|
 | `uv run scripts/verify.py` | 6 stages, all PASS |
-| Server tests (3.12) | 1176 passed, 0 skipped |
+| Server tests (3.12) | 1177 passed, 0 skipped |
 | Plugin-core tests (3.10) | 1223 passed, 0 skipped |
 | `uv run krita-art-mcp probe` | 231 PASS, 0 FAIL, 25 MEASURED; about 150 s |
 | `uv run krita-art-mcp doctor` | 6 steps, all PASS, with a root allowed |
