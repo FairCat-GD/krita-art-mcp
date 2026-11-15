@@ -7,7 +7,7 @@ from mcp.types import CallToolResult
 
 from krita_art_mcp import envelope, strokes
 from krita_art_mcp.bridge_client import BeforeSend, Failed, Outcome
-from krita_art_mcp.tools import changes
+from krita_art_mcp.tools import changes, observe
 from krita_art_mcp.tools.dispatch import ToolCall, finite, from_outcome, journaled
 
 # Point fields Phase 1 cannot apply: Node.paintPath paints every point at pressure 1.
@@ -18,6 +18,7 @@ MIN_LENGTH_PX = 0.5
 # along the stroke; the plugin holds both.
 MIN_DYNAMICS_PX = 1.0
 MIN_KNOT_GAP = 0.001
+KNOTS = observe.LIMITS["dynamics_knots"]
 
 
 def paint_stroke(call: ToolCall, arguments: dict[str, Any]) -> CallToolResult:
@@ -124,12 +125,16 @@ def _dynamics_rules(arguments: dict[str, Any]) -> CallToolResult | None:
         if knots is None:
             continue
         # The schema holds the shape; a caller past it gets a refusal, never a raise.
-        if (
-            not isinstance(knots, list)
-            or len(knots) < 2
-            or not all(isinstance(knot, dict) and _number(knot.get("at")) for knot in knots)
+        if not isinstance(knots, list) or not all(
+            isinstance(knot, dict) and _number(knot.get("at")) for knot in knots
         ):
             message = f"dynamics.{key} holds knots {{at, value}}."
+            return envelope.failure(
+                "INVALID_ARGUMENT", message, details={"field": f"dynamics.{key}"}
+            )
+        if not KNOTS["min"] <= len(knots) <= KNOTS["max"]:
+            held = f"{len(knots)} knot" if len(knots) == 1 else f"{len(knots)} knots"
+            message = f"dynamics.{key} holds {held}, and takes {KNOTS['min']} to {KNOTS['max']}."
             return envelope.failure(
                 "INVALID_ARGUMENT", message, details={"field": f"dynamics.{key}"}
             )

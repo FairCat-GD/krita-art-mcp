@@ -5,12 +5,11 @@ from typing import Any
 
 import pytest
 from bridge_core import documents
-from bridge_core import dynamics as bridge_dynamics
-from jsonschema import Draft202012Validator
+from knots import even_knots, knots
 from parity import refused_alike
 from worlds import World, running_world
 
-from krita_art_mcp import roots, schemas, tools
+from krita_art_mcp import roots, tools
 from krita_art_mcp.tools import branching, changes, painting, pixels, saving
 from krita_art_mcp.tools import documents as documents_tools
 from krita_art_mcp.tools.observe import LIMITS
@@ -307,23 +306,19 @@ TAPER = [{"at": 0, "value": 0.2}, {"at": 1, "value": 1}]
 OPTIONS = ("size", "opacity")
 
 
-def _knots(*at: float) -> list[dict[str, float]]:
-    return [{"at": value, "value": 1} for value in at]
-
-
 # Each of the order rules, for each option alone.
 KNOT_ORDER = {
-    "start": _knots(0.2, 1),
-    "end": _knots(0, 0.9),
-    "falls": _knots(0, 0.6, 0.4, 1),
-    "apart": _knots(0, 0.0004, 1),
+    "start": knots(0.2, 1),
+    "end": knots(0, 0.9),
+    "falls": knots(0, 0.6, 0.4, 1),
+    "apart": knots(0, 0.0004, 1),
 }
 
 
 @pytest.mark.parametrize(
     ("dynamics", "brush"),
     [
-        *[({option: knots}, {}) for option in OPTIONS for knots in KNOT_ORDER.values()],
+        *[({option: order}, {}) for option in OPTIONS for order in KNOT_ORDER.values()],
         ({"size": TAPER}, {"preset_sha256": None}),
         ({"size": TAPER}, {"color": None, "mask": "reveal"}),
     ],
@@ -421,24 +416,21 @@ def _ids(tool: str, document_id: str) -> dict[str, Any]:
 
 
 DYNAMICS = ("inputSchema", "properties", "dynamics")
-SIXTEEN = _knots(*[index / 15 for index in range(16)])
-SEVENTEEN = _knots(*[index / 16 for index in range(17)])
+SIXTEEN = even_knots(16)
+SEVENTEEN = even_knots(17)
 
 
 @pytest.mark.parametrize(
     ("dynamics", "cut", "rule"),
     [
-        *[
-            ({option: SEVENTEEN}, (*DYNAMICS, "properties", option, "maxItems"), None)
-            for option in OPTIONS
-        ],
-        # The server's own rule refuses a short list too, so both its halves go off.
+        # The server's own rule counts knots too, so both its halves go off.
         *[
             (
-                {option: _knots(0)},
-                (*DYNAMICS, "properties", option, "minItems"),
+                {option: taper},
+                (*DYNAMICS, "properties", option, bound),
                 (painting, "_dynamics_rules"),
             )
+            for taper, bound in ((SEVENTEEN, "maxItems"), (knots(0), "minItems"))
             for option in OPTIONS
         ],
         (
@@ -454,8 +446,7 @@ SEVENTEEN = _knots(*[index / 16 for index in range(17)])
         ({}, (*DYNAMICS, "minProperties"), None),
     ],
     ids=[
-        *[f"{option}-17-knots" for option in OPTIONS],
-        *[f"{option}-1-knot" for option in OPTIONS],
+        *[f"{option}-{count}" for count in ("17-knots", "1-knot") for option in OPTIONS],
         "knot-fields",
         "value-range",
         "neither-option",
@@ -475,15 +466,15 @@ def test_both_sides_hold_a_tapers_schema_rules(
 
 
 @pytest.mark.parametrize("option", OPTIONS)
-def test_both_sides_take_sixteen_knots(option: str) -> None:
-    # refused_alike wants both sides to refuse, so the cap's own edge is held here.
-    arguments = _stroke("doc-1", preset_sha256="e" * 64)
+def test_both_sides_take_sixteen_knots(world: World, option: str) -> None:
+    # refused_alike wants both sides to refuse, so the cap's own edge is held here: the call
+    # passes the schema, the server's rules and the plugin's argument checks, and is refused
+    # only for the layer this document lacks.
+    arguments = _stroke(_document(world), preset_sha256="e" * 64)
     arguments["dynamics"] = {option: SIXTEEN}
-    schema = schemas.load("krita_paint_stroke")["inputSchema"]
-    assert Draft202012Validator(schema).is_valid(arguments)
-    op_args = painting.stroke_op(arguments)
-    assert isinstance(op_args, dict), op_args
-    bridge_dynamics.check(op_args["dynamics"], op_args["brush"], op_args["path"])
+    content = world.server().content("krita_paint_stroke", arguments)
+    assert content["operation_id"] is not None, content
+    assert content["error"]["code"] == "LAYER_NOT_FOUND", content
 
 
 def test_both_sides_want_a_taper_at_least_a_pixel_long(

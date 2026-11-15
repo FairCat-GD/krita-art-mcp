@@ -14,9 +14,31 @@ in `docs/spec/`, with a Read line in every block (see `docs/DEVELOPMENT-WORKFLOW
   the capability notes and the guide (0.32.0).
 - **The reply to the Codex agent's report** went into the chat alone, by the owner's amendment of
   decision 6 at G1; no file was written outside the repository.
-- **Push status:** `origin/main` holds everything through P1's review commit (`2c75590`). The
-  release (`2312d86`), this close and the review commit that follows it wait for the next approved
-  push; list `origin/main..HEAD` before it.
+- **Pushed.** `origin/main` holds everything through G1's review commit ("review: the server's own
+  knot rule said no count, and 6 smaller"), pushed with the owner's approval: the release
+  (`2312d86`), the close (`8c0ecd3`) and that review commit. List `origin/main..HEAD` before any
+  push.
+- **G1's review (`/code-review high`), 7 findings: 6 fixed, 1 needing no change.** The close had
+  already deleted `SESSIONS.md`, so they are recorded here and in the review commit.
+  - **The server's own knot rule stated no count,** and checked no upper bound, for a caller past
+    the schema such as the probe. It now says `dynamics.opacity holds 17 knots, and takes 2 to 16.`
+    as the plugin does, from `limits.dynamics_knots`; the parity cases at 17 knots switch it off
+    with the schema's bound.
+  - **The 16-knot parity test called the plugin's `check` directly.** It now goes through the
+    plugin's handler and is refused only for the missing layer.
+  - **The probe's 16-knot taper was judged by the older preset check.** It now runs after it and
+    checks its own preset comes back.
+  - **The guide said "neither" of three transforms.**
+  - **`LENGTHS` sat below its user,** mid-module; it is with the other constants now.
+  - **Four knot builders** became one, `tests/fixtures/knots.py`; the probe keeps its own, since
+    it cannot import from `tests/`.
+  - **No change needed:** the `isinstance` on a length problem's instance looked redundant, but it
+    narrows jsonschema's `Any | Unset` for mypy, which failed without it.
+  - **Falsified:** the server's rule checking only the minimum (its 17-knot test failed); the
+    plugin's cap at 15 through the handler (both 16-knot parity cases failed); the probe's preset
+    clause, broken alone (237 PASS, 1 FAIL, exactly it). The files were restored byte for byte.
+  - **Numbers after the review:** 1198 server tests (+3), 1245 plugin tests, 29 parity tests; probe
+    238 PASS, 0 FAIL, 27 MEASURED in 155 s; the plugin unchanged, so no reinstall.
 - **0.32.0 is installed and live.** G1 ran `install-plugin` and restarted Krita at 0 unsaved, so
   the running plugin is this checkout's. The owner's MCP client needs its own restart to pick the
   server up, and the Codex agent stays paused until it has.
@@ -31,7 +53,7 @@ in `docs/spec/`, with a Read line in every block (see `docs/DEVELOPMENT-WORKFLOW
     time they were asked for; ask again.
   - **The chat's last message is the workflow kit's one-line opener,** never this file's text.
 - **Baseline** (ARCHITECTURE's table, v0.32.0, measured at G1):
-  - `verify`: 6 stages, all PASS; 1195 server tests and 1245 plugin-core tests, 0 skipped;
+  - `verify`: 6 stages, all PASS; 1198 server tests and 1245 plugin-core tests, 0 skipped;
   - `probe`: 238 PASS, 0 FAIL, 27 MEASURED, about 153 s with 0 documents open, the journal check
     reading 864 dispatched lines;
   - 25 tools, 25 schema files, 30 error codes, 39 bridge ops, 17 capabilities, 29 parity tests,

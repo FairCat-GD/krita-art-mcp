@@ -224,8 +224,8 @@ capability matrix's notes for `layer.translate`, `layer.scale`, `layer.rotate` a
 give the same order:
 1. **Copy first** with `krita_layer_duplicate`, if you want the original kept: resampling loses
    detail, and a translated layer cannot be copied.
-2. **Scale, rotate or shear** next, before you add masks or translate: neither is taken on a layer
-   holding a mask, and a transform mask is one.
+2. **Scale, rotate or shear** next, before you add masks or translate: none of the three takes a
+   layer holding a mask, and a translate adds a transform mask to the layer.
 3. **Translate last.**
 
 **Scale, rotate or shear a layer.** `krita_layer_transform` with one of these operations resamples

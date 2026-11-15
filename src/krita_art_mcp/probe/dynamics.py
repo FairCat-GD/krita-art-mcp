@@ -162,13 +162,13 @@ async def run(
         tapers = Tapers(a, document_id, data["root_layer_id"], preset)
         await _widths_and_alpha(report, tapers)
         _receipts(report, tapers)
-        await _knot_cap(report, tapers)
         after = await _preset_state(a, client, document_id, preset)
         report.check(
             "after the tapers, their preset's listed hash and dirty flag are as before",
             before == after and before[1] is not None,
             f"{before} became {after}",
         )
+        await _knot_cap(report, client, tapers)
         await _refusals(report, a, document_id, data["root_layer_id"], preset)
         await _leak(report, a, client, tapers, data["layers"], before)
     finally:
@@ -296,9 +296,10 @@ def _even(count: int) -> list[dict[str, float]]:
     return _knots(*[(index / (count - 1), 0.4 + 0.6 * (index % 2)) for index in range(count)])
 
 
-async def _knot_cap(report: Report, tapers: Tapers) -> None:
+async def _knot_cap(report: Report, client: BridgeClient, tapers: Tapers) -> None:
     # Outside Tapers.paint, so the receipt count above stays the five tapers it checks.
     a, document_id = tapers.a, tapers.document_id
+    preset = await _preset_state(a, client, document_id, tapers.preset)
     layer = await add_layer(a, document_id, tapers.root, "dynamics 16 knots")
     if layer is None:
         report.check("the knot cap's layer is made", False)
@@ -308,14 +309,18 @@ async def _knot_cap(report: Report, tapers: Tapers) -> None:
         a, TOOL, stroke_args(document_id, layer, brush, _line(LONG), dynamics={"size": _even(16)})
     )
     painted = await capture(a, document_id, WHOLE, "layer", layer)
+    restored = await _preset_state(a, client, document_id, tapers.preset)
     taper = ((sixteen.get("data") or {}).get("effective_brush") or {}).get("dynamics") or {}
     report.check(
-        "a 16-knot taper paints, and its receipt carries all 16 knots",
+        "a 16-knot taper paints, its receipt carries all 16 knots, and its preset comes back as "
+        "it was",
         sixteen.get("status") == "completed"
         and len(taper.get("size") or []) == 16
         and painted is not None
-        and bool(painted[..., 3].any()),
-        f"{sixteen.get('status')}, {code(sixteen)}",
+        and bool(painted[..., 3].any())
+        and restored == preset
+        and preset[1] is not None,
+        f"{sixteen.get('status')}, {code(sixteen)}, preset {preset} became {restored}",
     )
     before = await capture(a, document_id, WHOLE)
     refused = await tool(

@@ -7,6 +7,7 @@ from typing import Any
 
 import pytest
 from jsonschema import Draft202012Validator
+from knots import even_knots, knots
 from mcp.types import CallToolResult, ImageContent
 from worlds import NOW, World, running_world
 
@@ -118,15 +119,11 @@ def _tapered(**dynamics: Any) -> dict[str, Any]:
     return arguments
 
 
-def _knots(*at: float) -> list[dict[str, float]]:
-    return [{"at": value, "value": 0.5} for value in at]
-
-
 TAPER_REFUSALS = [
-    (_tapered(size=_knots(0.1, 1)), {"field": "dynamics.size"}),
-    (_tapered(opacity=_knots(0, 0.9)), {"field": "dynamics.opacity"}),
-    (_tapered(size=_knots(0, 0.0005, 1)), {"field": "dynamics.size"}),
-    (_tapered(size=_knots(0, 0.6, 0.6, 1)), {"field": "dynamics.size"}),
+    (_tapered(size=knots(0.1, 1)), {"field": "dynamics.size"}),
+    (_tapered(opacity=knots(0, 0.9)), {"field": "dynamics.opacity"}),
+    (_tapered(size=knots(0, 0.0005, 1)), {"field": "dynamics.size"}),
+    (_tapered(size=knots(0, 0.6, 0.6, 1)), {"field": "dynamics.size"}),
     ({**_tapered(size=ENDS), "brush": {**BRUSH}}, {"field": "brush.preset_sha256"}),
     (
         {**_tapered(size=ENDS), "points": [{"x": 4.5, "y": 4.5}, {"x": 5.2, "y": 4.5}]},
@@ -156,11 +153,11 @@ def test_a_taper_s_refusal_comes_before_the_journal(
     "dynamics",
     [
         {},
-        {"size": _knots(0)},
+        {"size": knots(0)},
         {"size": [{"at": 0, "value": 0.5}, {"at": 1, "value": 1.5}]},
         {"size": [{"at": 0, "value": 0.5}, {"at": 1, "value": 1, "x": 1}]},
         {"width": ENDS},
-        {"size": _knots(*[index / 16 for index in range(17)])},
+        {"size": even_knots(17)},
     ],
     ids=["empty", "one-knot", "value-past-1", "unknown-knot-field", "unknown-option", "17-knots"],
 )
@@ -184,8 +181,8 @@ def test_a_knot_count_past_the_cap_is_refused_with_the_count_and_the_cap(
     count: int,
     said: str,
 ) -> None:
-    knots = _knots(*[index / max(count - 1, 1) for index in range(count)])
-    content = world.server().content("krita_paint_stroke", _tapered(**{option: knots}))
+    taper = {option: even_knots(count)}
+    content = world.server().content("krita_paint_stroke", _tapered(**taper))
     error = content["error"]
     assert content["operation_id"] is None and error["code"] == "INVALID_ARGUMENT"
     assert error["details"]["outcome"] == "not_applied"
@@ -218,6 +215,16 @@ def test_a_taper_past_the_schema_is_refused_never_raised(knots: Any) -> None:
     arguments["dynamics"] = {"size": knots}
     refused = painting.stroke_op(arguments)
     assert isinstance(refused, CallToolResult) and refused.is_error
+
+
+@pytest.mark.parametrize(("count", "held"), [(0, "0 knots"), (1, "1 knot"), (17, "17 knots")])
+def test_a_knot_count_past_the_schema_says_the_count_and_the_cap(count: int, held: str) -> None:
+    arguments = _tapered(opacity=even_knots(count))
+    refused = painting.stroke_op(arguments)
+    assert isinstance(refused, CallToolResult) and refused.structured_content is not None
+    error = refused.structured_content["error"]
+    assert error["message"] == f"dynamics.opacity holds {held}, and takes 2 to 16."
+    assert error["details"]["field"] == "dynamics.opacity"
 
 
 def test_a_curve_s_length_is_its_arc_not_its_chord() -> None:

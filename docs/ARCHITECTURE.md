@@ -376,7 +376,8 @@ float, a copy's name, a layer's name length, a removal's `verify`, a
 translate that moves nothing or past its range, and a scale, rotate or shear of nothing, past its
 schema's bounds, or of another type or field. A taper's order rules are held for each option alone,
 and its knot count at 1 and 17; 16 knots, which `refused_alike` cannot hold since both sides take
-them, pass the schema, the server's rules and the plugin's in a parity test of their own. `tests/support/parity.py`'s
+them, pass the schema, the server's rules and the plugin's argument checks in a parity test of
+their own, refused only for a layer the document lacks. `tests/support/parity.py`'s
 `refused_alike` calls the tool, turns the server's half off, and calls again, so the server's own
 translation carries the same arguments to the plugin. Both must refuse with one code and one
 `retryable`, the plugin before its marker. Their messages may differ.
@@ -1133,7 +1134,8 @@ Distance sensor (K51), on the pixel engine alone. `bridge_core/dynamics.py` is p
 - **Rules.** Each option is 2 to 16 knots `{at, value}`, at from 0 to 1 rising by 0.001 or more.
   The cap is `dynamics.MIN_KNOTS` and `MAX_KNOTS`, announced in `limits.dynamics_knots` and the
   field's description. A count past it is refused before dispatch by the schema, whose message
-  states the count and the bound; the plugin's states the count and the range.
+  states the count and the bound. The server's own rule, for a caller past the schema such as the
+  probe, and the plugin's state the count and the range alike.
   A taper needs `preset_sha256`, colour paint, and an arc length of 1 px or more. These are
   parity pairs with the server, which measures the arc the same way.
 - **Refused before any change.** A preset held after a failed restore is refused first, before
@@ -1783,7 +1785,7 @@ depend on it: 87 open documents cost about 50 s more.
 | Check | Expected |
 |---|---|
 | `uv run scripts/verify.py` | 6 stages, all PASS |
-| Server tests (3.12) | 1195 passed, 0 skipped |
+| Server tests (3.12) | 1198 passed, 0 skipped |
 | Plugin-core tests (3.10) | 1245 passed, 0 skipped |
 | `uv run krita-art-mcp probe` | 238 PASS, 0 FAIL, 27 MEASURED; about 155 s |
 | `uv run krita-art-mcp doctor` | 6 steps, all PASS, with a root allowed |

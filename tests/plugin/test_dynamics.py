@@ -8,6 +8,7 @@ from bridge_core import dynamics
 from bridge_core.errors import BridgeError
 from bridge_core.resources import fingerprint
 from fake_krita import FILL_PRESET, PRESET_XML, preset_xml
+from knots import even_knots
 from paint_world import PAINT, World, box, fill_args
 
 NAME = "Basic Round"
@@ -97,20 +98,16 @@ def test_a_taper_that_keeps_the_rules_passes() -> None:
     dynamics.check(None, {"preset_sha256": None, "mask": "hide"}, PATH)
 
 
-def _even(count: int) -> list[dict[str, float]]:
-    return [{"at": index / max(count - 1, 1), "value": 1} for index in range(count)]
-
-
 @pytest.mark.parametrize("option", ["size", "opacity"])
 def test_sixteen_knots_pass_for_either_option(option: str) -> None:
-    taper = {"size": None, "opacity": None, option: _even(16)}
+    taper = {"size": None, "opacity": None, option: even_knots(16)}
     dynamics.check(taper, BRUSH, PATH)
 
 
 @pytest.mark.parametrize("option", ["size", "opacity"])
 @pytest.mark.parametrize("count", [1, 17])
 def test_a_knot_count_past_the_cap_says_the_count_and_the_cap(option: str, count: int) -> None:
-    taper = {"size": None, "opacity": None, option: _even(count)}
+    taper = {"size": None, "opacity": None, option: even_knots(count)}
     with pytest.raises(BridgeError) as raised:
         dynamics.check(taper, BRUSH, PATH)
     body = raised.value.body

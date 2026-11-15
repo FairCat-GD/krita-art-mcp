@@ -35,6 +35,8 @@ from krita_art_mcp.tools.dispatch import ToolCall, contract_problem, finite, ide
 MAX_REPORTED_PROBLEMS = 50
 # jsonschema quotes the offending value, which may be a 4096-point array.
 MAX_MESSAGE_CHARS = 200
+# A list's length problem reads as its count and this bound.
+LENGTHS = {"maxItems": "at most", "minItems": "at least"}
 
 ToolFunction = Callable[[ToolCall, dict[str, Any]], CallToolResult]
 # The arguments, the MCP client's name and the call's arrival, for the journal.
@@ -297,15 +299,12 @@ def _said(problem: ValidationError) -> str:
     if problem.validator == "not" and problem.validator_value == {}:
         return "not allowed with these arguments"
     # jsonschema quotes the list before its bound, so a long one would lose the bound.
-    if problem.validator in _LENGTHS and isinstance(problem.instance, list):
+    if problem.validator in LENGTHS and isinstance(problem.instance, list):
         count = len(problem.instance)
         held = f"{count} item" if count == 1 else f"{count} items"
-        bound = f"{_LENGTHS[problem.validator]} {problem.validator_value}"
+        bound = f"{LENGTHS[problem.validator]} {problem.validator_value}"
         return f"has {held}, and takes {bound}"
     return _short(problem.message)
-
-
-_LENGTHS = {"maxItems": "at most", "minItems": "at least"}
 
 
 def _client_name(ctx: Any) -> str | None:
