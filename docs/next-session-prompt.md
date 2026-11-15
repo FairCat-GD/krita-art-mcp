@@ -1,55 +1,53 @@
-No round is in progress. Read CLAUDE.md, docs/ARCHITECTURE.md's overview, invariants and baseline,
-then this file; then the sections of docs/ARCHITECTURE.md the request touches. The next session is
-an **intake**: write the owner's request down verbatim, ask what it leaves open, and plan the round
-in `docs/spec/`, with a Read line in every block (see `docs/DEVELOPMENT-WORKFLOW.md`, *Rounds*).
+Read `docs/spec/FEATURE-save-recompose-and-knot-limit.md` whole; `docs/ARCHITECTURE.md` *The save*,
+*The verification core*, *The tool contract* (the `api_version` rule and the replay paragraph),
+*Reads, and K46*, *Testing strategy*, and the reference rows K12, K39, K42 and K45;
+`docs/USER-GUIDE.md` step 9. Then CLAUDE.md, docs/ARCHITECTURE.md's overview, invariants and
+baseline, your block in docs/spec/SESSIONS.md, then this file, and do Session P1: the save reports
+what its own recompose changed. P1 has three parts:
+- reproduce first: a probe check of the grouped three-fill case and its ungrouped control, run
+  against the installed 0.30.0 plugin before any plugin edit, and a failing plugin-core test;
+- the receipt: `recompose {changed_px, visible_changed_px, changed_bounds_px}` on the save and the
+  document duplicate, `composite_preserved` unchanged in meaning;
+- the docs, and the cause read from the layer itself, as K55.
 
-## State you need that is not in the docs
+Release 0.31.0.
 
-- **krita-art-mcp 0.30.0 is released.** Round 2 (recovery and construction: R1, R2, R3, D1, F1, C1,
-  M1, X1, X1a, E1, L1, B1, T1, S1, X2, X2a, V1) is closed. Its spec files are deleted; the last
-  done-note is in `docs/spec/SESSIONS.md` as of the release commit (`40c7491`), and
-  `docs/BACKLOG.md`'s header says how to read the rest.
-- **What round 2 built,** on the Phase 1 round 1 shipped: every failed change says whether it
-  applied (`details.outcome`); one verified-mutation frame under the paint and layer ops; flat
-  fills; transparency masks; tapered strokes; layer duplicate, reorder and remove; a document
-  branch; translate through a transform mask; scale, rotate and shear; truthful hints; and the
-  discovery work on limits, colours and the forms Codex renders.
-- **Push status:** `origin/main` holds everything through "docs: the standing traps move into the
-  rules file", this session's last commit, named by its subject because this note was folded into
-  it. The release (`40c7491`) and the close (`b078efb`) are on the remote with it, and nothing
-  waits for a push.
-- **0.30.0 is installed and live.** V1 ran `install-plugin` and restarted Krita at 0 unsaved, so
-  the running plugin is this checkout's. The owner's MCP client still needs its own restart to
-  pick the server up.
-- **Open items live in `docs/BACKLOG.md`.** Round 2 added, among others: the server-side batch with
-  what V1 re-measured and what a decision still needs; the fake's pixel-step snapshot; a Krita quit
-  while a taper holds a preset edited; a failed branch open naming the branch as its `document_id`;
-  an undo that takes back the owner's own step; and the refusals that still say "Phase 1".
-- **V1's review (`/code-review high`), 7 findings: 7 fixed.** `SESSIONS.md` was already deleted, so
-  the findings and their fixes are in the review commit's message. Two of them correct V1's own
-  done-note, which the release commit keeps as it was written:
-  - **`doctor` did not pass 6 of 6 before the Krita restart.** That run stopped at step 1, because
-    the version bump had not been installed yet; it read 0 open documents and 0 unsaved. It passed
-    6 of 6 after `install-plugin` and the restart.
-  - **V1 never established that the Codex agent was paused.** It checked that Krita held 0 open and
-    0 unsaved documents, and nothing more.
+## State you need that is not in the specs
+
+- **Round 3 is what a save changed, and the knot limit:** P1 and G1, with no architecture review.
+  The intake is done; P1 and G1 remain.
+- **The intake is committed locally, not pushed.** `origin/main` holds everything through
+  `aef93b3` ("docs: the standing traps move into the rules file"). List `origin/main..HEAD` before
+  any push.
+- **What the intake found, which P1 builds on:**
+  - `bridge_core/saving.py` `write` refreshes the projection inside `unmasked_view`, exports, then
+    hashes the live composite (`:140-155`). The comparison is byte-exact and held; what moved is the
+    live document, at the refresh.
+  - The handoff's captures say so: before the save and after it, the live document differs in 7
+    pixels, all alpha 0; after the save, the live document, the reopened one and the KRA's
+    `mergedimage.png` are equal byte for byte.
+  - The frame refreshes before a change's before-read (`mutation.py:238`) and not before its
+    after-read (`:317`). Decision 3 leaves that as it is, in the backlog.
+  - The fake already models a stale projection: `render` and `projection` by key, redrawn only by
+    `refresh` (`tests/fixtures/fake_krita.py:118-121`, `_redraw` at `:386`).
+  - The hypothesis to settle: the colour under alpha 0, `[103,97,118]`, is the first fill's, so
+    the paint layer probably holds it itself.
+- **The handoff stays outside the repository** (decision 7). Its numbers are in the feature file;
+  its files, its folder and the names in it are not to be written anywhere here.
 - **Decisions written down nowhere else:**
-  - **Plan reviews are the owner's call.** An adversarial review of the plan ran on Opus at X1a,
-    E1, L1, B1, T1, S1 and X2a. Propose one when a plan reworks a heavily tested path, and ask
-    which model.
+  - **Plan reviews are the owner's call.** None ran on this intake. Propose one when a plan
+    reworks a heavily tested path, and ask which model.
   - **Live runs and Krita restarts** were allowed at 0 unsaved with the Codex agent paused, each
-    time they were asked for; ask again.
-  - **The batch question stays open.** The journal holds no session on the construction tools, so
-    what fills and the layer ops already took off a batch is unmeasured.
-- **Baseline** (ARCHITECTURE's table, v0.30.0, measured at V1):
+    time they were asked for; ask again. P1 needs two runs: the reproduction before any plugin
+    edit, and the check after `install-plugin` and a restart.
+- **Baseline** (ARCHITECTURE's table, v0.30.0, unchanged by the intake):
   - `verify`: 6 stages, all PASS; 1177 server tests and 1223 plugin-core tests, 0 skipped;
-  - `probe`: 231 PASS, 0 FAIL, 25 MEASURED, about 150 s with 0 documents open, the journal check
-    reading 848 dispatched lines;
+  - `probe`: 231 PASS, 0 FAIL, 25 MEASURED, about 150 s with 0 documents open;
   - 25 tools, 25 schema files, 30 error codes, 39 bridge ops, 17 capabilities, 28 parity tests,
     instructions 3,371 characters, `api_version` 0.4.0;
   - Codex's renderer: the stroke's normalised input 4,378 of 5,000 bytes, 622 to spare.
-- **Not done:** nothing from V1's block. The workflow re-measure ran on the journal alone, as the
-  owner chose, because no session since fills exists.
+- **Not done:** no live run was made at the intake; its measurements are from the handoff's
+  captures and the journal, read-only.
 
 ## Watch for
 
@@ -69,4 +67,7 @@ in `docs/spec/`, with a Read line in every block (see `docs/DEVELOPMENT-WORKFLOW
   the owner before any probe or measurement run.
 - **The journal in the data folder is the owner's own work.** Read it read-only, and record counts
   and timings alone: never a document path, a layer name or a folder.
+- **The probe refuses a changed plugin.** Reproduce before the first plugin edit.
+- **Never normalise the evidence.** Compare the bytes raw, in tests and in the probe.
+- **Comments state the present.** No session ids, no "used to", no review stories.
 - **Every push needs its own approval.** List `origin/main..HEAD` first.

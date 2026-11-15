@@ -33,7 +33,9 @@ commit: `git show 40c7491:docs/spec/SESSIONS.md`, and likewise
   - combining a taper with the preset's own sensors, which needs `UseSameCurve` and the curve
     modes handled;
   - mask paint under a taper;
-  - the dirty-presets setting changed from its default.
+  - the dirty-presets setting changed from its default;
+  - more than 16 knots an option, the count E1 proved. Widths at every knot of a longer curve
+    would have to be measured first. Left out at the round 3 intake.
 
   The probe's tapers also run on a preset its earlier checks left dirty, so the reload route is held
   only by unit tests and E1's measurement; a probe check on a clean preset would hold it live.
@@ -53,6 +55,12 @@ commit: `git show 40c7491:docs/spec/SESSIONS.md`, and likewise
     client's own records. Every session the journal holds predates fills, so nothing measures how
     much a fill that replaces a run of strokes, or a layer op that replaces several, already took
     the pressure off a batch.
+  - **Re-measured at the round 3 intake,** from one day's journal on 0.30.0, where the Codex agent
+    ran a scratch study on the construction tools: 88 calls with their times. Inside the server a
+    fill took a median of 146 ms, a stroke 136 ms, a layer create 50 ms and a save 124 ms, where
+    the agent's client saw about 3 s each. The time is still the client's. Timing the server's
+    share by stage (dispatch, paint, projection, verification, transport), as the agent suggested,
+    matters only once that share grows.
 - **Wrap authoring and a tiled preview.** Left out at the round 2 intake: Phase 5 owns tiling, and
   paired shapes at opposite edges were workable. A scripted stroke honours wrap-around (K47) and
   paints the opposite edge; `Canvas.setWrapAroundMode` is not axis-aware, and the actions
@@ -63,7 +71,8 @@ commit: `git show 40c7491:docs/spec/SESSIONS.md`, and likewise
     integer wrap translation (a half-roll) and a tiled preview. In one session, every wrapped asset
     needed a lossless half-roll made outside the tools, and a reopen. Translate (0.27.0) moves a
     layer through a transform mask, which does not wrap; a half-roll would need a wrapped move, and
-    that question stays open.
+    that question stays open. Raised again at 0.30.0, as a change of workflow rather than a
+    regression, and left here by the round 3 intake.
 - **Target identity in receipts and guidance** (0.18.0). The Codex agent sent three strokes to the
   wrong document through its own helper's default target; the server did what it was asked. Making
   the document, layer and selection a mutation acted on prominent in each receipt, and in the
@@ -201,6 +210,14 @@ commit: `git show 40c7491:docs/spec/SESSIONS.md`, and likewise
   the colour bytes of every transparent pixel under it (1,728 px changed, 768 of them visible).
   Under an allowed mask that would refuse an invisible change. `krita_paint_stroke` counts them
   too (0.9.0): the checks stay byte-exact.
+- **A change's after-read is Krita's projection as it stands** (0.30.0, measured at the round 3
+  intake). The frame recomposes before a change's before-read (`Mutation.read`) and not before its
+  after-read, and a save recomposes before it writes. Colour under alpha 0 can differ between the
+  two: in one grouped case, 5 pixels between one fill's after-read and the next fill's before-read,
+  and 7 across a save, every one alpha 0. So a change's `changed_px` and `changed_bounds_px` can
+  count such pixels, and under an allowed mask one could refuse a change for them. Recomposing
+  before every after-read, and before captures, was left out at the round 3 intake: a
+  whole-canvas recompose more per change, and the stroke's time measured again.
 - **Composite reads in two Krita states** (0.5.0). "Isolate active layer" mode changes the
   composite a read sees, and a document with two views reports the first view's active node. Both
   are untested.
@@ -306,6 +323,11 @@ these are the parts only a person can see.
   while the composite, the layer tree and the compared pixels match. A hand change to guides, or to
   the global selection where no layer holds it, should still close under `refuse`; no harness op
   makes one.
+- **Krita's own close paths after a verified save** (0.30.0). The Codex agent confirmed the tool's
+  guarded close after a verified save, and `dirty` and `krita_modified` reported apart, but not a
+  tab closed by hand, Close All, a quit, or a hand edit after the save. Krita should ask to save
+  each, since a save leaves its flag set (K45), and a hand edit should make `refuse` refuse. Unit
+  tests and the probe's close checks cover the tool's side.
 - **A layer style spreading a change** (0.8.0). No harness op can add a layer style, so unit
   tests hold the `layer_style` reason. Add a drop shadow by hand to a layer of an agent's working
   copy, then change its opacity with `krita_layer_update`: region scope should be refused, naming
