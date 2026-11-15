@@ -4,8 +4,9 @@ Read `docs/spec/FEATURE-save-recompose-and-knot-limit.md` whole; `docs/ARCHITECT
 `docs/USER-GUIDE.md` step 9. Then CLAUDE.md, docs/ARCHITECTURE.md's overview, invariants and
 baseline, your block in docs/spec/SESSIONS.md, then this file, and do Session P1: the save reports
 what its own recompose changed. P1 has three parts:
-- reproduce first: a probe check of the grouped three-fill case and its ungrouped control, run
-  against the installed 0.30.0 plugin before any plugin edit, and a failing plugin-core test;
+- reproduce first: probe checks of the grouped three-fill case and its ungrouped control, run
+  against the installed 0.30.0 plugin before any plugin edit (the drift check passing, the
+  receipt check failing), and a failing plugin-core test;
 - the receipt: `recompose {changed_px, visible_changed_px, changed_bounds_px}` on the save and the
   document duplicate, `composite_preserved` unchanged in meaning;
 - the docs, and the cause read from the layer itself, as K55.
@@ -16,9 +17,19 @@ Release 0.31.0.
 
 - **Round 3 is what a save changed, and the knot limit:** P1 and G1, with no architecture review.
   The intake is done; P1 and G1 remain.
-- **The intake is committed locally, not pushed.** `origin/main` holds everything through
-  `aef93b3` ("docs: the standing traps move into the rules file"). List `origin/main..HEAD` before
-  any push.
+- **The intake and its review fixes are committed locally, not pushed.** `origin/main` holds
+  everything through `aef93b3` ("docs: the standing traps move into the rules file"). List
+  `origin/main..HEAD` before any push.
+- **The intake's review (`/code-review high`), 6 findings: 6 fixed** in the plan, before P1:
+  - the duplicate's receipt comes from `document.duplicate_open` and its `Placed`, not from
+    `write`, so P1's block now points there;
+  - the reproduction is two checks, the drift itself and the receipt, so a missing field alone
+    cannot pass for a reproduced case;
+  - the compare reuses the read `write` already takes after the export, rather than a third
+    whole-canvas read;
+  - a 16-knot case gets tests of its own, since `refused_alike` asserts a refusal;
+  - the latency figures: a save took about 110 ms at the client, not 3 s, in the backlog and the
+    feature file.
 - **What the intake found, which P1 builds on:**
   - `bridge_core/saving.py` `write` refreshes the projection inside `unmasked_view`, exports, then
     hashes the live composite (`:140-155`). The comparison is byte-exact and held; what moved is the
@@ -28,6 +39,9 @@ Release 0.31.0.
     `mergedimage.png` are equal byte for byte.
   - The frame refreshes before a change's before-read (`mutation.py:238`) and not before its
     after-read (`:317`). Decision 3 leaves that as it is, in the backlog.
+  - The duplicate's receipt is built by `document.duplicate_open` (`bridge_core/branching.py:80`)
+    from a `Placed` the finish makes (`saving.py:261`), which today keeps no save fields beyond
+    the path and the hash.
   - The fake already models a stale projection: `render` and `projection` by key, redrawn only by
     `refresh` (`tests/fixtures/fake_krita.py:118-121`, `_redraw` at `:386`).
   - The hypothesis to settle: the colour under alpha 0, `[103,97,118]`, is the first fill's, so

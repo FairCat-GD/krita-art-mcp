@@ -55,9 +55,12 @@ step 9.
     read-only, capture. Beside it the control: one polygon fill on a paint layer at the root. The
     polygons and colours are in the feature file's summary of the handoff, item 1; P1 copies them
     from the handoff's recipe as plain numbers.
-  - Run it against the installed 0.30.0 plugin before any plugin edit. It must FAIL at its own
-    step, because the receipt says nothing of the pixels the save changed. Record the counts and
-    coordinates found beside the handoff's seven.
+  - Two checks, apart. The drift: the probe's captures before and after the save differ, under
+    alpha 0 only; this one shows the case reproduces, and its counts and coordinates are recorded
+    beside the handoff's seven. The receipt: it accounts for every pixel the save changed. Run
+    both against the installed 0.30.0 plugin before any plugin edit: the drift check must PASS
+    and the receipt check FAIL at its own step. A drift check that fails means the case did not
+    reproduce, and P1 stops to say so.
   - A plugin-core test with a stale projection, through the fake's `render` and `projection`
     (`tests/fixtures/fake_krita.py:118-121`, `_redraw` at `:386`), failing on today's code.
   - Settle the intake's hypothesis: read the grouped case's paint layer itself (`krita_capture`,
@@ -65,13 +68,19 @@ step 9.
     colour under alpha 0. Record it as a K-row (K55 is next) whatever it shows.
 - **The receipt** (decisions 1–3).
   - `bridge_core/saving.py` `write` (`:140-155`): inside the existing `unmasked_view`, read the
-    composite before `port.refresh`, and compare it with the composite after, in bands. Add a pure
-    helper to `bridge_core/verification.py`, beside `changes()`, that also counts the pixels with
-    alpha above 0 on either side. Drop the before-read once compared: a canvas is up to
-    8192² × 4 bytes (`_check_size`).
+    composite before `port.refresh`, and compare it with the composite after. `write` already
+    reads the whole composite after the export to hash it (`:155`), and the export does not move
+    the projection, so one read after the refresh serves both the compare and the hash. Add a
+    pure helper to `bridge_core/verification.py`, beside `changes()`, that also counts the pixels
+    with alpha above 0 on either side. A canvas is up to 8192² × 4 bytes (`_check_size`), so never
+    hold more than the two reads at once, and drop the first once compared; if that is too much
+    at 8192², compare band by band through `composite_rects`.
   - The save's result and receipt gain `recompose {changed_px, visible_changed_px,
-    changed_bounds_px}`; `Pending.receipt` carries it to the finish. The duplicate goes through
-    `write`, so it carries it too.
+    changed_bounds_px}`; `Pending.receipt` carries it to the finish.
+  - The duplicate's receipt is not the finish's: `document.duplicate_open` builds it
+    (`bridge_core/branching.py:80`) from a `Placed`, which the finish makes from the pending save
+    (`saving.py:261`) and which keeps only the path, the hash and the inheritance. `Placed` carries
+    `recompose` from the save, and the open's result returns it.
   - Server: `tools/saving.py` `SAVE_DATA` and the receipt's text (a count, only when not zero);
     `tools/branching.py` `DUPLICATE_DATA`; both output schemas, the field required, with
     descriptions that state the contract. `composite_preserved` is byte-exact against the document
@@ -92,10 +101,11 @@ step 9.
   - the helper: changes under alpha 0 only, visible changes, none, an empty rect, a band boundary;
   - a save over a stale projection reports what the recompose changed and still compares
     byte-exact; a save over a current one reports zeros;
-  - the duplicate carries it, and the finish's receipt carries the save's;
+  - the duplicate's open returns it from its `Placed`, and the finish's receipt carries the
+    save's;
   - both tools' server receipts, and each schema's example.
 - `probe`, on the owner's yes with the Codex agent paused:
-  - the reproduction FAILs before the fix;
+  - before the fix, the drift check PASSes and the receipt check FAILs;
   - after `install-plugin` and a Krita restart at 0 unsaved, it PASSes: the receipt's counts
     equal the probe's own diff of its captures before and after the save, the capture after the
     save equals the reopened one byte for byte, and the control reports 0 while it holds colour
@@ -125,10 +135,12 @@ taper's rules), *The server*, *The tool contract*, *Testing strategy*; `USER-GUI
 dynamics, the transform section and *What it cannot do*; `docs/BACKLOG.md`; P1's done-note.
 
 - **Tests first** (decision 4), each failing on today's code where it should:
-  - for `size` and for `opacity`, each alone: 16 knots paint and 17 are refused; 1 knot, a first
-    `at` other than 0, a last `at` other than 1, an `at` that falls, and two knots under 0.001
-    apart are each refused. Both sides, through `refused_alike` in `tests/test_parity.py`, which
-    today holds `knots-start` and `knots-apart`, and `too-many-knots` for size alone;
+  - for `size` and for `opacity`, each alone: 17 knots, 1 knot, a first `at` other than 0, a
+    last `at` other than 1, an `at` that falls, and two knots under 0.001 apart are each refused,
+    on both sides, through `refused_alike` in `tests/test_parity.py`, which today holds
+    `knots-start` and `knots-apart`, and `too-many-knots` for size alone;
+  - 16 knots, for each option, pass the server's rules and the plugin's `dynamics.check` alike:
+    tests of their own, since `refused_alike` asserts that both sides refuse;
   - the 17-knot refusal has a null `operation_id`, reads `not_applied`, writes no journal line,
     and sends nothing to the bridge;
   - its message names the field, the count and the cap, within `MAX_MESSAGE_CHARS`.

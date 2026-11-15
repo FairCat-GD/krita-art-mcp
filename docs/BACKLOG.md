@@ -57,8 +57,10 @@ commit: `git show 40c7491:docs/spec/SESSIONS.md`, and likewise
     the pressure off a batch.
   - **Re-measured at the round 3 intake,** from one day's journal on 0.30.0, where the Codex agent
     ran a scratch study on the construction tools: 88 calls with their times. Inside the server a
-    fill took a median of 146 ms, a stroke 136 ms, a layer create 50 ms and a save 124 ms, where
-    the agent's client saw about 3 s each. The time is still the client's. Timing the server's
+    fill took a median of 146 ms, a stroke 136 ms and a layer create 50 ms, where the agent's
+    client saw about 3 s each; a save took 124 ms inside the server and about 110 ms at the client.
+    The time is still the client's, and the save, the one the client reports fast, points again at
+    its review of each call. Timing the server's
     share by stage (dispatch, paint, projection, verification, transport), as the agent suggested,
     matters only once that share grows.
 - **Wrap authoring and a tiled preview.** Left out at the round 2 intake: Phase 5 owns tiling, and

@@ -75,8 +75,9 @@ recorded calls, none on the owner's production art, which its own checks found u
   `_short` cuts it at 200 characters, before "is too long". The cap is in the user guide, not in
   `limits` or the field's description.
 - **Latency.** For that day's calls, the journal gives medians inside the server of 146 ms a fill,
-  136 ms a stroke, 50 ms a layer create and 124 ms a save, where the agent's client saw about 3 s.
-  The time is the client's, as the batch item in the backlog already says.
+  136 ms a stroke and 50 ms a layer create, where the agent's client saw about 3 s each. A save
+  took 124 ms inside the server and about 110 ms at the client. The time is the client's, as the
+  batch item in the backlog already says.
 - **`refuse` after a verified save** is documented alike in the guide (step 10) and the close
   tool's description: it closes while nothing changed since, though Krita's flag stays set.
 - **Transform order** is in `krita_layer_transform`'s description, not in the capability matrix.
