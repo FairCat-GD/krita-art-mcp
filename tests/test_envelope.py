@@ -6,6 +6,7 @@ from typing import Any
 import bridge_core
 import pytest
 from bridge_core import affine as bridge_affine
+from bridge_core import capabilities as bridge_capabilities
 from bridge_core import documents as bridge_documents
 from bridge_core import dynamics as bridge_dynamics
 from bridge_core import errors as bridge_errors
@@ -160,6 +161,12 @@ def test_the_plugins_bounds_are_the_schemas_limits() -> None:
             bridge_dynamics.MIN_KNOTS,
             bridge_dynamics.MAX_KNOTS,
         )
+    assert observe.LIMITS["dynamics_knots"] == {
+        "min": bridge_dynamics.MIN_KNOTS,
+        "max": bridge_dynamics.MAX_KNOTS,
+    }
+    cap = f"{bridge_dynamics.MIN_KNOTS} to {bridge_dynamics.MAX_KNOTS} knots"
+    assert cap in stroke["dynamics"]["description"]
     for tool_name in ("krita_layer_create", "krita_layer_duplicate"):
         name = schemas.load(tool_name)["inputSchema"]["properties"]["name"]
         assert name["maxLength"] == bridge_layers.MAX_NAME
@@ -168,6 +175,12 @@ def test_the_plugins_bounds_are_the_schemas_limits() -> None:
     assert tuple(render["overlays"]["items"]["enum"]) == bridge_previews.OVERLAYS
     assert tuple(sheets.OVERLAY_RGB) == bridge_previews.OVERLAYS
     assert tool_preview.MAX_PREVIEW_PIXELS == bridge_previews.MAX_PREVIEW_PIXELS
+
+
+def test_the_server_info_example_carries_the_shipped_matrix_and_limits() -> None:
+    example = schemas.load("krita_server_info")["example"]["structuredContent"]["data"]
+    assert example["capabilities"] == bridge_capabilities.matrix()
+    assert example["limits"] == observe.LIMITS
 
 
 def test_a_cancelled_call_is_retryable_alike_on_both_sides() -> None:

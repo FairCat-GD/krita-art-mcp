@@ -196,6 +196,25 @@
                     "description": "A stroke's on-curve points may lie off the canvas by up to this times brush.size_px. Control points may lie anywhere, and a brush's reach can be wider.",
                     "type": "number",
                     "exclusiveMinimum": 0
+                  },
+                  "dynamics_knots": {
+                    "description": "How many knots each of krita_paint_stroke's dynamics.size and dynamics.opacity takes.",
+                    "type": "object",
+                    "properties": {
+                      "min": {
+                        "type": "integer",
+                        "minimum": 1
+                      },
+                      "max": {
+                        "type": "integer",
+                        "minimum": 1
+                      }
+                    },
+                    "required": [
+                      "min",
+                      "max"
+                    ],
+                    "additionalProperties": false
                   }
                 },
                 "required": [
@@ -205,7 +224,8 @@
                   "capture_source_pixels",
                   "brush_size_px",
                   "resource_page_size",
-                  "stroke_overhang_size_fraction"
+                  "stroke_overhang_size_fraction",
+                  "dynamics_knots"
                 ],
                 "additionalProperties": false
               },
@@ -476,6 +496,25 @@
                   "description": "A stroke's on-curve points may lie off the canvas by up to this times brush.size_px. Control points may lie anywhere, and a brush's reach can be wider.",
                   "type": "number",
                   "exclusiveMinimum": 0
+                },
+                "dynamics_knots": {
+                  "description": "How many knots each of krita_paint_stroke's dynamics.size and dynamics.opacity takes.",
+                  "type": "object",
+                  "properties": {
+                    "min": {
+                      "type": "integer",
+                      "minimum": 1
+                    },
+                    "max": {
+                      "type": "integer",
+                      "minimum": 1
+                    }
+                  },
+                  "required": [
+                    "min",
+                    "max"
+                  ],
+                  "additionalProperties": false
                 }
               },
               "required": [
@@ -485,7 +524,8 @@
                 "capture_source_pixels",
                 "brush_size_px",
                 "resource_page_size",
-                "stroke_overhang_size_fraction"
+                "stroke_overhang_size_fraction",
+                "dynamics_knots"
               ],
               "additionalProperties": false
             },
@@ -583,8 +623,8 @@
       "operation_id": null,
       "data": {
         "session_id": "3f2a9c41d7e84b0c9a61f2d5c8e07b13",
-        "server_version": "0.31.0",
-        "plugin_version": "0.31.0",
+        "server_version": "0.32.0",
+        "plugin_version": "0.32.0",
         "protocol": 1,
         "krita_version": "5.3.4",
         "qt_major": 5,
@@ -612,22 +652,22 @@
           "layer.translate": {
             "supported": true,
             "since": "0.27.0",
-            "notes": "Paint layers and groups moved by whole pixels through a transform mask on top of their masks: the layer's own pixels never change, Krita's undo takes back the mask's attach and each move, verified against protection and undone on a leak. A KRA keeps it; an ORA drops it, so its save is refused."
+            "notes": "Paint layers and groups moved by whole pixels through a transform mask on top of their masks: the layer's own pixels never change, Krita's undo takes back the mask's attach and each move, verified against protection and undone on a leak. A KRA keeps it; an ORA drops it, so its save is refused. Order: copy the layer first to keep it; scale, rotate or shear before adding masks or translating; translate last."
           },
           "layer.scale": {
             "supported": true,
             "since": "0.28.0",
-            "notes": "A paint layer, or a group of paint layers and groups, scaled to a whole-pixel size about its bounds' centre with one of Krita's eight filters (Node.scaleNode): its pixels are resampled, in one undo step, verified against protection and undone on a leak."
+            "notes": "A paint layer, or a group of paint layers and groups, scaled to a whole-pixel size about its bounds' centre with one of Krita's eight filters (Node.scaleNode): its pixels are resampled, in one undo step, verified against protection and undone on a leak. Order: copy the layer first to keep it; scale, rotate or shear before adding masks or translating; translate last."
           },
           "layer.rotate": {
             "supported": true,
             "since": "0.28.0",
-            "notes": "A paint layer, or a group of paint layers and groups, turned by degrees about its bounds' centre, Bicubic (Node.rotateNode): its pixels are resampled, in one undo step, verified against protection and undone on a leak."
+            "notes": "A paint layer, or a group of paint layers and groups, turned by degrees about its bounds' centre, Bicubic (Node.rotateNode): its pixels are resampled, in one undo step, verified against protection and undone on a leak. Order: copy the layer first to keep it; scale, rotate or shear before adding masks or translating; translate last."
           },
           "layer.shear": {
             "supported": true,
             "since": "0.28.0",
-            "notes": "A paint layer, or a group of paint layers and groups, sheared by degrees on x and y about its bounds' centre, Bilinear (Node.shearNode): its pixels are resampled, in one undo step, verified against protection and undone on a leak."
+            "notes": "A paint layer, or a group of paint layers and groups, sheared by degrees on x and y about its bounds' centre, Bilinear (Node.shearNode): its pixels are resampled, in one undo step, verified against protection and undone on a leak. Order: copy the layer first to keep it; scale, rotate or shear before adding masks or translating; translate last."
           },
           "stroke.per_point_input": {
             "supported": false,
@@ -685,7 +725,11 @@
             "max": 1000
           },
           "resource_page_size": 100,
-          "stroke_overhang_size_fraction": 0.5
+          "stroke_overhang_size_fraction": 0.5,
+          "dynamics_knots": {
+            "min": 2,
+            "max": 16
+          }
         },
         "allowed_roots": [
           "/projects/demo"

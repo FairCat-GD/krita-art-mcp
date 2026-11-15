@@ -1,6 +1,6 @@
 # krita-art-mcp — architecture, as built
 
-This is the system as it stands at 0.31.0, in round 3, on the round 2 release. Every session
+This is the system as it stands at 0.32.0, the round 3 release. Every session
 keeps it true, in the same commit as the change. Each section stands on its own: a session reads
 the overview, the invariants and the baseline, then only the sections its work touches.
 `docs/USER-GUIDE.md` is the same system from the user's side.
@@ -263,7 +263,8 @@ handle field were added, so it stays. At 0.27.0 a tool and the layers' `translat
 and a duplicate refuses a layer holding a transform mask, a new refusal, so it stays. At 0.28.0
 `krita_layer_transform` took three operations, each with a receipt shape of its own beside the
 translate's, so it stays. At 0.31.0 the save and the duplicate added `recompose`, and
-`composite_preserved` kept its meaning, so it stays.
+`composite_preserved` kept its meaning, so it stays. At 0.32.0 `limits` added `dynamics_knots`
+and a list's length error was reworded, so it stays.
 
 **A receipt the journal replays is checked against today's schema.** A retry inside the journal's
 7-day window answers from the stored receipt, so a receipt written before an output field became
@@ -334,9 +335,9 @@ an input passes through and its TypeScript renderer, from `rust-v0.166.0` (the s
 2026-11-04), and renders Codex's own test case as Codex's test expects. For every tool,
 `test_codex_shows_every_input_and_output_whole` holds:
 - the normalised input at most 5,000 bytes, past which Codex strips descriptions and then deeper
-  shapes (the largest is `krita_paint_stroke`'s, 4,378);
+  shapes (the largest is `krita_paint_stroke`'s, 4,386);
 - the rendered input at most 16,000 bytes, past which it becomes `unknown`, and with no `unknown`
-  in it (the largest is `krita_paint_stroke`'s, 2,941);
+  in it (the largest is `krita_paint_stroke`'s, 2,949);
 - the rendered output at most 16,000 bytes and not `unknown` (the largest is
   `krita_layer_transform`'s, 4,975).
 
@@ -347,7 +348,9 @@ agent reads one by filtering for it.
 **Argument errors name every problem,** up to `MAX_REPORTED_PROBLEMS` (50). The message joins them,
 `details.errors` lists them and `details.omitted` counts the rest. Fields take turns over the cap, so
 one repeated mistake cannot hide another; the cap keeps an answer well under Claude Code's 25,000
-tokens (C4). A forbidden field reads "not allowed with these arguments".
+tokens (C4). A forbidden field reads "not allowed with these arguments", and a list of the wrong
+length reads as its count and bound ("has 17 items, and takes at most 16"), since jsonschema quotes
+the list first and `MAX_MESSAGE_CHARS` would cut the bound off.
 
 **A number no double holds is refused in one place.** mcp's parser reads `NaN`, `Infinity` and
 `1e400` as floats, and a number schema's bounds pass NaN. `_checked` walks every tool's arguments
@@ -364,17 +367,19 @@ schema, where a job ends at its first raise and each check reads what the one be
 document before the layer before the pixels.
 
 **Argument rules are written twice on purpose.** Each side trusts no caller, and a refusal the server
-makes carries no `operation_id`. Each pair is held by a parity test in `tests/test_parity.py`: 28
+makes carries no `operation_id`. Each pair is held by a parity test in `tests/test_parity.py`: 29
 today, from open's format, editable lists and mode to a capture's area, a layer's coverage, a
 fill's colour and area, a stroke's or fill's colour and mask paint, a taper's rules and its
 schema's own (the knot count, a knot's fields, a value's range, and naming neither option), a
 layer moved inside or above itself, a layer id in Krita's own form, a whole number sent as a
 float, a copy's name, a layer's name length, a removal's `verify`, a
 translate that moves nothing or past its range, and a scale, rotate or shear of nothing, past its
-schema's bounds, or of another type or field. `tests/support/parity.py`'s
+schema's bounds, or of another type or field. A taper's order rules are held for each option alone,
+and its knot count at 1 and 17; 16 knots, which `refused_alike` cannot hold since both sides take
+them, pass the schema, the server's rules and the plugin's in a parity test of their own. `tests/support/parity.py`'s
 `refused_alike` calls the tool, turns the server's half off, and calls again, so the server's own
 translation carries the same arguments to the plugin. Both must refuse with one code and one
-`retryable`, the plugin before its marker.
+`retryable`, the plugin before its marker. Their messages may differ.
 - **A rule in a named function** is switched off by name: a stroke's colour is `_brush_rules`, a
   fill's colour and area its `_fill_rules`, a move inside or above itself `reorder_rules`.
 - **A rule in the schema** is cut, by its path, from the schema a second server is built with:
@@ -456,8 +461,9 @@ it takes only `false`; erasing, when it comes, puts it back). Each now fails the
 `INVALID_ARGUMENT`. `krita_document_create`'s stay, since round 2 does not amend that schema.
 
 `limits.capture_pixels` in `krita_server_info` is reported and enforced by nothing but `max_px`'s
-schema maximum, of which it is the square. `brush_size_px`, `resource_page_size` and
-`stroke_overhang_size_fraction` are the plugin's own bounds, each held to its constant by a test;
+schema maximum, of which it is the square. `brush_size_px`, `resource_page_size`,
+`stroke_overhang_size_fraction` and `dynamics_knots` are the plugin's own bounds, each held to its
+constant by a test, and the last also to the stroke schema's `minItems` and `maxItems`;
 the overhang bounds on-curve points only, so a brush's reach can pass it.
 
 **The capability matrix** is the one place a later feature announces itself. False today:
@@ -465,7 +471,10 @@ the overhang bounds on-curve points only, so a brush's reach can pass it.
 presets have no seed), `operation.cancel_running`, `color_spaces`, `filters` (Phase 2), `animation`
 (Phase 5). True since 0.9.0: `stroke.native_brush`, `stroke.smoothing`, `selection.enforced`; since
 0.21.0, `paint.fill`; since 0.22.0, `mask.transparency`; since 0.24.0, `stroke.dynamics`; since
-0.27.0, `layer.translate`; since 0.28.0, `layer.scale`, `layer.rotate` and `layer.shear`.
+0.27.0, `layer.translate`; since 0.28.0, `layer.scale`, `layer.rotate` and `layer.shear`. The four
+transforms' notes end with one sentence, `capabilities.TRANSFORM_ORDER`: copy first, scale, rotate
+or shear before adding masks or translating, translate last. A test holds `krita_server_info`'s
+example to the plugin's matrix and the server's `limits`.
 
 **The instructions.** `instructions.py` is 3,371 of Claude Code's 4,096 characters (C4). A test
 holds at least 700 spare, the room the instruction lines of the tools still to come will need. It
@@ -1122,6 +1131,9 @@ lightness, and `erase` with white hides alike). The frame reads the target one b
 **A taper (`dynamics`).** A stroke's size and opacity along its arc length, through Krita's own
 Distance sensor (K51), on the pixel engine alone. `bridge_core/dynamics.py` is pure.
 - **Rules.** Each option is 2 to 16 knots `{at, value}`, at from 0 to 1 rising by 0.001 or more.
+  The cap is `dynamics.MIN_KNOTS` and `MAX_KNOTS`, announced in `limits.dynamics_knots` and the
+  field's description. A count past it is refused before dispatch by the schema, whose message
+  states the count and the bound; the plugin's states the count and the range.
   A taper needs `preset_sha256`, colour paint, and an arc length of 1 px or more. These are
   parity pairs with the server, which measures the arc the same way.
 - **Refused before any change.** A preset held after a failed restore is refused first, before
@@ -1466,7 +1478,7 @@ document, and fails the checks it overlaps. The stock presets `b) Basic-2 Opacit
 **The journal check comes last.** It is the live evidence that `uncertain` stays rare.
 - **What it reads.** Every line the probe's servers journaled, through the journal's own reader,
   so a line a later one settled counts as settled.
-- **When it fails.** On fewer than 340 dispatched lines, under half a whole run's 848, since that
+- **When it fails.** On fewer than 340 dispatched lines, under half a whole run's 864, since that
   means it read the wrong place. Or on any request left with an unknown attempt, which it names:
   uncertain, unregistered, or dispatched with no finished line.
 - **What it cannot see.** Reads, harness ops and the probe's own direct bridge calls, none of which
@@ -1762,7 +1774,7 @@ the code is shaped as it is.
   it. A Krita holding 87 documents ran document ops about three times slower, and left the paint
   benchmarks, the preview benchmark and H4 idle alone.
 
-## Baseline (v0.31.0)
+## Baseline (v0.32.0)
 
 Taken on 2026-11-15 on Krita 5.3.4.1, macOS, Apple Silicon, on a Krita restarted that session, with
 **0 documents open**. The probe prints the open-document count beside its time, because document ops
@@ -1771,9 +1783,9 @@ depend on it: 87 open documents cost about 50 s more.
 | Check | Expected |
 |---|---|
 | `uv run scripts/verify.py` | 6 stages, all PASS |
-| Server tests (3.12) | 1178 passed, 0 skipped |
-| Plugin-core tests (3.10) | 1235 passed, 0 skipped |
-| `uv run krita-art-mcp probe` | 235 PASS, 0 FAIL, 27 MEASURED; about 155 s |
+| Server tests (3.12) | 1195 passed, 0 skipped |
+| Plugin-core tests (3.10) | 1245 passed, 0 skipped |
+| `uv run krita-art-mcp probe` | 238 PASS, 0 FAIL, 27 MEASURED; about 155 s |
 | `uv run krita-art-mcp doctor` | 6 steps, all PASS, with a root allowed |
 | Registered tools | 25 |
 | Schema files | 25 |
@@ -1781,7 +1793,7 @@ depend on it: 87 open documents cost about 50 s more.
 | Bridge ops | 39 |
 | Bridge protocol; `api_version` | 1; 0.4.0 |
 | Capabilities | 17: 10 supported, 7 not |
-| Parity tests | 28 |
+| Parity tests | 29 |
 | Server instructions | 3,371 of 4,096 characters, at least 700 spare |
 | CLI commands | 5 |
 

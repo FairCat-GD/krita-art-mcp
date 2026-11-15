@@ -46,6 +46,14 @@ def test_the_capability_matrix_has_every_entry_in_its_shape() -> None:
             assert entry["since"] is None
 
 
+@pytest.mark.parametrize("name", ["layer.translate", "layer.scale", "layer.rotate", "layer.shear"])
+def test_each_transform_states_the_order_to_transform_in(name: str) -> None:
+    notes = capabilities.matrix()[name]["notes"]
+    assert capabilities.TRANSFORM_ORDER in notes
+    for step in ("copy", "scale, rotate or shear", "translate last"):
+        assert step in capabilities.TRANSFORM_ORDER
+
+
 def test_only_what_is_built_is_supported() -> None:
     supported = {name for name, entry in capabilities.matrix().items() if entry["supported"]}
     assert supported == {

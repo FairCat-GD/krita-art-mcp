@@ -100,6 +100,9 @@ recorded calls, none on the owner's production art, which its own checks found u
    not the server instructions, which have no room.
 6. **The fixed-versus-unverified report** goes into a reply file in the handoff's folder, outside
    the repository, and into the chat. The folder's path never enters the repository.
+
+   **Amended 2026-11-15 by the user, in G1.** The reply goes into the chat alone, with no file in
+   the handoff's folder: the owner chose it when G1 asked for the folder's path.
 7. **Fixtures are recipes.** The probe and the tests rebuild the handoff's cases from their sizes,
    polygons, colours and knot arrays. No file of the handoff, nor its path, enters the repository.
 8. **The sessions, in order:** P1 (0.31.0), the save's recompose; G1 (0.32.0), the knot limit,

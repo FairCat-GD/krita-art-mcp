@@ -296,7 +296,16 @@ def _said(problem: ValidationError) -> str:
     # A field a rule forbids is `{"not": {}}`, whose own message explains nothing.
     if problem.validator == "not" and problem.validator_value == {}:
         return "not allowed with these arguments"
+    # jsonschema quotes the list before its bound, so a long one would lose the bound.
+    if problem.validator in _LENGTHS and isinstance(problem.instance, list):
+        count = len(problem.instance)
+        held = f"{count} item" if count == 1 else f"{count} items"
+        bound = f"{_LENGTHS[problem.validator]} {problem.validator_value}"
+        return f"has {held}, and takes {bound}"
     return _short(problem.message)
+
+
+_LENGTHS = {"maxItems": "at most", "minItems": "at least"}
 
 
 def _client_name(ctx: Any) -> str | None:

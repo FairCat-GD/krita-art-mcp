@@ -41,8 +41,11 @@ def check(dynamics: Any, brush: dict[str, Any], path: dict[str, Any]) -> None:
 
 
 def _check_knots(knots: Any, field: str) -> None:
-    if not isinstance(knots, list) or not MIN_KNOTS <= len(knots) <= MAX_KNOTS:
+    if not isinstance(knots, list):
         _refuse(f"{field} holds {MIN_KNOTS} to {MAX_KNOTS} knots.", field)
+    if not MIN_KNOTS <= len(knots) <= MAX_KNOTS:
+        held = f"{len(knots)} knot" if len(knots) == 1 else f"{len(knots)} knots"
+        _refuse(f"{field} holds {held}, and takes {MIN_KNOTS} to {MAX_KNOTS}.", field)
     for knot in knots:
         if not isinstance(knot, dict) or set(knot) != KNOT_FIELDS:
             _refuse(f"Each knot of {field} is {{at, value}}.", field)

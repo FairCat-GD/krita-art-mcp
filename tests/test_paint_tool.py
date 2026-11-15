@@ -171,6 +171,29 @@ def test_the_schema_holds_a_taper_s_shape(
     assert content["error"]["code"] == "INVALID_ARGUMENT" and sent == []
 
 
+@pytest.mark.parametrize("option", ["size", "opacity"])
+@pytest.mark.parametrize(
+    ("count", "said"),
+    [(17, "has 17 items, and takes at most 16"), (1, "has 1 item, and takes at least 2")],
+    ids=["17-knots", "1-knot"],
+)
+def test_a_knot_count_past_the_cap_is_refused_with_the_count_and_the_cap(
+    world: World,
+    sent: list[tuple[str, dict[str, Any]]],
+    option: str,
+    count: int,
+    said: str,
+) -> None:
+    knots = _knots(*[index / max(count - 1, 1) for index in range(count)])
+    content = world.server().content("krita_paint_stroke", _tapered(**{option: knots}))
+    error = content["error"]
+    assert content["operation_id"] is None and error["code"] == "INVALID_ARGUMENT"
+    assert error["details"]["outcome"] == "not_applied"
+    assert error["message"] == f"/dynamics/{option}: {said}"
+    assert error["details"]["errors"] == [{"path": f"/dynamics/{option}", "message": said}]
+    assert sent == [] and _journal(world) == []
+
+
 def test_a_taper_reaches_the_op_with_both_options_named(
     world: World, sent: list[tuple[str, dict[str, Any]]]
 ) -> None:

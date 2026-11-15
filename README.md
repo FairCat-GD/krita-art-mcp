@@ -6,7 +6,7 @@ game size, and undo or keep it. It is for painted (non-pixel) 2D game art.
 
 ## What it does
 
-0.31.0 has 25 tools: looking at a painting, painting it, building and transforming its layers,
+0.32.0 has 25 tools: looking at a painting, painting it, building and transforming its layers,
 trying an alternative beside it, and saving the result.
 
 - **Works on a copy.** A document opens as a working copy with every existing layer protected, and

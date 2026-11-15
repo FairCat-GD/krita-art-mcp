@@ -118,8 +118,8 @@ The server gives every agent these rules as its instructions. This is the same l
 in order.
 
 **1. See what is there.** Call `krita_server_info` first, and do not plan around a capability marked
-`supported: false`. Its `limits` give the brush size range, the resource page size and how far a
-stroke may run past the canvas, and every field with a range or a unit states it in its schema
+`supported: false`. Its `limits` give the brush size range, the resource page size, how far a
+stroke may run past the canvas and how many knots a taper takes, and every field with a range or a unit states it in its schema
 `description`, which Codex shows its model where it drops `minimum` and `maximum`.
 `krita_document_list` shows what is open. Documents you opened by hand list as
 `read_only`, so an agent can read them and never change them.
@@ -218,6 +218,15 @@ by_px: [x, y]}` moves a paint layer or a group, with all it holds.
   and Krita's cumulative undo, which would merge two moves.
 - **Saving.** A KRA keeps the move and its mask. An ORA drops the transform mask, so the reopened
   file would show the layer unmoved, and the save is refused (`SAVE_VERIFY_FAILED`).
+
+**Transform in this order.** Each step refuses what a later one leaves behind, so the
+capability matrix's notes for `layer.translate`, `layer.scale`, `layer.rotate` and `layer.shear`
+give the same order:
+1. **Copy first** with `krita_layer_duplicate`, if you want the original kept: resampling loses
+   detail, and a translated layer cannot be copied.
+2. **Scale, rotate or shear** next, before you add masks or translate: neither is taken on a layer
+   holding a mask, and a transform mask is one.
+3. **Translate last.**
 
 **Scale, rotate or shear a layer.** `krita_layer_transform` with one of these operations resamples
 a paint layer, or a group with every layer in it, through Krita's own Layer > Transform, in one
@@ -318,7 +327,9 @@ changed on the canvas, and `layer_bounds_px` is the layer's whole extent, past i
 "dynamics": {"size": [{"at": 0, "value": 0.1}, {"at": 0.5, "value": 1}, {"at": 1, "value": 0.1}]}
 ```
 
-- **Knots.** `size` and `opacity` each take 2 to 16 knots. `at` is the fraction of the stroke's
+- **Knots.** `size` and `opacity` each take 2 to 16 knots, as `krita_server_info`'s
+  `limits.dynamics_knots` says. A list outside that is refused before anything is sent, with its
+  count and the limit: `/dynamics/size: has 17 items, and takes at most 16`. `at` is the fraction of the stroke's
   length, rising by at least 0.001, with the first knot at 0 and the last at 1. `value` is 0 to 1
   and multiplies `brush.size_px` or `brush.opacity` at that point, so a taper only ever thins or
   fades the brush you gave it: to swell, send the narrow width as `size_px` and raise the knots
@@ -467,7 +478,7 @@ Every failure returns `error: {code, message, retryable, details}`. The table gi
 
 | Code | Retryable | What it means | What to do |
 |---|---|---|---|
-| `INVALID_ARGUMENT` | no | The arguments break the schema or a rule, or hold a number that is not finite (NaN, Infinity, or one past a double's range). Also an undo past the last protection change, a redo of a rolled-back stroke, or a preset that does not exist (with the 5 nearest names) | Fix the call. A schema error names every problem, in the message and in `details.errors` |
+| `INVALID_ARGUMENT` | no | The arguments break the schema or a rule, or hold a number that is not finite (NaN, Infinity, or one past a double's range). A list of the wrong length says how many items it has and the bound it broke. Also an undo past the last protection change, a redo of a rolled-back stroke, or a preset that does not exist (with the 5 nearest names) | Fix the call. A schema error names every problem, in the message and in `details.errors` |
 | `UNSUPPORTED_CAPABILITY` | no | Not in this build or phase, the plugin cannot bound the change's reach, cumulative undo is on, or a save of a document not in sRGB | If `details` names a reach reason, use `verify: "full"`. Otherwise do without it |
 | `KRITA_NOT_RUNNING` | no | No live bridge | Follow the step in the message, or run `doctor` |
 | `PROTOCOL_MISMATCH` | no | The server and the plugin are different versions | Run `install-plugin` and restart Krita. If the plugin is the newer, restart the MCP client |
@@ -517,8 +528,8 @@ Every failure returns `error: {code, message, retryable, details}`. The table gi
 - **No per-point pressure, tilt or timing.** Every point paints at pressure 1, and such input is
   refused unless `input_fallback` is `flat`. Scripted strokes hold speed sensors constant, so of six
   stock presets tried, only `j) WaterC Basic Round-Grunge` tapers by itself, and only as it starts.
-  For a taper, give the stroke `dynamics`: size and opacity along its length, on the pixel brush
-  engine. It is not available on mask paint, and not while Krita's "save tweaks to presets
+  For a taper, give the stroke `dynamics`: size and opacity along its length, each from 2 to 16
+  knots, on the pixel brush engine. It is not available on mask paint, and not while Krita's "save tweaks to presets
   temporarily" setting is changed.
 - **The colour's alpha must be 1.** Transparency comes from the brush's `opacity` and `flow`.
 - **No erasing.** `eraser` takes only `false`.

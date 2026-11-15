@@ -253,6 +253,15 @@ def test_a_source_with_no_target_has_one_problem() -> None:
     assert [problem["path"] for problem in errors] == ["/sources/0"]
 
 
+def test_a_list_of_the_wrong_length_reads_as_its_count_and_bound() -> None:
+    # jsonschema's own message quotes the list first, and a long one is cut before its bound.
+    points = [[0, 0]] * 300
+    error = _refusal("krita_sample", {**_example("krita_sample"), "points": points})
+    assert error["message"] == "/points: has 300 items, and takes at most 256"
+    error = _refusal("krita_sample", {**_example("krita_sample"), "points": []})
+    assert error["message"] == "/points: has 0 items, and takes at least 1"
+
+
 def test_a_forbidden_field_is_refused_in_plain_words() -> None:
     arguments = {**_example("krita_document_open"), "mode": "read_only"}
     error = _refusal("krita_document_open", arguments)

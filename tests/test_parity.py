@@ -5,10 +5,12 @@ from typing import Any
 
 import pytest
 from bridge_core import documents
+from bridge_core import dynamics as bridge_dynamics
+from jsonschema import Draft202012Validator
 from parity import refused_alike
 from worlds import World, running_world
 
-from krita_art_mcp import roots, tools
+from krita_art_mcp import roots, schemas, tools
 from krita_art_mcp.tools import branching, changes, painting, pixels, saving
 from krita_art_mcp.tools import documents as documents_tools
 from krita_art_mcp.tools.observe import LIMITS
@@ -302,20 +304,34 @@ def test_both_sides_refuse_a_nearly_flat_closed_curve(
 
 
 TAPER = [{"at": 0, "value": 0.2}, {"at": 1, "value": 1}]
+OPTIONS = ("size", "opacity")
+
+
+def _knots(*at: float) -> list[dict[str, float]]:
+    return [{"at": value, "value": 1} for value in at]
+
+
+# Each of the order rules, for each option alone.
+KNOT_ORDER = {
+    "start": _knots(0.2, 1),
+    "end": _knots(0, 0.9),
+    "falls": _knots(0, 0.6, 0.4, 1),
+    "apart": _knots(0, 0.0004, 1),
+}
 
 
 @pytest.mark.parametrize(
     ("dynamics", "brush"),
     [
-        ({"size": [{"at": 0.2, "value": 1}, {"at": 1, "value": 1}]}, {}),
-        (
-            {"opacity": [{"at": 0, "value": 1}, {"at": 0.0004, "value": 1}, {"at": 1, "value": 1}]},
-            {},
-        ),
+        *[({option: knots}, {}) for option in OPTIONS for knots in KNOT_ORDER.values()],
         ({"size": TAPER}, {"preset_sha256": None}),
         ({"size": TAPER}, {"color": None, "mask": "reveal"}),
     ],
-    ids=["knots-start", "knots-apart", "no-sha", "mask-paint"],
+    ids=[
+        *[f"{option}-{name}" for option in OPTIONS for name in KNOT_ORDER],
+        "no-sha",
+        "mask-paint",
+    ],
 )
 def test_both_sides_hold_a_taper_s_rules(
     world: World,
@@ -405,35 +421,69 @@ def _ids(tool: str, document_id: str) -> dict[str, Any]:
 
 
 DYNAMICS = ("inputSchema", "properties", "dynamics")
-SEVENTEEN = [{"at": index / 16, "value": 1} for index in range(17)]
+SIXTEEN = _knots(*[index / 15 for index in range(16)])
+SEVENTEEN = _knots(*[index / 16 for index in range(17)])
 
 
 @pytest.mark.parametrize(
-    ("dynamics", "cut"),
+    ("dynamics", "cut", "rule"),
     [
-        ({"size": SEVENTEEN}, (*DYNAMICS, "properties", "size", "maxItems")),
+        *[
+            ({option: SEVENTEEN}, (*DYNAMICS, "properties", option, "maxItems"), None)
+            for option in OPTIONS
+        ],
+        # The server's own rule refuses a short list too, so both its halves go off.
+        *[
+            (
+                {option: _knots(0)},
+                (*DYNAMICS, "properties", option, "minItems"),
+                (painting, "_dynamics_rules"),
+            )
+            for option in OPTIONS
+        ],
         (
             {"size": [{"at": 0, "value": 1, "extra": 1}, {"at": 1, "value": 1}]},
             (*DYNAMICS, "properties", "size", "items", "additionalProperties"),
+            None,
         ),
         (
             {"size": [{"at": 0, "value": 1.5}, {"at": 1, "value": 1}]},
             (*DYNAMICS, "properties", "size", "items", "properties", "value", "maximum"),
+            None,
         ),
-        ({}, (*DYNAMICS, "minProperties")),
+        ({}, (*DYNAMICS, "minProperties"), None),
     ],
-    ids=["too-many-knots", "knot-fields", "value-range", "neither-option"],
+    ids=[
+        *[f"{option}-17-knots" for option in OPTIONS],
+        *[f"{option}-1-knot" for option in OPTIONS],
+        "knot-fields",
+        "value-range",
+        "neither-option",
+    ],
 )
 def test_both_sides_hold_a_tapers_schema_rules(
     world: World,
     monkeypatch: pytest.MonkeyPatch,
     dynamics: dict[str, Any],
     cut: tuple[Any, ...],
+    rule: tuple[object, str] | None,
 ) -> None:
     arguments = _stroke(_document(world), preset_sha256="e" * 64)
     arguments["dynamics"] = dynamics
-    refused = refused_alike(world, monkeypatch, "krita_paint_stroke", arguments, schema=cut)
+    refused = refused_alike(world, monkeypatch, "krita_paint_stroke", arguments, rule, schema=cut)
     assert refused["details"]["field"].startswith("dynamics")
+
+
+@pytest.mark.parametrize("option", OPTIONS)
+def test_both_sides_take_sixteen_knots(option: str) -> None:
+    # refused_alike wants both sides to refuse, so the cap's own edge is held here.
+    arguments = _stroke("doc-1", preset_sha256="e" * 64)
+    arguments["dynamics"] = {option: SIXTEEN}
+    schema = schemas.load("krita_paint_stroke")["inputSchema"]
+    assert Draft202012Validator(schema).is_valid(arguments)
+    op_args = painting.stroke_op(arguments)
+    assert isinstance(op_args, dict), op_args
+    bridge_dynamics.check(op_args["dynamics"], op_args["brush"], op_args["path"])
 
 
 def test_both_sides_want_a_taper_at_least_a_pixel_long(

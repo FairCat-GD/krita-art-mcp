@@ -6,6 +6,29 @@ All notable changes to krita-art-mcp are documented here. The format follows
 
 ## [Unreleased]
 
+## [0.32.0] — 2026-11-15
+
+A taper with too many knots now says so plainly, and the limit and the order to transform in are
+where an agent looks first. Update with `install-plugin`, restart Krita, then restart your MCP
+client.
+
+### Added
+
+- **`limits.dynamics_knots` in `krita_server_info`.** It gives the 2 to 16 knots each of a
+  stroke's `dynamics.size` and `dynamics.opacity` takes, and the `dynamics` field's description now
+  says the same.
+- **The order to transform in, in the capability matrix.** The notes of `layer.translate`,
+  `layer.scale`, `layer.rotate` and `layer.shear` end with it: copy the layer first to keep it;
+  scale, rotate or shear before adding masks or translating; translate last.
+
+### Changed
+
+- **A list of the wrong length says its count and its bound.** A 17-knot taper used to be refused
+  with a message that quoted the start of the list and was cut off before saying what was wrong;
+  it now reads `/dynamics/size: has 17 items, and takes at most 16`. This holds for every list in
+  every tool, such as a sample's `points`. It is still refused before anything is sent, and
+  nothing is painted.
+
 ## [0.31.0] — 2026-11-15
 
 A save now says what its own recompose changed in the live document. Update with

@@ -13,10 +13,11 @@ LIMITS: dict[str, Any] = {
     # The largest area one capture reads, a whole 8k master; the plugin holds an equal copy.
     "capture_source_pixels": 8192 * 8192,
     "wait_budget_seconds": int(WAIT_BUDGET_S),
-    # The plugin enforces these three; a test holds each to its constant there.
+    # The plugin enforces these four; a test holds each to its constant there.
     "brush_size_px": {"min": 1, "max": 1000},
     "resource_page_size": 100,
     "stroke_overhang_size_fraction": 0.5,
+    "dynamics_knots": {"min": 2, "max": 16},
 }
 RESOURCE_DATA = ("kind", "total", "resources", "next_cursor")
 # The blend modes paint calls accept, as Krita's composite-op ids (K21); the plugin holds an equal

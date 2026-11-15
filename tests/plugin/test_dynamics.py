@@ -97,6 +97,29 @@ def test_a_taper_that_keeps_the_rules_passes() -> None:
     dynamics.check(None, {"preset_sha256": None, "mask": "hide"}, PATH)
 
 
+def _even(count: int) -> list[dict[str, float]]:
+    return [{"at": index / max(count - 1, 1), "value": 1} for index in range(count)]
+
+
+@pytest.mark.parametrize("option", ["size", "opacity"])
+def test_sixteen_knots_pass_for_either_option(option: str) -> None:
+    taper = {"size": None, "opacity": None, option: _even(16)}
+    dynamics.check(taper, BRUSH, PATH)
+
+
+@pytest.mark.parametrize("option", ["size", "opacity"])
+@pytest.mark.parametrize("count", [1, 17])
+def test_a_knot_count_past_the_cap_says_the_count_and_the_cap(option: str, count: int) -> None:
+    taper = {"size": None, "opacity": None, option: _even(count)}
+    with pytest.raises(BridgeError) as raised:
+        dynamics.check(taper, BRUSH, PATH)
+    body = raised.value.body
+    assert body["code"] == "INVALID_ARGUMENT"
+    assert body["details"]["field"] == f"dynamics.{option}"
+    plural = "knot" if count == 1 else "knots"
+    assert body["message"] == f"dynamics.{option} holds {count} {plural}, and takes 2 to 16."
+
+
 def test_an_arc_length_follows_the_curve_and_a_line_is_exact() -> None:
     # A half circle of radius 10 from two cubics, against pi * r.
     k = 4 * (2**0.5 - 1) / 3 * 10

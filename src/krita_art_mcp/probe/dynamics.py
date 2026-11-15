@@ -162,6 +162,7 @@ async def run(
         tapers = Tapers(a, document_id, data["root_layer_id"], preset)
         await _widths_and_alpha(report, tapers)
         _receipts(report, tapers)
+        await _knot_cap(report, tapers)
         after = await _preset_state(a, client, document_id, preset)
         report.check(
             "after the tapers, their preset's listed hash and dirty flag are as before",
@@ -181,6 +182,14 @@ async def _capability(report: Report, a: Client) -> None:
         "the capability matrix marks stroke.dynamics supported since 0.24.0",
         entry.get("supported") is True and entry.get("since") == "0.24.0",
         str(entry),
+    )
+    knots = (data.get("limits") or {}).get("dynamics_knots")
+    options = schemas.load(TOOL)["inputSchema"]["properties"]["dynamics"]["properties"]
+    bounds = [{"min": options[key]["minItems"], "max": options[key]["maxItems"]} for key in options]
+    report.check(
+        "limits.dynamics_knots is 2 to 16, each option's bounds in the stroke's schema",
+        knots == {"min": 2, "max": 16} and all(bound == knots for bound in bounds),
+        f"{knots}, schema {bounds}",
     )
 
 
@@ -280,6 +289,51 @@ def _receipts(report: Report, tapers: Tapers) -> None:
         "each taper's receipt matches its schema and states the sensor length Krita took",
         len(tapers.receipts) == 5 and not problems,
         f"{len(tapers.receipts)} receipts, {problems}",
+    )
+
+
+def _even(count: int) -> list[dict[str, float]]:
+    return _knots(*[(index / (count - 1), 0.4 + 0.6 * (index % 2)) for index in range(count)])
+
+
+async def _knot_cap(report: Report, tapers: Tapers) -> None:
+    # Outside Tapers.paint, so the receipt count above stays the five tapers it checks.
+    a, document_id = tapers.a, tapers.document_id
+    layer = await add_layer(a, document_id, tapers.root, "dynamics 16 knots")
+    if layer is None:
+        report.check("the knot cap's layer is made", False)
+        return
+    brush = brush_args(tapers.preset, size_px=SIZE)
+    sixteen = await tool(
+        a, TOOL, stroke_args(document_id, layer, brush, _line(LONG), dynamics={"size": _even(16)})
+    )
+    painted = await capture(a, document_id, WHOLE, "layer", layer)
+    taper = ((sixteen.get("data") or {}).get("effective_brush") or {}).get("dynamics") or {}
+    report.check(
+        "a 16-knot taper paints, and its receipt carries all 16 knots",
+        sixteen.get("status") == "completed"
+        and len(taper.get("size") or []) == 16
+        and painted is not None
+        and bool(painted[..., 3].any()),
+        f"{sixteen.get('status')}, {code(sixteen)}",
+    )
+    before = await capture(a, document_id, WHOLE)
+    refused = await tool(
+        a, TOOL, stroke_args(document_id, layer, brush, _line(LONG), dynamics={"size": _even(17)})
+    )
+    after = await capture(a, document_id, WHOLE)
+    error = refused.get("error") or {}
+    report.check(
+        "a 17-knot taper is refused before dispatch with its count and the cap, the canvas "
+        "unchanged",
+        code(refused) == "INVALID_ARGUMENT"
+        and refused.get("operation_id") is None
+        and (error.get("details") or {}).get("outcome") == "not_applied"
+        and error.get("message") == "/dynamics/size: has 17 items, and takes at most 16"
+        and before is not None
+        and after is not None
+        and np.array_equal(before, after),
+        f"{code(refused)}: {error.get('message')}",
     )
 
 

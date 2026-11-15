@@ -252,3 +252,57 @@ dynamics, the transform section and *What it cannot do*; `docs/BACKLOG.md`; P1's
 - **A release restarts the MCP client too.** Tell the owner before the restart.
 - **The reply lives outside the repository,** so it may name what the repository cannot. Nothing
   from it comes back in.
+
+**Amended at plan time, with the owner (2026-11-15):** the reply goes into the chat alone, with no
+file in the handoff's folder; the owner chose it when asked for the folder's path. Decision 6
+carries the amendment beside itself in the feature file.
+
+**Done (2026-11-15, 0.32.0).**
+
+- **Decided with the owner in plan mode:**
+  - The reply in chat only (the amendment above), built from the feature file's summary of the
+    handoff; no handoff file was read.
+  - No adversarial plan review: nothing here reworks a heavily tested path.
+  - Live runs and a Krita restart at 0 unsaved documents, with the Codex agent paused.
+- **The message.** `tools/__init__.py` `_said` reads a `maxItems` or `minItems` problem on a list
+  as `has <n> items, and takes at most|at least <bound>`, for every tool; a 17-knot taper reads
+  `/dynamics/size: has 17 items, and takes at most 16`. The plugin's `_check_knots` says
+  `dynamics.size holds 17 knots, and takes 2 to 16.`; a value that is not a list keeps its old
+  wording.
+- **Discovery.** `limits.dynamics_knots {min: 2, max: 16}` in `observe.LIMITS` and the
+  server-info schema; the `dynamics` description says "2 to 16 knots". The four transforms'
+  capability notes end with `capabilities.TRANSFORM_ORDER`, and the guide has a *Transform in this
+  order* paragraph. The instructions are unchanged.
+- **Tests.** Parity: the four order rules for each option alone, 17 and 1 knots for each option,
+  and a new test that 16 knots pass the schema, `stroke_op` and the plugin's `check`. The server's
+  message on a 17- and a 1-knot taper for each option, before the journal and the bridge, and on a
+  sample's `points`; the plugin's message per option; `limits` and the description held to the
+  plugin's constants; the four notes; and, beyond the block, `krita_server_info`'s example held to
+  the plugin's matrix and the server's `limits`, since four notes changed and that copy had drifted
+  before.
+- **Probe:** three checks in `probe/dynamics.py`: `limits.dynamics_knots` against the schema's
+  bounds, a 16-knot taper that paints with all 16 knots in its receipt, and a 17-knot taper refused
+  before dispatch with its count and the cap, the composite unchanged.
+- **Amendments:**
+  - **The reply** (above).
+  - **The example guard,** added by the session (above).
+  - **The 1-knot parity case** proves less than it names: the plugin's ends rule also refuses one
+    knot, so lowering the plugin's minimum leaves that case passing. The plugin's message test, which
+    reads the count, holds the count rule. Found while planning.
+- **Measured** on 0.32.0, Krita 5.3.4.1, restarted this session, 0 documents open: a 17-knot taper's
+  refusal reads `/dynamics/size: has 17 items, and takes at most 16`; a 16-knot taper paints. The
+  journal check counted 864 dispatched lines a run, where the architecture still said 848; it says
+  864 now. H4's save 4.9 s.
+- **Falsified,** each once, each failing at its own test, the files restored byte for byte:
+  - the tests that failed on today's code before the fix (the server's message, the plugin's, the
+    sample's, `limits`, the description, the notes);
+  - the plugin skipping `opacity` (the six opacity parity cases), its ends rule reading only the
+    first knot (`end`), its gap rule taking a falling `at` (`falls`), its cap at 17 (`17-knots`) and
+    at 15 (the 16-knot tests on both sides); a note changed without its example;
+  - the plugin's 16-knot test first read `MAX_KNOTS` itself and passed at 15; it names 16 now and
+    fails at 15;
+  - the probe's three checks broken together: 235 PASS, 3 FAIL, exactly those.
+- **Numbers:** 1195 server tests (+17), 1245 plugin tests (+10), parity 29 (+1), probe 238 PASS
+  (+3), 0 FAIL, 27 MEASURED, 153 s with 0 documents open. 25 tools, 25 schema files, 30 error codes,
+  39 ops, 17 capabilities, instructions 3,371 characters, `api_version` 0.4.0. Codex's renderer:
+  the stroke's normalised input 4,386 of 5,000 bytes (+8). `doctor` 6 of 6.

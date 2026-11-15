@@ -1,5 +1,11 @@
 from typing import Any
 
+# One order for every transform, since each step refuses what a later one leaves behind.
+TRANSFORM_ORDER = (
+    "Order: copy the layer first to keep it; scale, rotate or shear before adding masks or "
+    "translating; translate last."
+)
+
 # The capability matrix agents adapt to. Each entry is true for this build: a capability is
 # supported only once it is built and tested, and `since` names the release that built it.
 _MATRIX: dict[str, tuple[bool, str | None, str]] = {
@@ -36,28 +42,29 @@ _MATRIX: dict[str, tuple[bool, str | None, str]] = {
         "Paint layers and groups moved by whole pixels through a transform mask on top of their "
         "masks: the layer's own pixels never change, Krita's undo takes back the mask's attach "
         "and each move, verified against protection and undone on a leak. A KRA keeps it; an "
-        "ORA drops it, so its save is refused.",
+        "ORA drops it, so its save is refused. " + TRANSFORM_ORDER,
     ),
     "layer.scale": (
         True,
         "0.28.0",
         "A paint layer, or a group of paint layers and groups, scaled to a whole-pixel size about "
         "its bounds' centre with one of Krita's eight filters (Node.scaleNode): its pixels are "
-        "resampled, in one undo step, verified against protection and undone on a leak.",
+        "resampled, in one undo step, verified against protection and undone on a leak. "
+        + TRANSFORM_ORDER,
     ),
     "layer.rotate": (
         True,
         "0.28.0",
         "A paint layer, or a group of paint layers and groups, turned by degrees about its "
         "bounds' centre, Bicubic (Node.rotateNode): its pixels are resampled, in one undo step, "
-        "verified against protection and undone on a leak.",
+        "verified against protection and undone on a leak. " + TRANSFORM_ORDER,
     ),
     "layer.shear": (
         True,
         "0.28.0",
         "A paint layer, or a group of paint layers and groups, sheared by degrees on x and y "
         "about its bounds' centre, Bilinear (Node.shearNode): its pixels are resampled, in one "
-        "undo step, verified against protection and undone on a leak.",
+        "undo step, verified against protection and undone on a leak. " + TRANSFORM_ORDER,
     ),
     "stroke.per_point_input": (
         False,
