@@ -1139,6 +1139,7 @@ The first release is the scaffold that the Phase 1 tools are built on.
   reports its version to the client; it offers no tools yet.
 - **`krita-art-mcp --version`.** It prints the installed version.
 
+[0.32.0]: https://github.com/FairCat-GD/krita-art-mcp/commit/2312d86ed08987779d6cedb8932d450a0f941a24
 [0.31.0]: https://github.com/FairCat-GD/krita-art-mcp/commit/e837ef7d6cfec707403376ff9625c7994933edd0
 [0.30.0]: https://github.com/FairCat-GD/krita-art-mcp/commit/40c74913f515a8797e72dbaa1e3bfed4a2ae32ea
 [0.29.0]: https://github.com/FairCat-GD/krita-art-mcp/commit/fa949c0c14a81cb7b71e90f81e8292ed59077c16

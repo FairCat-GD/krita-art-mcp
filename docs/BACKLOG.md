@@ -12,6 +12,8 @@ closed. Read its files from git history, at round 1's release commit:
 `REVIEW-2026-10-25.md` and `REVIEW-2026-10-30.md`. Round 2's left it the same way, at its release
 commit: `git show 40c7491:docs/spec/SESSIONS.md`, and likewise
 `FEATURE-recovery-and-construction.md`, `REVIEW-2026-11-06.md` and `REVIEW-2026-11-12.md`.
+Round 3's left it at its release commit too: `git show 2312d86:docs/spec/SESSIONS.md`, and
+likewise `FEATURE-save-recompose-and-knot-limit.md`.
 `docs/ARCHITECTURE.md`'s overview says what "the contract", "Phase N" and "review N" mean.
 
 ## Deferred
