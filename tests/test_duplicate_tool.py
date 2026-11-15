@@ -132,6 +132,11 @@ def test_a_duplicate_opens_a_branch_and_leaves_its_source_dirty(world: World) ->
         and data["sha256"] == hashlib.sha256(target.read_bytes()).hexdigest()
     )
     assert data["reopened_verified"] is True and data["baseline_untouched"] is True
+    assert data["recompose"] == {
+        "changed_px": 0,
+        "visible_changed_px": 0,
+        "changed_bounds_px": None,
+    }
     assert (data["source_dirty"], data["source_krita_modified"]) == (True, True)
     assert data["mode"] == "working_copy" and data["source_path"] == source["source_path"]
     listed = _listed(world)

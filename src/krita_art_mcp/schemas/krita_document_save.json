@@ -112,7 +112,63 @@
                 ]
               },
               "composite_preserved": {
-                "const": true
+                "const": true,
+                "description": "The reopened file's composite equals the live document's byte for byte, as the save left it: after its recompose."
+              },
+              "recompose": {
+                "type": "object",
+                "description": "What the save's recompose of Krita's projection, just before it writes, changed in the live document's composite: the pixels whose bytes differ, those of them with alpha above 0 before or after, and the rect around them (null when none). A capture taken before the save can differ from the file in these pixels, often colour under alpha 0. Nothing is cleaned.",
+                "properties": {
+                  "changed_px": {
+                    "type": "integer",
+                    "minimum": 0
+                  },
+                  "visible_changed_px": {
+                    "type": "integer",
+                    "minimum": 0
+                  },
+                  "changed_bounds_px": {
+                    "anyOf": [
+                      {
+                        "type": "object",
+                        "properties": {
+                          "x": {
+                            "type": "integer",
+                            "minimum": 0
+                          },
+                          "y": {
+                            "type": "integer",
+                            "minimum": 0
+                          },
+                          "width": {
+                            "type": "integer",
+                            "minimum": 1
+                          },
+                          "height": {
+                            "type": "integer",
+                            "minimum": 1
+                          }
+                        },
+                        "required": [
+                          "x",
+                          "y",
+                          "width",
+                          "height"
+                        ],
+                        "additionalProperties": false
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  }
+                },
+                "required": [
+                  "changed_px",
+                  "visible_changed_px",
+                  "changed_bounds_px"
+                ],
+                "additionalProperties": false
               },
               "expected_losses": {
                 "type": "array",
@@ -174,6 +230,7 @@
               "layers_preserved",
               "baseline_untouched",
               "composite_preserved",
+              "recompose",
               "expected_losses",
               "dirty",
               "krita_modified",
@@ -309,7 +366,63 @@
               ]
             },
             "composite_preserved": {
-              "const": true
+              "const": true,
+              "description": "The reopened file's composite equals the live document's byte for byte, as the save left it: after its recompose."
+            },
+            "recompose": {
+              "type": "object",
+              "description": "What the save's recompose of Krita's projection, just before it writes, changed in the live document's composite: the pixels whose bytes differ, those of them with alpha above 0 before or after, and the rect around them (null when none). A capture taken before the save can differ from the file in these pixels, often colour under alpha 0. Nothing is cleaned.",
+              "properties": {
+                "changed_px": {
+                  "type": "integer",
+                  "minimum": 0
+                },
+                "visible_changed_px": {
+                  "type": "integer",
+                  "minimum": 0
+                },
+                "changed_bounds_px": {
+                  "anyOf": [
+                    {
+                      "type": "object",
+                      "properties": {
+                        "x": {
+                          "type": "integer",
+                          "minimum": 0
+                        },
+                        "y": {
+                          "type": "integer",
+                          "minimum": 0
+                        },
+                        "width": {
+                          "type": "integer",
+                          "minimum": 1
+                        },
+                        "height": {
+                          "type": "integer",
+                          "minimum": 1
+                        }
+                      },
+                      "required": [
+                        "x",
+                        "y",
+                        "width",
+                        "height"
+                      ],
+                      "additionalProperties": false
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                }
+              },
+              "required": [
+                "changed_px",
+                "visible_changed_px",
+                "changed_bounds_px"
+              ],
+              "additionalProperties": false
             },
             "expected_losses": {
               "type": "array",
@@ -371,6 +484,7 @@
             "layers_preserved",
             "baseline_untouched",
             "composite_preserved",
+            "recompose",
             "expected_losses",
             "dirty",
             "krita_modified",
@@ -464,6 +578,11 @@
         "layers_preserved": true,
         "baseline_untouched": true,
         "composite_preserved": true,
+        "recompose": {
+          "changed_px": 0,
+          "visible_changed_px": 0,
+          "changed_bounds_px": null
+        },
         "expected_losses": [],
         "dirty": false,
         "krita_modified": true,

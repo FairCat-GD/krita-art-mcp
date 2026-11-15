@@ -5,13 +5,12 @@ Usage: uv run scripts/amend_schemas.py [--check]
 A tool's session edits its schema's input, the `data` under its output's properties, and its
 example. This script then writes the envelope, `guard` and `source` into every schema, copies
 each `data` into the completed rule, open's `layers` into inspect's and document_duplicate's,
-inspect's `protection` into document_duplicate's, layer_update's
+inspect's `protection` and save's `recompose` into document_duplicate's, layer_update's
 `verification` object into paint_stroke's and paint_fill's and its whole `verification` into
 layer_create's, layer_duplicate's, layer_reorder's, layer_remove's and layer_transform's, the
-stroke's colour into
-sample's `color` and the fill's, the stroke's mask paint into the fill's `mask`, selection_set's
-rect, ellipse and polygon shapes into the fill's, and the outcome values into operation_get's
-`outcome`, and formats the files.
+stroke's colour into sample's `color` and the fill's, the stroke's mask paint into the fill's
+`mask`, selection_set's rect, ellipse and polygon shapes into the fill's, and the outcome values
+into operation_get's `outcome`, and formats the files.
 With --check it changes nothing and exits 1 if any file would change.
 """
 
@@ -120,6 +119,10 @@ def amended(tools: dict[str, dict[str, Any]]) -> dict[str, dict[str, Any]]:
     duplicated["layers"] = copy.deepcopy(layers)
     duplicated["protection"] = copy.deepcopy(
         _data(tools["krita_document_inspect"])["properties"]["protection"]
+    )
+    # Its file is a save's, so it reports the save's recompose.
+    duplicated["recompose"] = copy.deepcopy(
+        _data(tools["krita_document_save"])["properties"]["recompose"]
     )
     # A stroke always reports its verification, so it takes only the object branch.
     checked = _data(tools["krita_layer_update"])["properties"]["verification"]["anyOf"][0]

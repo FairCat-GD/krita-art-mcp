@@ -1,6 +1,6 @@
 # krita-art-mcp — architecture, as built
 
-This is the system as it stands at 0.30.0, the release that closed round 2. Every session
+This is the system as it stands at 0.31.0, in round 3, on the round 2 release. Every session
 keeps it true, in the same commit as the change. Each section stands on its own: a session reads
 the overview, the invariants and the baseline, then only the sections its work touches.
 `docs/USER-GUIDE.md` is the same system from the user's side.
@@ -262,7 +262,8 @@ refusal it did not make before but no field or value changed, so it stays. At 0.
 handle field were added, so it stays. At 0.27.0 a tool and the layers' `translation_px` were added,
 and a duplicate refuses a layer holding a transform mask, a new refusal, so it stays. At 0.28.0
 `krita_layer_transform` took three operations, each with a receipt shape of its own beside the
-translate's, so it stays.
+translate's, so it stays. At 0.31.0 the save and the duplicate added `recompose`, and
+`composite_preserved` kept its meaning, so it stays.
 
 **A receipt the journal replays is checked against today's schema.** A retry inside the journal's
 7-day window answers from the stored receipt, so a receipt written before an output field became
@@ -277,7 +278,8 @@ is an open object.
 arguments; `ExactArguments` passes them through and the runner validates with Draft 2020-12.
 `scripts/amend_schemas.py` writes the shapes the files share (the envelope with its typed error,
 `guard`, `source`, the completed rule's copy of `data`, open's `layers` as inspect's and the
-duplicate's, inspect's `protection` as the duplicate's, the stroke's colour as
+duplicate's, inspect's `protection` and the save's `recompose` as the duplicate's, the stroke's
+colour as
 the sample's `color` and the fill's, the stroke's mask paint as the fill's `mask`, the selection's
 rect, ellipse and polygon as the fill's, layer_update's `verification` as the stroke's, the fill's
 and each layer op's, and the outcome values as operation_get's `outcome`) and formats them; a test
@@ -441,7 +443,7 @@ the round 2 intake for the schemas that round amends.
 | `krita_paint_fill` `effective_fill.preset_id` | `c)_Pencil-3_Large_4B.kpp` | Statement, kept: the preset every fill activates (K49) |
 | `krita_capture` `fresh` | `true` | No phase promises it; meaningful once reads can pin a revision (Phase 3) |
 | `krita_preview_render` `static_only`, `source_pixels_changed` | `true`, `0` | Statements, kept: a preview certifies no motion and writes nothing |
-| `krita_document_save` `reopened_verified`, `composite_preserved` | `true` | Statements, kept: any other outcome is an error |
+| `krita_document_save` `reopened_verified`, `composite_preserved` | `true` | Statements, kept: any other outcome is an error. `composite_preserved` is byte-exact against the document as the save left it, after its recompose; `recompose` reports what that moved |
 | `krita_paint_stroke` and `krita_paint_fill` `protected_pixels_changed`, `changed_outside_px`, `undo_steps` | `0`, `0`, `1` | Statements, kept: on a completed stroke or fill; a leak is an error |
 | `krita_protection_set` `composite_outside_mask`, `undo_steps` | `exact`, `0` | Statements, kept |
 | `krita_layer_update` `undoable` | `["blend_mode"]` or empty | Statement, kept (K22) |
@@ -694,7 +696,8 @@ its own (decision 12). `Document.clone()` is never used: it is not added to `Kis
   opens, shows and checks the file as the open does (`opening.opened`), and registers the branch
   last: the source's mode, the file as `path` and its hash as `opened_sha256`, the source's
   `source_*` fields (null for a created document's branch, so `baseline_untouched` keeps meaning),
-  a new `baseline_id`, an empty ledger, the caller's lease.
+  a new `baseline_id`, an empty ledger, the caller's lease. Its result carries the save's
+  `recompose`, which the finish kept in `Placed`.
 - **What it inherits is the tighter of the save's snapshot and the source now:** the union of the
   protected ids, kept to the branch's own nodes; the AND of the masks; each flag's OR. Protection
   drops a protected node that has gone from the source, so the snapshot keeps a rerun from
@@ -940,7 +943,9 @@ composite inside `unmasked_view`.
 **Check.** `check` works in bands of 2²⁰ pixels. Per pixel it makes a flags byte (1 changed, 2
 outside the mask, 4 alpha changed) from `int.from_bytes` XORs over strided slices and `translate`
 tables, and counts with `translate` and `count`: whole-buffer byte operations, never per-pixel Python.
-The checks are byte-exact, so a colour change under alpha 0 counts (see the backlog).
+The checks are byte-exact, so a colour change under alpha 0 counts (see the backlog). `drift`, the
+save's count of what its recompose moved, works the same way and skips a band whose bytes are
+equal.
 
 **The plugin computes the counts, the server makes the images,** so a second server that shares a
 retry still gets the counts. A pass sends before and after, up to 2048²; a refusal sends before and
@@ -1268,16 +1273,28 @@ Nothing lands unverified, and the document keeps pointing at its own file (K39).
 plugin ops, because the server must decode `mergedimage.png` and Krita has no Pillow.
 
 `document.save` checks the path and the space, and refuses a canvas of more than 8192² pixels,
-whatever its shape, with `UNSUPPORTED_CAPABILITY` before writing, since it reads the whole composite twice and every node
-unbanded. Inside `unmasked_view` it recomposes the projection, because after a stroke the projection
-can differ from a fresh recomposite of the same layers, then `exportImage`s to
-`<dir>/.<stem>.<token>.saving<ext>`. `False` is `BUSY`, with nothing left (K45). It reopens the
+whatever its shape, with `UNSUPPORTED_CAPABILITY` before writing, since it reads the whole composite
+twice live and once reopened, and every node unbanded. Inside `unmasked_view` it reads the composite,
+recomposes the projection, because after a change the projection can differ from a fresh
+recomposite of the same layers (K55), reads it again and hashes that, then `exportImage`s to
+`<dir>/.<stem>.<token>.saving<ext>`. Both reads are dropped before the export, so it holds no more
+than before. `False` is `BUSY`, with nothing left but the recompose (K45). It reopens the
 written file with `reopening.read_file`, shared with the lazy baseline, and compares. A mismatch
 removes the file and is `SAVE_VERIFY_FAILED`, with up to 20 mismatches. Otherwise an earlier
 unfinished save is dropped, last, so a save that fails leaves it as it was, and the handle keeps a
 `Pending` save, which takes over any folders the dropped one made. Each failure past the folder reports its cleanup, and reads `not_applied` only if
 nothing of the save stays. An export that moved the document reads `uncertain`, however clean its
 file.
+
+**What the recompose moved.** `verification.drift` compares the two reads: `recompose
+{changed_px, visible_changed_px, changed_bounds_px}`, the pixels whose bytes differ, those with
+alpha above 0 on either side, and the rect around them. It goes in the receipt, and in a `BUSY`
+refusal's `details`, since the refresh moved the live document before Krita refused; a retry then
+counts only its own, usually 0. Nothing is cleaned: `composite_preserved` stays byte-exact against
+the document as the recompose left it, so a capture taken before the save can differ from the file
+in exactly these pixels. An equal band of 2²⁰ pixels costs one compare, so a sparse drift on an
+8192² canvas takes about 0.2 s, and one in every band about 1.9 s. In the mask display mode, which
+nothing has measured, an overlay that left the projection late would count as drift.
 
 **What is compared.** Both formats: size, colour space, the composite. KRA: nodes by id, every `tree`
 field (the root's own id changes; a translate mask's move among them), and each node's own pixels over the union of both bounds. ORA: nodes
@@ -1461,7 +1478,7 @@ only those names. `~/Desktop` and `~/Downloads` are left out, because listing th
 permission prompt.
 
 **What the probe measures and does not gate.** A MEASURED line stays only if something rests on it
-and no check would notice it changing. The 25 lines:
+and no check would notice it changing. The 27 lines:
 
 | Lines | Why they stay |
 |---|---|
@@ -1474,6 +1491,7 @@ and no check would notice it changing. The 25 lines:
 | N-01 and N-09 opening the master, and their corner-to-corner strokes | Costs no budget gates; Krita's memory is on the backlog |
 | Retention after N-01; the journal after N-01 | Growth watches behind backlog items |
 | H4's long save, and the refused close after it | A save has no budget, and the close re-reads what the save compared |
+| The grouped save's drift, and the grouped layer's own pixels there | The case's first report named seven pixels; K55 rests on the layer read |
 
 A line can also appear as a skip: "paths outside every root" when a root covers them, or the tall tip
 when its preset is missing. The journal line takes the fastest of five lookups, because one read in
@@ -1620,6 +1638,7 @@ cite stay in the PDD, in git history.
 | K52 | `Node.remove()` runs one `KisImageLayerRemoveCommand` ("Remove Layer"), which takes each node of the subtree off its own parent and turns the removed layers' clones into paint layers, undone together; `addChildNode` runs one `KisImageLayerAddCommand` ("Add Layer"), above `above` or on top; `Node.duplicate()` clones the subtree with a new uuid for every node and pushes no step; `setName` and `setVisible` on a detached node push none | `libs/libkis/Node.cpp`; `libs/image/commands/kis_image_layer_remove_command.cpp`, `kis_image_layer_remove_command_impl.cpp`, `kis_image_layer_add_command.cpp`; `libs/image/kis_base_node.cpp`, `kis_node.cpp`; measured |
 | K53 | `TransformMask.fromXML` runs a `KisSimpleModifyTransformMaskCommand` under a bare `KUndo2Command` through `runSingleCommandStroke`, named after its empty text, and does not wait; a fresh mask holds the transform tool's free transform at identity; `toXML` writes attributes in a per-session hash order; an affine mask renders through its worker until a static cache rebuilt 3000 ms later; `KisRecalculateTransformMaskJob::run` uses its layer's image unchecked, and undoing the attach of a copied transform mask crashes Krita there | `libs/libkis/TransformMask.cpp`; `libs/image/kis_processing_applicator.cpp`; `libs/image/commands_new/KisSimpleModifyTransformMaskCommand.cpp`; `libs/image/kis_transform_mask.cpp`; `libs/image/kis_recalculate_transform_mask_job.cpp`; measured |
 | K54 | `Node.scaleNode(origin, w, h, strategy)` scales by w and h over the exact bounds' size about `origin`, taking an unknown strategy as Bicubic; `rotateNode(radians)` turns about the exact bounds' centre, Bicubic; `shearNode(degX, degY)` shears x then y about it, Bilinear, and pushes no step when `mapRect` keeps the bounds' size; each is one processing step ("Scale Layer", "Rotate Layer", "Shear Layer") that waits and returns silently for a mask; the visitor resamples every paint device and mask selection below, maps a transform mask's params, and moves the node's clones; rotate and shear move a layer's offset; a resample leaves colour under alpha 0 outside the exact bounds | `libs/libkis/Node.cpp:695-743`; `libs/image/kis_image.cc:1078-1340`; `libs/image/processing/kis_transform_processing_visitor.cpp`; `libs/image/kis_transform_worker.cc:59-67`; measured |
+| K55 | A group's projection, as Krita updates it after a fill on a layer inside, can hold `[0,0,0,0]` where that layer's own device holds colour under alpha 0; `refreshProjection` brings the layer's colour into the composite. A layer at the root shows its colour under alpha 0 in the composite as painted. In the grouped three-fill case all 7 pixels a save's recompose changed held the first fill's colour, `[103,97,118,0]`, in the layer itself | measured |
 | C1 | `mcp` 2.3.0: `FastMCP` is `MCPServer`; `Image` takes no `_meta`; a raised exception yields only "Error executing tool X" | Probed 2026-10-22 |
 | C2 | Codex passes MCP images to image-capable models and honours `codex/imageDetail` | openai/codex `codex-rs/core/src/mcp_tool_call.rs` |
 | C4 | Claude Code: output limit 25,000 tokens; instructions and descriptions truncated at 4,096 characters | code.claude.com/docs/en/mcp |
@@ -1741,18 +1760,18 @@ the code is shaped as it is.
   it. A Krita holding 87 documents ran document ops about three times slower, and left the paint
   benchmarks, the preview benchmark and H4 idle alone.
 
-## Baseline (v0.30.0)
+## Baseline (v0.31.0)
 
-Taken on 2026-11-13 on Krita 5.3.4.1, macOS, Apple Silicon, on a Krita restarted that session, with
+Taken on 2026-11-15 on Krita 5.3.4.1, macOS, Apple Silicon, on a Krita restarted that session, with
 **0 documents open**. The probe prints the open-document count beside its time, because document ops
 depend on it: 87 open documents cost about 50 s more.
 
 | Check | Expected |
 |---|---|
 | `uv run scripts/verify.py` | 6 stages, all PASS |
-| Server tests (3.12) | 1177 passed, 0 skipped |
-| Plugin-core tests (3.10) | 1223 passed, 0 skipped |
-| `uv run krita-art-mcp probe` | 231 PASS, 0 FAIL, 25 MEASURED; about 150 s |
+| Server tests (3.12) | 1178 passed, 0 skipped |
+| Plugin-core tests (3.10) | 1235 passed, 0 skipped |
+| `uv run krita-art-mcp probe` | 235 PASS, 0 FAIL, 27 MEASURED; about 155 s |
 | `uv run krita-art-mcp doctor` | 6 steps, all PASS, with a root allowed |
 | Registered tools | 25 |
 | Schema files | 25 |

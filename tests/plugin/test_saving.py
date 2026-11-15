@@ -474,6 +474,61 @@ def test_the_projection_is_recomposed_before_the_export(world: World) -> None:
     assert calls.index("refresh") < calls.index("export") < calls.index("node")
 
 
+# Two pixels whose colour under alpha 0 a recompose fills in, and one it makes visible.
+STALE = bytes(8 * 4 * 4)
+RECOMPOSED = {(2, 1): [5, 6, 7, 0], (5, 2): [1, 2, 3, 0], (6, 3): [9, 9, 9, 255]}
+DRIFT = {
+    "changed_px": 3,
+    "visible_changed_px": 1,
+    "changed_bounds_px": {"x": 2, "y": 1, "width": 5, "height": 3},
+}
+NO_DRIFT = {"changed_px": 0, "visible_changed_px": 0, "changed_bounds_px": None}
+
+
+def recomposed() -> bytes:
+    fresh = bytearray(STALE)
+    for (x, y), pixel in RECOMPOSED.items():
+        fresh[(y * 8 + x) * 4 : (y * 8 + x) * 4 + 4] = bytes(pixel)
+    return bytes(fresh)
+
+
+def stale(world: World, document_id: str) -> None:
+    # Krita's projection as a capture reads it, before the save's own recompose redraws it.
+    key = world.key(document_id)
+    world.port.render[key] = lambda tree: recomposed()
+    world.port.projection[key] = STALE
+
+
+def test_a_save_over_a_stale_projection_reports_what_its_recompose_changed(world: World) -> None:
+    document_id = world.open()
+    stale(world, document_id)
+    saved = world.save(document_id)
+    assert saved["recompose"] == DRIFT
+    # The comparison stays byte-exact, against the document as the recompose left it.
+    assert saved["composite_sha256"] == hashlib.sha256(recomposed()).hexdigest()
+    assert saved["composite_preserved"] is True
+    finished = world.finish(saved)
+    assert finished["recompose"] == DRIFT and finished["composite_preserved"] is True
+
+
+def test_a_save_over_a_current_projection_reports_no_recompose(world: World) -> None:
+    document_id = world.open()
+    saved = world.save(document_id)
+    assert saved["recompose"] == NO_DRIFT
+    assert world.finish(saved)["recompose"] == NO_DRIFT
+
+
+def test_a_busy_export_reports_its_recompose_and_its_retry_none(world: World) -> None:
+    # The refresh moved the live document before Krita refused the export.
+    document_id = world.open()
+    stale(world, document_id)
+    world.port.export_works = False
+    body = world.refused("save", document_id)
+    assert body["code"] == "BUSY" and body["details"]["recompose"] == DRIFT
+    world.port.export_works = True
+    assert world.save(document_id)["recompose"] == NO_DRIFT
+
+
 def _rename(saved: dict[str, Any]) -> None:
     saved["tree"]["nodes"][0]["name"] = "renamed"
 

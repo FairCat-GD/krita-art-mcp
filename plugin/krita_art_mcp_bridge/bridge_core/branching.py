@@ -83,6 +83,7 @@ def handlers(
             "path": path,
             "sha256": placed.sha256,
             "reopened_verified": True,
+            "recompose": placed.recompose,
             "baseline_id": baseline_id,
             "baseline_untouched": untouched,
             "source_dirty": source.dirty,

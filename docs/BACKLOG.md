@@ -219,7 +219,10 @@ commit: `git show 40c7491:docs/spec/SESSIONS.md`, and likewise
   and 7 across a save, every one alpha 0. So a change's `changed_px` and `changed_bounds_px` can
   count such pixels, and under an allowed mask one could refuse a change for them. Recomposing
   before every after-read, and before captures, was left out at the round 3 intake: a
-  whole-canvas recompose more per change, and the stroke's time measured again.
+  whole-canvas recompose more per change, and the stroke's time measured again. The cause is in
+  the layer (K55, 0.31.0): the grouped layer itself holds the first fill's colour under alpha 0 at
+  every one of the 7 pixels, and the group's updated projection shows `[0,0,0,0]` there until a
+  recompose. A save now reports the 7 as its `recompose`; a change's after-read still does not.
 - **Composite reads in two Krita states** (0.5.0). "Isolate active layer" mode changes the
   composite a read sees, and a document with two views reports the first view's active node. Both
   are untested.

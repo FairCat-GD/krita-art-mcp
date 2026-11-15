@@ -7,6 +7,7 @@ import uuid
 from pathlib import Path
 from typing import Any
 
+import numpy as np
 from mcp import Client
 from mcp.types import CallToolResult
 
@@ -18,11 +19,13 @@ from krita_art_mcp.probe.common import (
     add_layer,
     brush_args,
     by_name,
+    capture,
     close,
     document_dirty,
     finished,
     guard,
     harness_call,
+    held_bounds,
     inspect_data,
     krita_rss_kb,
     line_points,
@@ -30,8 +33,9 @@ from krita_art_mcp.probe.common import (
     open_args,
     stroke_args,
 )
+from krita_art_mcp.probe.filling import fill_args
 from krita_art_mcp.probe.opening import UNWRITABLE
-from krita_art_mcp.probe.report import Report, code, tool
+from krita_art_mcp.probe.report import Report, code, differs, tool
 from krita_art_mcp.tools.changes import resolve_update
 from krita_art_mcp.tools.documents import SRGB_PROFILE
 from krita_art_mcp.tools.painting import stroke_op
@@ -71,6 +75,44 @@ PAINT_DELAY_S = 0.5
 PAINT_BUDGET_S = 1.0
 RETRY_BUDGET_S = 0.3
 PAINT_POLL_S = 0.2
+# A grouped case where the save's recompose moves colour under alpha 0, rebuilt from its recipe:
+# a transparent canvas, a group holding one paint layer, three opaque polygon fills; and its
+# control, the first fill alone on a layer at the root.
+RECOMPOSE_PX = (768, 640)
+RECOMPOSE_WHOLE = {"x": 0, "y": 0, "width": RECOMPOSE_PX[0], "height": RECOMPOSE_PX[1]}
+FILLS: tuple[tuple[tuple[int, int, int], list[list[int]]], ...] = (
+    (
+        (103, 97, 118),
+        [
+            [397, 478],
+            [423, 452],
+            [469, 447],
+            [514, 476],
+            [527, 513],
+            [502, 537],
+            [445, 543],
+            [409, 521],
+        ],
+    ),
+    ((183, 176, 191), [[403, 478], [426, 458], [467, 454], [508, 478], [489, 499], [445, 507]]),
+    (
+        (143, 136, 156),
+        [
+            [403, 478],
+            [445, 507],
+            [489, 499],
+            [508, 478],
+            [521, 511],
+            [498, 530],
+            [447, 536],
+            [413, 518],
+        ],
+    ),
+)
+# (x, y) of the pixels the case's first report saw change, all under alpha 0.
+DRIFT_SEEN = ((402, 500), (402, 501), (402, 502), (402, 503), (521, 493), (521, 494), (521, 519))
+# How many changed pixels a MEASURED line lists.
+LISTED = 12
 
 
 def save_args(document_id: str, path: Path, request_id: str | None = None) -> dict[str, Any]:
@@ -87,12 +129,21 @@ def _hidden(folder: Path) -> list[str]:
 
 
 async def save(a: Client, document_id: str, path: Path) -> dict[str, Any]:
+    saved, _ = await save_retried(a, document_id, path)
+    return saved
+
+
+async def save_retried(
+    a: Client, document_id: str, path: Path
+) -> tuple[dict[str, Any], dict[str, Any] | None]:
+    # The receipt, and the BUSY refusal it retried after, if any.
     arguments = save_args(document_id, path)
     saved = await finished(a, await tool(a, "krita_document_save", arguments), SAVE_LIMIT_S)
-    if code(saved) == "BUSY":
-        # An autosave can hold the document for a moment; the save wrote nothing, so it retries.
-        saved = await finished(a, await tool(a, "krita_document_save", arguments), SAVE_LIMIT_S)
-    return saved
+    if code(saved) != "BUSY":
+        return saved, None
+    # An autosave can hold the document for a moment; the save wrote nothing, so it retries.
+    again = await finished(a, await tool(a, "krita_document_save", arguments), SAVE_LIMIT_S)
+    return again, saved
 
 
 async def run(
@@ -100,8 +151,241 @@ async def run(
 ) -> None:
     folder = harness / "saving"
     folder.mkdir(exist_ok=True)
+    await _recompose(report, a, folder)
     await _round_trips(report, a, client, folder, hard)
     await _long_save(report, a, client, folder, hard)
+
+
+async def _recompose(report: Report, a: Client, folder: Path) -> None:
+    # Its own folder, so its files never meet the round trips' check for hidden ones.
+    own = folder / "recompose"
+    own.mkdir(exist_ok=True)
+    grouped = await _grouped_case(a, own)
+    if isinstance(grouped, str):
+        report.check("the grouped recompose case is prepared", False, grouped)
+    else:
+        _grouped_checks(report, grouped)
+    control = await _control_case(a, own)
+    if isinstance(control, str):
+        report.check("the recompose control is prepared", False, control)
+    else:
+        _control_check(report, control)
+
+
+async def _created(a: Client, name: str) -> tuple[str, dict[str, Any]] | str:
+    arguments = {
+        "name": f"krita-art-mcp probe {name}",
+        "size_px": list(RECOMPOSE_PX),
+        "color_model": "RGBA",
+        "depth": "U8",
+        "profile_id": SRGB_PROFILE,
+        "background": "transparent",
+        "request_id": str(uuid.uuid4()),
+    }
+    created = await tool(a, "krita_document_create", arguments)
+    if created.get("status") != "completed":
+        return f"krita_document_create: {code(created)}"
+    return created["document_id"], created["data"]
+
+
+async def _filled(a: Client, document_id: str, layer_id: str, count: int) -> str | None:
+    for rgb, points in FILLS[:count]:
+        shape = {"type": "polygon", "points": points}
+        filled = await tool(
+            a, "krita_paint_fill", fill_args(document_id, layer_id, shape, rgb, verify="full")
+        )
+        if filled.get("status") != "completed":
+            return f"krita_paint_fill: {code(filled)}"
+    return None
+
+
+async def _layer_in(
+    a: Client, document_id: str, parent_id: str, above_id: str | None, kind: str
+) -> str | None:
+    arguments = {
+        "guard": guard(document_id),
+        "parent_id": parent_id,
+        "above_id": above_id,
+        "type": kind,
+        "name": f"krita-art-mcp probe recompose {kind}",
+    }
+    made = await tool(a, "krita_layer_create", arguments)
+    layer_id: str | None = (made.get("data") or {}).get("layer_id")
+    return layer_id
+
+
+async def _grouped_case(a: Client, folder: Path) -> dict[str, Any] | str:
+    # Three fills on a layer inside a group; captures of the composite before and after the save,
+    # of the layer's own pixels, and of the saved file reopened.
+    created = await _created(a, "recompose")
+    if isinstance(created, str):
+        return created
+    document_id, data = created
+    target = folder / "grouped.kra"
+    try:
+        group = await _layer_in(
+            a, document_id, data["root_layer_id"], data["initial_layer_id"], "group"
+        )
+        layer = None if group is None else await _layer_in(a, document_id, group, None, "paint")
+        if layer is None:
+            return "krita_layer_create made no group, or no layer in it"
+        failed = await _filled(a, document_id, layer, len(FILLS))
+        if failed is not None:
+            return failed
+        before = await capture(a, document_id, RECOMPOSE_WHOLE)
+        own = await capture(a, document_id, RECOMPOSE_WHOLE, "layer", layer)
+        saved, busy = await save_retried(a, document_id, target)
+        after = await capture(a, document_id, RECOMPOSE_WHOLE)
+    finally:
+        await close(a, document_id)
+    reopened = None
+    if saved.get("status") == "completed":
+        opened = await tool(a, "krita_document_open", open_args(target, "read_only"))
+        if opened.get("status") == "completed":
+            try:
+                reopened = await capture(a, opened["document_id"], RECOMPOSE_WHOLE)
+            finally:
+                await close(a, opened["document_id"])
+    return {
+        "before": before,
+        "after": after,
+        "own": own,
+        "reopened": reopened,
+        "saved": saved,
+        "busy": busy,
+    }
+
+
+def _grouped_checks(report: Report, case: dict[str, Any]) -> None:
+    before, after, saved = case["before"], case["after"], case["saved"]
+    changed = None if before is None or after is None else np.any(before != after, axis=2)
+    if changed is None:
+        count = shown = 0
+        drift = "a capture is missing"
+    else:
+        count = int(changed.sum())
+        hidden = (before[..., 3] == 0) & (after[..., 3] == 0)
+        shown = int((changed & ~hidden).sum())
+        drift = f"{count} pixels differ, {shown} of them with alpha above 0"
+    report.check(
+        "a grouped document's captures before and after its save differ, under alpha 0 alone",
+        changed is not None and count > 0 and shown == 0,
+        drift,
+    )
+    recompose = (saved.get("data") or {}).get("recompose")
+    problems = []
+    if saved.get("status") != "completed":
+        problems.append(f"the save: {code(saved) or saved.get('status')}")
+    elif recompose is None:
+        problems.append("the receipt has no recompose")
+    elif changed is None:
+        problems.append("a capture is missing")
+    else:
+        expected = {
+            "changed_px": count,
+            "visible_changed_px": shown,
+            "changed_bounds_px": held_bounds(changed[..., None]),
+        }
+        problems += [
+            f"{key} {recompose.get(key)}, where the captures say {value}"
+            for key, value in expected.items()
+            if recompose.get(key) != value
+        ]
+    detail = "; ".join(problems) or str(recompose)
+    if case["busy"] is not None:
+        # A retry's own recompose counts nothing the first attempt's refresh already moved.
+        details = (case["busy"].get("error") or {}).get("details") or {}
+        detail += f"; after a BUSY retry, whose details held {details.get('recompose')}"
+    report.check(
+        "the grouped save's recompose counts exactly what its captures before and after it say",
+        not problems,
+        detail,
+    )
+    report.check(
+        "the grouped document's capture after its save equals the saved file's, reopened, byte "
+        "for byte",
+        after is not None and case["reopened"] is not None and not differs(case["reopened"], after),
+        differs(case["reopened"], after) or "equal",
+    )
+    if changed is not None:
+        _drift_measured(report, changed, before, after, case["own"])
+
+
+def _drift_measured(
+    report: Report,
+    changed: np.ndarray,
+    before: np.ndarray,
+    after: np.ndarray,
+    own: np.ndarray | None,
+) -> None:
+    where = [(int(x), int(y)) for y, x in np.argwhere(changed)]
+    seen = sum(point in where for point in DRIFT_SEEN)
+    listed = ", ".join(
+        f"({x},{y}) {before[y, x].tolist()} to {after[y, x].tolist()}" for x, y in where[:LISTED]
+    )
+    report.measured(
+        "the grouped save's drift: each pixel the save changed, before and after",
+        f"{len(where)} pixels, {seen} of the first report's 7 among them: {listed}",
+    )
+    if own is None:
+        report.measured("the grouped layer's own pixels at the drift", "the layer was not read")
+        return
+    hidden = sum(int(own[y, x, 3]) == 0 and bool(own[y, x, :3].any()) for x, y in where)
+    same = sum(own[y, x].tolist() == after[y, x].tolist() for x, y in where)
+    pixels = ", ".join(f"({x},{y}) {own[y, x].tolist()}" for x, y in where[:LISTED])
+    report.measured(
+        "the grouped layer's own pixels at the drift",
+        f"{hidden} of {len(where)} hold colour under alpha 0, {same} equal the composite after "
+        f"the save: {pixels}",
+    )
+
+
+async def _control_case(a: Client, folder: Path) -> dict[str, Any] | str:
+    # The first fill alone on the document's own layer, at the root.
+    created = await _created(a, "recompose control")
+    if isinstance(created, str):
+        return created
+    document_id, data = created
+    try:
+        failed = await _filled(a, document_id, data["initial_layer_id"], 1)
+        if failed is not None:
+            return failed
+        before = await capture(a, document_id, RECOMPOSE_WHOLE)
+        saved, busy = await save_retried(a, document_id, folder / "control.kra")
+        after = await capture(a, document_id, RECOMPOSE_WHOLE)
+    finally:
+        await close(a, document_id)
+    return {"before": before, "after": after, "saved": saved, "busy": busy}
+
+
+def _control_check(report: Report, case: dict[str, Any]) -> None:
+    before, after, saved = case["before"], case["after"], case["saved"]
+    problems = []
+    hidden = 0
+    if before is None or after is None:
+        problems.append("a capture is missing")
+    else:
+        if differs(after, before):
+            problems.append(f"the save changed it: {differs(after, before)}")
+        hidden = int(((before[..., 3] == 0) & np.any(before[..., :3] != 0, axis=2)).sum())
+        if hidden < 1:
+            problems.append("its composite holds no colour under alpha 0")
+    recompose = (saved.get("data") or {}).get("recompose")
+    zero = {"changed_px": 0, "visible_changed_px": 0, "changed_bounds_px": None}
+    if saved.get("status") != "completed":
+        problems.append(f"the save: {code(saved) or saved.get('status')}")
+    elif recompose is None:
+        problems.append("the receipt has no recompose")
+    elif recompose != zero:
+        problems.append(f"the receipt's recompose is {recompose}")
+    if case["busy"] is not None:
+        problems.append("the save was retried after a BUSY")
+    report.check(
+        "an ungrouped one-fill save reports a recompose of 0 while its composite holds colour "
+        "under alpha 0",
+        not problems,
+        "; ".join(problems) or f"{hidden} pixels hold colour under alpha 0",
+    )
 
 
 async def _round_trips(

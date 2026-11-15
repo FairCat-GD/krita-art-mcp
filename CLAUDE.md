@@ -31,7 +31,8 @@ Every session runs the cycle in `docs/DEVELOPMENT-WORKFLOW.md`:
 8. the handoff prompt for the next session;
 9. a local commit, with `verify` run on its drafted message as the last act before it;
 10. the owner's `/code-review high`, then a review-fixes commit;
-11. the next session's prompt, printed as the last message.
+11. the one-line opener, printed as the last message: it points at `docs/next-session-prompt.md`
+    and never repeats it (the workflow kit's step 12; this repository's copy is older).
 
 One session per chat. A push or tag needs explicit approval, each time.
 
@@ -192,7 +193,7 @@ message for AI attribution. A hit names the file and line, or the commit and mes
 |---|---|
 | `uv run scripts/verify.py [--message <draft>]` | The gate, in six stages: `format`, `lint`, `types`, `tests` (3.12), `plugin-tests` (3.10, pytest only) and `hygiene`. It then prints a summary and exits 1 if any stage failed. `--message` gives `hygiene` the drafted commit message to check too. |
 | `uv run scripts/verify.py <stage>…` | Runs only the named stages; `--message` needs `hygiene` among them. |
-| `uv run scripts/amend_schemas.py [--check]` | Writes the shapes the tool schemas share (the envelope, `guard`, `source`, the completed rule's copy of `data`, inspect's and the duplicate's `layers`, the duplicate's `protection`, the sample's and the fill's `color`, the fill's `mask`, the fill's selection shapes, the `verification` of the paint receipts and the layer ops, operation_get's `outcome` values) and formats the files. A tool session edits its schema's input, `data` and example, then runs it. `--check` changes nothing; a test holds the files to it. |
+| `uv run scripts/amend_schemas.py [--check]` | Writes the shapes the tool schemas share (the envelope, `guard`, `source`, the completed rule's copy of `data`, inspect's and the duplicate's `layers`, the duplicate's `protection` and `recompose`, the sample's and the fill's `color`, the fill's `mask`, the fill's selection shapes, the `verification` of the paint receipts and the layer ops, operation_get's `outcome` values) and formats the files. A tool session edits its schema's input, `data` and example, then runs it. `--check` changes nothing; a test holds the files to it. |
 | `uv run krita-art-mcp --version` | Prints the package version. |
 | `uv run krita-art-mcp serve` | Runs the MCP server `krita-art` over stdio; the clients start it this way. |
 | `uv run krita-art-mcp install-plugin [--krita-data-dir DIR]` | Copies the plugin into Krita's `pykrita/` (default `~/Library/Application Support/Krita`) and prints the steps left. It never edits `kritarc`. |

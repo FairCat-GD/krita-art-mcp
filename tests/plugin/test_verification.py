@@ -83,6 +83,63 @@ def test_bands_give_the_same_verdict_as_one_buffer(monkeypatch: pytest.MonkeyPat
     }
 
 
+# The drift a save's recompose made.
+
+
+CLEAR = (0, 0, 0, 0)
+
+
+def _drift(*values: tuple[int, int, int, int], at: tuple[int, ...] = (1,)) -> dict[str, Any]:
+    old = [CLEAR] * 8
+    new = list(old)
+    for index, value in zip(at, values, strict=True):
+        new[index] = value
+    return verification.drift(memoryview(_pixels(*old)), _pixels(*new), RECT)
+
+
+def test_colour_under_alpha_0_counts_as_drift_and_never_as_visible() -> None:
+    assert _drift((103, 97, 118, 0), (1, 0, 0, 0), at=(1, 6)) == {
+        "changed_px": 2,
+        "visible_changed_px": 0,
+        "changed_bounds_px": {"x": 1, "y": 0, "width": 2, "height": 2},
+    }
+
+
+@pytest.mark.parametrize("alpha", [1, 128, 254, 255])
+def test_a_pixel_with_alpha_above_0_after_is_visible(alpha: int) -> None:
+    assert _drift((5, 6, 7, alpha))["visible_changed_px"] == 1
+
+
+def test_a_pixel_with_alpha_above_0_before_is_visible() -> None:
+    # Opaque to clear, and an opaque colour change.
+    old = _pixels((5, 6, 7, 255), (5, 6, 7, 128), *[CLEAR] * 6)
+    new = _pixels(CLEAR, (9, 6, 7, 128), *[CLEAR] * 6)
+    found = verification.drift(old, new, RECT)
+    assert (found["changed_px"], found["visible_changed_px"]) == (2, 2)
+
+
+def test_no_drift_and_an_empty_rect_report_nothing() -> None:
+    none = {"changed_px": 0, "visible_changed_px": 0, "changed_bounds_px": None}
+    assert verification.drift(BEFORE, BEFORE, RECT) == none
+    assert verification.drift(b"", b"", {"x": 0, "y": 0, "width": 0, "height": 2}) == none
+
+
+def test_bands_give_the_same_drift_as_one_buffer(monkeypatch: pytest.MonkeyPatch) -> None:
+    # A band edge mid-row, and changes in the first and the last band.
+    values = ((1, 2, 3, 0), (4, 5, 6, 200), (7, 8, 9, 0))
+    whole = _drift(*values, at=(0, 4, 7))
+    monkeypatch.setattr(verification, "BAND_PIXELS", 3)
+    assert (
+        _drift(*values, at=(0, 4, 7))
+        == whole
+        == {
+            "changed_px": 3,
+            "visible_changed_px": 1,
+            "changed_bounds_px": {"x": 0, "y": 0, "width": 4, "height": 2},
+        }
+    )
+
+
 def test_a_protected_layer_whose_hash_moved_is_named_and_leaks() -> None:
     before = _reading(BEFORE, hashes={"a": "1", "b": "2"})
     after = _reading(BEFORE, hashes={"a": "1", "b": "3"})

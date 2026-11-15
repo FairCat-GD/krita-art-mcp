@@ -34,6 +34,7 @@ SAVE_DATA = (
     "layers_preserved",
     "baseline_untouched",
     "composite_preserved",
+    "recompose",
     "expected_losses",
     "dirty",
     "krita_modified",
@@ -294,9 +295,17 @@ def save_receipt(outcome: Outcome) -> CallToolResult:
         if result["krita_modified"]:
             where = result["document_path"] or "no file of its own"
             held = f" Krita still marks the document modified; it points at {where}."
+        moved = ""
+        recompose = result["recompose"]
+        if recompose["changed_px"]:
+            count = recompose["changed_px"]
+            moved = (
+                f" Its recompose first changed {count} pixel{'' if count == 1 else 's'} of the "
+                f"live composite, {recompose['visible_changed_px']} with alpha above 0."
+            )
         return (
             f"Saved {result['document_id']} to {result['path']} ({result['format'].upper()}), "
-            f"verified by reopening, {losses}{stays}.{held}"
+            f"verified by reopening, {losses}{stays}.{moved}{held}"
         )
 
     return from_outcome(outcome, data, text, lambda result: result["document_id"])

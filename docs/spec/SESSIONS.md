@@ -88,6 +88,11 @@ step 9.
     first. Run `scripts/amend_schemas.py` if the shape joins its shared list.
   - `composite_preserved` keeps its meaning, so `api_version` stays 0.4.0.
   - Nothing is cleaned, normalised or refused for it (decision 3).
+  - **Amended at plan time, with the owner (2026-11-15):** both composite reads, the compare and
+    the hash go before the export, inside `unmasked_view`, rather than reusing the read after it.
+    The reason: holding the first read through `exportImage` costs 256 MiB at 8192², which no
+    probe line can see, and a `BUSY` export can then report its own recompose. An export that
+    moved the projection would fail the reopen's compare or the close's check.
 - **Docs.**
   - `ARCHITECTURE.md`: *The save* (the recompose and its count); K55; the `api_version`
     paragraph (0.31.0 adds a field, so it stays); the baseline.
@@ -125,6 +130,46 @@ step 9.
 - **Never normalise in a test or the probe.** The finding is the bytes, compared raw.
 - **The handoff's files stay outside the repository.** The fixtures are recipes (decision 7), and
   no name from the handoff enters a file or a message.
+
+**Done (2026-11-15, 0.31.0).**
+
+- **Decided with the owner in plan mode:**
+  - The session read the handoff's recipe itself, read-only; only its numbers entered the probe.
+  - An adversarial plan review by Opus: no blocker, and all eight findings went into the plan. The
+    main one: two of the four probe checks would have been falsified only by a missing field, so
+    run 3 broke each with the field present. The others: the reads before the export (the
+    amendment above), `recompose` in a `BUSY` refusal, alphas 128 and 254 and a change past the
+    first band in the helper's tests, the save's files in a folder of their own, a capture that
+    returns None failing its checks, the missed doc sites, and the Codex agent kept paused until
+    its client restarts.
+  - Live runs and Krita restarts at 0 unsaved documents, with the Codex agent paused.
+- **Reproduced first,** against the installed 0.30.0 plugin with only the probe changed: 233
+  PASS, 2 FAIL, exactly the receipt and the control, each for the missing field; the drift check
+  passed. The drift is the case's first report exactly: the same 7 pixels, each `[0,0,0,0]` before
+  the save and `[103,97,118,0]` after, none with alpha.
+- **K55, the cause, read from the layer:** the grouped paint layer's own device holds
+  `[103,97,118,0]`, the first fill's colour, at all 7 pixels, equal to the composite after the
+  save. The control's composite holds colour under alpha 0 in 292 pixels and its save moved none.
+- **The plugin-core tests failed first** on today's code: a stale projection, a current one and
+  a `BUSY` export, each with `KeyError: 'recompose'`.
+- **The cost.** `drift` took 1.9 s on an 8192² pair changed in every band, which put H4's save at
+  7.4 s on a run that was slow throughout. An equal band now costs one compare, so a sparse drift
+  takes 0.23 s; H4 measured 4.7 s before the change and 4.8 s after.
+- **Falsified,** each once, each failing at its own test, the tree restored byte for byte:
+  - **The plugin:** the first read after the refresh (the stale save, the `BUSY` and the
+    duplicate's cases), `visible` from one side only, alpha read raw instead of marked (alphas 128
+    and 254), the first band only, the equal-band skip comparing one pixel, the `BUSY` details
+    dropped, and `Placed` returning zeros.
+  - **The server:** the receipt's sentence dropped, and the duplicate's field dropped.
+  - **The probe:** the four new checks broken together in run 3, with the field present: 231
+    PASS and 4 FAIL, exactly those.
+- **The owner's correction, mid-session:** a session ends with the workflow kit's one-line opener,
+  not the handoff's text. CLAUDE.md's step 11 says so now; this repository's copy of the workflow
+  is older than the kit's step 12.
+- **Numbers:** 1178 server tests (+1), 1235 plugin tests (+12), probe 235 PASS (+4), 0 FAIL, 27
+  MEASURED (+2), 153 s with 0 documents open. 25 tools, 25 schema files, 30 error codes, 39 ops,
+  17 capabilities, 28 parity tests, instructions 3,371 characters, `api_version` 0.4.0. `doctor`
+  6 of 6 after the restart.
 
 ---
 

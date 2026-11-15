@@ -261,7 +261,8 @@ as a document of its own. Its receipt names it `new_document_id`.
   source's mode. Its history starts empty, and it has its own `baseline_id`: the document as it was
   when you duplicated it.
 - **The source stays as it was,** dirty or not; the receipt says which (`source_dirty`,
-  `source_krita_modified`). Save it on its own when you want it kept.
+  `source_krita_modified`). Save it on its own when you want it kept. Its `recompose` is the
+  save's (step 9): what recomposing the source changed before the branch's file was written.
 - **Compare the two** with `krita_preview_render`, one source each, each with its own
   `baseline_id`. Reading a baseline costs its whole canvas once, so on large canvases render each
   document with its baseline on its own first; after that, both fit in one render.
@@ -401,6 +402,15 @@ message says so: close the dialog, then retry with the same `request_id`, and th
 
 An `.ora` drops masks and adjustment layers, and lists what it lost in `expected_losses`; a visible
 loss fails the save. Prefer `.kra`.
+
+`composite_preserved` means the file's composite equals the live document's byte for byte, as the
+save left it. Before it writes, the save has Krita recompose the document's projection, which can
+change it: inside a group, colour under fully transparent pixels can appear that the projection
+did not show before. `recompose` says what that changed, `changed_px` pixels in `changed_bounds_px`,
+`visible_changed_px` of them with any alpha. So a capture taken before the save can differ from the
+saved file in those pixels, usually colour under alpha 0 alone. Nothing is cleaned: if your checks
+need no colour under alpha 0, check the file. A save refused with `BUSY` reports its `recompose` in
+`details`, and its retry counts only its own.
 
 The receipt says where the file went (`path`) and where the live document still points
 (`document_path`, its working copy). It also gives two flags: `dirty`, changes the bridge made since

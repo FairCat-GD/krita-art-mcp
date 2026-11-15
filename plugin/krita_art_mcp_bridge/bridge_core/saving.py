@@ -6,7 +6,7 @@ import secrets
 from pathlib import Path
 from typing import Any
 
-from . import files, log, nodes, reopening, roots
+from . import files, log, nodes, reopening, roots, verification
 from .errors import UNCERTAIN, BridgeError, cleaned, exact
 from .inspection import TYPES, check_shown_frame
 from .jobs import Call, Handler
@@ -72,10 +72,14 @@ class Inherited:
 
 class Placed:
     # A duplicate's file in place, waiting for document.duplicate_open.
-    def __init__(self, path: str, sha256: str, inherited: Inherited) -> None:
+    def __init__(
+        self, path: str, sha256: str, inherited: Inherited, recompose: dict[str, Any]
+    ) -> None:
         self.path = path
         self.sha256 = sha256
         self.inherited = inherited
+        # What the save's recompose changed in the source, which the open reports.
+        self.recompose = recompose
         # Taken once it is in place, so the open hashes it again only if it moved.
         self.stat = files.source_stat(path)
 
@@ -139,20 +143,29 @@ def handlers(registry: Registry, port: DocumentsPort, data: Path) -> dict[str, H
             _check_writable(written, target)
             # K46: no selection mask's overlay may enter the file or the reads. The projection is
             # recomposed first: after a stroke it can differ from its layers' own composite, which
-            # is what the file holds and its reopening shows.
+            # is what the file holds and its reopening shows. What that moved is counted, then
+            # both reads go before the export.
             with nodes.unmasked_view(port, handle.document):
+                shown = port.composite(handle.document)
                 port.refresh(handle.document)
+                current = port.composite(handle.document)
+                composite = _sha256(current)
+                recompose = verification.drift(shown, current, _canvas(info))
+                del shown, current
                 exported = port.export(handle.document, written)
             if not exported:
                 message = "Krita did not export; an autosave may hold the document. Retry."
-                raise BridgeError("BUSY", message, True, {"document_id": handle.document_id})
+                details: dict[str, Any] = {
+                    "document_id": handle.document_id,
+                    "recompose": recompose,
+                }
+                raise BridgeError("BUSY", message, True, details)
             if port.describe(handle.document)["path"] != info["path"]:
                 # Removing the file cannot undo this.
                 moved = {"outcome": UNCERTAIN, "rollback_verified": False}
                 message = "The export moved the document to its file."
                 raise BridgeError("INTERNAL_ERROR", message, False, moved)
             live = port.tree(handle.document)
-            composite = _sha256(port.composite(handle.document))
 
             def read(document: Any) -> dict[str, Any]:
                 return _reopened(port, document, kind, live)
@@ -196,6 +209,7 @@ def handlers(registry: Registry, port: DocumentsPort, data: Path) -> dict[str, H
             "reopened_verified": True,
             "layers_preserved": not losses,
             "composite_preserved": True,
+            "recompose": recompose,
             "baseline_untouched": untouched,
             "expected_losses": losses,
         }
@@ -258,7 +272,8 @@ def handlers(registry: Registry, port: DocumentsPort, data: Path) -> dict[str, H
         if pending.branch is not None:
             # A duplicate leaves its source as it was; its file waits to open as its own document.
             target, sha = pending.target, pending.receipt["sha256"]
-            handle.branches[pending.save_id] = Placed(target, sha, pending.branch)
+            recompose = pending.receipt["recompose"]
+            handle.branches[pending.save_id] = Placed(target, sha, pending.branch, recompose)
         elif handle.changes == pending.changes:
             # A change since the save read the document keeps its dirt.
             cleared = True
@@ -375,8 +390,13 @@ def _written_name(target: str) -> str:
     return os.path.join(folder, f".{stem}.{secrets.token_hex(4)}.saving{extension}")
 
 
+def _canvas(info: dict[str, Any]) -> dict[str, int]:
+    return {"x": 0, "y": 0, "width": info["size_px"][0], "height": info["size_px"][1]}
+
+
 def _check_size(info: dict[str, Any]) -> None:
-    # The save reads the whole canvas, live and reopened, and the server decodes it once more.
+    # The save reads the whole canvas twice live and once reopened, and the server decodes it once
+    # more.
     width, height = info["size_px"]
     if width * height > MAX_READ_PIXELS:
         details = {"size_px": info["size_px"], "max_pixels": MAX_READ_PIXELS}

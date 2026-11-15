@@ -6,6 +6,31 @@ All notable changes to krita-art-mcp are documented here. The format follows
 
 ## [Unreleased]
 
+## [0.31.0] — 2026-11-15
+
+A save now says what its own recompose changed in the live document. Update with
+`install-plugin`, restart Krita, then restart your MCP client.
+
+### Added
+
+- **`recompose` on a save's and a duplicate's receipt.** Before it writes, a save has Krita
+  recompose the document's projection. Inside a group that can bring out colour under fully
+  transparent pixels that the projection did not show, so a capture taken before the save could
+  differ from the saved file while `composite_preserved` read true. `recompose` counts those
+  pixels (`changed_px`), how many of them have any alpha (`visible_changed_px`), and where they are
+  (`changed_bounds_px`). The receipt's text names the count when it is not 0. A save refused with
+  `BUSY` reports its recompose in `details`. Nothing is cleaned.
+
+### Changed
+
+- **`composite_preserved` says what it promises.** Its description now says it is byte-exact
+  against the document as the save left it, after the recompose. The comparison itself is
+  unchanged.
+- **A retried save or duplicate made before this release can fail.** Retrying a save or a
+  duplicate with a `request_id` from before 0.31.0 answers from its stored receipt, which has no
+  `recompose`, so it returns `INTERNAL_ERROR` with `outcome: applied`. The file was saved; check
+  it, or save again under a new `request_id`.
+
 ## [0.30.0] — 2026-11-13
 
 Round 2 is complete and documented: recovery that tells the truth about every failed change, flat

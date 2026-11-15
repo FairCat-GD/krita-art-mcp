@@ -105,6 +105,7 @@ def test_a_save_lands_verified_and_clears_the_dirt(world: World) -> None:
         "layers_preserved": True,
         "baseline_untouched": True,
         "composite_preserved": True,
+        "recompose": {"changed_px": 0, "visible_changed_px": 0, "changed_bounds_px": None},
         "expected_losses": [],
         "dirty": False,
         "krita_modified": True,
@@ -117,6 +118,7 @@ def test_a_save_lands_verified_and_clears_the_dirt(world: World) -> None:
     assert _saves(world) == ["hero-r02.kra"] and not _dirty(world, document_id)
     text = str(result.content[0].model_dump().get("text"))
     assert "verified by reopening" in text
+    assert "recompose" not in text
     assert f"Krita still marks the document modified; it points at {working_copy}." in text
     closed = world.server().content(
         "krita_document_close",
@@ -126,6 +128,33 @@ def test_a_save_lands_verified_and_clears_the_dirt(world: World) -> None:
         },
     )
     assert closed["status"] == "completed"
+
+
+def test_a_save_over_a_stale_projection_reports_and_says_what_its_recompose_changed(
+    world: World,
+) -> None:
+    document_id = _opened(world)
+    # Krita's projection before the save redraws it: one colour under alpha 0, one pixel shown.
+    fresh = bytearray(8 * 4 * 4)
+    fresh[(1 * 8 + 2) * 4 : (1 * 8 + 2) * 4 + 4] = bytes([5, 6, 7, 0])
+    fresh[(3 * 8 + 6) * 4 : (3 * 8 + 6) * 4 + 4] = bytes([9, 9, 9, 255])
+    [key] = world.port.live
+    world.port.render[key] = lambda tree: bytes(fresh)
+    world.port.projection[key] = bytes(len(fresh))
+    target = world.tmp_path / "art" / "revisions" / "hero-r02.kra"
+    result = world.server().call("krita_document_save", _save(document_id, target))
+    content = result.structured_content or {}
+    assert content["status"] == "completed", content
+    assert content["data"]["composite_preserved"] is True
+    assert content["data"]["recompose"] == {
+        "changed_px": 2,
+        "visible_changed_px": 1,
+        "changed_bounds_px": {"x": 2, "y": 1, "width": 5, "height": 3},
+    }
+    text = str(result.content[0].model_dump().get("text"))
+    assert (
+        "Its recompose first changed 2 pixels of the live composite, 1 with alpha above 0." in text
+    )
 
 
 def test_a_mergedimage_that_differs_fails_and_leaves_nothing(world: World) -> None:

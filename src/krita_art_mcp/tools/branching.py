@@ -23,6 +23,7 @@ DUPLICATE_DATA = (
     "path",
     "sha256",
     "reopened_verified",
+    "recompose",
     "baseline_id",
     "baseline_untouched",
     "source_dirty",

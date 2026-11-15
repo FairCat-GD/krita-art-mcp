@@ -327,6 +327,36 @@ def changes(
     return marked.count(CHANGED), _bounds(marked, rect)
 
 
+def drift(old: Any, new: Any, rect: dict[str, int]) -> dict[str, Any]:
+    # Two composite reads of one rect (B, G, R, A): the pixels whose bytes differ, those of them
+    # with alpha above 0 on either side, and the canvas rect around them.
+    old, new = _bytes(old), _bytes(new)
+    pixels = 0 if _empty(rect) else rect["width"] * rect["height"]
+    marked = bytearray(pixels)
+    visible = 0
+    for start in range(0, pixels, BAND_PIXELS):
+        stop = min(pixels, start + BAND_PIXELS)
+        count = stop - start
+        was, now = old[start * 4 : stop * 4], new[start * 4 : stop * 4]
+        # A recompose moves few pixels, so an equal band costs one compare (bytes compare
+        # faster than memoryviews).
+        if bytes(was) == bytes(now):
+            continue
+        changed = 0
+        for channel in range(4):
+            changed |= _int(was[channel::4]) ^ _int(now[channel::4])
+        marks = changed.to_bytes(count, "little").translate(_MARK_CHANGED)
+        alpha = _int(was[3::4]) | _int(now[3::4])
+        shown = alpha.to_bytes(count, "little").translate(_MARK_CHANGED)
+        visible += (_int(marks) & _int(shown)).to_bytes(count, "little").count(CHANGED)
+        marked[start:stop] = marks
+    return {
+        "changed_px": marked.count(CHANGED),
+        "visible_changed_px": visible,
+        "changed_bounds_px": _bounds(marked, rect),
+    }
+
+
 def crop(buffer: Any, outer: dict[str, int], inner: dict[str, int], channels: int = 4) -> bytes:
     # The rows of inner, a rect inside outer, from a read of outer of channels bytes per pixel.
     width, left = outer["width"] * channels, (inner["x"] - outer["x"]) * channels

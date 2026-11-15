@@ -201,6 +201,25 @@ def test_a_duplicate_leaves_its_source_as_it_was(world: World, dirty: bool) -> N
     assert opened["source_dirty"] is dirty and opened["source_krita_modified"] is before[2]
 
 
+def test_a_duplicate_reports_its_recompose_from_the_save_to_the_open(world: World) -> None:
+    # A stale projection: the save's recompose fills in one colour under alpha 0.
+    document_id = world.open()
+    key = world.handle(document_id).document.key
+    fresh = bytearray(WIDTH * HEIGHT * 4)
+    fresh[(1 * WIDTH + 3) * 4 : (1 * WIDTH + 3) * 4 + 4] = bytes([4, 5, 6, 0])
+    world.port.render[key] = lambda tree: bytes(fresh)
+    world.port.projection[key] = bytes(WIDTH * HEIGHT * 4)
+    drift = {
+        "changed_px": 1,
+        "visible_changed_px": 0,
+        "changed_bounds_px": {"x": 3, "y": 1, "width": 1, "height": 1},
+    }
+    saved = world.duplicate(document_id)
+    assert saved["recompose"] == drift
+    assert world.finish(saved)["recompose"] == drift
+    assert world.open_branch(saved)["recompose"] == drift
+
+
 def test_the_finish_places_the_duplicate_and_waits_for_its_open(world: World) -> None:
     document_id = world.open()
     saved = world.duplicate(document_id)
