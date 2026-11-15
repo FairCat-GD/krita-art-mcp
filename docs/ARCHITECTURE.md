@@ -1292,8 +1292,10 @@ alpha above 0 on either side, and the rect around them. It goes in the receipt, 
 refusal's `details`, since the refresh moved the live document before Krita refused; a retry then
 counts only its own, usually 0. Nothing is cleaned: `composite_preserved` stays byte-exact against
 the document as the recompose left it, so a capture taken before the save can differ from the file
-in exactly these pixels. An equal band of 2²⁰ pixels costs one compare, so a sparse drift on an
-8192² canvas takes about 0.2 s, and one in every band about 1.9 s. In the mask display mode, which
+in exactly these pixels. Equal reads cost one compare, and so does each equal band of 2²⁰
+pixels. Timed outside Krita on CPython 3.10 with an 8192² pair, a drift in 7 bands took about
+0.2 s and one in every band about 1.9 s; inside Krita, only H4's save is timed, 4.8 s after
+against 4.7 s before. In the mask display mode, which
 nothing has measured, an overlay that left the projection late would count as drift.
 
 **What is compared.** Both formats: size, colour space, the composite. KRA: nodes by id, every `tree`

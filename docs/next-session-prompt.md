@@ -18,12 +18,14 @@ Release 0.32.0.
 
 - **Round 3 is what a save changed, and the knot limit.** P1 is done (0.31.0); G1 remains, and
   closes the round.
-- **Nothing of round 3 is pushed.** `origin/main` holds everything through `aef93b3` ("docs: the
-  standing traps move into the rules file"). Local: the intake, its review fixes, P1's release and
-  P1's review commit. List `origin/main..HEAD` before any push.
-- **P1's review (`/code-review high`)** follows this commit; its findings go in its commit message
-  and the note it adds here. CHANGELOG's `[0.31.0]` link to P1's release commit is added in that
-  review commit, once the hash exists.
+- **Pushed.** `origin/main` holds everything through P1's review commit ("review: the control
+  check failed on any BUSY retry, and 5 smaller"), pushed with the owner's approval. List
+  `origin/main..HEAD` before any push.
+- **P1's review (`/code-review high`), 6 findings: 6 fixed** in its review commit, run live
+  after a restart (235 PASS, 0 FAIL, 27 MEASURED). The main one: the probe's control check failed
+  on any `BUSY` retry. The others: `drift` returns at once on equal reads, the architecture says
+  where its timings were measured, the probe's create and layer arguments have one home
+  (`common.create_args`, `add_layer`), the changelog's `[0.31.0]` link, and a shorter comment.
 - **P1 amended its block, with the owner:** the save takes both composite reads before the export,
   rather than reusing the read after it, so nothing extra is held through `exportImage` (256 MiB at
   8192²) and a `BUSY` refusal reports its own recompose.

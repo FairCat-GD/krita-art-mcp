@@ -141,10 +141,7 @@ def handlers(registry: Registry, port: DocumentsPort, data: Path) -> dict[str, H
         written = _written_name(target)
         try:
             _check_writable(written, target)
-            # K46: no selection mask's overlay may enter the file or the reads. The projection is
-            # recomposed first: after a stroke it can differ from its layers' own composite, which
-            # is what the file holds and its reopening shows. What that moved is counted, then
-            # both reads go before the export.
+            # K46 keeps any mask overlay out; the recompose matches what the file will hold (K55).
             with nodes.unmasked_view(port, handle.document):
                 shown = port.composite(handle.document)
                 port.refresh(handle.document)

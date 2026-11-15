@@ -3,7 +3,8 @@ import re
 
 import pytest
 
-from krita_art_mcp.probe import PREFIX, _created_here
+from krita_art_mcp.probe import _created_here
+from krita_art_mcp.probe.common import PREFIX
 from krita_art_mcp.probe.report import Report
 
 

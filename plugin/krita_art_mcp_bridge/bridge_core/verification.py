@@ -332,14 +332,16 @@ def drift(old: Any, new: Any, rect: dict[str, int]) -> dict[str, Any]:
     # with alpha above 0 on either side, and the canvas rect around them.
     old, new = _bytes(old), _bytes(new)
     pixels = 0 if _empty(rect) else rect["width"] * rect["height"]
+    # Most saves move nothing; bytes compare faster than memoryviews.
+    if bytes(old[: pixels * 4]) == bytes(new[: pixels * 4]):
+        return {"changed_px": 0, "visible_changed_px": 0, "changed_bounds_px": None}
     marked = bytearray(pixels)
     visible = 0
     for start in range(0, pixels, BAND_PIXELS):
         stop = min(pixels, start + BAND_PIXELS)
         count = stop - start
         was, now = old[start * 4 : stop * 4], new[start * 4 : stop * 4]
-        # A recompose moves few pixels, so an equal band costs one compare (bytes compare
-        # faster than memoryviews).
+        # A recompose moves few pixels, so an equal band costs one compare.
         if bytes(was) == bytes(now):
             continue
         changed = 0

@@ -14,7 +14,11 @@ from krita_art_mcp import paths
 from krita_art_mcp.bridge_client import BridgeClient, Done
 from krita_art_mcp.probe import fixtures
 from krita_art_mcp.probe.report import tool
+from krita_art_mcp.tools.documents import SRGB_PROFILE
 from krita_art_mcp.tools.saving import file_sha256
+
+# Every document, layer and file name the probe makes starts with it.
+PREFIX = "krita-art-mcp probe"
 
 
 def guard(document_id: str, request_id: str | None = None) -> dict[str, str]:
@@ -25,13 +29,33 @@ def by_name(layers: list[dict[str, Any]]) -> dict[str, dict[str, Any]]:
     return {layer["name"]: layer for layer in layers}
 
 
-async def add_layer(a: Client, document_id: str, parent_id: str, name: str) -> str | None:
+def create_args(name: str, request_id: str | None = None, **changes: Any) -> dict[str, Any]:
+    return {
+        "name": f"{PREFIX} {name}",
+        "size_px": [64, 32],
+        "color_model": "RGBA",
+        "depth": "U8",
+        "profile_id": SRGB_PROFILE,
+        "background": "transparent",
+        "request_id": request_id or str(uuid.uuid4()),
+        **changes,
+    }
+
+
+async def add_layer(
+    a: Client,
+    document_id: str,
+    parent_id: str,
+    name: str,
+    kind: str = "paint",
+    above_id: str | None = None,
+) -> str | None:
     arguments = {
         "guard": guard(document_id),
         "parent_id": parent_id,
-        "above_id": None,
-        "type": "paint",
-        "name": f"krita-art-mcp probe {name}",
+        "above_id": above_id,
+        "type": kind,
+        "name": f"{PREFIX} {name}",
     }
     made = await tool(a, "krita_layer_create", arguments)
     layer_id: str | None = (made.get("data") or {}).get("layer_id")

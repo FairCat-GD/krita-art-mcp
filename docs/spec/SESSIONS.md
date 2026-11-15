@@ -170,6 +170,18 @@ step 9.
   MEASURED (+2), 153 s with 0 documents open. 25 tools, 25 schema files, 30 error codes, 39 ops,
   17 capabilities, 28 parity tests, instructions 3,371 characters, `api_version` 0.4.0. `doctor`
   6 of 6 after the restart.
+- **Review (`/code-review high`), 6 findings: 6 fixed and 0 skipped.**
+  - **The control check failed on any `BUSY` retry,** even one whose receipt was right. A retry is
+    now noted in its detail, as the grouped check does.
+  - **`drift` worked through a canvas that had not moved.** Equal reads now return at once, before
+    the mark buffer; falsified once, comparing only the first pixel.
+  - **The architecture gave timings measured outside Krita as Krita's.** It now says where each
+    was measured.
+  - **The probe built create and layer arguments a third time.** `common.create_args` and
+    `add_layer`'s kind and `above_id` serve all three places.
+  - **The changelog's `[0.31.0]` had no link,** and the save's K46 comment was a paragraph.
+  - **Live, after `install-plugin` and a restart:** 235 PASS, 0 FAIL, 27 MEASURED in 156 s; H4
+    4.9 s.
 
 ---
 

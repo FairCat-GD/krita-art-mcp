@@ -17,7 +17,7 @@ from krita_art_mcp import __version__, journal, paths, schemas, setup_checks
 from krita_art_mcp.bridge_client import BridgeClient, Done
 from krita_art_mcp.instructions import INSTRUCTIONS
 from krita_art_mcp.probe import changes, opening, painting, pixels, previews, updates, writes
-from krita_art_mcp.probe.common import close
+from krita_art_mcp.probe.common import PREFIX, close, create_args
 from krita_art_mcp.probe.report import Report, code, tool
 from krita_art_mcp.tools import BUILT_TOOLS, operations
 from krita_art_mcp.tools.documents import SRGB_PROFILE
@@ -31,7 +31,6 @@ MIN_JOURNALED = 340
 # Another client's transfer file lives for milliseconds; one the probe leaked stays.
 LEFTOVER_SETTLE_S = 1.0
 # Every document the probe makes carries this name, so a killed run's leftovers can be found.
-PREFIX = "krita-art-mcp probe"
 
 
 def run(
@@ -174,19 +173,6 @@ def _no_unsaved_documents(report: Report, client: BridgeClient) -> bool:
         unsaved == 0,
         "0 unsaved" if unsaved == 0 else f"{unsaved} unsaved: save your documents first",
     )
-
-
-def _create_args(name: str, request_id: str, **changes: Any) -> dict[str, Any]:
-    return {
-        "name": f"{PREFIX} {name}",
-        "size_px": [64, 32],
-        "color_model": "RGBA",
-        "depth": "U8",
-        "profile_id": SRGB_PROFILE,
-        "background": "transparent",
-        "request_id": request_id,
-        **changes,
-    }
 
 
 def _created_here(entry: dict[str, Any]) -> bool:
@@ -347,7 +333,7 @@ async def _no_leftovers(report: Report, mcp: Client, harness: Path, before: set[
 
 async def _document_checks(report: Report, a: Client, b: Client, harness: Path) -> None:
     request_id = str(uuid.uuid4())
-    arguments = _create_args("lease", request_id)
+    arguments = create_args("lease", request_id)
     created = await tool(a, "krita_document_create", arguments)
     data = created.get("data") or {}
     if not report.check(
@@ -380,7 +366,7 @@ async def _document_checks(report: Report, a: Client, b: Client, harness: Path) 
         again == created and from_b == created and count == 1,
         f"{count} probe document(s) open",
     )
-    changed = _create_args("other", request_id)
+    changed = create_args("other", request_id)
     report.check(
         "the same request_id with other arguments conflicts, in the server and the bridge",
         code(await tool(a, "krita_document_create", changed)) == "REQUEST_ID_CONFLICT"
@@ -404,7 +390,7 @@ async def _document_checks(report: Report, a: Client, b: Client, harness: Path) 
         "krita_operation_cancel reports a finished operation as completed",
         (cancelled.get("data") or {}).get("state") == "completed",
     )
-    deeper = _create_args("deep", str(uuid.uuid4()), depth="U16")
+    deeper = create_args("deep", str(uuid.uuid4()), depth="U16")
     report.check(
         "a 16-bit document is UNSUPPORTED_CAPABILITY",
         code(await tool(a, "krita_document_create", deeper)) == "UNSUPPORTED_CAPABILITY",
@@ -438,7 +424,7 @@ async def _cycles(report: Report, a: Client) -> None:
     failures = []
     for cycle in range(CYCLES):
         created = await tool(
-            a, "krita_document_create", _create_args(f"cycle {cycle}", str(uuid.uuid4()))
+            a, "krita_document_create", create_args(f"cycle {cycle}", str(uuid.uuid4()))
         )
         closed = (
             await close(a, created["document_id"])

@@ -21,6 +21,7 @@ from krita_art_mcp.probe.common import (
     by_name,
     capture,
     close,
+    create_args,
     document_dirty,
     finished,
     guard,
@@ -173,16 +174,7 @@ async def _recompose(report: Report, a: Client, folder: Path) -> None:
 
 
 async def _created(a: Client, name: str) -> tuple[str, dict[str, Any]] | str:
-    arguments = {
-        "name": f"krita-art-mcp probe {name}",
-        "size_px": list(RECOMPOSE_PX),
-        "color_model": "RGBA",
-        "depth": "U8",
-        "profile_id": SRGB_PROFILE,
-        "background": "transparent",
-        "request_id": str(uuid.uuid4()),
-    }
-    created = await tool(a, "krita_document_create", arguments)
+    created = await tool(a, "krita_document_create", create_args(name, size_px=list(RECOMPOSE_PX)))
     if created.get("status") != "completed":
         return f"krita_document_create: {code(created)}"
     return created["document_id"], created["data"]
@@ -199,21 +191,6 @@ async def _filled(a: Client, document_id: str, layer_id: str, count: int) -> str
     return None
 
 
-async def _layer_in(
-    a: Client, document_id: str, parent_id: str, above_id: str | None, kind: str
-) -> str | None:
-    arguments = {
-        "guard": guard(document_id),
-        "parent_id": parent_id,
-        "above_id": above_id,
-        "type": kind,
-        "name": f"krita-art-mcp probe recompose {kind}",
-    }
-    made = await tool(a, "krita_layer_create", arguments)
-    layer_id: str | None = (made.get("data") or {}).get("layer_id")
-    return layer_id
-
-
 async def _grouped_case(a: Client, folder: Path) -> dict[str, Any] | str:
     # Three fills on a layer inside a group; captures of the composite before and after the save,
     # of the layer's own pixels, and of the saved file reopened.
@@ -223,10 +200,9 @@ async def _grouped_case(a: Client, folder: Path) -> dict[str, Any] | str:
     document_id, data = created
     target = folder / "grouped.kra"
     try:
-        group = await _layer_in(
-            a, document_id, data["root_layer_id"], data["initial_layer_id"], "group"
-        )
-        layer = None if group is None else await _layer_in(a, document_id, group, None, "paint")
+        root, initial = data["root_layer_id"], data["initial_layer_id"]
+        group = await add_layer(a, document_id, root, "recompose group", "group", initial)
+        layer = None if group is None else await add_layer(a, document_id, group, "recompose")
         if layer is None:
             return "krita_layer_create made no group, or no layer in it"
         failed = await _filled(a, document_id, layer, len(FILLS))
@@ -378,13 +354,14 @@ def _control_check(report: Report, case: dict[str, Any]) -> None:
         problems.append("the receipt has no recompose")
     elif recompose != zero:
         problems.append(f"the receipt's recompose is {recompose}")
+    detail = "; ".join(problems) or f"{hidden} pixels hold colour under alpha 0"
     if case["busy"] is not None:
-        problems.append("the save was retried after a BUSY")
+        detail += "; after a BUSY retry"
     report.check(
         "an ungrouped one-fill save reports a recompose of 0 while its composite holds colour "
         "under alpha 0",
         not problems,
-        "; ".join(problems) or f"{hidden} pixels hold colour under alpha 0",
+        detail,
     )
 
 

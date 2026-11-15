@@ -1,5 +1,4 @@
 import os
-import uuid
 from pathlib import Path
 from typing import Any
 
@@ -17,6 +16,7 @@ from krita_art_mcp.probe.common import (
     capture,
     capture_composite,
     close,
+    create_args,
     finished,
     guard,
     harness_call,
@@ -390,15 +390,7 @@ async def _source_closed(
 
 
 async def _created(report: Report, a: Client, folder: Path, held: Path) -> None:
-    arguments = {
-        "name": "krita-art-mcp probe branch source",
-        "size_px": [fixtures.WIDTH, fixtures.HEIGHT],
-        "color_model": "RGBA",
-        "depth": "U8",
-        "profile_id": "sRGB-elle-V2-srgbtrc.icc",
-        "background": "transparent",
-        "request_id": str(uuid.uuid4()),
-    }
+    arguments = create_args("branch source", size_px=[fixtures.WIDTH, fixtures.HEIGHT])
     created = await tool(a, "krita_document_create", arguments)
     document_id = created.get("document_id")
     if not document_id:
