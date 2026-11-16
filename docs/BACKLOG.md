@@ -119,6 +119,16 @@ likewise `FEATURE-save-recompose-and-knot-limit.md`.
   the export and the finish leaves it, and nothing sweeps the owner's folders.
 - **A plugin zip for other users,** importable through Krita's *Import Python Plugin from File*.
   Left out at the round 1 intake; round 1 installs with `install-plugin`.
+- **A standalone package.** `uv build` makes a wheel and an sdist that hold the server and its
+  schemas but not the plugin, its `.desktop` or the docs, so only a checkout can install the plugin
+  (measured by the Codex agent on 0.32.0). Shipping one would bundle the plugin as package resources
+  from its one source tree, find it through installed resources rather than the checkout's layout
+  (`paths.plugin_source`), and test a clean install with no checkout present. Left out at the
+  round 4 intake, which kept the checkout as the one install route.
+- **The lost-reply and never-sent routes, live.** Unit tests hold both, and the Codex agent ran them
+  once against real Krita through a server whose bridge client dropped one reply or failed before
+  sending. Keeping that in the probe would need a fault server of its own, test-side and off every
+  public tool. Left out at the round 4 intake.
 - **Layer reads of groups and of masks in `krita_sample`** (0.5.0). `krita_sample` reads paint layers
   only; `krita_capture` reads a transparency mask with `target: "mask"` since 0.22.0. A group has no
   pixels of its own, and could be read through `Node.projectionPixelData`.
@@ -330,11 +340,20 @@ these are the parts only a person can see.
   while the composite, the layer tree and the compared pixels match. A hand change to guides, or to
   the global selection where no layer holds it, should still close under `refuse`; no harness op
   makes one.
-- **Krita's own close paths after a verified save** (0.30.0). The Codex agent confirmed the tool's
-  guarded close after a verified save, and `dirty` and `krita_modified` reported apart, but not a
-  tab closed by hand, Close All, a quit, or a hand edit after the save. Krita should ask to save
-  each, since a save leaves its flag set (K45), and a hand edit should make `refuse` refuse. Unit
-  tests and the probe's close checks cover the tool's side.
+- **Krita's export dialogs and mixed Close All orders on close** (0.32.0). The Codex agent's run of
+  Krita's own close paths used KRA working copies, and Close All with Save for one document and
+  Discard for the other. A working copy opened from a PNG or an ORA, whose save on close shows
+  Krita's export dialog, and other orders across several documents were not tried. Krita should
+  ask the same way, and `refuse` should refuse after a hand edit.
+- **First activation on a fresh Krita profile** (0.32.0). Nobody has installed from a checkout into
+  a Krita that has never seen the plugin. On a new macOS user account with Krita 5.3.x started
+  once, follow only the README and the guide: clone, `install-plugin`, find the plugin in the
+  Python Plugin Manager, enable it, restart, `roots add` one disposable folder, `doctor` at each
+  incomplete stage and then passing all six steps; register a client, and open, paint, save,
+  close and reopen a fictional file. Never rename or empty the owner's own Krita folder or
+  preferences to fake it: `KRITA_ART_MCP_DATA_DIR` moves only the server's data. The Codex agent's
+  checks covered an install into an empty folder and first-run guidance with no `kritarc` or
+  `config.json`. Left out at the round 4 intake.
 - **A layer style spreading a change** (0.8.0). No harness op can add a layer style, so unit
   tests hold the `layer_style` reason. Add a drop shadow by hand to a layer of an agent's working
   copy, then change its opacity with `krita_layer_update`: region scope should be refused, naming
