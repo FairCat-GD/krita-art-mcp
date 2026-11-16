@@ -78,9 +78,11 @@ native-close defect was found.
   - `install.run` (`install.py:10`) checks only the source's package folder, so a source without
     its `.desktop` copies the package in, retires the old one, and then raises at
     `plugin_files.py:50`, leaving the plugin's folder new and its `.desktop` old;
-  - `plugin_files.source_hash` of a missing folder is the empty digest, so a missing source and a
-    missing install compare equal. `plugin_current` (`setup_checks.py:77-84`), which `doctor` and
-    the probe's first check both call, hashes the source with no check.
+  - `plugin_files.source_hash` of a missing folder is the empty folder's digest, with no error.
+    `plugin_current` (`setup_checks.py:77-84`), which `doctor`'s step 5 and the probe's first check
+    both call, hashes the source with no check, so with no source it reports a hash mismatch and
+    sends the owner to `install-plugin`, which has nothing to install. It cannot pass falsely: the
+    running plugin's hash is never the empty digest, and step 1 checks the installed folder first.
 - **The package gap matches the layout:** `uv_build` with `src/` packs `src/krita_art_mcp/` only,
   and `paths.plugin_source()` (`paths.py:55-57`) is the checkout's `plugin/`. ARCHITECTURE
   *Packaging* already says there is no PyPI package; README and the guide imply a checkout without
@@ -124,25 +126,26 @@ native-close defect was found.
 4. **Recovery: the unit gaps, and three live checks.**
    - Unit: cancel a queued call through the tool, then retry it and repeat the retry; a paint
      recovered by a new server; a save finished by a new server after the first is gone.
-   - Live, behind the probe's existing long save: cancel a queued call and retry it; end a server
-     mid-save and finish the save from a new one; end a server with a paint queued and recover it
-     from a new one.
+   - Live: cancel a call queued behind the probe's existing long save, and retry it; end one server
+     of the probe's own while a save of its own runs with a paint queued behind it, then finish the
+     save and recover the paint from a new process.
    - No fault-injection code, in the probe or in production. The never-sent route and a Krita
      restart stay held by unit tests, with the handoff's live run as their evidence.
 5. **The handoff settles "Krita's own close paths after a verified save".** It is recorded in
    ARCHITECTURE as measured on 5.3.4.1, and leaves the backlog's *Not yet checked by hand*; what
    the handoff did not try stays there.
-6. **The round ends on a tag.** Its last session cuts 0.32.2 and asks before tagging it `v0.32.2`
-   locally. Pushing the tag and making the repository public are separate approvals, outside this
-   round.
+6. **The round ends on a tag.** Its last session cuts 0.32.1 and asks before tagging it `v0.32.1`
+   locally, on the commit its release checks last ran on. Pushing the tag and making the repository
+   public are separate approvals, outside this round.
 7. **Fixtures are recipes,** and nothing of the handoff's evidence enters the repository: no file,
    no path, no receipt, and no name of the owner's art.
 8. **The readiness report** (the install route, the final commit, version and archive hash, the
    gates' counts, what stays unverified, a stable or not-stable call for that scope) goes into the
    chat alone.
-9. **The sessions, in order:** L1 (0.32.1), the recovery routes kept as checks; V1 (0.32.2,
-   tagged), setup diagnostics, the install route, the release checks, the report and the close.
-   Two sessions place no architecture review.
+9. **The sessions, in order:** L1, the recovery routes kept as checks, which changes tests and the
+   probe alone and so cuts no version and needs no Krita restart; V1 (0.32.1, tagged), setup
+   diagnostics, the install route, the release checks, the report and the close. Two sessions place
+   no architecture review.
 10. **Out of this round,** each in `docs/BACKLOG.md`:
     - a standalone package with the plugin bundled as package resources;
     - the lost-reply and never-sent routes run live through a probe-only fault server;

@@ -32,12 +32,15 @@ Never push without being asked.
 
 | Session | Scope | Decisions | Version |
 |---|---|---|---|
-| L1 | The recovery routes kept as checks: unit gaps, three live checks | 4, 7 | **0.32.1** |
-| V1 | Setup diagnostics, the install route said plainly, the release checks and report; close | 1, 2, 3, 5, 6, 7, 8, 10 | **0.32.2**, tagged |
+| L1 | The recovery routes kept as checks: unit gaps, three live checks | 4, 7 | — |
+| V1 | Setup diagnostics, the install route said plainly, the release checks and report; close | 1, 2, 3, 5, 6, 7, 8, 10 | **0.32.1**, tagged |
 
-Both sessions cut a version, and the plugin holds its version equal to the package's, so each
-runs `install-plugin` and needs Krita restarted at 0 unsaved documents before its probe, and the
-owner's MCP client restarted after. Each asks the owner first, with the Codex agent paused.
+L1 changes tests and the probe alone, so it cuts no version: the plugin stays byte for byte the
+installed one, the probe's hash check passes without `install-plugin`, and Krita needs no restart.
+If L1 finds it must change the plugin or a tool, it stops and asks. V1 cuts the version, and the
+plugin holds its version equal to the package's, so V1 runs `install-plugin` and needs Krita
+restarted at 0 unsaved documents before its probe, and the owner's MCP client restarted after. Each
+session asks the owner before any probe run, with the Codex agent paused.
 
 ---
 
@@ -62,19 +65,26 @@ journal check); `USER-GUIDE.md` *Retries and long calls*.
     with the retry guidance and finishes nothing; a same-id `krita_document_save` from the new
     server takes the lease, finishes and verifies. Beside `tests/test_save_tool.py:261` and `:285`,
     where the first process always lives.
-- **Three live checks** (decision 4), in `src/krita_art_mcp/probe/saving.py`, behind the probe's
-  existing long save (`_long_save`, `:647`), whose 8192² export keeps Krita's main thread busy
-  for about 5 s.
-  - **Cancel.** A layer create queued behind the save is cancelled; the poll reads `cancelled` and
-    `not_applied` with a valid receipt; once the save ends the layer is absent; the same-id retry
-    runs once, and its repeat returns the same operation id. Cancelling the running save is
-    `UNSUPPORTED_CAPABILITY`, `not_applied`.
-  - **A server ended mid-save.** A second server of the probe's own (`_server`,
-    `probe/__init__.py:64`, with its own journal folder) opens a document and saves it; that
-    process is ended while the save runs. A new process over the same folder polls `uncertain`
-    and finishes nothing, and the same-id save finishes with its file verified.
-  - **A server ended with a paint queued.** The same, with a fill queued behind a save: the new
-    process's poll reads `applied`, and the same-id retry adds no undo step.
+- **Three live checks** (decision 4), in `src/krita_art_mcp/probe/saving.py`.
+  - **Cancel,** behind the probe's existing long save (`_long_save`, `:647`), whose 8192² export
+    keeps Krita's main thread busy for about 5 s. The layer create goes to a small document of its
+    own, made by the probe's bridge client as H4's paint document is (`harness_call(client,
+    "document.create", …)`). Not the working copy, which server-a leases, so the client's create
+    would answer `DOCUMENT_IN_USE` and never queue; and not H4's paint document, whose check counts
+    exactly one undo step (`_h4_checks`, `:751`). Cancelled while queued, the poll reads
+    `cancelled` and `not_applied` with a valid receipt; once the save ends the layer is absent; the
+    same-id retry runs once, and its repeat returns the same operation id. Cancelling the running
+    save is `UNSUPPORTED_CAPABILITY`, `not_applied`.
+  - **One server ended mid-save, holding a queued paint.** A server of the probe's own (`_server`,
+    `probe/__init__.py:64`, with its own journal folder, never server-a) opens a working copy of a
+    fixture of its own and saves it, and a fill on a second small document it holds is queued
+    behind the save. The process is ended once, while both are pending. A new process over the
+    same folder then, for the save, polls `uncertain` and finishes nothing, and the same-id save
+    finishes with its file verified; for the fill, polls `applied`, and the same-id retry adds no
+    undo step. That is two checks from one ended server and one save.
+  - **The restart save is sized to stay running** past the server's end, and no larger: L1 measures
+    the smallest recipe (from `fixtures.long_save_stack`) that does, rather than a second 8192²
+    stack, and records the probe's added time and Krita's memory beside H4's MEASURED line.
   - Every check fails, never passes, when it did not see the state it is about (queued, running,
     pending at the moment the server ended).
 - **Docs.**
@@ -82,7 +92,8 @@ journal check); `USER-GUIDE.md` *Retries and long calls*.
     lost-reply and never-sent routes are held by unit tests alone); the baseline (tests, PASS, the
     probe's time, the journal's dispatched lines).
   - `USER-GUIDE.md`: only if a check shows the guide wrong.
-  - `CHANGELOG.md`: 0.32.1, the probe's new checks, in the user's words.
+  - `CHANGELOG.md`: nothing of its own; the handoff names the probe's new checks, and V1's 0.32.1
+    entry carries them in the user's words.
   - `docs/BACKLOG.md`: *A Krita that dies mid-call* gains what the handoff showed for an orderly
     quit, and stays for a hard one.
 - **Ask at the start of L1:** how to falsify three live checks without a full probe run each
@@ -134,7 +145,7 @@ by hand*.
   - `doctor` stays six steps, and exits 1 with no traceback.
 - **The install route said plainly** (decision 1).
   - README *Quick start* and `USER-GUIDE.md` *Install*: clone the repository at the release tag
-    (the URL `CHANGELOG.md`'s links already use), `cd` into it, then the existing steps. A wheel or
+    (named as the *Ask at the start* settles), `cd` into it, then the existing steps. A wheel or
     an sdist alone cannot install the plugin. *Update*: fetch the next tag, then the existing three
     steps.
   - `ARCHITECTURE.md` *Packaging*: the checkout is the one install route; what a built package
@@ -144,8 +155,10 @@ by hand*.
   handoff measured them on 5.3.4.1 (item 5 of its summary), and a line in *Registry, lease and
   document state* beside Krita's flag. The intake already took the item out of
   `docs/BACKLOG.md`.
-- **The release checks, by hand, on the release commit** (decisions 6, 8), recorded in the
-  done-note:
+- **The release checks, by hand** (decisions 6, 8), run on the release commit and recorded in the
+  done-note, then run again on the commit to be tagged once the review commit exists, and recorded
+  in the handoff, since the close has deleted the done-note's file by then. A review that changes
+  only documents needs only the archive check again; one that changes code needs all of them:
   - `verify`, `probe` and `doctor`, with their counts;
   - `git archive` of the commit, unpacked in a scratch folder outside the checkout: it holds
     `plugin/` with its `.desktop`, `src/` with the 25 schemas, `pyproject.toml`, `uv.lock`,
@@ -154,9 +167,9 @@ by hand*.
   - a wheel built into a scratch folder and installed into a scratch environment answers
     `install-plugin` and `doctor` with the new message and exit 1, no traceback.
 - **The readiness report** (decision 8), in the chat alone.
-- **The tag** (decision 6): asked for after the review commit, made locally as `v0.32.2` on it,
-  never pushed without its own approval. `CHANGELOG.md`'s 0.32.2 link names the tag, and
-  `[Unreleased]` compares it with `HEAD`.
+- **The tag** (decision 6): asked for after the review commit and the checks run again on it, made
+  locally as `v0.32.1` on that commit, the one the checks describe, and never pushed without its own
+  approval. `CHANGELOG.md`'s 0.32.1 link names the tag, and `[Unreleased]` compares it with `HEAD`.
 - **The close:** the release commit carries the done-note; then `docs: close round 4` deletes
   `docs/spec/`'s files, `docs/BACKLOG.md`'s header names round 4's release commit beside rounds
   1 to 3, and the handoff says no round is in progress.
@@ -164,7 +177,7 @@ by hand*.
   - `USER-GUIDE.md`: *Install*, *Update*, *`doctor` and troubleshooting* (step 1's new failures).
   - `ARCHITECTURE.md`: *The CLI*, *Packaging*, K56, the header's version line, the baseline.
   - README: *Quick start*.
-  - `CHANGELOG.md`: 0.32.2.
+  - `CHANGELOG.md`: 0.32.1, with L1's probe checks beside V1's own changes.
   - `docs/BACKLOG.md`: the header, at the close; the round's left-out items stay as the intake
     wrote them.
 - **Ask at the start of V1:** whether the README names the clone URL while the repository is still

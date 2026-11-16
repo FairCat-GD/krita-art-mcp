@@ -344,16 +344,19 @@ these are the parts only a person can see.
   Krita's own close paths used KRA working copies, and Close All with Save for one document and
   Discard for the other. A working copy opened from a PNG or an ORA, whose save on close shows
   Krita's export dialog, and other orders across several documents were not tried. Krita should
-  ask the same way, and `refuse` should refuse after a hand edit.
+  ask the same way, and `refuse` should refuse after a hand edit. The probe's close checks (in
+  `probe/modified.py`) and the save tool's unit tests hold the tool's side for every format.
 - **First activation on a fresh Krita profile** (0.32.0). Nobody has installed from a checkout into
   a Krita that has never seen the plugin. On a new macOS user account with Krita 5.3.x started
   once, follow only the README and the guide: clone, `install-plugin`, find the plugin in the
   Python Plugin Manager, enable it, restart, `roots add` one disposable folder, `doctor` at each
   incomplete stage and then passing all six steps; register a client, and open, paint, save,
   close and reopen a fictional file. Never rename or empty the owner's own Krita folder or
-  preferences to fake it: `KRITA_ART_MCP_DATA_DIR` moves only the server's data. The Codex agent's
-  checks covered an install into an empty folder and first-run guidance with no `kritarc` or
-  `config.json`. Left out at the round 4 intake.
+  preferences to fake it: `KRITA_ART_MCP_DATA_DIR` moves only the server's data. The setup tests
+  (`tests/test_setup_commands.py`) hold `install-plugin`'s copy into a folder and its first-run
+  steps, and every `doctor` step failing in turn; the Codex agent also checked an install into an
+  empty folder and first-run guidance with no `kritarc` or `config.json`. Left out at the round 4
+  intake.
 - **A layer style spreading a change** (0.8.0). No harness op can add a layer style, so unit
   tests hold the `layer_style` reason. Add a drop shadow by hand to a layer of an agent's working
   copy, then change its opacity with `krita_layer_update`: region scope should be refused, naming

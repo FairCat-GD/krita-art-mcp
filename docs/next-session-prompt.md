@@ -7,17 +7,25 @@ docs/spec/SESSIONS.md, then this file, and do Session L1: the recovery routes ke
 has two parts:
 - the unit gaps: a queued call cancelled and retried through the tools, a paint recovered by a new
   server, a save finished by a new server after the first is gone;
-- three live checks behind the probe's long save: a queued call cancelled and retried, a server
-  ended mid-save, a server ended with a paint queued.
+- three live checks: a call queued behind the probe's long save, cancelled and retried; one server
+  of the probe's own ended while its save runs with a paint queued, then the save finished and the
+  paint recovered from a new process.
 
-Release 0.32.1.
+No release: L1 changes tests and the probe alone, so it cuts no version, and the installed plugin
+stays current without a Krita restart. V1 releases 0.32.1.
 
 ## State you need that is not in the specs
 
 - **Round 4 is stable-release readiness:** the intake is done; L1 and V1 remain.
-- **The intake is committed locally, not pushed.** `origin/main` holds everything through the
-  review commit "review: the server's own knot rule said no count, and 6 smaller". List
-  `origin/main..HEAD` before any push.
+- **Pushed.** `origin/main` holds everything through the intake's review commit ("review: L1's
+  queued cancel had no document of its own, and 6 smaller"), pushed with the owner's approval:
+  the intake (`ac1ccc4`) and that review commit. List `origin/main..HEAD` before any push.
+- **The intake's review (`/code-review high`), 7 findings, all fixed** in the spec and the plan:
+  L1's cancel check queues on a document of its own; V1 re-runs the release checks on the commit
+  it tags; the two restart checks share one ended server and one save; L1 cuts no version and V1
+  releases 0.32.1; V1's install steps wait on its own question about the clone URL; the feature
+  file states what a missing source does to the hash check; the new by-hand items name their
+  automated cover.
 - **Where the round comes from.** The Codex agent ran release checks on 0.32.0 and found no
   painting, cancellation, recovery or native-close defect. The feature file summarises its handoff
   in public-safe words; the handoff itself stays outside the repository, and nothing of its
@@ -38,9 +46,9 @@ Release 0.32.1.
   - **Live runs and Krita restarts** were allowed at 0 unsaved with the Codex agent paused, each
     time they were asked for; ask again.
   - **The chat's last message is the workflow kit's one-line opener,** never this file's text.
-  - **L1 cuts 0.32.1 though it changes only tests and the probe,** because each session here is a
-    release and the plugin's version is held equal to the package's. So it runs `install-plugin`
-    and needs Krita restarted before its probe.
+  - **L1 cuts no version.** A bump would force `install-plugin`, a Krita restart and the client's
+    restart to reload an unchanged plugin, since the plugin's version is held equal to the
+    package's. If L1 finds it must change the plugin or a tool, it stops and asks.
 - **Baseline** (ARCHITECTURE's table, v0.32.0, unchanged by the intake):
   - `verify`: 6 stages, all PASS; 1198 server tests and 1245 plugin-core tests, 0 skipped;
   - `probe`: 238 PASS, 0 FAIL, 27 MEASURED, about 153 s with 0 documents open, the journal check
