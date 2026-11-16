@@ -57,6 +57,13 @@ def plugin_source() -> Path:
     return Path(__file__).resolve().parents[2] / "plugin"
 
 
+def tilde(path: Path) -> str:
+    # Setup output is pasted into notes, so it shows the home folder as ~.
+    home = str(Path.home())
+    text = str(path)
+    return "~" + text[len(home) :] if text.startswith(home + "/") else text
+
+
 @dataclass(frozen=True)
 class Places:
     # Every folder a tool reaches, handed in, so no test can reach the owner's.

@@ -7,8 +7,9 @@ from krita_art_mcp import paths, plugin_files, setup_checks
 
 def run(krita_data_dir: Path, kritarc: Path, out: TextIO = sys.stdout) -> int:
     source = paths.plugin_source()
-    if not (source / paths.PLUGIN_NAME).is_dir():
-        print(f"install-plugin: no plugin source at {source}; run it from the repo.", file=out)
+    checked = plugin_files.payload(source)
+    if isinstance(checked, plugin_files.SourceProblem):
+        print(f"install-plugin: {checked.detail}. {setup_checks.CHECKOUT}", file=out)
         return 1
     if not krita_data_dir.is_dir():
         print(

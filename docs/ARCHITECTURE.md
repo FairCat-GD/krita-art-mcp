@@ -1,6 +1,6 @@
 # krita-art-mcp — architecture, as built
 
-This is the system as it stands at 0.32.0, the round 3 release. Every session
+This is the system as it stands at 0.32.1, the round 4 release. Every session
 keeps it true, in the same commit as the change. Each section stands on its own: a session reads
 the overview, the invariants and the baseline, then only the sections its work touches.
 `docs/USER-GUIDE.md` is the same system from the user's side.
@@ -672,7 +672,10 @@ every undo step sets it, an undo back to the open clears it, and no export clear
 a verified save `dirty` is false and `krita_modified` stays true. A property write through libkis
 (K22) is no undo step and leaves it clear while `dirty` is set; a change made by hand sets it alone.
 The bridge reads it and never clears it, except in the close itself. `doctor`'s unsaved count and
-the restart rule read it too, so a saved working copy counts as unsaved until it closes.
+the restart rule read it too, so a saved working copy counts as unsaved until it closes. Krita's own
+close paths follow the flag (K56): after a verified save, a tab close, Close All and Quit each ask,
+and Krita's Save writes the working copy itself. A hand edit after the save leaves `dirty` false,
+so the close's own compare is what refuses it.
 
 ## Documents
 
@@ -1434,6 +1437,22 @@ bridge reachable; the protocol and plugin hash; at least one root. Whenever the 
 prints Krita's open and unsaved counts, whichever step failed, because that check matters most when
 the plugin is stale, and a session reads them before it restarts Krita.
 
+**The payload check.** `plugin_files.payload` reads the plugin's source beside this copy of the
+server: its package's `__init__.py`, its `.desktop`, and every module through the hash. Nothing is
+compared, hashed or copied before it answers, because a missing folder hashes as the empty digest.
+Its users:
+- `install-plugin`, before it touches Krita's folder. The install also stages the package and the
+  `.desktop` before either replaces anything, so a failed copy leaves the old plugin whole.
+- `doctor`'s step 1, which says, in this order: no plugin source (naming what is missing), a source
+  it cannot read, nothing installed, or an installed copy that differs. The first two take the
+  checkout as their fix, never `install-plugin`, which would have nothing to copy.
+- `setup_checks.plugin_current`, behind `doctor`'s step 5 and the probe's first check, so a missing
+  source never matches a running plugin.
+- `serve`'s explanation of a Krita that is not running, which goes through step 1.
+
+Each exits 1 or answers a failed step, never a traceback, and none touches a plugin, `kritarc` or
+`config.json`.
+
 ## Testing strategy — six layers, and what each cannot see
 
 | Layer | Runs | Covers | Cannot see |
@@ -1569,9 +1588,13 @@ for the owner's call, and no budget is relaxed to pass.
 
 ## Packaging
 
-The server runs as `uv run --project <repo> krita-art-mcp serve`. There is no PyPI package and no app
-bundle. `mcp` is pinned to 2.3.x, where `FastMCP` is `MCPServer` and `mcp.server.fastmcp` raises;
-moving past it is a decision. The plugin uses Python 3.10 syntax, the standard library and the PyQt
+The server runs as `uv run --project <repo> krita-art-mcp serve`. **A checkout of a release tag is the
+one install route**, on macOS, Apple Silicon and Krita 5.3.x. There is no PyPI package and no app
+bundle. `uv build` makes a wheel and an sdist that hold the server and its schemas, but not the
+plugin, its `.desktop` or the docs, because `paths.plugin_source` is the checkout's `plugin/`.
+From one, `install-plugin` and `doctor` stop at the payload check with exit 1 (see *The CLI*), and
+the probe stops at its first check. A standalone package is on the backlog. `mcp` is pinned to
+2.3.x, where `FastMCP` is `MCPServer` and `mcp.server.fastmcp` raises; moving past it is a decision. The plugin uses Python 3.10 syntax, the standard library and the PyQt
 shim, and ships with the repository; the runtime is Krita's bundled Python 3.13 with PyQt5 5.15.11.
 `uv_build` and the `src/` layout build the package, and schemas are package data.
 
@@ -1673,6 +1696,7 @@ cite stay in the PDD, in git history.
 | K53 | `TransformMask.fromXML` runs a `KisSimpleModifyTransformMaskCommand` under a bare `KUndo2Command` through `runSingleCommandStroke`, named after its empty text, and does not wait; a fresh mask holds the transform tool's free transform at identity; `toXML` writes attributes in a per-session hash order; an affine mask renders through its worker until a static cache rebuilt 3000 ms later; `KisRecalculateTransformMaskJob::run` uses its layer's image unchecked, and undoing the attach of a copied transform mask crashes Krita there | `libs/libkis/TransformMask.cpp`; `libs/image/kis_processing_applicator.cpp`; `libs/image/commands_new/KisSimpleModifyTransformMaskCommand.cpp`; `libs/image/kis_transform_mask.cpp`; `libs/image/kis_recalculate_transform_mask_job.cpp`; measured |
 | K54 | `Node.scaleNode(origin, w, h, strategy)` scales by w and h over the exact bounds' size about `origin`, taking an unknown strategy as Bicubic; `rotateNode(radians)` turns about the exact bounds' centre, Bicubic; `shearNode(degX, degY)` shears x then y about it, Bilinear, and pushes no step when `mapRect` keeps the bounds' size; each is one processing step ("Scale Layer", "Rotate Layer", "Shear Layer") that waits and returns silently for a mask; the visitor resamples every paint device and mask selection below, maps a transform mask's params, and moves the node's clones; rotate and shear move a layer's offset; a resample leaves colour under alpha 0 outside the exact bounds | `libs/libkis/Node.cpp:695-743`; `libs/image/kis_image.cc:1078-1340`; `libs/image/processing/kis_transform_processing_visitor.cpp`; `libs/image/kis_transform_worker.cc:59-67`; measured |
 | K55 | A group's projection, as Krita updates it after a fill on a layer inside, can hold `[0,0,0,0]` where that layer's own device holds colour under alpha 0; `refreshProjection` brings the layer's colour into the composite. A layer at the root shows its colour under alpha 0 in the composite as painted. In the grouped three-fill case all 7 pixels a save's recompose changed held the first fill's colour, `[103,97,118,0]`, in the layer itself | measured |
+| K56 | After a verified save, on KRA working copies: a tab close, Close All and Quit each ask, and Cancel keeps every document and file as it was. Save writes the working file with a `~` backup, and its merged pixels equal the verified save's; Discard leaves the file unchanged. Quit's Save and Discard each end Krita's process, `bridge.json` goes with it, and Krita relaunches cleanly. A hand edit after the save (a layer's opacity in the Layers docker) leaves `dirty` false and `krita_modified` true, a `refuse` close answers `DOCUMENT_DIRTY`, `not_applied`, and Krita's Save on quit keeps the edit | measured on 5.3.4.1, in the Codex agent's release run on 0.32.0 |
 | C1 | `mcp` 2.3.0: `FastMCP` is `MCPServer`; `Image` takes no `_meta`; a raised exception yields only "Error executing tool X" | Probed 2026-10-22 |
 | C2 | Codex passes MCP images to image-capable models and honours `codex/imageDetail` | openai/codex `codex-rs/core/src/mcp_tool_call.rs` |
 | C4 | Claude Code: output limit 25,000 tokens; instructions and descriptions truncated at 4,096 characters | code.claude.com/docs/en/mcp |
@@ -1687,10 +1711,10 @@ the code is shaped as it is.
 - Krita's flag, measured on PNG, KRA and ORA working copies: a layer, a stroke, a selection and a
   `harness.add_node` set it; a view or opacity change and every save, verified, refused or failed,
   leave it; an undo back to the open clears it. A created document is not modified.
-- After a verified save, a tab close, Close All and quit each ask to save. Krita's own Save on a KRA
-  working copy writes it with a `~` backup beside it and clears the flag, `dirty` stays, and the
-  lazy baseline then answers `SOURCE_HASH_MISMATCH`. On a PNG working copy, Save opens the PNG
-  export dialog, which warns that the image loses information.
+- After a verified save, Krita's close paths behave as K56 records. Krita's own Save on a KRA
+  working copy also clears the flag, `dirty` stays, and the lazy baseline then answers
+  `SOURCE_HASH_MISMATCH`. On a PNG working copy, Save opens the PNG export dialog, which warns
+  that the image loses information.
 - `addChildNode` puts a node on top when `above_id` is `None`, and makes it active.
 - `setActiveNode` on the global selection's own mask leaves the previous layer active.
 - Preset XML: the raw digest changed at every restart, across six runs; the canonical one held. No
@@ -1794,18 +1818,16 @@ the code is shaped as it is.
   it. A Krita holding 87 documents ran document ops about three times slower, and left the paint
   benchmarks, the preview benchmark and H4 idle alone.
 
-## Baseline (v0.32.0)
+## Baseline (v0.32.1)
 
-Taken on 2026-11-15 on Krita 5.3.4.1, macOS, Apple Silicon, on a Krita restarted that session, with
-**0 documents open**. The test and probe rows were taken again on 2026-11-16 with 0 documents open,
-on a Krita not restarted since and already holding about 1.6 GB, so their time is not a restarted
-Krita's. The probe prints the open-document count beside its time, because document ops
-depend on it: 87 open documents cost about 50 s more.
+Taken on 2026-11-17 on Krita 5.3.4.1, macOS, Apple Silicon, on a Krita restarted that session, with
+**0 documents open**, while macOS held about 3.9 GB of swap. The probe prints the open-document
+count beside its time, because document ops depend on it: 87 open documents cost about 50 s more.
 
 | Check | Expected |
 |---|---|
 | `uv run scripts/verify.py` | 6 stages, all PASS |
-| Server tests (3.12) | 1200 passed, 0 skipped |
+| Server tests (3.12) | 1213 passed, 0 skipped |
 | Plugin-core tests (3.10) | 1245 passed, 0 skipped |
 | `uv run krita-art-mcp probe` | 242 PASS, 0 FAIL, 28 MEASURED; about 163 s |
 | `uv run krita-art-mcp doctor` | 6 steps, all PASS, with a root allowed |

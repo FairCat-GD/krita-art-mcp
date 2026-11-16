@@ -623,8 +623,8 @@
       "operation_id": null,
       "data": {
         "session_id": "3f2a9c41d7e84b0c9a61f2d5c8e07b13",
-        "server_version": "0.32.0",
-        "plugin_version": "0.32.0",
+        "server_version": "0.32.1",
+        "plugin_version": "0.32.1",
         "protocol": 1,
         "krita_version": "5.3.4",
         "qt_major": 5,

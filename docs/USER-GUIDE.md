@@ -18,21 +18,37 @@ alternative; and delivering a verified save.
   strokes into one undo step.
 - [uv](https://docs.astral.sh/uv/). It installs Python 3.12 for the server, and Python 3.10 for the
   plugin's tests.
+- git, to clone the repository.
 - An MCP client. Codex and Claude Code are the two it is tested with.
 
 ## Install
 
-1. From this repository, copy the plugin into Krita:
+krita-art-mcp installs from a checkout of a release tag and runs from it, so keep the checkout
+where it is. The plugin ships beside the server in the repository, not inside the Python package:
+a wheel or an sdist alone holds no plugin, and `install-plugin` and `doctor` run from one stop and
+say to use a checkout.
+
+1. Clone the release and go into it:
+
+   ```bash
+   git clone --branch v0.32.1 https://github.com/FairCat-GD/krita-art-mcp.git
+   ```
+
+   ```bash
+   cd krita-art-mcp
+   ```
+
+2. Copy the plugin into Krita:
 
    ```bash
    uv run krita-art-mcp install-plugin
    ```
 
-2. Quit Krita and start it again.
-3. In *Configure Krita › Python Plugin Manager* (in the application menu on macOS), enable
+3. Quit Krita and start it again.
+4. In *Configure Krita › Python Plugin Manager* (in the application menu on macOS), enable
    *Krita Art MCP Bridge*.
-4. Quit Krita and start it again.
-5. Allow the folders agents may use, one command each. An agent can name no file outside them, and
+5. Quit Krita and start it again.
+6. Allow the folders agents may use, one command each. An agent can name no file outside them, and
    its working copies go into a folder inside them:
 
    ```bash
@@ -42,7 +58,7 @@ alternative; and delivering a verified save.
    `roots list` shows them, and `roots remove <folder>` takes one away. `roots add` refuses `/`, your
    home folder, and krita-art-mcp's own data folder, anything inside it, or any folder that holds it.
    If `config.json` already lists one of those, every path is refused until you remove it.
-6. Check the setup. `doctor` names the first step that fails, and how to fix it:
+7. Check the setup. `doctor` names the first step that fails, and how to fix it:
 
    ```bash
    uv run krita-art-mcp doctor
@@ -52,7 +68,7 @@ alternative; and delivering a verified save.
 
 Apps started from the Dock do not inherit your shell's `PATH`, so both registrations use absolute
 paths. Replace `/Users/<you>/.local/bin/uv` with the output of `which uv`, and `/ABS/PATH/krita-art-mcp`
-with this repository's folder.
+with your checkout's folder.
 
 **Codex**, in `~/.codex/config.toml`:
 
@@ -108,8 +124,18 @@ Folders, or open the folder in the app, then restart the app.
 
 ## Update
 
-Run `install-plugin` again and restart Krita, then restart your MCP client. The server refuses a
-plugin of another version with `PROTOCOL_MISMATCH`, so a release needs all three steps. Save your
+In your checkout, fetch the release tags and switch to the new one (here `v0.33.0` stands for it):
+
+```bash
+git fetch --tags
+```
+
+```bash
+git switch --detach v0.33.0
+```
+
+Then run `install-plugin` again and restart Krita, then restart your MCP client. The server refuses
+a plugin of another version with `PROTOCOL_MISMATCH`, so a release needs all three steps. Save your
 work first: restarting Krita closes your documents.
 
 ## The core loop, from an agent's side
@@ -612,12 +638,16 @@ is closed, because Krita keeps it marked modified.
 
 | Step | If it fails |
 |---|---|
-| 1. The plugin files are installed and current | Run `install-plugin`, then restart Krita |
+| 1. The plugin files are installed and current | Nothing installed, or an installed copy that differs: run `install-plugin`, then restart Krita. No plugin source beside this copy of the server, or one it cannot read: run it from a readable checkout of a release tag (see *Install*) |
 | 2. `kritarc` enables the plugin | Enable *Krita Art MCP Bridge* in the Python Plugin Manager, then restart Krita |
 | 3. Krita is running | Start Krita |
 | 4. The bridge is reachable | Follow its message; restart Krita |
 | 5. The protocol and plugin hash match | Run `install-plugin`, then restart Krita |
 | 6. At least one root is allowed | Run `roots add <folder>` |
+
+**`install-plugin` or `doctor` says there is no plugin source.** They check the plugin's source in
+the checkout before they compare, hash or copy anything, and a wheel or an sdist has none. Both exit
+1 and change nothing in Krita's folder. Run them, and register the server, from a checkout.
 
 **An agent lists no tools, or the handshake closes.** Check the absolute paths in the registration,
 then the macOS folder access above.

@@ -319,3 +319,69 @@ by hand*.
   folder of the owner's.
 - **A tag is not a push.** Ask before tagging; the tag and the repository's visibility each need
   their own approval.
+
+**Done (2026-11-17, 0.32.1).**
+- **Decided with the owner at the start:**
+  - **The clone URL** (the *Ask at the start*): README and the guide name the repository's URL
+    now, since CHANGELOG's links already publish it.
+  - **Live runs** were allowed for the session, with the Codex agent paused: `install-plugin`, a
+    Krita restart at 0 unsaved, and `doctor` and probe runs.
+  - No plan review was proposed: the change reworks a small path.
+- **The payload check.**
+  - `plugin_files.payload` reads the source's `__init__.py`, its `.desktop` and, through the
+    hash, every module. It returns the hash and the `.desktop`'s bytes, or a `SourceProblem`:
+    "no plugin source beside this copy of the server", naming what is missing, or "cannot read
+    the plugin source".
+  - `plugin_installed` checks it first, with the new `CHECKOUT` fix, never `install-plugin`.
+  - `plugin_current` checks it before any compare, so step 5, the probe's first check and its
+    `Stopped:` note all name it.
+  - `install.run` checks it before the Krita-folder check and any copy.
+  - `serve`'s not-running explanation goes through step 1, so it says the same.
+  - `_home` became `paths.tilde`, so `plugin_files` names paths in `~` form without an import
+    cycle.
+- **An addition to the block:** `plugin_files.install` stages the `.desktop` beside the package
+  before it retires anything, so a copy that fails part-way leaves the old plugin whole.
+- **Tests** (`tests/test_setup_commands.py`, +13):
+  - step 1's seven cases through `doctor`;
+  - a source it cannot read;
+  - `install-plugin` from a source with no `.desktop`, Krita's folder byte for byte unchanged;
+  - a failed install leaving the old plugin whole;
+  - a missing source against the empty digest, through `plugin_current` and the probe;
+  - the CLI run from a copy of the package with no plugin beside it, for `install-plugin` and
+    `doctor`.
+  - The two stale-plugin tests pass unchanged.
+- **Docs.**
+  - README and the guide: git, then the clone at `v0.32.1`. *Update* fetches the next tag, and
+    step 1's failures are in the troubleshooting table.
+  - ARCHITECTURE: *The CLI*'s payload check, *Packaging*'s one install route, K56, the
+    Krita's-flag line, the measured bullet pointing at K56, the header and the baseline.
+  - CLAUDE.md: the `install-plugin` row.
+  - CHANGELOG: 0.32.1, with L1's probe checks and tests, and the tag's links.
+- **Falsified,** each by its key rule, with every file restored from a copy and compared:
+  - `plugin_current` hashing without the check: the empty digest passed, and the test failed on
+    `passed`;
+  - `install.run` checking only the package folder: the copy reached `plugin_files.install`,
+    which raised at the test's call;
+  - the `.desktop` copied after the swap: the old plugin's tree differed;
+  - a source problem given the install fix: the matrix's three source cases failed;
+  - every `OSError` read as missing: the unreadable case printed "has no";
+  - the payload raising: both subprocess cases printed a traceback.
+- **Release checks, on the release tree as staged** (it differs from the commit only by this note):
+  - `verify`: 6 stages PASS; 1213 server tests (+13), 1245 plugin-core tests (0).
+  - `install-plugin`, then `doctor` at step 5 stale with 0 open and 0 unsaved, so Krita was
+    restarted. `doctor` then passed all six steps.
+  - `probe`: 242 PASS, 0 FAIL, 28 MEASURED, in 163.3 s with 0 documents open, the journal check
+    reading 870 dispatched lines. macOS held about 3.9 GB of swap before and after.
+  - **The archive** of the staged tree held:
+    - `plugin/` with its `.desktop` and 56 modules;
+    - 25 schemas;
+    - `pyproject.toml`, `uv.lock`, `LICENSE`;
+    - every document README links.
+    `uv sync --locked` worked there. Its `install-plugin`, with `HOME` in a scratch folder, wrote
+    57 files into an empty folder (the package and the `.desktop`), at the repository's hash.
+  - **A wheel** built from that archive holds no `plugin/` and no `.desktop`. Installed into a
+    scratch environment, with a plugin already in the scratch home's Krita folder, its
+    `install-plugin` and `doctor` each exited 1 with the checkout message and no traceback. The
+    install left its target folder empty.
+- **Numbers:** server tests 1213 (+13), plugin-core 1245 (0); probe 242 PASS, 0 FAIL, 28 MEASURED,
+  journal 870; tools, schemas, codes, ops, capabilities, parity tests and instructions unchanged.

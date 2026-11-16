@@ -1,17 +1,21 @@
 import asyncio
+import dataclasses
 import io
 import json
+import os
 import re
 import shutil
 import stat
+import subprocess
+import sys
 from pathlib import Path
 from typing import Any, cast
 
 import pytest
 
-from krita_art_mcp import doctor, install, paths, plugin_files, probe, roots
+from krita_art_mcp import doctor, install, paths, plugin_files, probe, roots, setup_checks
 from krita_art_mcp.bridge_client import BeforeSend, BridgeClient, Done, Failed, Outcome
-from krita_art_mcp.errors import error_body
+from krita_art_mcp.errors import PROTOCOL, error_body
 from krita_art_mcp.probe import opening
 from krita_art_mcp.probe.report import Report
 from krita_art_mcp.setup_checks import Setup
@@ -82,6 +86,42 @@ def test_install_plugin_refuses_a_missing_krita_folder(tmp_path: Path) -> None:
     out = io.StringIO()
     assert install.run(tmp_path / "missing", tmp_path / "kritarc", out) == 1
     assert "does not exist" in out.getvalue()
+
+
+def _tree(folder: Path) -> dict[str, bytes | None]:
+    return {
+        path.relative_to(folder).as_posix(): path.read_bytes() if path.is_file() else None
+        for path in sorted(folder.rglob("*"))
+    }
+
+
+def test_install_plugin_copies_nothing_from_a_source_without_its_desktop(
+    tmp_path: Path, plugin_source: Path
+) -> None:
+    (plugin_source / plugin_files.desktop_name()).unlink()
+    krita = _krita_dir(tmp_path)
+    before = _tree(krita)
+    out = io.StringIO()
+    assert install.run(krita, tmp_path / "kritarc", out) == 1
+    assert _tree(krita) == before
+    assert out.getvalue() == (
+        "install-plugin: no plugin source beside this copy of the server "
+        f"({plugin_source} has no krita_art_mcp_bridge.desktop). {setup_checks.CHECKOUT}\n"
+    )
+
+
+def test_a_failed_install_leaves_the_old_plugin_whole(tmp_path: Path, plugin_source: Path) -> None:
+    krita = tmp_path / "Krita"
+    (krita / "pykrita").mkdir(parents=True)
+    plugin_files.install(REPO_PLUGIN, krita)
+    old = _tree(krita / "pykrita")
+    (plugin_source / paths.PLUGIN_NAME / "bridge_core" / "jobs.py").write_text("NEW = True\n")
+    (plugin_source / plugin_files.desktop_name()).unlink()
+    with pytest.raises(FileNotFoundError):
+        plugin_files.install(plugin_source, krita)
+    # Only the hidden staging copy, which the next install sweeps, is new.
+    after = _tree(krita / "pykrita")
+    assert {name: content for name, content in after.items() if name[0] != "."} == old
 
 
 class _Client(BridgeClient):
@@ -182,6 +222,171 @@ def test_doctor_finds_a_stale_installed_copy(tmp_path: Path, stale: str) -> None
     out = io.StringIO()
     assert doctor.run(setup, _Client(_healthy(REPO_HASH)), out) == 1
     assert out.getvalue().startswith("1. the plugin files are installed and current: FAIL")
+
+
+STEP_1_CASES = [
+    "nothing installed",
+    "no source",
+    "no .desktop",
+    "no package",
+    "installed .desktop differs",
+    "hash differs",
+    "exact match",
+]
+
+
+def _source_copy(tmp_path: Path) -> Path:
+    source = tmp_path / "checkout" / "plugin"
+    shutil.copytree(REPO_PLUGIN, source, ignore=shutil.ignore_patterns("__pycache__"))
+    return source
+
+
+@pytest.mark.parametrize(
+    ("case", "detail", "fix"),
+    [
+        ("nothing installed", "nothing is installed in {krita}/pykrita", "install-plugin"),
+        (
+            "no source",
+            "no plugin source beside this copy of the server ({source} does not exist)",
+            "checkout",
+        ),
+        (
+            "no .desktop",
+            "no plugin source beside this copy of the server "
+            "({source} has no krita_art_mcp_bridge.desktop)",
+            "checkout",
+        ),
+        (
+            "no package",
+            "no plugin source beside this copy of the server "
+            "({source} has no krita_art_mcp_bridge/__init__.py)",
+            "checkout",
+        ),
+        (
+            "installed .desktop differs",
+            "the installed .desktop file differs from the repo's",
+            "install-plugin",
+        ),
+        ("hash differs", "installed {installed}, repo {repo}", "install-plugin"),
+        ("exact match", "hash {repo}", ""),
+    ],
+    ids=STEP_1_CASES,
+)
+def test_step_1_tells_its_failures_apart(tmp_path: Path, case: str, detail: str, fix: str) -> None:
+    setup = _setup(tmp_path, installed=case != "nothing installed", enabled=True, running=True)
+    source = _source_copy(tmp_path)
+    setup = dataclasses.replace(setup, plugin_source=source)
+    target = plugin_files.installed(setup.krita_data_dir)
+    if case == "no source":
+        shutil.rmtree(source)
+    elif case == "no .desktop":
+        (source / plugin_files.desktop_name()).unlink()
+    elif case == "no package":
+        shutil.rmtree(source / paths.PLUGIN_NAME)
+    elif case == "installed .desktop differs":
+        desktop = target.parent / plugin_files.desktop_name()
+        desktop.write_bytes(desktop.read_bytes() + b"\n")
+    elif case == "hash differs":
+        (target / "bridge_core" / "jobs.py").write_text("EDITED = True\n")
+    out = io.StringIO()
+    status = doctor.run(setup, _Client(_healthy(REPO_HASH)), out)
+    lines = out.getvalue().splitlines()
+    expected = detail.format(
+        krita=setup.krita_data_dir,
+        source=source,
+        repo=REPO_HASH[:12],
+        installed=plugin_files.source_hash(target)[:12] if target.is_dir() else "",
+    )
+    outcome = "PASS" if not fix else "FAIL"
+    assert lines[0] == f"1. the plugin files are installed and current: {outcome} ({expected})"
+    if not fix:
+        assert status == 0
+        return
+    assert status == 1 and lines[2] == "doctor: stopped at step 1 of 6."
+    # A source problem is never cured by install-plugin, which would have nothing to copy.
+    assert lines[1].startswith("   Fix: ") and fix in lines[1]
+    assert ("install-plugin" in lines[1]) == (fix == "install-plugin")
+
+
+def test_step_1_names_a_plugin_source_it_cannot_read(tmp_path: Path) -> None:
+    setup = _setup(tmp_path, installed=True, enabled=True, running=True)
+    source = _source_copy(tmp_path)
+    desktop = source / plugin_files.desktop_name()
+    desktop.chmod(0)
+    try:
+        if os.access(desktop, os.R_OK):
+            pytest.skip("this platform lets the owner read a file with no permissions")
+        out = io.StringIO()
+        setup = dataclasses.replace(setup, plugin_source=source)
+        assert doctor.run(setup, _Client(_healthy(REPO_HASH)), out) == 1
+        lines = out.getvalue().splitlines()
+        assert lines[0] == (
+            "1. the plugin files are installed and current: FAIL "
+            f"(cannot read the plugin source in {source}: Permission denied)"
+        )
+        assert lines[1] == f"   Fix: {setup_checks.CHECKOUT}"
+    finally:
+        desktop.chmod(0o644)
+
+
+def test_a_missing_plugin_source_never_matches_the_running_plugin(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    missing = tmp_path / "plugin"
+    # A missing folder hashes as the empty digest, which a bare compare would pass.
+    empty = plugin_files.source_hash(missing / paths.PLUGIN_NAME)
+    step = setup_checks.plugin_current({"protocol": PROTOCOL, "plugin_hash": empty}, missing)
+    detail = f"no plugin source beside this copy of the server ({missing} does not exist)"
+    assert (step.passed, step.detail, step.fix) == (False, detail, setup_checks.CHECKOUT)
+    monkeypatch.setattr(paths, "plugin_source", lambda: missing)
+    out = io.StringIO()
+    healthy = Done({"protocol": PROTOCOL, "plugin_hash": empty, "krita_version": "5.3.4"}, None)
+    assert probe.run(out, _Client(healthy), tmp_path / "harness", ["/nonexistent"]) == 1
+    lines = out.getvalue().splitlines()
+    assert lines[0].startswith("FAIL     the running plugin is the repo's") and detail in lines[0]
+    assert lines[1] == f"Stopped: {setup_checks.CHECKOUT}"
+
+
+PACKAGE = Path(__file__).resolve().parents[1] / "src" / "krita_art_mcp"
+
+
+@pytest.mark.parametrize(
+    "command", [["install-plugin", "--krita-data-dir", "{krita}"], ["doctor"]], ids=lambda c: c[0]
+)
+def test_a_copy_with_no_plugin_beside_it_exits_1_without_a_traceback(
+    tmp_path: Path, command: list[str]
+) -> None:
+    # An installed wheel has the server's package alone; its plugin source would sit here.
+    site = tmp_path / "env" / "site"
+    shutil.copytree(PACKAGE, site / "krita_art_mcp", ignore=shutil.ignore_patterns("__pycache__"))
+    home, krita = tmp_path / "home", tmp_path / "krita"
+    home.mkdir()
+    krita.mkdir()
+    env = {
+        **os.environ,
+        "PYTHONPATH": str(site),
+        "HOME": str(home),
+        "KRITA_ART_MCP_DATA_DIR": str(tmp_path / "data"),
+    }
+    main = "import sys; from krita_art_mcp.cli import main; sys.exit(main(sys.argv[1:]))"
+    arguments = [argument.format(krita=krita) for argument in command]
+    result = subprocess.run(
+        [sys.executable, "-c", main, *arguments],
+        cwd=tmp_path,
+        env=env,
+        capture_output=True,
+        text=True,
+        timeout=60,
+    )
+    assert result.returncode == 1
+    assert "Traceback" not in result.stdout + result.stderr
+    # The copy, not this checkout, was imported: only it has no source beside it.
+    source = (tmp_path / "env" / "plugin").resolve()
+    assert f"no plugin source beside this copy of the server ({source} does not exist)" in (
+        result.stdout
+    )
+    assert setup_checks.CHECKOUT in result.stdout
+    assert list(krita.iterdir()) == []
 
 
 def test_doctor_says_nothing_of_documents_when_krita_is_closed(tmp_path: Path) -> None:

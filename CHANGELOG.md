@@ -6,6 +6,51 @@ All notable changes to krita-art-mcp are documented here. The format follows
 
 ## [Unreleased]
 
+## [0.32.1] — 2026-11-17
+
+The install route is said plainly, the setup commands say so when they are run from anything
+else, and the live harness now runs cancel and recovery against real Krita. Update in your
+checkout: fetch the tags, switch to `v0.32.1`, run `install-plugin`, restart Krita, then restart
+your MCP client.
+
+### Fixed
+
+- **`doctor` no longer crashes without the plugin's source.** Run from a copy with no plugin
+  beside it, such as an installed wheel, it used to end in a traceback once a plugin was
+  installed. Its first step now fails with "no plugin source beside this copy of the server" and
+  says to run from a checkout, and `doctor` exits 1. That step tells four failures apart: no
+  source, a source it cannot read, nothing installed, and an installed copy that differs. A
+  server run from such a copy says the same when Krita is not running, rather than failing the
+  call.
+- **`install-plugin` checks the whole plugin source before it copies anything.** A source missing
+  its `.desktop` file used to replace the plugin's folder and then stop, leaving the old `.desktop`
+  beside the new plugin. It now changes nothing in Krita's folder and exits 1, and a copy that
+  fails part-way leaves the old plugin whole.
+- **The stale-plugin check never passes a missing source.** `doctor`'s fifth step and the probe's
+  first check used to report a hash mismatch and send you to `install-plugin`; they now say there
+  is no plugin source and to run from a checkout.
+
+### Changed
+
+- **The install route is a checkout of a release tag.** The README and the guide now start with
+  `git clone --branch v0.32.1`, and updating fetches the next tag first. A wheel or an sdist alone
+  holds no plugin and cannot install one; the guide says so, and so do the setup commands.
+
+### Added
+
+- **The probe cancels a call queued behind a long save.** A layer create waiting behind H4's save
+  is cancelled, reads `cancelled` and `not_applied` with a valid receipt, and is absent once the
+  save ends; cancelling the running save is refused. Retrying the create under its `request_id`
+  runs it once, and repeating that retry returns the same operation.
+- **The probe ends a server of its own mid-save and finishes the save from a new one.** It first
+  checks the state it is about: the server's process gone, the save still running in Krita, its
+  journal line unsettled and nothing at the path. A new server then reads the save `uncertain`,
+  and retrying it under its `request_id` finishes and verifies the file. A MEASURED line reports
+  how long the check took and how long the save ran on after its server was gone.
+- **Tests for the recovery routes:** a queued layer create cancelled through the tools and
+  retried once; a paint whose reply came back running, recovered by another server over the same
+  journal; and a save finished by a new server once its first is gone.
+
 ## [0.32.0] — 2026-11-15
 
 A taper with too many knots now says so plainly, and the limit and the order to transform in are
@@ -1139,6 +1184,8 @@ The first release is the scaffold that the Phase 1 tools are built on.
   reports its version to the client; it offers no tools yet.
 - **`krita-art-mcp --version`.** It prints the installed version.
 
+[Unreleased]: https://github.com/FairCat-GD/krita-art-mcp/compare/v0.32.1...HEAD
+[0.32.1]: https://github.com/FairCat-GD/krita-art-mcp/releases/tag/v0.32.1
 [0.32.0]: https://github.com/FairCat-GD/krita-art-mcp/commit/2312d86ed08987779d6cedb8932d450a0f941a24
 [0.31.0]: https://github.com/FairCat-GD/krita-art-mcp/commit/e837ef7d6cfec707403376ff9625c7994933edd0
 [0.30.0]: https://github.com/FairCat-GD/krita-art-mcp/commit/40c74913f515a8797e72dbaa1e3bfed4a2ae32ea

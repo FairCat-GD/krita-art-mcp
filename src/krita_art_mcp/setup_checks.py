@@ -8,6 +8,11 @@ from krita_art_mcp import paths, plugin_files, processes, roots
 from krita_art_mcp.errors import PROTOCOL
 
 INSTALL = "Run `uv run krita-art-mcp install-plugin`, then restart Krita."
+# Never install-plugin: with no source beside this copy, it has nothing to install.
+CHECKOUT = (
+    "Run krita-art-mcp from a readable checkout of the repository, cloned at a release tag; "
+    "a wheel or an sdist alone holds no plugin."
+)
 ENABLE = (
     "Enable Krita Art MCP Bridge in Configure Krita > Python Plugin Manager "
     "(in the application menu), then restart Krita."
@@ -34,26 +39,27 @@ class Setup:
 
 def plugin_installed(setup: Setup) -> Step:
     name = "the plugin files are installed and current"
+    source = plugin_files.payload(setup.plugin_source)
+    if isinstance(source, plugin_files.SourceProblem):
+        return Step(name, False, source.detail, CHECKOUT)
     target = plugin_files.installed(setup.krita_data_dir)
     desktop = target.parent / plugin_files.desktop_name()
     if not target.is_dir() or not desktop.is_file():
-        return Step(name, False, f"nothing is installed in {_home(target.parent)}", INSTALL)
-    source_desktop = setup.plugin_source / plugin_files.desktop_name()
-    if desktop.read_bytes() != source_desktop.read_bytes():
+        return Step(name, False, f"nothing is installed in {paths.tilde(target.parent)}", INSTALL)
+    if desktop.read_bytes() != source.desktop:
         return Step(name, False, "the installed .desktop file differs from the repo's", INSTALL)
     installed_hash = plugin_files.source_hash(target)
-    repo_hash = plugin_files.source_hash(setup.plugin_source / paths.PLUGIN_NAME)
-    if installed_hash != repo_hash:
-        detail = f"installed {installed_hash[:12]}, repo {repo_hash[:12]}"
+    if installed_hash != source.hash:
+        detail = f"installed {installed_hash[:12]}, repo {source.hash[:12]}"
         return Step(name, False, detail, INSTALL)
-    return Step(name, True, f"hash {repo_hash[:12]}")
+    return Step(name, True, f"hash {source.hash[:12]}")
 
 
 def plugin_enabled(setup: Setup) -> Step:
     name = "kritarc enables the plugin"
     if _kritarc_enables(setup.kritarc):
         return Step(name, True, f"[python] enable_{paths.PLUGIN_NAME}=true")
-    return Step(name, False, f"{_home(setup.kritarc)} does not enable it", ENABLE)
+    return Step(name, False, f"{paths.tilde(setup.kritarc)} does not enable it", ENABLE)
 
 
 def krita_running(setup: Setup) -> Step:
@@ -76,12 +82,15 @@ def first_local_failure(setup: Setup) -> Step | None:
 
 def plugin_current(health: dict[str, Any], plugin_source: Path) -> Step:
     # Invariant 11: the plugin Krita runs is the repository's, at this protocol.
-    repo_hash = plugin_files.source_hash(plugin_source / paths.PLUGIN_NAME)
+    name = "the protocol and plugin hash match"
+    source = plugin_files.payload(plugin_source)
+    if isinstance(source, plugin_files.SourceProblem):
+        return Step(name, False, source.detail, CHECKOUT)
     running_hash = str(health.get("plugin_hash"))
     protocol = health.get("protocol")
-    current = protocol == PROTOCOL and running_hash == repo_hash
-    detail = f"protocol {protocol}, running {running_hash[:12]}, repo {repo_hash[:12]}"
-    return Step("the protocol and plugin hash match", current, detail, INSTALL)
+    current = protocol == PROTOCOL and running_hash == source.hash
+    detail = f"protocol {protocol}, running {running_hash[:12]}, repo {source.hash[:12]}"
+    return Step(name, current, detail, INSTALL)
 
 
 def roots_allowed(setup: Setup) -> Step:
@@ -108,7 +117,8 @@ def roots_allowed(setup: Setup) -> Step:
 
 
 def bridge_missing() -> Step:
-    fix = f"Restart Krita; if the bridge still does not start, read {_home(paths.plugin_log())}."
+    log = paths.tilde(paths.plugin_log())
+    fix = f"Restart Krita; if the bridge still does not start, read {log}."
     return Step("the bridge is reachable", False, "Krita runs, but its bridge does not", fix)
 
 
@@ -128,9 +138,3 @@ def _kritarc_enables(kritarc: Path) -> bool:
             if key.strip() == f"enable_{paths.PLUGIN_NAME}":
                 return value.strip().lower() == "true"
     return False
-
-
-def _home(path: Path) -> str:
-    home = str(Path.home())
-    text = str(path)
-    return "~" + text[len(home) :] if text.startswith(home + "/") else text

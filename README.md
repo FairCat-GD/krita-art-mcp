@@ -6,7 +6,7 @@ game size, and undo or keep it. It is for painted (non-pixel) 2D game art.
 
 ## What it does
 
-0.32.0 has 25 tools: looking at a painting, painting it, building and transforming its layers,
+0.32.1 has 25 tools: looking at a painting, painting it, building and transforming its layers,
 trying an alternative beside it, and saving the result.
 
 - **Works on a copy.** A document opens as a working copy with every existing layer protected, and
@@ -38,8 +38,20 @@ It does not judge whether strokes look painted. That stays with you.
   English name, and with cumulative undo off.
 - [uv](https://docs.astral.sh/uv/). It installs Python 3.12 for the server, and Python 3.10 for the
   plugin's tests.
+- git, to clone the repository.
 
 ## Quick start
+
+It installs from a checkout of a release tag, and runs from there. A wheel or an sdist alone holds
+no plugin, so it cannot install one. Clone the release and go into it:
+
+```bash
+git clone --branch v0.32.1 https://github.com/FairCat-GD/krita-art-mcp.git
+```
+
+```bash
+cd krita-art-mcp
+```
 
 Copy the plugin into Krita:
 
@@ -60,7 +72,7 @@ uv run krita-art-mcp doctor
 
 Register the server with your MCP client, then ask the agent to call `krita_server_info`.
 [The user guide](docs/USER-GUIDE.md) has the registration for Codex and Claude Code, what to do when a
-client cannot read the repository, and how to update.
+client cannot read the checkout, and how to update to the next release.
 
 ## Documentation
 
