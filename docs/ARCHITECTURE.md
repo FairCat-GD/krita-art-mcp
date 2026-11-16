@@ -1797,7 +1797,9 @@ the code is shaped as it is.
 ## Baseline (v0.32.0)
 
 Taken on 2026-11-15 on Krita 5.3.4.1, macOS, Apple Silicon, on a Krita restarted that session, with
-**0 documents open**; the test and probe rows again on 2026-11-16, with 0 documents open. The probe prints the open-document count beside its time, because document ops
+**0 documents open**. The test and probe rows were taken again on 2026-11-16 with 0 documents open,
+on a Krita not restarted since and already holding about 1.6 GB, so their time is not a restarted
+Krita's. The probe prints the open-document count beside its time, because document ops
 depend on it: 87 open documents cost about 50 s more.
 
 | Check | Expected |

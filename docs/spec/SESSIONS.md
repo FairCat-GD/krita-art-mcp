@@ -210,6 +210,30 @@ journal check); `USER-GUIDE.md` *Retries and long calls*.
   - `doctor`: six steps pass.
   - Tools, schemas, codes, ops, capabilities, parity tests and instructions are unchanged. No
     version was cut.
+- **Review (`/code-review high`), 7 findings: 7 fixed and 0 skipped.**
+  - **H4's end was stamped after its cancels.** The save's call now carries the time it returned
+    (`_stamped`), so cancels that outlast it cannot stretch H4's time or its after-the-save check.
+  - **A failed `ps` read as the pid gone.** `_listed` counts only a `ps` that ran, so `_gone`
+    waits for a real "not found".
+  - **A silent bridge read as the save registered.** `_registered` takes only the bridge's own
+    answer (`_answered`, a GET with no wait), since the client's `Pending` reads `running` either
+    way.
+  - **The journal re-read whole on every poll.** `_dispatched` keeps one reader, which reads
+    only new lines.
+  - **Three copies of one wait loop.** `_waited` holds it once.
+  - **The baseline's note hid Krita's state.** It now says the 2026-11-16 rows ran on a Krita not
+    restarted, holding about 1.6 GB.
+  - **The create borrowed the paint's budget.** It has its own `CREATE_BUDGET_S` and
+    `CREATE_POLL_S`.
+  - **Falsified:** `_listed` and `_answered` broken together in one driver run. The precondition
+    read "pid gone False" and "held False" on their own items; the file was restored from a copy
+    and compared.
+  - **Measured:** the driver's H4 and restart checks passed. The macOS swap had then reached
+    3 GB, Krita's resident memory had fallen to about 1 GB, and its saves ran slower: the restart
+    save ran on 3.7 to 7.1 s past its server's end, and the check took 11.9 to 14.7 s.
+  - **Numbers after the review:** `verify` green, 1200 server and 1245 plugin-core tests. `probe`
+    242 PASS, 0 FAIL, 28 MEASURED, journal 870, in 205.3 s under that swap; the baseline keeps the
+    163 s taken before it.
 
 ---
 

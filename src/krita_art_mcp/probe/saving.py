@@ -1,4 +1,6 @@
 import asyncio
+import http.client
+import json
 import os
 import signal
 import statistics
@@ -6,6 +8,7 @@ import subprocess
 import threading
 import time
 import uuid
+from collections.abc import Awaitable, Callable
 from pathlib import Path
 from typing import Any
 
@@ -80,8 +83,11 @@ PAINT_DELAY_S = 0.5
 PAINT_BUDGET_S = 1.0
 RETRY_BUDGET_S = 0.3
 PAINT_POLL_S = 0.2
-# The layer created behind the save, cancelled while it waits, then retried.
+# The layer created behind the save, cancelled while it waits, then retried; its client's waits,
+# so the call comes back pending well before the save ends and the cancel still finds it queued.
 QUEUED_NAME = f"{PREFIX} h4 queued"
+CREATE_BUDGET_S = 1.0
+CREATE_POLL_S = 0.2
 # The restart save: the smallest gradient stack measured to keep running past its server's end.
 RESTARTED = "server-c"
 RESTART_SIZE = 4096
@@ -90,7 +96,7 @@ RESTART_SIDE = 2048
 # How long the probe waits for a journal line, a registration or a pid to go, and how often.
 LINE_WAIT_S = 10.0
 LINE_POLL_S = 0.02
-# One short read of an operation's state.
+# One short read of an operation's state, or of the bridge's answer about it.
 READ_S = 0.3
 # A grouped case where the save's recompose moves colour under alpha 0, rebuilt from its recipe:
 # a transparent canvas, a group holding one paint layer, three opaque polygon fills; and its
@@ -731,7 +737,7 @@ async def _long_save(
             "name": QUEUED_NAME,
             "coverage": None,
         }
-        creator = BridgeClient(budget_s=PAINT_BUDGET_S, poll_s=PAINT_POLL_S)
+        creator = BridgeClient(budget_s=CREATE_BUDGET_S, poll_s=CREATE_POLL_S)
 
         def create_queued() -> Outcome:
             return creator.call("layer.create", layer, request_id=create_id)
@@ -741,15 +747,17 @@ async def _long_save(
         with _Poller() as poller:
             started = time.monotonic()
             saving = asyncio.ensure_future(
-                tool(a, "krita_document_save", save_args(document_id, target, save_id))
+                _stamped(tool(a, "krita_document_save", save_args(document_id, target, save_id)))
             )
             await asyncio.sleep(PAINT_DELAY_S)
             sent, queued = await asyncio.gather(
                 asyncio.to_thread(paint_twice), asyncio.to_thread(create_queued)
             )
             cancels = await _cancels(b, harness / "server-a" / "journal", save_id, queued)
-            saved = await finished(a, await saving, SAVE_LIMIT_S)
-            ended = time.monotonic()
+            first, ended = await saving
+            saved = await finished(a, first, SAVE_LIMIT_S)
+            if saved is not first:
+                ended = time.monotonic()
             took = ended - started
             await asyncio.sleep(2 * RECOVERY_S)
         followed = [client.operation(str(one.operation_id)) for one in sent]
@@ -792,6 +800,12 @@ async def _long_save(
         await close(a, document_id)
         for one in made:
             _discard(client, one)
+
+
+async def _stamped(call: Awaitable[dict[str, Any]]) -> tuple[dict[str, Any], float]:
+    # When the call itself returned, whatever the probe awaited in the meantime.
+    content = await call
+    return content, time.monotonic()
 
 
 def _canvas(name: str) -> dict[str, Any]:
@@ -859,15 +873,27 @@ async def _cancels(
     return answers
 
 
-def _dispatched(journal_dir: Path, request_id: str) -> str | None:
-    # A call's operation id, from its server's journal, while the call itself is still awaited.
+def _waited[T](found: Callable[[], T | None]) -> T | None:
+    # What found() first returns, polled until LINE_WAIT_S runs out.
     deadline = time.monotonic() + LINE_WAIT_S
     while time.monotonic() < deadline:
-        prior = journal.Journal(journal_dir).lookup(request_id)
-        if prior is not None and prior.attempts:
-            return prior.attempts[0].operation_id
+        value = found()
+        if value is not None:
+            return value
         time.sleep(LINE_POLL_S)
     return None
+
+
+def _dispatched(journal_dir: Path, request_id: str) -> str | None:
+    # A call's operation id, from its server's journal, while the call itself is still awaited.
+    # One reader, so each poll reads only the lines written since the last.
+    reader = journal.Journal(journal_dir)
+
+    def found() -> str | None:
+        prior = reader.lookup(request_id)
+        return prior.attempts[0].operation_id if prior is not None and prior.attempts else None
+
+    return _waited(found)
 
 
 async def _layers_named(a: Client, document_id: str) -> int:
@@ -1032,23 +1058,52 @@ def _serve_children() -> set[int]:
 
 def _registered(operation_id: str) -> bool:
     # The journal line comes before the POST, so the bridge may not hold the call yet.
-    reader = BridgeClient(budget_s=READ_S, poll_s=READ_S)
-    deadline = time.monotonic() + LINE_WAIT_S
-    while time.monotonic() < deadline:
-        if isinstance(reader.operation(operation_id), Pending):
-            return True
-        time.sleep(LINE_POLL_S)
-    return False
+    return _waited(lambda: _answered(operation_id) in ("queued", "running") or None) is not None
+
+
+def _answered(operation_id: str) -> str | None:
+    # The call's state as the bridge itself answers it, "unknown" for an id it lacks, and None
+    # while it is silent: the client's Pending reads "running" either way.
+    try:
+        info = json.loads(paths.bridge_file().read_text(encoding="utf-8"))
+        connection = http.client.HTTPConnection("127.0.0.1", int(info["port"]), timeout=READ_S)
+        try:
+            headers = {"Authorization": f"Bearer {info['token']}"}
+            connection.request("GET", f"/v1/operations/{operation_id}?wait_s=0", headers=headers)
+            response = connection.getresponse()
+            status, reply = response.status, json.loads(response.read())
+        finally:
+            connection.close()
+    except (OSError, ValueError, KeyError, TypeError):
+        return None
+    if status == 404:
+        return "unknown"
+    state = reply.get("status") if isinstance(reply, dict) else None
+    return state if isinstance(state, str) else None
 
 
 def _gone(pid: int) -> float | None:
-    # When ps stops finding the pid, which is what the lease asks before it passes on.
-    deadline = time.monotonic() + LINE_WAIT_S
-    while time.monotonic() < deadline:
-        if not processes.start_time(pid):
-            return time.monotonic()
-        time.sleep(LINE_POLL_S)
-    return None
+    # When ps runs and no longer finds the pid, which is what the lease asks before it passes on.
+    return _waited(lambda: time.monotonic() if _listed(pid) is False else None)
+
+
+def _listed(pid: int) -> bool | None:
+    # Whether ps finds the pid; None when ps itself did not answer, which proves nothing.
+    try:
+        found = subprocess.run(
+            ["/bin/ps", "-p", str(pid), "-o", "pid="],
+            capture_output=True,
+            text=True,
+            timeout=5,
+            check=False,
+            stdin=subprocess.DEVNULL,
+            env=processes.PS_ENV,
+        )
+    except (OSError, subprocess.TimeoutExpired):
+        return None
+    if found.returncode not in (0, 1):
+        return None
+    return bool(found.stdout.strip())
 
 
 async def _recovered(

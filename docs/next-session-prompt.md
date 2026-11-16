@@ -22,8 +22,9 @@ Release 0.32.1, tagged locally once the owner approves the tag.
 ## State you need that is not in the specs
 
 - **Round 4 is stable-release readiness:** L1 is done, and V1 remains.
-- **L1 is committed locally, not pushed.** `origin/main` holds everything through `da8c6f7`, the
-  intake's review commit. List `origin/main..HEAD` before any push.
+- **Pushed.** `origin/main` holds everything through L1's review commit ("review: H4's end was
+  stamped after its cancels, and 6 smaller"), pushed with the owner's approval: L1 (`f0a377b`)
+  and that review commit. List `origin/main..HEAD` before any push.
 - **What L1 left that V1 builds on:**
   - **Probe checks for V1's 0.32.1 entry.** L1 wrote no CHANGELOG line, so V1 says these in the
     user's words:
@@ -57,8 +58,10 @@ Release 0.32.1, tagged locally once the owner approves the tag.
   - **V1's version bump needs a restart.** The plugin holds its version equal to the package's,
     so V1 runs `install-plugin` and needs Krita restarted at 0 unsaved before its probe. The
     owner's MCP client restarts after; say so before restarting anything.
-  - **Krita's memory after L1's runs.** Krita sat at about 2.6 GB after L1's driver and probe
-    runs, since each large save keeps memory. V1's restart clears it before the release probe.
+  - **Krita's memory after L1's runs.** Krita reached about 2.6 GB over L1's driver and probe
+    runs, since each large save keeps memory. Then macOS swapped about 3 GB, and the last probe
+    took 205 s against the baseline's 163 s. V1's restart clears it before the release probe;
+    read a slow probe beside `sysctl vm.swapusage`.
 - **Baseline** (ARCHITECTURE's table, v0.32.0, as L1 left it):
   - `verify`: 6 stages, all PASS; 1200 server tests and 1245 plugin-core tests, 0 skipped;
   - `probe`: 242 PASS, 0 FAIL, 28 MEASURED, about 163 s with 0 documents open, the journal check
