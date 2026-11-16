@@ -370,8 +370,12 @@ these are the parts only a person can see.
   Monitor for a minute while it is idle.
 - **A Krita that dies mid-call** (0.3.0). Unit tests hold the uncertain outcome, and each of the
   deaths found in 0.12.0 came back `INTERNAL_ERROR` with `outcome: uncertain`, but nobody has forced
-  one on purpose. Quit Krita hard during a long save through the tool, restart it, and retry with
-  the same `request_id`: expect `uncertain`, with nothing sent again.
+  one on purpose. The Codex agent's release run on 0.32.0 tried an orderly quit: a receipt left
+  unsettled, then Krita quit and relaunched. The poll and the retry stayed `uncertain`, nothing was
+  sent to the new session, and a settled receipt answered from the journal. Its drawing was saved
+  and closed before the quit, so it was not a crash. A hard quit is still untried: quit Krita hard
+  during a long save through the tool, restart it, and retry with the same `request_id`. Expect
+  `uncertain`, with nothing sent again.
 - **A lazy baseline from a file saved with a selection mask active** (0.11.0). The baseline is
   read from the working copy's file, opened again without a view, so Krita should draw no mask
   overlay into it (K46); the probe's fixtures never save one. Save a KRA by hand with a local

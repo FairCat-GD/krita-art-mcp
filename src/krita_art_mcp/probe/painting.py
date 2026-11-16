@@ -112,7 +112,9 @@ def _pick(found: list[dict[str, Any]], names: tuple[str, ...]) -> dict[str, Any]
     return next((by[name] for name in names if name in by), None)
 
 
-async def run(report: Report, a: Client, b: Client, client: BridgeClient, harness: Path) -> None:
+async def run(
+    report: Report, a: Client, b: Client, client: BridgeClient, harness: Path, serve: list[str]
+) -> None:
     harness = Path(os.path.realpath(harness))
     folder = harness / "painting"
     folder.mkdir(exist_ok=True)
@@ -164,7 +166,7 @@ async def run(report: Report, a: Client, b: Client, client: BridgeClient, harnes
                 await _benchmark(report, a, client, harness, folder, spec, hard)
         # Inside the window whose brush state this function writes back.
         with report.timed("save"):
-            await saving.run(report, a, client, harness, hard)
+            await saving.run(report, a, b, client, harness, hard, serve)
             await branching.run(report, a, client, harness, hard)
             await modified.run(report, a, client, harness, hard)
         with report.timed("acceptance"):

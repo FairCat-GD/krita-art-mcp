@@ -7,7 +7,7 @@ from pathlib import Path
 from typing import Any
 
 import numpy as np
-from mcp import Client
+from mcp import Client, StdioServerParameters
 from PIL import Image
 
 from krita_art_mcp import paths
@@ -19,6 +19,12 @@ from krita_art_mcp.tools.saving import file_sha256
 
 # Every document, layer and file name the probe makes starts with it.
 PREFIX = "krita-art-mcp probe"
+
+
+def stdio_server(serve: list[str], harness: Path, name: str) -> StdioServerParameters:
+    # Each server keeps its journal in the harness folder, never in the owner's data dir.
+    env = {"KRITA_ART_MCP_DATA_DIR": str(harness / name)}
+    return StdioServerParameters(command=serve[0], args=serve[1:], env=env)
 
 
 def guard(document_id: str, request_id: str | None = None) -> dict[str, str]:

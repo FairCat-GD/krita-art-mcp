@@ -82,6 +82,10 @@ journal check); `USER-GUIDE.md` *Retries and long calls*.
     same folder then, for the save, polls `uncertain` and finishes nothing, and the same-id save
     finishes with its file verified; for the fill, polls `applied`, and the same-id retry adds no
     undo step. That is two checks from one ended server and one save.
+  - **Amended at plan time, with the owner, on Fable's advice:** one server is ended mid-save
+    with no fill queued behind it, and a new process finishes its save. One `serve` process runs
+    one tool call at a time (`tools.CALLS`), so it cannot hold a save and a fill in flight at
+    once. Decision 4 carries the dated amendment.
   - **The restart save is sized to stay running** past the server's end, and no larger: L1 measures
     the smallest recipe (from `fixtures.long_save_stack`) that does, rather than a second 8192²
     stack, and records the probe's added time and Krita's memory beside H4's MEASURED line.
@@ -121,6 +125,91 @@ journal check); `USER-GUIDE.md` *Retries and long calls*.
   pid is gone.
 - **The probe's 238 PASS baseline moves by the checks added,** some of which may run in a loop;
   count from a run.
+
+**Done (2026-11-16, no version).**
+- **Decided with the owner at the start:**
+  - **The restart check.** The owner asked Fable for advice and took it: one server ended
+    mid-save, its save finished by a new process, and no live paint recovery (see *Amendments*).
+  - **Falsification and sizing** (the *Ask at the start*): a scratch driver outside the
+    repository ran only the save stage's H4 and restart checks against the harness, with the
+    sweep, the no-unsaved gate and the brush state read and written back. One full probe run
+    was the gate.
+  - **Live runs** were allowed for the session, with the Codex agent paused, at 0 unsaved.
+- **Unit tests.**
+  - `test_a_cancelled_job_is_not_applied_and_its_retry_runs_once` (`tests/test_outcomes.py`)
+    extends the stroke-through-the-client case in place:
+    - a `krita_layer_create` is queued behind `slow` through the tool, cancelled with
+      `krita_operation_cancel`, and polled `cancelled`, `not_applied`, `receipt_valid: true`;
+    - the layer is absent;
+    - its retry runs once, and the repeats from the journal and from server B share its id.
+  - `test_a_paint_that_came_back_running_is_recovered_by_another_server`:
+    - a stroke is held running by `on_paint`;
+    - server B over A's journal polls it `applied`, with a valid receipt;
+    - its retry returns the same id, with one undo step and the journal settled.
+  - `test_a_new_server_finishes_a_save_once_its_first_server_is_gone` (`tests/test_save_tool.py`):
+    - with A gone (`world.alive`), B over A's journal polls `uncertain` with the retry sentence,
+      and finishes nothing;
+    - its same-id save completes under the original id, verified, with one export and the
+      journal settled.
+- **The probe.**
+  - **Plumbing.** `_server` became `common.stdio_server`. `painting.run` and `saving.run` take
+    `serve`, and `saving.run` takes server-b.
+  - **H4's cancel** (`_long_save`, `_cancels`, `_cancel_checks`).
+    - A layer create on a document of the probe's client queues beside H4's paint, through a
+      `BridgeClient` of its own.
+    - Server-b does the cancelling, because server-a holds `CALLS` for the whole save. It
+      cancels the create first, since only a queued op is cancelled. It polls it. Then it
+      cancels the save, whose operation id comes from server-a's journal through
+      `journal.Journal.lookup`.
+    - The retry goes through the probe's client, which resolves the first retry's transfer files
+      as it does the stroke's. It counts as a pass only after a cancel that took.
+  - **The restart check** (`_restart`, `_ended_mid_save`, `_recovered`) runs in server-c's own
+    folder, on 16 gradient layers of 2048 px on a 4096² canvas.
+    - The server's pid is the difference in the probe's `serve` children in `ps`.
+    - The probe waits until the bridge holds the save. It then SIGKILLs the server, cancels the
+      awaited call, and leaves the `Client`, which reaps the child, until `ps` no longer finds
+      the pid.
+    - The precondition requires all of these: the save held before the end, the pid gone, the
+      journal line unsettled, the save still `Pending`, and nothing at the path. The recovery
+      check requires the precondition as well.
+- **Amendments:**
+  - **One server ended mid-save, with no fill queued behind it.** The block had one server hold
+    a save and a fill both pending. `tools.CALLS` lets a server have only one call in flight, so
+    its fill could not reach Krita before its save's call returned.
+    - Fable's advice: a fill from any other sender would only test the bridge's dedup again,
+      which H4's queued retry already holds.
+    - Amended at plan time, with the owner. Decision 4 carries the dated amendment.
+    - The block's "two checks from one ended server" became the precondition and the recovery.
+    - The paint route stays with the new unit test and the handoff's run.
+- **Measured** (Krita 5.3.4.1). How long the restart save ran on after its server was gone, by
+  size:
+  - 2048² with 8 layers of 1024 px: 0.1 s. It ended before the read, and both checks failed, as
+    they should.
+  - 4096² with 8 layers of 2048 px: 0.8 s.
+  - 4096² with 16 layers of 2048 px: 1.1 s, 1.1 s and 1.2 s, then 1.1 s in the full probe. Chosen.
+  - 6144² with 8 layers of 3072 px: 2.0 s.
+  - The restart check takes 4.1 s, the save stage 32.5 s, and the probe 162.9 s, against about
+    155 s before.
+  - Krita's memory rose with each large save and was not given back: from 410 MB to about
+    2.6 GB over the driver runs. In the probe it went from 1.65 GB to 2.27 GB across H4 and to
+    2.65 GB after the restart check.
+  - Leaving a `Client` whose child was killed mid-call raised nothing once the call's task was
+    cancelled.
+- **Falsified:**
+  - **The three unit tests**, each by its key assertion: the layer count after the retry, the
+    undo steps, and the retry's operation id. Each failed at its own line, and the files were
+    restored from copies.
+  - **The four live checks**, broken in one driver run: the cancel's `receipt_valid`, the
+    retry's layer count, the precondition's condition, and the recovery's expected outcome.
+    Each failed on its own line, the recovery naming its own rule. `saving.py` was restored from
+    a copy and compared byte for byte.
+- **Numbers:**
+  - Server tests: 1200 (+2). Plugin-core tests: 1245 (0).
+  - `probe`: 242 PASS (+4), 0 FAIL, 28 MEASURED (+1), in 162.9 s with 0 documents open. The
+    journal check read 870 dispatched lines (+6).
+  - `doctor`: six steps pass.
+  - Tools, schemas, codes, ops, capabilities, parity tests and instructions are unchanged. No
+    version was cut.
 
 ---
 

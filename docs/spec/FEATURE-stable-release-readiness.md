@@ -131,6 +131,12 @@ native-close defect was found.
      save and recover the paint from a new process.
    - No fault-injection code, in the probe or in production. The never-sent route and a Krita
      restart stay held by unit tests, with the handoff's live run as their evidence.
+   - **Amended 2026-11-16, at L1's plan, by the owner, on Fable's advice:** the live restart
+     check ends one server mid-save and finishes its save from a new process, with no paint queued
+     behind it. One `serve` process runs one tool call at a time (`tools.CALLS`), so it cannot
+     hold a save and a fill in flight at once. A paint sent by another sender would only test the
+     bridge's dedup again, which H4's queued retry already holds. The paint recovered by a new
+     server stays held by its unit test, with the handoff's live run as its evidence.
 5. **The handoff settles "Krita's own close paths after a verified save".** It is recorded in
    ARCHITECTURE as measured on 5.3.4.1, and leaves the backlog's *Not yet checked by hand*; what
    the handoff did not try stays there.

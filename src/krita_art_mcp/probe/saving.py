@@ -1,6 +1,8 @@
 import asyncio
 import os
+import signal
 import statistics
+import subprocess
 import threading
 import time
 import uuid
@@ -11,11 +13,12 @@ import numpy as np
 from mcp import Client
 from mcp.types import CallToolResult
 
-from krita_art_mcp import paths
-from krita_art_mcp.bridge_client import BridgeClient, Done, Outcome, Pending
+from krita_art_mcp import journal, paths, processes
+from krita_art_mcp.bridge_client import BridgeClient, Done, Failed, Outcome, Pending
 from krita_art_mcp.paths import Places
 from krita_art_mcp.probe import fixtures
 from krita_art_mcp.probe.common import (
+    PREFIX,
     add_layer,
     brush_args,
     by_name,
@@ -32,6 +35,7 @@ from krita_art_mcp.probe.common import (
     line_points,
     megabytes,
     open_args,
+    stdio_server,
     stroke_args,
 )
 from krita_art_mcp.probe.filling import fill_args
@@ -40,7 +44,7 @@ from krita_art_mcp.probe.report import Report, code, differs, tool
 from krita_art_mcp.tools.changes import resolve_update
 from krita_art_mcp.tools.documents import SRGB_PROFILE
 from krita_art_mcp.tools.painting import stroke_op
-from krita_art_mcp.tools.saving import file_sha256
+from krita_art_mcp.tools.saving import file_sha256, finish_operation_id
 
 # The fields a KRA brings back for every layer, beside its id; the root's own id is new.
 KRA_FIELDS = (
@@ -76,6 +80,18 @@ PAINT_DELAY_S = 0.5
 PAINT_BUDGET_S = 1.0
 RETRY_BUDGET_S = 0.3
 PAINT_POLL_S = 0.2
+# The layer created behind the save, cancelled while it waits, then retried.
+QUEUED_NAME = f"{PREFIX} h4 queued"
+# The restart save: the smallest gradient stack measured to keep running past its server's end.
+RESTARTED = "server-c"
+RESTART_SIZE = 4096
+RESTART_LAYERS = 16
+RESTART_SIDE = 2048
+# How long the probe waits for a journal line, a registration or a pid to go, and how often.
+LINE_WAIT_S = 10.0
+LINE_POLL_S = 0.02
+# One short read of an operation's state.
+READ_S = 0.3
 # A grouped case where the save's recompose moves colour under alpha 0, rebuilt from its recipe:
 # a transparent canvas, a group holding one paint layer, three opaque polygon fills; and its
 # control, the first fill alone on a layer at the root.
@@ -148,13 +164,20 @@ async def save_retried(
 
 
 async def run(
-    report: Report, a: Client, client: BridgeClient, harness: Path, hard: dict[str, Any]
+    report: Report,
+    a: Client,
+    b: Client,
+    client: BridgeClient,
+    harness: Path,
+    hard: dict[str, Any],
+    serve: list[str],
 ) -> None:
     folder = harness / "saving"
     folder.mkdir(exist_ok=True)
     await _recompose(report, a, folder)
     await _round_trips(report, a, client, folder, hard)
-    await _long_save(report, a, client, folder, hard)
+    await _long_save(report, a, b, client, harness, hard)
+    await _restart(report, client, harness, serve)
 
 
 async def _recompose(report: Report, a: Client, folder: Path) -> None:
@@ -644,9 +667,18 @@ class _Poller:
         self._thread.join(POLL_TIMEOUT_S + 10)
 
 
+def _discard(client: BridgeClient, made: Outcome) -> None:
+    # A small document the probe's bridge client made, and so holds.
+    if isinstance(made, Done):
+        harness_call(
+            client, "document.close", document_id=made.result["document_id"], dirty_policy="discard"
+        )
+
+
 async def _long_save(
-    report: Report, a: Client, client: BridgeClient, folder: Path, hard: dict[str, Any]
+    report: Report, a: Client, b: Client, client: BridgeClient, harness: Path, hard: dict[str, Any]
 ) -> None:
+    folder = harness / "saving"
     source = folder / "long.ora"
     fixtures.write_sparse_ora(
         source, fixtures.long_save_stack(LONG_LAYERS, LONG_SIDE, LONG_SIZE), LONG_SIZE, LONG_SIZE
@@ -657,19 +689,17 @@ async def _long_save(
         await tool(a, "krita_document_open", open_args(source, "working_copy", folder / "work")),
         SAVE_LIMIT_S,
     )
-    painted = harness_call(client, "document.create", **_canvas())
-    if opened.get("status") != "completed" or not isinstance(painted, Done):
-        report.check("H4's documents open", False, f"{opened.get('error')}; {painted}")
-        if isinstance(painted, Done):
-            harness_call(
-                client,
-                "document.close",
-                document_id=painted.result["document_id"],
-                dirty_policy="discard",
-            )
+    painted = harness_call(client, "document.create", **_canvas(f"{PREFIX} h4"))
+    cancelled = harness_call(client, "document.create", **_canvas(f"{PREFIX} h4 cancel"))
+    made = (painted, cancelled)
+    if opened.get("status") != "completed" or not all(isinstance(one, Done) for one in made):
+        report.check("H4's documents open", False, f"{opened.get('error')}; {painted}; {cancelled}")
+        for one in made:
+            _discard(client, one)
         if opened.get("document_id"):
             await close(a, opened["document_id"])
         return
+    assert isinstance(painted, Done) and isinstance(cancelled, Done)
     document_id, paint_id = opened["document_id"], painted.result["document_id"]
     try:
         # A layer of its own, so Krita holds the working copy modified and refuse compares it.
@@ -692,14 +722,32 @@ async def _long_save(
             )
             return [first, again]
 
+        create_id = str(uuid.uuid4())
+        layer = {
+            "document_id": cancelled.result["document_id"],
+            "parent_id": cancelled.result["root_layer_id"],
+            "above_id": None,
+            "type": "paint",
+            "name": QUEUED_NAME,
+            "coverage": None,
+        }
+        creator = BridgeClient(budget_s=PAINT_BUDGET_S, poll_s=PAINT_POLL_S)
+
+        def create_queued() -> Outcome:
+            return creator.call("layer.create", layer, request_id=create_id)
+
         target = folder / "long.kra"
+        save_id = str(uuid.uuid4())
         with _Poller() as poller:
             started = time.monotonic()
             saving = asyncio.ensure_future(
-                tool(a, "krita_document_save", save_args(document_id, target))
+                tool(a, "krita_document_save", save_args(document_id, target, save_id))
             )
             await asyncio.sleep(PAINT_DELAY_S)
-            sent = await asyncio.to_thread(paint_twice)
+            sent, queued = await asyncio.gather(
+                asyncio.to_thread(paint_twice), asyncio.to_thread(create_queued)
+            )
+            cancels = await _cancels(b, harness / "server-a" / "journal", save_id, queued)
             saved = await finished(a, await saving, SAVE_LIMIT_S)
             ended = time.monotonic()
             took = ended - started
@@ -711,6 +759,15 @@ async def _long_save(
             resolve_update(Places.under(paths.default_data_dir(), folder / "h4"), followed[0])
         history = (await inspect_data(a, paint_id)).get("history") or {}
         _h4_checks(report, poller.calls, ended, saved, sent, followed, history)
+        cancel_id = cancelled.result["document_id"]
+        before = await _layers_named(a, cancel_id)
+        # The cancel released the request_id, so its retry runs; its repeat finds that run.
+        retried = [client.call("layer.create", layer, request_id=create_id) for _ in range(2)]
+        if isinstance(retried[0], Done):
+            # As the stroke's: the probe sent it, so it takes the transfer files its run left.
+            resolve_update(Places.under(paths.default_data_dir(), folder / "h4"), retried[0])
+        after = await _layers_named(a, cancel_id)
+        _cancel_checks(report, queued, cancels, before, retried, after)
         silences = sorted(
             (answered - sent_at for sent_at, answered in poller.calls if answered is not None),
             reverse=True,
@@ -733,13 +790,14 @@ async def _long_save(
         )
     finally:
         await close(a, document_id)
-        harness_call(client, "document.close", document_id=paint_id, dirty_policy="discard")
+        for one in made:
+            _discard(client, one)
 
 
-def _canvas() -> dict[str, Any]:
-    # The paint call's own small document, made by the probe's bridge client, which holds it.
+def _canvas(name: str) -> dict[str, Any]:
+    # A queued call's own small document, made by the probe's bridge client, which holds it.
     return {
-        "name": "krita-art-mcp probe h4",
+        "name": name,
         "size_px": [64, 32],
         "color_model": "RGBA",
         "depth": "U8",
@@ -781,3 +839,264 @@ def _h4_checks(
         f"{[type(one).__name__ for one in followed]}, {len(ids)} operation(s), "
         f"{history.get('undo_available')} undo step(s)",
     )
+
+
+async def _cancels(
+    b: Client, journal_dir: Path, save_id: str, queued: Outcome
+) -> dict[str, dict[str, Any]]:
+    # Through server-b, since server-a holds its call lock for the whole save. The create goes
+    # first: only a queued op is cancelled, so its cancel shows the save is still running.
+    answers: dict[str, dict[str, Any]] = {"create": {}, "polled": {}, "save": {}}
+    if not isinstance(queued, Pending):
+        return answers
+    cancel = {"operation_id": queued.operation_id, "request_id": str(uuid.uuid4())}
+    answers["create"] = await tool(b, "krita_operation_cancel", cancel)
+    answers["polled"] = await tool(b, "krita_operation_get", {"operation_id": queued.operation_id})
+    save_op = await asyncio.to_thread(_dispatched, journal_dir, save_id)
+    if save_op is not None:
+        cancel = {"operation_id": save_op, "request_id": str(uuid.uuid4())}
+        answers["save"] = await tool(b, "krita_operation_cancel", cancel)
+    return answers
+
+
+def _dispatched(journal_dir: Path, request_id: str) -> str | None:
+    # A call's operation id, from its server's journal, while the call itself is still awaited.
+    deadline = time.monotonic() + LINE_WAIT_S
+    while time.monotonic() < deadline:
+        prior = journal.Journal(journal_dir).lookup(request_id)
+        if prior is not None and prior.attempts:
+            return prior.attempts[0].operation_id
+        time.sleep(LINE_POLL_S)
+    return None
+
+
+async def _layers_named(a: Client, document_id: str) -> int:
+    layers = (await inspect_data(a, document_id)).get("layers", [])
+    return sum(layer["name"] == QUEUED_NAME for layer in layers)
+
+
+def _cancel_checks(
+    report: Report,
+    queued: Outcome,
+    answers: dict[str, dict[str, Any]],
+    before: int,
+    retried: list[Outcome],
+    after: int,
+) -> None:
+    state = (answers["create"].get("data") or {}).get("state")
+    polled = answers["polled"].get("data") or {}
+    seen = (polled.get("state"), polled.get("outcome"), polled.get("receipt_valid"))
+    refused = answers["save"]
+    details = (refused.get("error") or {}).get("details") or {}
+    cancelled = state == "cancelled"
+    report.check(
+        "H4: a layer create queued behind the save is cancelled through krita_operation_cancel, "
+        "polled cancelled and not_applied with a valid receipt, and absent once the save ends; "
+        "cancelling the running save is UNSUPPORTED_CAPABILITY, not_applied",
+        cancelled
+        and seen == ("cancelled", "not_applied", True)
+        and before == 0
+        and code(refused) == "UNSUPPORTED_CAPABILITY"
+        and (details.get("state"), details.get("outcome")) == ("running", "not_applied"),
+        f"sent {type(queued).__name__}, cancel {state or code(answers['create'])}, polled {seen}, "
+        f"{before} layer(s) after the save; the save's cancel {code(refused)} {details}",
+    )
+    # A create that was never cancelled would pass the rest, as one run under one id.
+    ids = {one.operation_id for one in retried}
+    ran = all(isinstance(one, Done) for one in retried) and len(ids) == 1
+    report.check(
+        "H4: the cancelled layer create's same-id retry runs once, and its repeat returns the "
+        "same operation id",
+        cancelled
+        and ran
+        and isinstance(queued, Pending)
+        and queued.operation_id not in ids
+        and after == 1,
+        f"retried {[type(one).__name__ for one in retried]}, {len(ids)} operation(s), "
+        f"{after} layer(s)",
+    )
+
+
+async def _restart(report: Report, client: BridgeClient, harness: Path, serve: list[str]) -> None:
+    folder = harness / "saving" / "restart"
+    folder.mkdir()
+    source = folder / "restart.ora"
+    fixtures.write_sparse_ora(
+        source,
+        fixtures.long_save_stack(RESTART_LAYERS, RESTART_SIDE, RESTART_SIZE),
+        RESTART_SIZE,
+        RESTART_SIZE,
+    )
+    rss_before = krita_rss_kb()
+    started = time.monotonic()
+    ended = await _ended_mid_save(client, harness, serve, folder, source)
+    if isinstance(ended, str):
+        report.check("the restart check's working copy opens", False, ended)
+        return
+    reader = BridgeClient(budget_s=READ_S, poll_s=READ_S)
+    target, operation_id = Path(ended["arguments"]["path"]), ended["operation_id"]
+    prior = journal.Journal(harness / RESTARTED / "journal").lookup(ended["request_id"])
+    still = None if operation_id is None else reader.operation(operation_id)
+    seen = {
+        "save held by the bridge before the end": ended["held"],
+        "pid gone": ended["gone"] is not None,
+        "journal line unsettled": prior is not None and prior.unsettled(),
+        "save still running": isinstance(still, Pending),
+        "nothing at the path": not target.exists(),
+    }
+    pending = all(seen.values())
+    report.check(
+        "a server of the probe's own is ended mid-save: its pid gone, its save's journal line "
+        "unsettled, the save still running in Krita, and nothing at the path",
+        pending,
+        "; ".join(f"{name} {held}" for name, held in seen.items()),
+    )
+    done = None
+    if operation_id is not None:
+        done = await asyncio.to_thread(reader.operation, operation_id, budget_s=SAVE_LIMIT_S)
+    ran_on = time.monotonic() - ended["gone"] if ended["gone"] and isinstance(done, Done) else None
+    recovered = await _recovered(client, harness, serve, folder, ended)
+    report.check(
+        "a new server over the ended one's journal polls its save uncertain, finishing nothing, "
+        "and its same-id retry finishes it, verified",
+        pending and not recovered,
+        "; ".join(recovered) or "finished by the new server",
+    )
+    report.measured(
+        f"the restart save: the {RESTART_SIZE} x {RESTART_SIZE} working copy with "
+        f"{RESTART_LAYERS} gradient {RESTART_SIDE} px layers, its server ended mid-save",
+        f"{time.monotonic() - started:.1f} s for the check; the save ran on "
+        + ("unmeasured" if ran_on is None else f"{ran_on:.1f} s")
+        + f" after its server was gone; Krita {megabytes(rss_before)} before, "
+        f"{megabytes(krita_rss_kb())} after",
+    )
+
+
+async def _ended_mid_save(
+    client: BridgeClient, harness: Path, serve: list[str], folder: Path, source: Path
+) -> dict[str, Any] | str:
+    # Opens a working copy, starts its save, and ends the server once Krita holds the save.
+    before = _serve_children()
+    async with Client(stdio_server(serve, harness, RESTARTED)) as server:
+        pids = _serve_children() - before
+        if len(pids) != 1:
+            return f"{len(pids)} new serve processes, where one was started"
+        (pid,) = pids
+        opened = await finished(
+            server,
+            await tool(
+                server, "krita_document_open", open_args(source, "working_copy", folder / "work")
+            ),
+            SAVE_LIMIT_S,
+        )
+        if opened.get("status") != "completed":
+            return f"krita_document_open: {opened.get('error')}"
+        request_id = str(uuid.uuid4())
+        arguments = save_args(opened["document_id"], folder / "restart.kra", request_id)
+        saving = asyncio.ensure_future(tool(server, "krita_document_save", arguments))
+        operation_id = await asyncio.to_thread(
+            _dispatched, harness / RESTARTED / "journal", request_id
+        )
+        held = operation_id is not None and await asyncio.to_thread(_registered, operation_id)
+        os.kill(pid, signal.SIGKILL)
+        saving.cancel()
+        await asyncio.gather(saving, return_exceptions=True)
+    # Whatever was seen, the new server closes the working copy this one opened.
+    return {
+        "document_id": opened["document_id"],
+        "request_id": request_id,
+        "operation_id": operation_id,
+        "arguments": arguments,
+        "held": held,
+        "gone": await asyncio.to_thread(_gone, pid),
+    }
+
+
+def _serve_children() -> set[int]:
+    # This process's serve children, so the one a check ends is known by its pid.
+    listed = subprocess.run(
+        ["/bin/ps", "-axo", "pid=,ppid=,command="],
+        capture_output=True,
+        text=True,
+        check=False,
+        stdin=subprocess.DEVNULL,
+        env=processes.PS_ENV,
+    ).stdout
+    found = set()
+    for line in listed.splitlines():
+        fields = line.split()
+        if len(fields) >= 3 and fields[1] == str(os.getpid()) and fields[-1] == "serve":
+            found.add(int(fields[0]))
+    return found
+
+
+def _registered(operation_id: str) -> bool:
+    # The journal line comes before the POST, so the bridge may not hold the call yet.
+    reader = BridgeClient(budget_s=READ_S, poll_s=READ_S)
+    deadline = time.monotonic() + LINE_WAIT_S
+    while time.monotonic() < deadline:
+        if isinstance(reader.operation(operation_id), Pending):
+            return True
+        time.sleep(LINE_POLL_S)
+    return False
+
+
+def _gone(pid: int) -> float | None:
+    # When ps stops finding the pid, which is what the lease asks before it passes on.
+    deadline = time.monotonic() + LINE_WAIT_S
+    while time.monotonic() < deadline:
+        if not processes.start_time(pid):
+            return time.monotonic()
+        time.sleep(LINE_POLL_S)
+    return None
+
+
+async def _recovered(
+    client: BridgeClient, harness: Path, serve: list[str], folder: Path, ended: dict[str, Any]
+) -> list[str]:
+    # What the new server got wrong; empty when it finished the ended server's save.
+    operation_id, arguments = ended["operation_id"], ended["arguments"]
+    target = Path(arguments["path"])
+    problems = []
+    async with Client(stdio_server(serve, harness, RESTARTED)) as later:
+        try:
+            if operation_id is None:
+                return ["the save's journal line never came"]
+            polled = await _settled(later, operation_id)
+            receipt = polled.get("receipt") or {}
+            said = (receipt.get("error") or {}).get("message") or ""
+            if (polled.get("state"), polled.get("outcome")) != ("failed", "uncertain"):
+                problems.append(f"polled {polled.get('state')}, {polled.get('outcome')}")
+            if "the same request_id finishes it" not in said:
+                problems.append(f"the poll says {said!r}")
+            if target.exists() or not _hidden(folder):
+                problems.append(f"after the poll: {os.listdir(folder)}")
+            finish = client.operation(finish_operation_id(operation_id), budget_s=READ_S)
+            if not (isinstance(finish, Failed) and finish.operation_id is None):
+                problems.append(f"the bridge holds the finish: {type(finish).__name__}")
+            saved = await finished(
+                later, await tool(later, "krita_document_save", arguments), SAVE_LIMIT_S
+            )
+            result = saved.get("data") or {}
+            if (saved.get("status"), saved.get("operation_id")) != ("completed", operation_id):
+                problems.append(f"the retry: {code(saved) or saved.get('status')}")
+            elif not target.exists() or result.get("sha256") != file_sha256(target):
+                problems.append("the file at the path is not the one the receipt names")
+            elif not (result.get("reopened_verified") and result.get("composite_preserved")):
+                problems.append(f"the receipt says {result}")
+            if _hidden(folder):
+                problems.append(f"left beside it: {_hidden(folder)}")
+        finally:
+            await close(later, ended["document_id"])
+    return problems
+
+
+async def _settled(mcp: Client, operation_id: str) -> dict[str, Any]:
+    # Polled until the call is no longer queued or running.
+    deadline = time.monotonic() + SAVE_LIMIT_S
+    while True:
+        got = await tool(mcp, "krita_operation_get", {"operation_id": operation_id})
+        data: dict[str, Any] = got.get("data") or {}
+        if data.get("state") not in ("queued", "running") or time.monotonic() > deadline:
+            return data
+        await asyncio.sleep(1.0)

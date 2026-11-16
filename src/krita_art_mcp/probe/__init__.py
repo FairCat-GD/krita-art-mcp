@@ -17,7 +17,7 @@ from krita_art_mcp import __version__, journal, paths, schemas, setup_checks
 from krita_art_mcp.bridge_client import BridgeClient, Done
 from krita_art_mcp.instructions import INSTRUCTIONS
 from krita_art_mcp.probe import changes, opening, painting, pixels, previews, updates, writes
-from krita_art_mcp.probe.common import PREFIX, close, create_args
+from krita_art_mcp.probe.common import PREFIX, close, create_args, stdio_server
 from krita_art_mcp.probe.report import Report, code, tool
 from krita_art_mcp.tools import BUILT_TOOLS, operations
 from krita_art_mcp.tools.documents import SRGB_PROFILE
@@ -61,12 +61,6 @@ def _serve_command() -> list[str]:
     return [str(Path(sys.executable).with_name("krita-art-mcp")), "serve"]
 
 
-def _server(serve: list[str], harness: Path, name: str) -> StdioServerParameters:
-    # Each server keeps its journal in the harness folder, never in the owner's data dir.
-    env = {"KRITA_ART_MCP_DATA_DIR": str(harness / name)}
-    return StdioServerParameters(command=serve[0], args=serve[1:], env=env)
-
-
 def _probe(report: Report, client: BridgeClient, serve: list[str], harness: Path) -> None:
     health = client.health()
     if not isinstance(health, Done):
@@ -82,7 +76,7 @@ def _probe(report: Report, client: BridgeClient, serve: list[str], harness: Path
         info.get("plugin_version") == __version__,
         f"plugin {info.get('plugin_version')}",
     )
-    asyncio.run(_over_stdio(report, _server(serve, harness, "server-a"), info))
+    asyncio.run(_over_stdio(report, stdio_server(serve, harness, "server-a"), info))
     _runtime(report, info)
     # First, because what a dead run left dirty would stop this one at the unsaved check.
     asyncio.run(_close_leftovers(report, client, serve, harness))
@@ -220,7 +214,7 @@ def _only_ours_unsaved(client: BridgeClient, own: list[dict[str, Any]]) -> bool:
 async def _close_leftovers(
     report: Report, client: BridgeClient, serve: list[str], harness: Path
 ) -> None:
-    async with Client(_server(serve, harness, "server-a")) as a:
+    async with Client(stdio_server(serve, harness, "server-a")) as a:
         own = await _own_documents(a, harness)
         if not own or not _only_ours_unsaved(client, own):
             return
@@ -231,8 +225,8 @@ async def _close_leftovers(
 
 async def _documents(report: Report, client: BridgeClient, serve: list[str], harness: Path) -> None:
     async with (
-        Client(_server(serve, harness, "server-a")) as a,
-        Client(_server(serve, harness, "server-b")) as b,
+        Client(stdio_server(serve, harness, "server-a")) as a,
+        Client(stdio_server(serve, harness, "server-b")) as b,
     ):
         before = _transfer_files(harness)
         listed = writes.take(writes.places(harness.parent))
@@ -251,7 +245,7 @@ async def _documents(report: Report, client: BridgeClient, serve: list[str], har
                 await changes.run(report, a, b, client, harness)
             with report.timed("update"):
                 await updates.run(report, a, client, harness)
-            await painting.run(report, a, b, client, harness)
+            await painting.run(report, a, b, client, harness, serve)
             await _no_leftovers(report, a, harness, before)
             _nothing_stray(report, listed)
         finally:

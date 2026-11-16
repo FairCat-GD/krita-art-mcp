@@ -1480,11 +1480,28 @@ document, and fails the checks it overlaps. The stock presets `b) Basic-2 Opacit
 **The journal check comes last.** It is the live evidence that `uncertain` stays rare.
 - **What it reads.** Every line the probe's servers journaled, through the journal's own reader,
   so a line a later one settled counts as settled.
-- **When it fails.** On fewer than 340 dispatched lines, under half a whole run's 864, since that
+- **When it fails.** On fewer than 340 dispatched lines, under half a whole run's 870, since that
   means it read the wrong place. Or on any request left with an unknown attempt, which it names:
   uncertain, unregistered, or dispatched with no finished line.
 - **What it cannot see.** Reads, harness ops and the probe's own direct bridge calls, none of which
   are journaled.
+
+**What the probe holds of recovery,** in the save stage.
+- **A cancel behind H4's save.** A layer create, on a small document the probe's bridge client
+  holds, queues behind the save beside H4's paint. It is cancelled through server-b, because
+  server-a holds its call lock for the whole save. It polls `cancelled` and `not_applied` with a
+  valid receipt, and is absent once the save ends. Its same-id retry runs once, and the repeat
+  returns the same operation id. Cancelling the running save, its id read from server-a's journal,
+  is `UNSUPPORTED_CAPABILITY`, `not_applied`.
+- **A server ended mid-save.** server-c opens a 4096² working copy and starts its save. It is killed
+  once the bridge holds the save, and reaped. Once `ps` no longer finds it, the check requires all
+  of these: the save still running in Krita, its journal line unsettled, and nothing at the path. A
+  new process over server-c's folder then polls the save `uncertain`, finishing nothing, and its
+  same-id retry takes the lease, finishes and verifies it. The retry's receipt settles the dead
+  server's line.
+- **Held by unit tests alone.** A server holds one call at a time, so it dies holding at most one.
+  These routes have no live check: the lost reply, the call never sent, a paint recovered by a new
+  server, and a Krita restart. The Codex agent's release run on 0.32.0 is their live evidence.
 
 **N-04's limit.** `probe/writes.py` lists the data directory, strictly, by `DATA_FILES`, and five other
 places for new names that look like ours (the cwd, the home folder, Krita's temp folder,
@@ -1494,7 +1511,7 @@ only those names. `~/Desktop` and `~/Downloads` are left out, because listing th
 permission prompt.
 
 **What the probe measures and does not gate.** A MEASURED line stays only if something rests on it
-and no check would notice it changing. The 27 lines:
+and no check would notice it changing. The 28 lines:
 
 | Lines | Why they stay |
 |---|---|
@@ -1507,6 +1524,7 @@ and no check would notice it changing. The 27 lines:
 | N-01 and N-09 opening the master, and their corner-to-corner strokes | Costs no budget gates; Krita's memory is on the backlog |
 | Retention after N-01; the journal after N-01 | Growth watches behind backlog items |
 | H4's long save, and the refused close after it | A save has no budget, and the close re-reads what the save compared |
+| The restart save | Its size rests on how long the save runs on after its server is gone, which shrinks if Krita saves faster |
 | The grouped save's drift, and the grouped layer's own pixels there | The case's first report named seven pixels; K55 rests on the layer read |
 
 A line can also appear as a skip: "paths outside every root" when a root covers them, or the tall tip
@@ -1525,7 +1543,7 @@ retry of a batch; previews from explicit recipes; a `.kra` saved, closed and reo
 | H1 | An agent fixes a real review defect better than a scripted correction | Open: the trial, after the round |
 | H2 | Flat `paintPath` strokes with stock presets read as hand-painted | Passed by hand, 0.14.0: five of six usable. Tapers through `dynamics` since 0.24.0: widths and alpha follow the knots against plain reference strokes, in the probe |
 | H3 | Codex shows MCP images to the model | Holds: its agent described a known pattern from the image alone, 0.14.0 and 0.15.0 |
-| H4 | The bridge answers while idle and recovers after a blocking call | Holds: idle p95 under 50 ms; a 5 s gradient save, chosen by the owner against the 20 s target, measured, with a queued retry run once |
+| H4 | The bridge answers while idle and recovers after a blocking call | Holds: idle p95 under 50 ms; a 5 s gradient save, chosen by the owner against the 20 s target, measured, with a queued retry run once and a queued create cancelled, then retried once |
 | H5 | The plugin runs on 5.3.x and 6.0.x | Backlog |
 | H6 | Requested colours paint exactly | Holds, in the probe |
 | H7 | Claude Code can do the repaints | Open: H1's other half |
@@ -1779,15 +1797,15 @@ the code is shaped as it is.
 ## Baseline (v0.32.0)
 
 Taken on 2026-11-15 on Krita 5.3.4.1, macOS, Apple Silicon, on a Krita restarted that session, with
-**0 documents open**. The probe prints the open-document count beside its time, because document ops
+**0 documents open**; the test and probe rows again on 2026-11-16, with 0 documents open. The probe prints the open-document count beside its time, because document ops
 depend on it: 87 open documents cost about 50 s more.
 
 | Check | Expected |
 |---|---|
 | `uv run scripts/verify.py` | 6 stages, all PASS |
-| Server tests (3.12) | 1198 passed, 0 skipped |
+| Server tests (3.12) | 1200 passed, 0 skipped |
 | Plugin-core tests (3.10) | 1245 passed, 0 skipped |
-| `uv run krita-art-mcp probe` | 238 PASS, 0 FAIL, 27 MEASURED; about 155 s |
+| `uv run krita-art-mcp probe` | 242 PASS, 0 FAIL, 28 MEASURED; about 163 s |
 | `uv run krita-art-mcp doctor` | 6 steps, all PASS, with a root allowed |
 | Registered tools | 25 |
 | Schema files | 25 |

@@ -568,23 +568,72 @@ def test_a_request_id_of_the_servers_own_derived_form_is_refused(world: World, e
     assert world.port.paths == []
 
 
-def test_a_cancelled_job_is_not_applied(world: World) -> None:
+def _named(world: World, document_id: str, name: str) -> int:
+    inspected = world.server().content(
+        "krita_document_inspect", {"document_id": document_id, "frame": 0}
+    )
+    return sum(layer["name"] == name for layer in inspected["data"]["layers"])
+
+
+def test_a_cancelled_job_is_not_applied_and_its_retry_runs_once(world: World) -> None:
     document_id = _document(world)
+    root = world.server().content(
+        "krita_document_inspect", {"document_id": document_id, "frame": 0}
+    )["data"]["root_layer_id"]
     world.gate.clear()
     client = world.client(budget_s=0.4)
     assert not isinstance(client.call("slow"), Done | Failed)
-    op_args = painting.stroke_op(_stroke(document_id))
-    assert isinstance(op_args, dict)
-    queued = client.call("paint.stroke", op_args, request_id="req-s")
-    assert not isinstance(queued, Done | Failed)
     server = Server(build_server(client, world.journal(), world.places()))
-    arguments = {"operation_id": queued.operation_id, "request_id": "req-cancel"}
-    cancelled = server.content("krita_operation_cancel", arguments)
-    got = server.content("krita_operation_get", {"operation_id": queued.operation_id})
+    arguments = {
+        "guard": {"document_id": document_id, "request_id": "req-layer"},
+        "parent_id": root,
+        "above_id": None,
+        "type": "paint",
+        "name": "queued",
+    }
+    queued = server.content("krita_layer_create", arguments)
+    assert queued["status"] == "queued"
+    cancel = {"operation_id": queued["operation_id"], "request_id": "req-cancel"}
+    cancelled = server.content("krita_operation_cancel", cancel)
+    got = server.content("krita_operation_get", {"operation_id": queued["operation_id"]})
     world.gate.set()
     assert cancelled["data"]["state"] == "cancelled"
-    assert (got["data"]["state"], got["data"]["outcome"]) == ("cancelled", "not_applied")
-    assert world.port.paths == []
+    assert (got["data"]["state"], got["data"]["outcome"], got["data"]["receipt_valid"]) == (
+        "cancelled",
+        "not_applied",
+        True,
+    )
+    assert _named(world, document_id, "queued") == 0
+    # The cancel released the request_id, so its retry runs; every repeat finds that run.
+    retried = world.server().content("krita_layer_create", arguments)
+    again = world.server().content("krita_layer_create", arguments)
+    from_b = world.server(B, "b").content("krita_layer_create", arguments)
+    assert retried["status"] == "completed" and again == retried
+    assert from_b["operation_id"] == retried["operation_id"]
+    assert _named(world, document_id, "queued") == 1
+
+
+def test_a_paint_that_came_back_running_is_recovered_by_another_server(world: World) -> None:
+    document_id = _document(world)
+    world.gate.clear()
+    world.port.on_paint.append(lambda key: world.gate.wait(10))
+    running = world.server(budget_s=0.6).content("krita_paint_stroke", _stroke(document_id))
+    assert running["status"] == "running"
+    world.gate.set()
+    # Another process over the same journal, as after the client restarted its server.
+    later = world.server(B, "a")
+    got = later.content("krita_operation_get", {"operation_id": running["operation_id"]})
+    assert (got["data"]["state"], got["data"]["outcome"], got["data"]["receipt_valid"]) == (
+        "completed",
+        "applied",
+        True,
+    )
+    again = later.content("krita_paint_stroke", _stroke(document_id))
+    assert (again["status"], again["operation_id"]) == ("completed", running["operation_id"])
+    inspected = later.content("krita_document_inspect", {"document_id": document_id, "frame": 0})
+    assert inspected["data"]["history"]["undo_available"] == 1 and len(world.port.paths) == 1
+    prior = world.journal().lookup("req-s")
+    assert prior is not None and not prior.unsettled()
 
 
 def test_a_read_refused_by_the_server_states_nothing(world: World) -> None:

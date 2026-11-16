@@ -11,7 +11,7 @@ import pytest
 from bridge_core.errors import BridgeError
 from fake_krita import bgra, png
 from PIL import Image, PngImagePlugin
-from worlds import B, World, running_world
+from worlds import A, B, World, running_world
 
 from krita_art_mcp import imaging, roots
 from krita_art_mcp.bridge_client import Done
@@ -299,6 +299,31 @@ def test_a_retry_from_another_process_leaves_the_finish_to_the_lease_holder(
     # The refusal changed nothing, so the finish runs for the process that holds the document.
     done = _settled(a, running["operation_id"])
     assert done["receipt"]["status"] == "completed" and _saves(world) == ["hero-r02.kra"]
+
+
+def test_a_new_server_finishes_a_save_once_its_first_server_is_gone(world: World) -> None:
+    document_id = _opened(world)
+    _held(world)
+    target = world.tmp_path / "art" / "revisions" / "hero-r02.kra"
+    running = world.server(budget_s=0.5).content("krita_document_save", _save(document_id, target))
+    operation_id = running["operation_id"]
+    assert running["status"] == "running"
+    world.alive[A["pid"]] = False
+    world.gate.set()
+    # Another process over the same journal, as after the client restarted its server.
+    later = world.server(B, "a")
+    polled = _settled(later, operation_id)
+    assert (polled["state"], polled["outcome"]) == ("failed", "uncertain")
+    assert "the same request_id finishes it" in polled["receipt"]["error"]["message"]
+    assert saving.finish_operation_id(operation_id) not in world.bridge.jobs._operations
+    assert _in_place(world) == [] and _saves(world) != []
+    saved = later.content("krita_document_save", _save(document_id, target))
+    assert (saved["status"], saved["operation_id"]) == ("completed", operation_id)
+    assert saved["data"]["reopened_verified"] is True
+    assert saved["data"]["sha256"] == hashlib.sha256(target.read_bytes()).hexdigest()
+    assert _saves(world) == ["hero-r02.kra"] and world.port.calls.count("export") == 1
+    prior = world.journal().lookup("req-save")
+    assert prior is not None and not prior.unsettled()
 
 
 def test_a_finish_that_met_a_dialog_runs_when_the_save_is_retried(world: World) -> None:
