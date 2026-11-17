@@ -43,13 +43,14 @@ in `docs/spec/`, with a Read line in every block (see `docs/DEVELOPMENT-WORKFLOW
     - the archive and wheel checks passed as at the release: 56 modules, the `.desktop` and 25
       schemas; a locked sync; 57 files installed; and the wheel's setup commands exiting 1 with
       no traceback.
-- **Tag status:** `v0.32.1` is tagged locally, with the owner's approval, on the last docs commit
-  ("docs: drop the platform-port items"), which holds this note; it moved there from the review
-  commit by way of `996f9fa`, at the owner's request each time. The archive check ran again on
-  it. The tag is not pushed: pushing it and making the repository public are separate approvals.
-- **Push status:** `origin/main` holds everything through that docs commit, pushed with the
-  owner's approval: the release (`1b357de`), the close (`e524119`), the review (`7bdaf0b`), the
-  agent rename (`996f9fa`) and that commit.
+- **The repository is public** since 2026-11-17, with the owner's approval, and `v0.32.1` is
+  pushed: an annotated tag on `0c31a4d` ("docs: drop the platform-port items"), where the archive
+  check last ran. Before the switch, a scan of every file version, path and message in the history
+  against the term list found nothing, and GitHub held only `main`, with no issues, pull requests,
+  releases, workflows, secrets or force-pushes. Private vulnerability reporting, secret scanning
+  and push protection are on; Dependabot is off. No GitHub release was made from the tag.
+- **Push status:** `origin/main` holds everything through this file's commit, which comes after
+  the tag and changes only this file. List `origin/main..HEAD` before any push.
 - **After the release, a docs commit** names the other agent by its role, "the agent", rather than
   by its client, at the owner's request. Codex stays named where the text is a fact about Codex as
   an MCP client.
@@ -94,4 +95,5 @@ in `docs/spec/`, with a Read line in every block (see `docs/DEVELOPMENT-WORKFLOW
 - **Krita's memory grows across a probe** (about 3.7 GB after H4 at V1), and macOS swap slows
   saves; read a slow probe beside `sysctl vm.swapusage`.
 - **Comments state the present.** No session ids, no "used to", no review stories.
-- **Every push and every tag needs its own approval.** List `origin/main..HEAD` first.
+- **Every push and every tag needs its own approval,** and the repository is public, so a
+  push publishes at once. List `origin/main..HEAD` first.
