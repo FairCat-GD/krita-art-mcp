@@ -638,7 +638,7 @@ is closed, because Krita keeps it marked modified.
 
 | Step | If it fails |
 |---|---|
-| 1. The plugin files are installed and current | Nothing installed, or an installed copy that differs: run `install-plugin`, then restart Krita. No plugin source beside this copy of the server, or one it cannot read: run it from a readable checkout of a release tag (see *Install*) |
+| 1. The plugin files are installed and current | Nothing installed, or an installed copy that differs or cannot be read: run `install-plugin`, then restart Krita. No plugin source beside this copy of the server, or one it cannot read: run it from a readable checkout of a release tag (see *Install*) |
 | 2. `kritarc` enables the plugin | Enable *Krita Art MCP Bridge* in the Python Plugin Manager, then restart Krita |
 | 3. Krita is running | Start Krita |
 | 4. The bridge is reachable | Follow its message; restart Krita |

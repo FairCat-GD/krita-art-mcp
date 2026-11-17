@@ -17,11 +17,39 @@ in `docs/spec/`, with a Read line in every block (see `docs/DEVELOPMENT-WORKFLOW
   - Krita's close paths after a verified save, recorded as K56.
 - **The release checks and the readiness report.** V1 ran the release checks on the release tree
   and recorded them in its done-note. The readiness report went into the chat alone (decision 8).
-- **Tag status:** `v0.32.1` is asked for once the review commit exists and the checks have run
-  again on it. Pushing the tag and making the repository public are separate approvals.
-- **Push status:** `origin/main` holds everything through L1's review commit (`3ec6e4f`). The
-  release (`1b357de`), this close and the review commit that follows wait for the next approved
-  push; list `origin/main..HEAD` before it.
+- **V1's review (`/code-review high`, over the release commit): 9 findings, 9 fixed, 0 skipped.**
+  The close had deleted `SESSIONS.md`, so the review is recorded here and in its commit.
+  - **A source folder that could not be read passed the payload check,** because the hash's
+    `rglob` skips it, and `install-plugin` then raised. `payload` now lists every folder first.
+  - **An installed copy that could not be read made step 1 raise,** in `doctor` and in `serve`'s
+    not-running explanation. It is now a failed step whose fix is `install-plugin`.
+  - **A missing module named nothing** ("has no )"). It now names the missing file and calls the
+    source incomplete.
+  - **A file at the source's path read as "does not exist".** It now reads "is not a folder".
+  - **The clone tag was held by no test.** `test_version` now holds README's and the guide's
+    `git clone --branch` to this release's tag.
+  - **`install-plugin` never compared its copy with the source.** A copy whose hash differs now
+    exits 1.
+  - **A failed install left its staging folder in Krita's folder.** It is now removed, and the test
+    compares the whole folder.
+  - **ARCHITECTURE claimed "never a traceback" too widely.** It now says which cases fail cleanly.
+  - **A test pinned the English "Permission denied".** It now reads `os.strerror`.
+  - **Falsified,** seven new checks, each by its rule, each failing on its own line, with every file
+    restored from a copy and compared.
+  - **The checks again, on the review tree:**
+    - `verify`: 6 stages PASS; 1219 server tests (+6), 1245 plugin-core;
+    - `doctor`: six steps pass; probe: 242 PASS, 0 FAIL, 28 MEASURED in 163.4 s, journal 870. The
+      plugin's source is unchanged, so Krita was not restarted again;
+    - the archive and wheel checks passed as at the release: 56 modules, the `.desktop` and 25
+      schemas; a locked sync; 57 files installed; and the wheel's setup commands exiting 1 with
+      no traceback.
+- **Tag status:** `v0.32.1` is tagged locally, with the owner's approval, on the review commit
+  ("review: an unreadable source folder passed the payload check, and 8 smaller"). That commit
+  holds this note, and the archive check ran again on it. The tag is not pushed: pushing it and
+  making the repository public are separate approvals.
+- **Push status:** `origin/main` holds everything through that review commit, pushed with the
+  owner's approval: the release (`1b357de`), the close (`e524119`) and the review commit, which
+  carries this note.
 - **0.32.1 is installed and live.** V1 ran `install-plugin` and restarted Krita at 0 unsaved, so
   the running plugin is this checkout's. The owner's MCP client needs its own restart to pick the
   server up, and the Codex agent stays paused until it has.
@@ -38,7 +66,7 @@ in `docs/spec/`, with a Read line in every block (see `docs/DEVELOPMENT-WORKFLOW
     time they were asked for; ask again.
   - **The chat's last message is the workflow kit's one-line opener,** never this file's text.
 - **Baseline** (ARCHITECTURE's table, v0.32.1, measured at V1 on a restarted Krita):
-  - `verify`: 6 stages, all PASS; 1213 server tests and 1245 plugin-core tests, 0 skipped;
+  - `verify`: 6 stages, all PASS; 1219 server tests and 1245 plugin-core tests, 0 skipped;
   - `probe`: 242 PASS, 0 FAIL, 28 MEASURED, about 163 s with 0 documents open, the journal check
     reading 870 dispatched lines;
   - 25 tools, 25 schema files, 30 error codes, 39 bridge ops, 17 capabilities, 29 parity tests,

@@ -1438,20 +1438,22 @@ prints Krita's open and unsaved counts, whichever step failed, because that chec
 the plugin is stale, and a session reads them before it restarts Krita.
 
 **The payload check.** `plugin_files.payload` reads the plugin's source beside this copy of the
-server: its package's `__init__.py`, its `.desktop`, and every module through the hash. Nothing is
-compared, hashed or copied before it answers, because a missing folder hashes as the empty digest.
-Its users:
-- `install-plugin`, before it touches Krita's folder. The install also stages the package and the
-  `.desktop` before either replaces anything, so a failed copy leaves the old plugin whole.
+server: its package's `__init__.py`, its `.desktop`, every folder it lists (the hash's `rglob`
+skips one it cannot), and every module through the hash. Nothing is compared, hashed or copied
+before it answers, because a missing folder hashes as the empty digest. Its users:
+- `install-plugin`, before it touches Krita's folder. The install stages the package and the
+  `.desktop` before either replaces anything, and removes them if a copy fails, so the old plugin
+  stays whole and nothing is left beside it. It then compares the copy's hash with the source's.
 - `doctor`'s step 1, which says, in this order: no plugin source (naming what is missing), a source
-  it cannot read, nothing installed, or an installed copy that differs. The first two take the
-  checkout as their fix, never `install-plugin`, which would have nothing to copy.
+  it cannot read, nothing installed, an installed copy it cannot read, or one that differs. The
+  first two take the checkout as their fix, never `install-plugin`, which would have nothing to
+  copy.
 - `setup_checks.plugin_current`, behind `doctor`'s step 5 and the probe's first check, so a missing
   source never matches a running plugin.
 - `serve`'s explanation of a Krita that is not running, which goes through step 1.
 
-Each exits 1 or answers a failed step, never a traceback, and none touches a plugin, `kritarc` or
-`config.json`.
+A source or an installed copy that is missing or cannot be read is a failed step or exit 1, not a
+traceback. None of these checks touches a plugin, `kritarc` or `config.json`.
 
 ## Testing strategy — six layers, and what each cannot see
 
@@ -1827,7 +1829,7 @@ count beside its time, because document ops depend on it: 87 open documents cost
 | Check | Expected |
 |---|---|
 | `uv run scripts/verify.py` | 6 stages, all PASS |
-| Server tests (3.12) | 1213 passed, 0 skipped |
+| Server tests (3.12) | 1219 passed, 0 skipped |
 | Plugin-core tests (3.10) | 1245 passed, 0 skipped |
 | `uv run krita-art-mcp probe` | 242 PASS, 0 FAIL, 28 MEASURED; about 163 s |
 | `uv run krita-art-mcp doctor` | 6 steps, all PASS, with a root allowed |

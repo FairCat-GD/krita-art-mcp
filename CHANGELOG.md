@@ -18,14 +18,16 @@ your MCP client.
 - **`doctor` no longer crashes without the plugin's source.** Run from a copy with no plugin
   beside it, such as an installed wheel, it used to end in a traceback once a plugin was
   installed. Its first step now fails with "no plugin source beside this copy of the server" and
-  says to run from a checkout, and `doctor` exits 1. That step tells four failures apart: no
-  source, a source it cannot read, nothing installed, and an installed copy that differs. A
+  says to run from a checkout, and `doctor` exits 1. That step tells its failures apart: no
+  source, a source it cannot read, nothing installed, and an installed copy that cannot be read
+  or that differs. A
   server run from such a copy says the same when Krita is not running, rather than failing the
   call.
 - **`install-plugin` checks the whole plugin source before it copies anything.** A source missing
   its `.desktop` file used to replace the plugin's folder and then stop, leaving the old `.desktop`
-  beside the new plugin. It now changes nothing in Krita's folder and exits 1, and a copy that
-  fails part-way leaves the old plugin whole.
+  beside the new plugin. It now changes nothing in Krita's folder and exits 1, including when a
+  folder inside the source cannot be read. A copy that fails part-way leaves the old plugin whole
+  and nothing beside it, and a copy whose hash differs from the source's is reported, with exit 1.
 - **The stale-plugin check never passes a missing source.** `doctor`'s fifth step and the probe's
   first check used to report a hash mismatch and send you to `install-plugin`; they now say there
   is no plugin source and to run from a checkout.

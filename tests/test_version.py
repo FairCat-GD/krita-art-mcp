@@ -1,6 +1,7 @@
 import json
 import os
 import queue
+import re
 import subprocess
 import sys
 import threading
@@ -30,6 +31,14 @@ def test_the_readme_and_the_server_info_example_name_this_version() -> None:
     assert EXPECTED_VERSION in readme.read_text(encoding="utf-8")
     example = schemas.load("krita_server_info")["example"]["structuredContent"]["data"]
     assert example["server_version"] == example["plugin_version"] == EXPECTED_VERSION
+
+
+def test_the_clone_steps_name_this_release_s_tag() -> None:
+    # A clone of another tag installs another release, and no code reads these lines.
+    root = Path(__file__).resolve().parents[1]
+    for document in ("README.md", "docs/USER-GUIDE.md"):
+        text = (root / document).read_text(encoding="utf-8")
+        assert re.findall(r"git clone --branch (\S+)", text) == [f"v{EXPECTED_VERSION}"]
 
 
 def test_cli_prints_its_version() -> None:

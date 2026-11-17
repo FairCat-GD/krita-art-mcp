@@ -19,8 +19,15 @@ def run(krita_data_dir: Path, kritarc: Path, out: TextIO = sys.stdout) -> int:
         )
         return 1
     target = plugin_files.install(source, krita_data_dir)
-    installed_hash = plugin_files.source_hash(target)[:12]
-    print(f"Installed the plugin into {target.parent} (hash {installed_hash}).", file=out)
+    installed_hash = plugin_files.source_hash(target)
+    if installed_hash != checked.hash:
+        print(
+            f"install-plugin: the copy in {target.parent} differs from the source (hash "
+            f"{installed_hash[:12]}, source {checked.hash[:12]}). Run it again.",
+            file=out,
+        )
+        return 1
+    print(f"Installed the plugin into {target.parent} (hash {installed_hash[:12]}).", file=out)
     if setup_checks.plugin_enabled(setup_checks.Setup(kritarc=kritarc)).passed:
         print("Next: restart Krita so it loads this version.", file=out)
     else:

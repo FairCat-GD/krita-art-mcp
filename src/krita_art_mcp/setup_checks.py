@@ -46,9 +46,14 @@ def plugin_installed(setup: Setup) -> Step:
     desktop = target.parent / plugin_files.desktop_name()
     if not target.is_dir() or not desktop.is_file():
         return Step(name, False, f"nothing is installed in {paths.tilde(target.parent)}", INSTALL)
-    if desktop.read_bytes() != source.desktop:
+    try:
+        installed_desktop = desktop.read_bytes()
+        installed_hash = plugin_files.source_hash(target)
+    except OSError as error:
+        detail = f"cannot read the installed plugin in {paths.tilde(target.parent)}: "
+        return Step(name, False, detail + str(error.strerror), INSTALL)
+    if installed_desktop != source.desktop:
         return Step(name, False, "the installed .desktop file differs from the repo's", INSTALL)
-    installed_hash = plugin_files.source_hash(target)
     if installed_hash != source.hash:
         detail = f"installed {installed_hash[:12]}, repo {source.hash[:12]}"
         return Step(name, False, detail, INSTALL)

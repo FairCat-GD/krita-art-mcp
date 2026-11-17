@@ -1,5 +1,6 @@
 import asyncio
 import dataclasses
+import errno
 import io
 import json
 import os
@@ -119,9 +120,23 @@ def test_a_failed_install_leaves_the_old_plugin_whole(tmp_path: Path, plugin_sou
     (plugin_source / plugin_files.desktop_name()).unlink()
     with pytest.raises(FileNotFoundError):
         plugin_files.install(plugin_source, krita)
-    # Only the hidden staging copy, which the next install sweeps, is new.
-    after = _tree(krita / "pykrita")
-    assert {name: content for name, content in after.items() if name[0] != "."} == old
+    assert _tree(krita / "pykrita") == old
+
+
+def test_install_plugin_refuses_a_copy_that_differs_from_its_source(
+    tmp_path: Path, plugin_source: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    copy = plugin_files.install
+
+    def altered(source: Path, krita_data_dir: Path) -> Path:
+        target = copy(source, krita_data_dir)
+        (target / "added_in_transit.py").write_text("ADDED = True\n")
+        return target
+
+    monkeypatch.setattr(plugin_files, "install", altered)
+    out = io.StringIO()
+    assert install.run(_krita_dir(tmp_path), tmp_path / "kritarc", out) == 1
+    assert "differs from the source" in out.getvalue() and "Installed" not in out.getvalue()
 
 
 class _Client(BridgeClient):
@@ -229,6 +244,8 @@ STEP_1_CASES = [
     "no source",
     "no .desktop",
     "no package",
+    "source is a file",
+    "a module that cannot be found",
     "installed .desktop differs",
     "hash differs",
     "exact match",
@@ -263,6 +280,17 @@ def _source_copy(tmp_path: Path) -> Path:
             "checkout",
         ),
         (
+            "source is a file",
+            "no plugin source beside this copy of the server ({source} is not a folder)",
+            "checkout",
+        ),
+        (
+            "a module that cannot be found",
+            "the plugin source in {source} is incomplete: "
+            "{source}/krita_art_mcp_bridge/dangling.py is missing",
+            "checkout",
+        ),
+        (
             "installed .desktop differs",
             "the installed .desktop file differs from the repo's",
             "install-plugin",
@@ -283,6 +311,11 @@ def test_step_1_tells_its_failures_apart(tmp_path: Path, case: str, detail: str,
         (source / plugin_files.desktop_name()).unlink()
     elif case == "no package":
         shutil.rmtree(source / paths.PLUGIN_NAME)
+    elif case == "source is a file":
+        shutil.rmtree(source)
+        source.write_text("not a plugin\n")
+    elif case == "a module that cannot be found":
+        (source / paths.PLUGIN_NAME / "dangling.py").symlink_to(tmp_path / "nowhere.py")
     elif case == "installed .desktop differs":
         desktop = target.parent / plugin_files.desktop_name()
         desktop.write_bytes(desktop.read_bytes() + b"\n")
@@ -308,25 +341,56 @@ def test_step_1_tells_its_failures_apart(tmp_path: Path, case: str, detail: str,
     assert ("install-plugin" in lines[1]) == (fix == "install-plugin")
 
 
-def test_step_1_names_a_plugin_source_it_cannot_read(tmp_path: Path) -> None:
+@pytest.mark.parametrize(
+    "locked",
+    ["the source's .desktop", "a source folder", "the installed .desktop"],
+)
+def test_step_1_names_a_plugin_it_cannot_read(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, locked: str
+) -> None:
     setup = _setup(tmp_path, installed=True, enabled=True, running=True)
     source = _source_copy(tmp_path)
-    desktop = source / plugin_files.desktop_name()
-    desktop.chmod(0)
+    setup = dataclasses.replace(setup, plugin_source=source)
+    pykrita = setup.krita_data_dir / "pykrita"
+    path, detail, fix = {
+        "the source's .desktop": (
+            source / plugin_files.desktop_name(),
+            f"cannot read the plugin source in {source}",
+            setup_checks.CHECKOUT,
+        ),
+        "a source folder": (
+            source / paths.PLUGIN_NAME / "bridge_core",
+            f"cannot read the plugin source in {source}",
+            setup_checks.CHECKOUT,
+        ),
+        "the installed .desktop": (
+            pykrita / plugin_files.desktop_name(),
+            f"cannot read the installed plugin in {pykrita}",
+            setup_checks.INSTALL,
+        ),
+    }[locked]
+    mode = path.stat().st_mode
+    path.chmod(0)
     try:
-        if os.access(desktop, os.R_OK):
-            pytest.skip("this platform lets the owner read a file with no permissions")
+        if os.access(path, os.R_OK):
+            pytest.skip("this platform lets the owner read what has no permissions")
         out = io.StringIO()
-        setup = dataclasses.replace(setup, plugin_source=source)
         assert doctor.run(setup, _Client(_healthy(REPO_HASH)), out) == 1
         lines = out.getvalue().splitlines()
         assert lines[0] == (
             "1. the plugin files are installed and current: FAIL "
-            f"(cannot read the plugin source in {source}: Permission denied)"
+            f"({detail}: {os.strerror(errno.EACCES)})"
         )
-        assert lines[1] == f"   Fix: {setup_checks.CHECKOUT}"
+        assert lines[1] == f"   Fix: {fix}"
+        if locked == "a source folder":
+            # The hash alone would skip the folder and pass a source the copy then fails on.
+            krita = _krita_dir(tmp_path / "other")
+            before = _tree(krita)
+            monkeypatch.setattr(paths, "plugin_source", lambda: source)
+            assert install.run(krita, tmp_path / "kritarc", io.StringIO()) == 1
+            assert _tree(krita) == before
     finally:
-        desktop.chmod(0o644)
+        path.chmod(stat.S_IMODE(mode))
 
 
 def test_a_missing_plugin_source_never_matches_the_running_plugin(
