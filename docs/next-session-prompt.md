@@ -48,7 +48,9 @@ in `docs/spec/`, with a Read line in every block (see `docs/DEVELOPMENT-WORKFLOW
   check last ran. Before the switch, a scan of every file version, path and message in the history
   against the term list found nothing, and GitHub held only `main`, with no issues, pull requests,
   releases, workflows, secrets or force-pushes. Private vulnerability reporting, secret scanning
-  and push protection are on; Dependabot is off. No GitHub release was made from the tag.
+  and push protection are on; Dependabot is off. A GitHub release, "krita-art-mcp 0.32.1", is
+  published from the tag as the latest, its notes the 0.32.1 changelog entry under the install
+  command.
 - **Push status:** `origin/main` holds everything through this file's commit, which comes after
   the tag and changes only this file. List `origin/main..HEAD` before any push.
 - **After the release, a docs commit** names the other agent by its role, "the agent", rather than
