@@ -104,9 +104,6 @@ Round 4's left it at its release commit: `git show 1b357de:docs/spec/SESSIONS.md
   round 1 tests 5.3.x only. The plugin keeps its PyQt6 import path for this.
 - **Probes on a Krita development build** (PDD Q9). Throwaway documents only, for early Phase 6
   capability checks. Left out at the round 1 intake.
-- **Windows and Linux.** The code stays portable, but nothing is tested there. Left out at the
-  round 1 intake. On Linux the bridge needs its own guard against SIGPIPE: `SO_NOSIGPIPE` is
-  Darwin's, so a reply to a client that has gone would still kill Krita there (0.12.0).
 - **Saving a document over 8192 × 8192 pixels** (review 13, F4). The save verifies by reading
   the whole live composite, the whole reopened composite and every node's pixels unbanded, so
   `krita_document_save` refuses a larger canvas with `UNSUPPORTED_CAPABILITY` while open, paint
@@ -121,16 +118,6 @@ Round 4's left it at its release commit: `git show 1b357de:docs/spec/SESSIONS.md
   the export and the finish leaves it, and nothing sweeps the owner's folders.
 - **A plugin zip for other users,** importable through Krita's *Import Python Plugin from File*.
   Left out at the round 1 intake; round 1 installs with `install-plugin`.
-- **A Windows port.** Asked for by the owner on 2026-11-17, to be planned at the next intake. The
-  code is macOS-only today, and nothing has run on Windows:
-  - the data folder, on both sides, is `~/Library/Application Support/krita-art-mcp`;
-  - `install-plugin`'s default Krita folder and `doctor`'s `kritarc` are macOS paths, where
-    Windows keeps them under `%APPDATA%` and `%LOCALAPPDATA%`;
-  - the lease, `is_live_krita` and `doctor`'s Krita check run `/bin/ps`, on both sides, and the
-    probe reads `ps` too;
-  - the bridge sets `SO_NOSIGPIPE`, which only Darwin has;
-  - the docs' setup, registration and restart steps are macOS steps.
-  No Windows machine is at hand, so the intake settles first how the port is tested.
 - **A standalone package.** `uv build` makes a wheel and an sdist that hold the server and its
   schemas but not the plugin, its `.desktop` or the docs, so only a checkout can install the plugin
   (measured by the agent on 0.32.0). Shipping one would bundle the plugin as package resources

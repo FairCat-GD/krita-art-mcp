@@ -629,8 +629,7 @@ body that cannot be sent becomes a plain `INTERNAL_ERROR`, so a bad result fails
 
 **SIGPIPE.** Krita's embedded Python leaves it at its default, so a write to a socket whose client
 has gone kills Krita with no crash report. `BridgeHTTPServer.get_request` sets `SO_NOSIGPIPE`
-(Darwin's 0x1022, which Python does not name) on every connection. On Linux the bridge would need
-its own guard.
+(Darwin's 0x1022, which Python does not name) on every connection.
 
 **Shutdown.** On `notifier().applicationClosing` it stops accepting, fails queued jobs with retryable
 `CANCELLED`, and stops the server, all before Python is finalised (K48). The Notifier must be
