@@ -169,7 +169,7 @@ The why for each is in `docs/ARCHITECTURE.md`, *The invariants*.
 Its whole history will be published, so every file, test, fixture, done-note, handoff and commit
 message follows these rules:
 - **No personal names, game names or agent personas.** Write "the owner", "the first game" and
-  "the Codex agent". The one agreed exception is the owner's name on README's copyright line.
+  "the agent". The one agreed exception is the owner's name on README's copyright line.
 - **No home-directory paths.** Write `~`.
 - **No AI attribution:** no co-author trailers, no lines saying a tool generated the work, no AI
   session links, no AI credited as author, co-author or addressee. Naming the tools is fine:

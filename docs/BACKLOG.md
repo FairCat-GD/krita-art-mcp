@@ -43,7 +43,7 @@ Round 4's left it at its release commit: `git show 1b357de:docs/spec/SESSIONS.md
 
   The probe's tapers also run on a preset its earlier checks left dirty, so the reload route is held
   only by unit tests and E1's measurement; a probe check on a clean preset would hold it live.
-- **A server-side batch.** Left out at the round 2 intake, with the Codex agent's agreement. `exec`
+- **A server-side batch.** Left out at the round 2 intake, with the agent's agreement. `exec`
   already awaits calls and stops on a failed envelope: 1,253 of 1,377 consecutive calls were under
   0.25 s apart. One would earn its cost through shared-context enforcement, durable partial receipts
   and recovery across a client's interruption, never atomic rollback (K29).
@@ -59,7 +59,7 @@ Round 4's left it at its release commit: `git show 1b357de:docs/spec/SESSIONS.md
     client's own records. Every session the journal holds predates fills, so nothing measures how
     much a fill that replaces a run of strokes, or a layer op that replaces several, already took
     the pressure off a batch.
-  - **Re-measured at the round 3 intake,** from one day's journal on 0.30.0, where the Codex agent
+  - **Re-measured at the round 3 intake,** from one day's journal on 0.30.0, where the agent
     ran a scratch study on the construction tools: 88 calls with their times. Inside the server a
     fill took a median of 146 ms, a stroke 136 ms and a layer create 50 ms, where the agent's
     client saw about 3 s each; a save took 124 ms inside the server and about 110 ms at the client.
@@ -73,13 +73,13 @@ Round 4's left it at its release commit: `git show 1b357de:docs/spec/SESSIONS.md
   `wrap_around_hv_axis`, `wrap_around_h_axis` and `wrap_around_v_axis` set the axis. Enabling wrap
   can push a "Crop Selections" undo step (`libs/image/kis_image.cc:2567-2580`). No textured
   continuity is claimed without an edge and corner probe.
-  - **Proposed again after 0.18.0 by the Codex agent,** not yet decided: a protected, verified
+  - **Proposed again after 0.18.0 by the agent,** not yet decided: a protected, verified
     integer wrap translation (a half-roll) and a tiled preview. In one session, every wrapped asset
     needed a lossless half-roll made outside the tools, and a reopen. Translate (0.27.0) moves a
     layer through a transform mask, which does not wrap; a half-roll would need a wrapped move, and
     that question stays open. Raised again at 0.30.0, as a change of workflow rather than a
     regression, and left here by the round 3 intake.
-- **Target identity in receipts and guidance** (0.18.0). The Codex agent sent three strokes to the
+- **Target identity in receipts and guidance** (0.18.0). The agent sent three strokes to the
   wrong document through its own helper's default target; the server did what it was asked. Making
   the document, layer and selection a mutation acted on prominent in each receipt, and in the
   instructions, would make such a slip visible at once. Measure before proposing a batch.
@@ -121,13 +121,23 @@ Round 4's left it at its release commit: `git show 1b357de:docs/spec/SESSIONS.md
   the export and the finish leaves it, and nothing sweeps the owner's folders.
 - **A plugin zip for other users,** importable through Krita's *Import Python Plugin from File*.
   Left out at the round 1 intake; round 1 installs with `install-plugin`.
+- **A Windows port.** Asked for by the owner on 2026-11-17, to be planned at the next intake. The
+  code is macOS-only today, and nothing has run on Windows:
+  - the data folder, on both sides, is `~/Library/Application Support/krita-art-mcp`;
+  - `install-plugin`'s default Krita folder and `doctor`'s `kritarc` are macOS paths, where
+    Windows keeps them under `%APPDATA%` and `%LOCALAPPDATA%`;
+  - the lease, `is_live_krita` and `doctor`'s Krita check run `/bin/ps`, on both sides, and the
+    probe reads `ps` too;
+  - the bridge sets `SO_NOSIGPIPE`, which only Darwin has;
+  - the docs' setup, registration and restart steps are macOS steps.
+  No Windows machine is at hand, so the intake settles first how the port is tested.
 - **A standalone package.** `uv build` makes a wheel and an sdist that hold the server and its
   schemas but not the plugin, its `.desktop` or the docs, so only a checkout can install the plugin
-  (measured by the Codex agent on 0.32.0). Shipping one would bundle the plugin as package resources
+  (measured by the agent on 0.32.0). Shipping one would bundle the plugin as package resources
   from its one source tree, find it through installed resources rather than the checkout's layout
   (`paths.plugin_source`), and test a clean install with no checkout present. Left out at the
   round 4 intake, which kept the checkout as the one install route.
-- **The lost-reply and never-sent routes, live.** Unit tests hold both, and the Codex agent ran them
+- **The lost-reply and never-sent routes, live.** Unit tests hold both, and the agent ran them
   once against real Krita through a server whose bridge client dropped one reply or failed before
   sending. Keeping that in the probe would need a fault server of its own, test-side and off every
   public tool. Left out at the round 4 intake.
@@ -272,7 +282,7 @@ Round 4's left it at its release commit: `git show 1b357de:docs/spec/SESSIONS.md
   refuses it on both sides.
 - **A client's `serve` runs this checkout as it stands** (0.18.0). Both registrations run
   `uv run --project <repo>`, so an MCP client started mid-session imports that session's uncommitted
-  code. Once the version is bumped and the plugin installed, nothing refuses it. R2's Codex session
+  code. Once the version is bumped and the plugin installed, nothing refuses it. R2's agent session
   ran that way, on finished code. A released copy to serve from would keep a client off work in
   progress.
 - **A selection whose mask file cannot be written reads `uncertain`,** though the selection
@@ -342,7 +352,7 @@ these are the parts only a person can see.
   while the composite, the layer tree and the compared pixels match. A hand change to guides, or to
   the global selection where no layer holds it, should still close under `refuse`; no harness op
   makes one.
-- **Krita's export dialogs and mixed Close All orders on close** (0.32.0). The Codex agent's run of
+- **Krita's export dialogs and mixed Close All orders on close** (0.32.0). The agent's run of
   Krita's own close paths used KRA working copies, and Close All with Save for one document and
   Discard for the other. A working copy opened from a PNG or an ORA, whose save on close shows
   Krita's export dialog, and other orders across several documents were not tried. Krita should
@@ -356,7 +366,7 @@ these are the parts only a person can see.
   close and reopen a fictional file. Never rename or empty the owner's own Krita folder or
   preferences to fake it: `KRITA_ART_MCP_DATA_DIR` moves only the server's data. The setup tests
   (`tests/test_setup_commands.py`) hold `install-plugin`'s copy into a folder and its first-run
-  steps, and every `doctor` step failing in turn; the Codex agent also checked an install into an
+  steps, and every `doctor` step failing in turn; the agent also checked an install into an
   empty folder and first-run guidance with no `kritarc` or `config.json`. Left out at the round 4
   intake.
 - **A layer style spreading a change** (0.8.0). No harness op can add a layer style, so unit
@@ -372,7 +382,7 @@ these are the parts only a person can see.
   Monitor for a minute while it is idle.
 - **A Krita that dies mid-call** (0.3.0). Unit tests hold the uncertain outcome, and each of the
   deaths found in 0.12.0 came back `INTERNAL_ERROR` with `outcome: uncertain`, but nobody has forced
-  one on purpose. The Codex agent's release run on 0.32.0 tried an orderly quit: a receipt left
+  one on purpose. The agent's release run on 0.32.0 tried an orderly quit: a receipt left
   unsettled, then Krita quit and relaunched. The poll and the retry stayed `uncertain`, nothing was
   sent to the new session, and a settled receipt answered from the journal. Its drawing was saved
   and closed before the quit, so it was not a crash. A hard quit is still untried: quit Krita hard

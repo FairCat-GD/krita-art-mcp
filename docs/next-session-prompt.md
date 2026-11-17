@@ -43,16 +43,23 @@ in `docs/spec/`, with a Read line in every block (see `docs/DEVELOPMENT-WORKFLOW
     - the archive and wheel checks passed as at the release: 56 modules, the `.desktop` and 25
       schemas; a locked sync; 57 files installed; and the wheel's setup commands exiting 1 with
       no traceback.
-- **Tag status:** `v0.32.1` is tagged locally, with the owner's approval, on the review commit
-  ("review: an unreadable source folder passed the payload check, and 8 smaller"). That commit
-  holds this note, and the archive check ran again on it. The tag is not pushed: pushing it and
-  making the repository public are separate approvals.
-- **Push status:** `origin/main` holds everything through that review commit, pushed with the
-  owner's approval: the release (`1b357de`), the close (`e524119`) and the review commit, which
-  carries this note.
+- **Tag status:** `v0.32.1` is tagged locally, with the owner's approval, on the docs commit
+  ("docs: name the other agent by its role, and note a Windows port"), moved there from the review
+  commit at the owner's request. That commit holds this note, and the archive check ran again on
+  it. The tag is not pushed: pushing it and making the repository public are separate approvals.
+- **Push status:** `origin/main` holds everything through that docs commit, pushed with the
+  owner's approval: the release (`1b357de`), the close (`e524119`), the review (`7bdaf0b`) and
+  the docs commit, which carries this note.
+- **After the release, a docs commit** names the other agent by its role, "the agent", rather than
+  by its client, at the owner's request. Codex stays named where the text is a fact about Codex as
+  an MCP client. `v0.32.1` marks that commit.
+- **The next intake's request is a Windows port** (the owner, 2026-11-17: "I'd like us to plan a
+  Windows port now, but how we gonna test it? I don't have windows"). `docs/BACKLOG.md`'s
+  *A Windows port* lists what is macOS-only today. How it is tested without a Windows machine is
+  the intake's first question.
 - **0.32.1 is installed and live.** V1 ran `install-plugin` and restarted Krita at 0 unsaved, so
   the running plugin is this checkout's. The owner's MCP client needs its own restart to pick the
-  server up, and the Codex agent stays paused until it has.
+  server up, and the agent stays paused until it has.
 - **Open items live in `docs/BACKLOG.md`,** among them what round 4 left there:
   - a standalone package with the plugin bundled;
   - the lost-reply and never-sent routes run live;
@@ -62,7 +69,7 @@ in `docs/spec/`, with a Read line in every block (see `docs/DEVELOPMENT-WORKFLOW
 - **Decisions written down nowhere else:**
   - **Plan reviews are the owner's call.** Propose one when a plan reworks a heavily tested path,
     and ask which model.
-  - **Live runs and Krita restarts** were allowed at 0 unsaved with the Codex agent paused, each
+  - **Live runs and Krita restarts** were allowed at 0 unsaved with the agent paused, each
     time they were asked for; ask again.
   - **The chat's last message is the workflow kit's one-line opener,** never this file's text.
 - **Baseline** (ARCHITECTURE's table, v0.32.1, measured at V1 on a restarted Krita):
@@ -84,7 +91,7 @@ in `docs/spec/`, with a Read line in every block (see `docs/DEVELOPMENT-WORKFLOW
   and `ARCHITECTURE.md`'s *Testing strategy* for the three ways a falsification proves nothing.
 - **The term list is not empty.** Never assume its size, never print a term, and ask before any
   write to it.
-- **Another agent works in Krita.** The Codex agent paints the owner's art through this server. Ask
+- **Another agent works in Krita.** The agent paints the owner's art through this server. Ask
   the owner before any probe or measurement run.
 - **The journal in the data folder is the owner's own work.** Read it read-only, and record counts
   and timings alone: never a document path, a layer name or a folder.
